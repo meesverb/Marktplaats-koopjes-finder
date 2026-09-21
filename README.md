@@ -2,18 +2,33 @@
 
 `racefiets_jev.py` searches [Marktplaats](https://www.marktplaats.nl) for
 listings matching a query — road bikes ("racefiets") by default, but `--query`
-works for anything (`--query muziekboxen`, `--query "canon eos"`, ...) — and
+works for anything (`--query luidsprekers`, `--query "canon eos"`, ...) — and
 flags ones priced well below the median of what it found as a quick way to
 spot bargains. The frame-height/groupset features below are bike-specific and
 simply find nothing to match on other queries, which is harmless.
+
+Pick a query term that's actually specific to what you want: Marktplaats'
+own category data is used to filter out unrelated results (see "Off-topic
+results" below), but that only works if your query has one clear dominant
+category to begin with. E.g. `luidsprekers` (speakers) works well; `boxen`
+doesn't — on Marktplaats that word matches baby playpens far more often
+than speakers.
 
 ## Usage
 
 ```bash
 pip install -r requirements.txt
 python racefiets_jev.py --pages 10
-python racefiets_jev.py --query muziekboxen --pages 10
+python racefiets_jev.py --query luidsprekers --pages 10
 ```
+
+Comma-separate multiple terms to run them in one go, e.g.
+`--query "racefiets,luidsprekers"` — each gets its own HTML/CSV report (named
+after the query), while the history/log/reference files stay shared. Only do
+this when the same filters (`--max-price`, etc.) make sense for both —
+`--min-frame-height`/`--max-frame-height` in particular would wipe out every
+result for a non-bike query, since those listings never have a frame size.
+Run the script separately per query instead when the filters need to differ.
 
 Listings marked with `*` are priced at or below `--bargain-ratio` (default
 `0.6`, i.e. 60%) of the median price across all listings fetched. Every
@@ -140,8 +155,11 @@ reliable done one model at a time than guessed in bulk.
 
 `reference_prices.csv` itself is gitignored by default (like the other
 local/personal files), so it's yours to edit freely without it showing up as
-a change to commit. Remove it from `.gitignore` if you'd rather keep it
-version-controlled.
+a change to commit — except this repo's copy is force-added anyway, since it
+already has real researched entries in it (currently a handful of bookshelf
+speakers, compared against a Denon SC-N10 baseline — see git log for the
+sources). Keep adding to it freely; `git add -f reference_prices.csv` if you
+want your local edits committed too, otherwise they just stay local.
 
 ### Off-topic results on deep pages
 

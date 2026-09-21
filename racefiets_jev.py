@@ -182,9 +182,13 @@ def extract_dominant_category(search_response: dict) -> Optional[int]:
     those back out."""
     for facet in search_response.get("facets", []):
         if facet.get("key") == "RelevantCategories":
-            for category in facet.get("categories", []):
-                if category.get("dominant"):
-                    return category.get("id")
+            dominant = [c for c in facet.get("categories", []) if c.get("dominant")]
+            if not dominant:
+                return None
+            # For an ambiguous query Marktplaats can flag more than one
+            # category as dominant (e.g. "boxen" flags both baby playpens
+            # and speakers) — the one with the most matches is the real one.
+            return max(dominant, key=lambda c: c.get("histogramCount", 0)).get("id")
     return None
 
 
@@ -774,7 +778,13 @@ def write_csv(listings: list[Listing], path: str) -> None:
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--query", default="racefiets", help="Search query (default: racefiets)")
+    parser.add_argument(
+        "--query",
+        default="racefiets",
+        help="Search query (default: racefiets). Comma-separate multiple terms (e.g. "
+        "\"racefiets,luidsprekers\") to run them all in one go — each gets its own HTML/CSV "
+        "report (named after the query), while history/log/reference files stay shared.",
+    )
     parser.add_argument(
         "--pages",
         type=int,
@@ -841,10 +851,25 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    args = parse_args(argv)
+def safe_query_slug(query: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", query.lower()).strip("-") or "query"
 
-    listings = collect_listings(args.query, args.pages, args.delay)
+
+def per_query_path(base: str, query: str, multi: bool) -> str:
+    """When running multiple queries in one go, give each its own output
+    file (derived from the base path) instead of them overwriting each
+    other; a single query keeps using the base path unchanged."""
+    if not multi:
+        return base
+    p = Path(base)
+    return str(p.with_name(f"{p.stem}_{safe_query_slug(query)}{p.suffix}"))
+
+
+def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
+    if multi:
+        print(f"\n=== {query} ===")
+
+    listings = collect_listings(query, args.pages, args.delay)
 
     if not args.no_bid_lookup:
         enrich_fast_bid_listings(listings, args.delay)
@@ -873,12 +898,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     print_table(listings)
 
     if args.output:
-        write_csv(listings, args.output)
-        print(f"\nWrote {len(listings)} listings to {args.output}")
+        output_path = per_query_path(args.output, query, multi)
+        write_csv(listings, output_path)
+        print(f"\nWrote {len(listings)} listings to {output_path}")
 
     if not args.no_html:
-        write_html(listings, args.html, args.query)
-        print(f"Wrote HTML overview to {args.html}")
+        html_path = per_query_path(args.html, query, multi)
+        write_html(listings, html_path, query)
+        print(f"Wrote HTML overview to {html_path}")
 
         new_count = sum(1 for l in listings if l.is_new)
         should_open = args.open_browser == "always" or (
@@ -886,9 +913,22 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         if should_open:
             try:
-                webbrowser.open(Path(args.html).resolve().as_uri())
+                webbrowser.open(Path(html_path).resolve().as_uri())
             except webbrowser.Error as exc:
                 print(f"warning: could not open browser: {exc}", file=sys.stderr)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = parse_args(argv)
+
+    queries = [q.strip() for q in args.query.split(",") if q.strip()]
+    if not queries:
+        print("error: no search query given", file=sys.stderr)
+        return 1
+    multi = len(queries) > 1
+
+    for query in queries:
+        run_for_query(args, query, multi)
 
     return 0
 
