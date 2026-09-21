@@ -50,6 +50,7 @@ class Listing:
     groupset_tier: Optional[int]
     url: str
     is_bargain: bool = False
+    price_is_bid: bool = False
     is_new: bool = False
     first_seen: str = ""
     ref_label: str = ""
@@ -72,6 +73,102 @@ def fetch_page(session: requests.Session, query: str, page: int) -> dict:
         )
     data = json.loads(match.group(1))
     return data["props"]["pageProps"]["searchRequestAndResponse"]
+
+
+CONFIG_MARKER = "window.__CONFIG__ = "
+
+
+def extract_balanced_json(text: str, start: int) -> Optional[dict]:
+    """Extract one JSON object starting at `start` (the opening '{'),
+    respecting quoted strings, and return it parsed."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
+def fetch_bid_info(session: requests.Session, vip_url: str) -> Optional[dict]:
+    """Fetch a listing's own page and return its bidsInfo (current bids /
+    minimum bid) — this isn't included in the search results for FAST_BID
+    listings, only on the listing page itself (loaded client-side there via
+    window.__CONFIG__)."""
+    resp = session.get(vip_url, timeout=15)
+    resp.raise_for_status()
+
+    marker_pos = resp.text.find(CONFIG_MARKER)
+    if marker_pos == -1:
+        return None
+    brace_pos = resp.text.find("{", marker_pos)
+    if brace_pos == -1:
+        return None
+    config = extract_balanced_json(resp.text, brace_pos)
+    if config is None:
+        return None
+    return config.get("listing", {}).get("bidsInfo")
+
+
+def resolve_bid_price(bids_info: dict) -> Optional[float]:
+    """The relevant "price" for a bidding listing: the current highest bid
+    if there is one, otherwise the seller's minimum starting bid."""
+    bids = bids_info.get("bids") or []
+    if bids:
+        return max(b["value"] for b in bids) / 100
+    minimum = bids_info.get("currentMinimumBid")
+    if minimum:
+        return minimum / 100
+    return None
+
+
+def enrich_fast_bid_listings(
+    listings: list[Listing], delay: float, session: Optional[requests.Session] = None
+) -> None:
+    """FAST_BID listings report €0 in search results; fetch their own page
+    to fill in the real minimum/current bid."""
+    targets = [l for l in listings if l.price_type == "FAST_BID" and l.price_eur is None]
+    if not targets:
+        return
+
+    session = session or requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
+
+    print(f"Biedprijzen ophalen voor {len(targets)} FAST_BID advertenties...", file=sys.stderr)
+    for i, listing in enumerate(targets, start=1):
+        try:
+            bids_info = fetch_bid_info(session, listing.url)
+        except requests.RequestException as exc:
+            print(f"  warning: kon bod niet ophalen voor {listing.item_id}: {exc}", file=sys.stderr)
+            continue
+
+        if bids_info:
+            price = resolve_bid_price(bids_info)
+            if price is not None:
+                listing.price_eur = price
+                listing.price_is_bid = True
+
+        print(f"  {i}/{len(targets)} verwerkt", file=sys.stderr)
+        if i < len(targets):
+            time.sleep(delay)
 
 
 def extract_attribute(raw_listing: dict, key: str) -> str:
@@ -174,7 +271,7 @@ def parse_listing(raw: dict) -> Listing:
         item_id=raw.get("itemId", ""),
         title=title,
         price_eur=price_eur,
-        price_type=price_info.get("priceType", ""),
+        price_type=price_type,
         city=raw.get("location", {}).get("cityName", ""),
         date=raw.get("date", ""),
         condition=extract_attribute(raw, "condition"),
@@ -182,6 +279,7 @@ def parse_listing(raw: dict) -> Listing:
         groupset=groupset,
         groupset_tier=groupset_tier,
         url=url,
+        price_is_bid=price_type in ("MIN_BID", "FAST_BID"),
     )
 
 
@@ -356,9 +454,13 @@ def print_table(listings: list[Listing]) -> None:
         listings,
         key=lambda l: (l.price_eur is None, l.price_eur if l.price_eur is not None else 0),
     )
-    print(f"{'':3} {'PRICE':>8}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
+    print(f"{'':4} {'PRICE':>8}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
     for l in rows:
-        mark = ("N" if l.is_new else " ") + ("*" if l.is_bargain else " ")
+        mark = (
+            ("N" if l.is_new else " ")
+            + ("*" if l.is_bargain else " ")
+            + ("B" if l.price_is_bid else " ")
+        )
         if l.price_eur is None:
             price_str = l.price_type
         elif l.price_eur < 1:
@@ -366,7 +468,7 @@ def print_table(listings: list[Listing]) -> None:
         else:
             price_str = f"€{l.price_eur:.0f}"
         print(
-            f"{mark:3} {price_str:>8}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
+            f"{mark:4} {price_str:>8}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
             f"{l.condition[:20]:<20} {l.city[:15]:<15} {l.title[:60]}"
         )
         print(f"      {l.url}")
@@ -382,9 +484,10 @@ def print_table(listings: list[Listing]) -> None:
 
     bargains = [l for l in listings if l.is_bargain]
     new_ones = [l for l in listings if l.is_new]
+    bids = [l for l in listings if l.price_is_bid]
     print(
         f"\n{len(listings)} listings, {len(bargains)} bargains (*), "
-        f"{len(new_ones)} new since last run (N)"
+        f"{len(new_ones)} new since last run (N), {len(bids)} bidding (B, price = huidig/minimum bod)"
     )
 
 
@@ -420,6 +523,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .badge.new {{ background: var(--new); }}
   .badge.bargain {{ background: var(--bargain); }}
   .price {{ font-weight: 600; white-space: nowrap; }}
+  .bid-tag {{ font-weight: 400; font-size: 0.72rem; color: var(--muted); }}
 </style>
 </head>
 <body>
@@ -503,6 +607,8 @@ def render_html(listings: list[Listing], query: str) -> str:
             else f"€{l.price_eur:.2f}" if l.price_eur < 1
             else f"€{l.price_eur:.0f}"
         )
+        if l.price_is_bid and l.price_eur is not None:
+            price_str += ' <span class="bid-tag">bod</span>'
         badges = ""
         if l.is_new:
             badges += '<span class="badge new">NIEUW</span>'
@@ -624,6 +730,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "against listing titles and compare the asking price to. Skipped if the file doesn't "
         "exist (default: reference_prices.csv)",
     )
+    parser.add_argument(
+        "--no-bid-lookup",
+        action="store_true",
+        help="Skip fetching each FAST_BID listing's own page for its real minimum/current bid "
+        "(faster, but those listings keep showing as FAST_BID with no price instead)",
+    )
     return parser.parse_args(argv)
 
 
@@ -631,6 +743,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
     listings = collect_listings(args.query, args.pages, args.delay)
+
+    if not args.no_bid_lookup:
+        enrich_fast_bid_listings(listings, args.delay)
 
     if args.min_price is not None:
         listings = [l for l in listings if l.price_eur is None or l.price_eur >= args.min_price]

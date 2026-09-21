@@ -40,6 +40,7 @@ schedule (e.g. every 15 minutes via cron / Task Scheduler).
 | `--no-html` | Skip writing the HTML overview | off |
 | `--history-file` | Path to the file that remembers which listings were already seen | `seen_listings.json` |
 | `--reference-file` | Optional CSV of known models to compare asking prices against (see below) | `reference_prices.csv` |
+| `--no-bid-lookup` | Skip fetching each FAST_BID listing's own page for its real bid amount (faster) | off |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:
 
@@ -67,6 +68,23 @@ buckets ("53 tot 57 cm", "57 tot 61 cm", etc.). `--min-frame-height`/
 so a bike in a bucket that only partially overlaps (e.g. bucket "53 tot 57
 cm" for a `--min-frame-height 54` filter) may still show up, and a bike with
 no frame size listed at all is excluded once this filter is active.
+
+### Bidding listings (FAST_BID / MIN_BID)
+
+Some listings ("Bieden") don't have a fixed price — Marktplaats' search
+results always report €0 for these (`FAST_BID`), even though the listing
+itself has a real minimum starting bid, or a real current highest bid once
+someone has bid. By default the script fetches each `FAST_BID` listing's own
+page to get that real number (marked `B` in the table, "bod" in the HTML
+report) and uses it everywhere — price filters, the bargain comparison, all
+of it — instead of treating it as priceless. `MIN_BID` listings already
+report a real number in search results, so no extra request is needed for
+those, but they're marked `B` too since it's still a bid, not a fixed
+asking price.
+
+This means one extra request per `FAST_BID` listing found, so a run with a
+lot of them takes longer. Use `--no-bid-lookup` to skip it and go back to
+treating those listings as priceless.
 
 ### Groupset detection (bikes)
 
