@@ -134,6 +134,7 @@ def collect_listings(
     session = session or requests.Session()
     session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
 
+    print(f"Zoeken naar '{query}' op Marktplaats...", file=sys.stderr)
     listings: dict[str, Listing] = {}
     page = 1
     while True:
@@ -152,6 +153,9 @@ def collect_listings(
             listings[listing.item_id] = listing
 
         max_page = data.get("maxAllowedPageNumber", page)
+        target = min(pages, max_page) if pages > 0 else max_page
+        print(f"  pagina {page}/{target} opgehaald — {len(listings)} advertenties tot nu toe", file=sys.stderr)
+
         reached_requested_limit = pages > 0 and page >= pages
         reached_site_limit = page >= max_page
         if reached_requested_limit or reached_site_limit:
