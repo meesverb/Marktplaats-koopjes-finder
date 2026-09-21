@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 venv/
 *.csv
+seen_listings.json
+racefiets_report.html
