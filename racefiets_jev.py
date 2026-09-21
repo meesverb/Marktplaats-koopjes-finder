@@ -60,6 +60,8 @@ class Listing:
     ref_pct_of_original: Optional[float] = None
     ref_specs: str = ""
     ref_better: bool = False
+    ref_market_avg: Optional[float] = None
+    ref_market_count: int = 0
     pct_of_median: Optional[float] = None
 
 
@@ -429,6 +431,63 @@ def append_bargain_log(path: str, listings: list[Listing]) -> int:
     return len(new_bargains)
 
 
+def load_reference_market_stats(path: str) -> dict:
+    """Build actual observed secondhand asking prices per reference model
+    from every past run's price_history.csv rows — a self-growing market
+    price database, distinct from the (often unknown/outdated) original
+    retail price in reference_prices.csv."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    except FileNotFoundError:
+        return {}
+
+    by_label: dict[str, list[float]] = {}
+    for row in rows:
+        try:
+            price = float(row["price_eur"])
+        except (KeyError, ValueError):
+            continue
+        by_label.setdefault(row["ref_label"], []).append(price)
+
+    stats = {}
+    for label, prices in by_label.items():
+        stats[label] = {
+            "count": len(prices),
+            "mean": statistics.mean(prices),
+            "median": statistics.median(prices),
+        }
+    return stats
+
+
+def apply_reference_market_stats(listings: list[Listing], stats: dict) -> None:
+    for listing in listings:
+        if listing.ref_label and listing.ref_label in stats:
+            s = stats[listing.ref_label]
+            listing.ref_market_avg = s["mean"]
+            listing.ref_market_count = s["count"]
+
+
+def append_reference_price_observations(path: str, listings: list[Listing]) -> int:
+    """Log one row per newly-seen listing that matched a reference model,
+    so future runs can compute the real observed secondhand price for
+    that model. Only logs on first sighting (is_new) so the same active
+    ad isn't counted again every run."""
+    observations = [l for l in listings if l.is_new and l.ref_label and l.price_eur is not None]
+    if not observations:
+        return 0
+
+    file_exists = Path(path).exists()
+    logged_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(["date", "ref_label", "item_id", "price_eur", "title"])
+        for listing in observations:
+            writer.writerow([logged_at, listing.ref_label, listing.item_id, listing.price_eur, listing.title])
+    return len(observations)
+
+
 def load_history(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
@@ -556,6 +615,8 @@ def print_table(listings: list[Listing]) -> None:
                 bits.append(f"nieuw €{l.ref_original_price:.0f}")
             if l.ref_pct_of_original is not None:
                 bits.append(f"nu {l.ref_pct_of_original:.0f}% daarvan")
+            if l.ref_market_count > 0:
+                bits.append(f"tweedehands gem. €{l.ref_market_avg:.0f} (n={l.ref_market_count})")
             if l.ref_specs:
                 bits.append(f"specs: {l.ref_specs}")
             if l.ref_score:
@@ -719,6 +780,8 @@ def render_html(listings: list[Listing], query: str) -> str:
             ref_price_str = f"€{l.ref_original_price:.0f}"
         else:
             ref_price_str = "—" if not l.ref_label else "onbekend"
+        if l.ref_market_count > 0:
+            ref_price_str += f" · 2e-hands gem. €{l.ref_market_avg:.0f} (n={l.ref_market_count})"
         ref_specs_str = html_lib.escape(l.ref_score) if l.ref_score else (
             html_lib.escape(l.ref_specs) if l.ref_specs else "—"
         )
@@ -875,6 +938,17 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "history instead of just the current snapshot (default: bargains_log.csv)",
     )
     parser.add_argument("--no-log", action="store_true", help="Skip appending to the bargains log")
+    parser.add_argument(
+        "--price-history-file",
+        default="reference_price_history.csv",
+        help="CSV that logs the price of every newly-seen listing matching a reference model, "
+        "building your own observed secondhand market price per model over time (shown as "
+        "'2e-hands gem.') independent of reference_prices.csv's original retail price "
+        "(default: reference_price_history.csv)",
+    )
+    parser.add_argument(
+        "--no-price-history", action="store_true", help="Skip recording/using observed secondhand prices"
+    )
     return parser.parse_args(argv)
 
 
@@ -911,11 +985,20 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
     reference = load_reference_data(args.reference_file)
     apply_reference_data(listings, reference)
 
+    if not args.no_price_history:
+        market_stats = load_reference_market_stats(args.price_history_file)
+        apply_reference_market_stats(listings, market_stats)
+
     listings = flag_bargains(listings, args.bargain_ratio)
 
     history = load_history(args.history_file)
     history = apply_history(listings, history)
     save_history(args.history_file, history)
+
+    if not args.no_price_history:
+        recorded = append_reference_price_observations(args.price_history_file, listings)
+        if recorded:
+            print(f"Recorded {recorded} price observation(s) to {args.price_history_file}")
 
     if not args.no_log:
         logged = append_bargain_log(args.log_file, listings)

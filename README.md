@@ -69,6 +69,8 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--open-browser` | `auto` (open only when there are new listings), `always`, or `never` | `auto` |
 | `--log-file` | CSV that newly found bargains get appended to (a running history) | `bargains_log.csv` |
 | `--no-log` | Skip appending to the bargains log | off |
+| `--price-history-file` | CSV that logs observed prices of reference-matched listings (builds your own market price database) | `reference_price_history.csv` |
+| `--no-price-history` | Skip recording/using observed secondhand prices | off |
 | `--no-bid-lookup` | Skip fetching each FAST_BID listing's own page for its real bid amount (faster) | off |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:
@@ -159,6 +161,18 @@ a purple "BETER" badge when `better_than_baseline` is set. See
 values in the example file are placeholders, not real prices). If you want
 help researching a specific model's original price, just ask — that's more
 reliable done one model at a time than guessed in bulk.
+
+### Your own market price history — `--price-history-file`
+
+Every time a listing matching a reference model is seen for the first time,
+its price gets logged to `reference_price_history.csv` (created
+automatically). From the second time a model shows up, the report also
+displays "2e-hands gem. €X (n=Y)" — the actual average secondhand asking
+price you've personally observed for that model, based on Y past sightings.
+This needs no research or original price at all, grows automatically the
+more you run the script, and is arguably more useful than a decades-old
+retail price for judging whether an asking price is reasonable. Disable
+with `--no-price-history`.
 
 `reference_prices.csv` itself is gitignored by default (like the other
 local/personal files), so it's yours to edit freely without it showing up as
