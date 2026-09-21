@@ -141,8 +141,9 @@ pattern,label,original_price_eur,specs,score,better_than_baseline
 Canyon Ultimate CF SLX 8,Canyon Ultimate CF SLX 8 (2021),4000,"11.7 kg, Ultegra Di2",8.5/10,1
 ```
 
-- `pattern`: regex (case-insensitive), matched against the listing title.
-  Put more specific patterns earlier in the file — the first match wins.
+- `pattern`: regex (case-insensitive), matched against the listing title and
+  description combined. Put more specific patterns earlier in the file — the
+  first match wins.
 - `label`: what to display when matched.
 - `original_price_eur`: what it cost new (optional — leave blank if unknown).
 - `specs`: the objective specs worth comparing (power, sensitivity, weight,
@@ -173,6 +174,24 @@ This needs no research or original price at all, grows automatically the
 more you run the script, and is arguably more useful than a decades-old
 retail price for judging whether an asking price is reasonable. Disable
 with `--no-price-history`.
+
+### `check_hifi_brand.py` — a research aid for filling in the reference file
+
+When researching models for `reference_prices.csv` (audio speakers), this
+checks which models a brand actually has on hifidatabase.com, with
+view/vote counts, in a single request — much cheaper than a full web
+search per model, and the vote count tells you upfront whether a model
+is even worth researching further before spending that search.
+
+```bash
+python check_hifi_brand.py "Mission"
+python check_hifi_brand.py "Wharfedale" --min-votes 5
+```
+
+Not wired into `racefiets_jev.py` itself — it's a standalone lookup you run
+by hand while researching, not something the main script needs. The site
+has bot-protection that kicks in after several rapid requests, so use it a
+brand at a time rather than in a loop.
 
 `reference_prices.csv` itself is gitignored by default (like the other
 local/personal files), so it's yours to edit freely without it showing up as

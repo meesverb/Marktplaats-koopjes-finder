@@ -41,6 +41,7 @@ NEXT_DATA_RE = re.compile(
 class Listing:
     item_id: str
     title: str
+    description: str
     price_eur: Optional[float]
     price_type: str
     city: str
@@ -295,6 +296,7 @@ def parse_listing(raw: dict) -> Listing:
     return Listing(
         item_id=raw.get("itemId", ""),
         title=title,
+        description=description,
         price_eur=price_eur,
         price_type=price_type,
         city=raw.get("location", {}).get("cityName", ""),
@@ -566,8 +568,9 @@ def apply_reference_data(listings: list[Listing], reference: list[dict]) -> None
     if not reference:
         return
     for listing in listings:
+        haystack = f"{listing.title} {listing.description}"
         for row in reference:
-            if row["regex"].search(listing.title):
+            if row["regex"].search(haystack):
                 listing.ref_label = row["label"]
                 listing.ref_original_price = row["original_price_eur"]
                 listing.ref_score = row["score"]
