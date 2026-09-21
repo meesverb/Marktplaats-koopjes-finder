@@ -64,6 +64,8 @@ class Listing:
     ref_market_avg: Optional[float] = None
     ref_market_count: int = 0
     pct_of_median: Optional[float] = None
+    price_dropped: bool = False
+    price_drop_from: Optional[float] = None
 
 
 def fetch_page(session: requests.Session, query: str, page: int) -> dict:
@@ -521,6 +523,14 @@ def apply_history(listings: list[Listing], history: dict) -> dict:
         else:
             listing.is_new = False
             listing.first_seen = entry.get("first_seen", now)
+            old_price = entry.get("last_price")
+            if (
+                old_price is not None
+                and listing.price_eur is not None
+                and listing.price_eur < old_price
+            ):
+                listing.price_dropped = True
+                listing.price_drop_from = old_price
             entry["last_seen"] = now
             entry["last_price"] = listing.price_eur
     return history
@@ -592,13 +602,14 @@ def print_table(listings: list[Listing]) -> None:
         listings,
         key=lambda l: (l.price_eur is None, l.price_eur if l.price_eur is not None else 0),
     )
-    print(f"{'':5} {'PRICE':>8} {'%MED':>6}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
+    print(f"{'':6} {'PRICE':>8} {'%MED':>6}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
     for l in rows:
         mark = (
             ("N" if l.is_new else " ")
             + ("*" if l.is_bargain else " ")
             + ("B" if l.price_is_bid else " ")
             + ("!" if l.ref_better else " ")
+            + ("v" if l.price_dropped else " ")
         )
         if l.price_eur is None:
             price_str = l.price_type
@@ -608,10 +619,12 @@ def print_table(listings: list[Listing]) -> None:
             price_str = f"€{l.price_eur:.0f}"
         pct_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
         print(
-            f"{mark:5} {price_str:>8} {pct_str:>6}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
+            f"{mark:6} {price_str:>8} {pct_str:>6}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
             f"{l.condition[:20]:<20} {l.city[:15]:<15} {l.title[:60]}"
         )
         print(f"      {l.url}")
+        if l.price_dropped:
+            print(f"      prijsverlaging: €{l.price_drop_from:.0f} → €{l.price_eur:.0f}")
         if l.ref_label:
             bits = [l.ref_label]
             if l.ref_original_price is not None:
@@ -631,10 +644,11 @@ def print_table(listings: list[Listing]) -> None:
     new_ones = [l for l in listings if l.is_new]
     bids = [l for l in listings if l.price_is_bid]
     better = [l for l in listings if l.ref_better]
+    dropped = [l for l in listings if l.price_dropped]
     print(
         f"\n{len(listings)} listings, {len(bargains)} bargains (*), "
         f"{len(new_ones)} new since last run (N), {len(bids)} bidding (B, price = huidig/minimum bod), "
-        f"{len(better)} beter dan referentie (!)"
+        f"{len(better)} beter dan referentie (!), {len(dropped)} prijsverlaging (v)"
     )
 
     stats = price_stats(listings)
@@ -651,6 +665,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   :root {{
     --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1a; --muted: #6b7280;
     --border: #e5e7eb; --new: #16a34a; --bargain: #dc2626; --accent: #2563eb; --better: #7c3aed;
+    --dropped: #ea580c;
   }}
   body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg);
          color: var(--text); margin: 0; padding: 24px; }}
@@ -674,6 +689,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .badge.new {{ background: var(--new); }}
   .badge.bargain {{ background: var(--bargain); }}
   .badge.better {{ background: var(--better); }}
+  .badge.dropped {{ background: var(--dropped); }}
   .price {{ font-weight: 600; white-space: nowrap; }}
   .bid-tag {{ font-weight: 400; font-size: 0.72rem; color: var(--muted); }}
 </style>
@@ -686,6 +702,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <button data-filter="new">Nieuw ({new_count})</button>
   <button data-filter="bargain">Koopjes ({bargain_count})</button>
   <button data-filter="better">Beter dan referentie ({better_count})</button>
+  <button data-filter="dropped">Prijsverlaging ({dropped_count})</button>
 </div>
 <table id="listings">
 <thead>
@@ -772,6 +789,8 @@ def render_html(listings: list[Listing], query: str) -> str:
             badges += '<span class="badge bargain">KOOPJE</span>'
         if l.ref_better:
             badges += '<span class="badge better">BETER</span>'
+        if l.price_dropped:
+            badges += f'<span class="badge dropped">-€{l.price_drop_from - l.price_eur:.0f}</span>'
         price_sort_value = l.price_eur if l.price_eur is not None else -1
 
         ref_str = html_lib.escape(l.ref_label) if l.ref_label else "—"
@@ -796,6 +815,7 @@ def render_html(listings: list[Listing], query: str) -> str:
 
         row_html.append(
             "<tr data-new='{is_new}' data-bargain='{is_bargain}' data-better='{is_better}' "
+            "data-dropped='{is_dropped}' "
             "data-price='{price_sort}' data-title='{title_attr}' "
             "data-frame='{frame_attr}' data-groupset='{groupset_sort}' "
             "data-condition='{condition_attr}' data-city='{city_attr}' data-ref='{ref_sort}' "
@@ -815,6 +835,7 @@ def render_html(listings: list[Listing], query: str) -> str:
                 is_new="1" if l.is_new else "0",
                 is_bargain="1" if l.is_bargain else "0",
                 is_better="1" if l.ref_better else "0",
+                is_dropped="1" if l.price_dropped else "0",
                 price_sort=price_sort_value,
                 title_attr=html_lib.escape(l.title, quote=True),
                 frame_attr=html_lib.escape(l.frame_height, quote=True),
@@ -852,6 +873,7 @@ def render_html(listings: list[Listing], query: str) -> str:
         new_count=sum(1 for l in listings if l.is_new),
         bargain_count=sum(1 for l in listings if l.is_bargain),
         better_count=sum(1 for l in listings if l.ref_better),
+        dropped_count=sum(1 for l in listings if l.price_dropped),
         price_stats_str=price_stats_str,
         rows="\n".join(row_html),
     )
@@ -952,6 +974,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--no-price-history", action="store_true", help="Skip recording/using observed secondhand prices"
     )
+    parser.add_argument(
+        "--no-notify-better",
+        action="store_true",
+        help="Skip the sound/highlighted-line notification when a new listing beats the reference baseline",
+    )
     return parser.parse_args(argv)
 
 
@@ -1003,6 +1030,9 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
         if recorded:
             print(f"Recorded {recorded} price observation(s) to {args.price_history_file}")
 
+    if not args.no_notify_better:
+        notify_better_matches(listings)
+
     if not args.no_log:
         logged = append_bargain_log(args.log_file, listings)
         if logged:
@@ -1029,6 +1059,29 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
                 webbrowser.open(Path(html_path).resolve().as_uri())
             except webbrowser.Error as exc:
                 print(f"warning: could not open browser: {exc}", file=sys.stderr)
+
+
+def notify_better_matches(listings: list[Listing]) -> None:
+    """Play a system sound and print a highlighted line for every newly
+    seen listing that beats the reference baseline — separate from the
+    general 'new listings' browser-open, so this specifically flags the
+    thing you're actually hunting for."""
+    matches = [l for l in listings if l.is_new and l.ref_better]
+    if not matches:
+        return
+
+    try:
+        import winsound
+
+        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+    except ImportError:
+        print("\a", end="", flush=True)
+
+    print(f"\n!! {len(matches)} NIEUWE MATCH(ES) BETER DAN REFERENTIE:")
+    for l in matches:
+        price = f"€{l.price_eur:.0f}" if l.price_eur is not None else l.price_type
+        print(f"   {price:>8}  {l.ref_label} — {l.title}")
+        print(f"             {l.url}")
 
 
 def main(argv: Optional[list[str]] = None) -> int:

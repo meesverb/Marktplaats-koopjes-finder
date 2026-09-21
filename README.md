@@ -71,6 +71,7 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--no-log` | Skip appending to the bargains log | off |
 | `--price-history-file` | CSV that logs observed prices of reference-matched listings (builds your own market price database) | `reference_price_history.csv` |
 | `--no-price-history` | Skip recording/using observed secondhand prices | off |
+| `--no-notify-better` | Skip the sound/notification when a listing beats the reference baseline | off |
 | `--no-bid-lookup` | Skip fetching each FAST_BID listing's own page for its real bid amount (faster) | off |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:
@@ -192,6 +193,44 @@ Not wired into `racefiets_jev.py` itself — it's a standalone lookup you run
 by hand while researching, not something the main script needs. The site
 has bot-protection that kicks in after several rapid requests, so use it a
 brand at a time rather than in a loop.
+
+### Price drops
+
+If a listing you've seen before shows up again at a lower price, it's
+flagged `v` in the console and gets an orange `-€X` badge in the HTML report
+(with its own "Prijsverlaging" filter tab) — often a stronger buy signal
+than "new". Needs no extra setup; it's derived from the same history file
+that already tracks "new" listings.
+
+### Notification on a reference match — `--no-notify-better`
+
+When a new listing matches a reference model flagged `better_than_baseline`,
+the script plays a system sound (Windows) or the terminal bell (elsewhere)
+and prints a highlighted summary — separate from `--open-browser`'s general
+"something new" behavior, so this specifically flags the thing you're
+actually hunting for. Disable with `--no-notify-better`.
+
+### `check_reference_overlaps.py` — validate the reference file
+
+As `reference_prices.csv` grows, a pattern can end up broader than intended
+and start matching listings meant for a different row (first match in file
+order wins, so the broader row silently steals them). This checks every
+row's pattern against every other row's own label and reports any
+unexpected match — no network access needed.
+
+```bash
+python check_reference_overlaps.py
+```
+
+### `reference_overview.py` — browse the reference database
+
+Renders `reference_prices.csv` (plus `reference_price_history.csv` if
+present) as a standalone, searchable, sortable HTML page — a way to review
+your whole reference database without opening the CSV.
+
+```bash
+python reference_overview.py
+```
 
 `reference_prices.csv` itself is gitignored by default (like the other
 local/personal files), so it's yours to edit freely without it showing up as
