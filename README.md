@@ -20,10 +20,16 @@ Listings marked with `*` are priced at or below `--bargain-ratio` (default
 
 Every run also writes `racefiets_report.html` — open it in a browser for a
 sortable, filterable overview (Nieuw / Koopjes) with clickable links to each
-listing. It compares against `seen_listings.json` (created automatically) so
-listings you've already seen in a previous run are marked accordingly instead
-of showing up as "new" every time — handy if you run this script on a
-schedule (e.g. every 15 minutes via cron / Task Scheduler).
+listing, and the average/median price of what was found. It compares against
+`seen_listings.json` (created automatically) so listings you've already seen
+in a previous run are marked accordingly instead of showing up as "new" every
+time — handy if you run this script on a schedule (e.g. every 15 minutes via
+cron / Task Scheduler). When there are new listings, the report also opens
+automatically in your browser (see `--open-browser` below).
+
+Every newly found bargain also gets appended to `bargains_log.csv` — unlike
+`--output`, which is a snapshot that gets overwritten each run, this keeps
+growing, so you end up with a history of every bargain ever spotted.
 
 ### Options
 
@@ -40,6 +46,9 @@ schedule (e.g. every 15 minutes via cron / Task Scheduler).
 | `--no-html` | Skip writing the HTML overview | off |
 | `--history-file` | Path to the file that remembers which listings were already seen | `seen_listings.json` |
 | `--reference-file` | Optional CSV of known models to compare asking prices against (see below) | `reference_prices.csv` |
+| `--open-browser` | `auto` (open only when there are new listings), `always`, or `never` | `auto` |
+| `--log-file` | CSV that newly found bargains get appended to (a running history) | `bargains_log.csv` |
+| `--no-log` | Skip appending to the bargains log | off |
 | `--no-bid-lookup` | Skip fetching each FAST_BID listing's own page for its real bid amount (faster) | off |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:

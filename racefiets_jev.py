@@ -19,6 +19,7 @@ import re
 import statistics
 import sys
 import time
+import webbrowser
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -357,6 +358,37 @@ def flag_bargains(listings: list[Listing], bargain_ratio: float) -> list[Listing
     return listings
 
 
+def price_stats(listings: list[Listing]) -> dict:
+    priced = [l.price_eur for l in listings if l.price_eur is not None]
+    if not priced:
+        return {"count": 0, "mean": None, "median": None}
+    return {
+        "count": len(priced),
+        "mean": statistics.mean(priced),
+        "median": statistics.median(priced),
+    }
+
+
+def append_bargain_log(path: str, listings: list[Listing]) -> int:
+    """Append newly-discovered bargains (is_new and is_bargain) to a running
+    CSV log, so you keep a history of every bargain ever spotted instead of
+    only the current snapshot. Returns how many rows were appended."""
+    new_bargains = [l for l in listings if l.is_new and l.is_bargain]
+    if not new_bargains:
+        return 0
+
+    file_exists = Path(path).exists()
+    logged_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    fieldnames = ["logged_at"] + list(asdict(new_bargains[0]).keys())
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if not file_exists:
+            writer.writeheader()
+        for listing in new_bargains:
+            writer.writerow({"logged_at": logged_at, **asdict(listing)})
+    return len(new_bargains)
+
+
 def load_history(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
@@ -490,6 +522,10 @@ def print_table(listings: list[Listing]) -> None:
         f"{len(new_ones)} new since last run (N), {len(bids)} bidding (B, price = huidig/minimum bod)"
     )
 
+    stats = price_stats(listings)
+    if stats["count"] >= 2:
+        print(f"gemiddelde prijs: €{stats['mean']:.0f} · mediaan: €{stats['median']:.0f} (over {stats['count']} geprijsde advertenties)")
+
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="nl">
@@ -528,7 +564,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <h1>Racefiets koopjes — "{query}"</h1>
-<div class="meta">Bijgewerkt {generated} · {total} advertenties · {new_count} nieuw sinds vorige run · {bargain_count} koopjes</div>
+<div class="meta">Bijgewerkt {generated} · {total} advertenties · {new_count} nieuw sinds vorige run · {bargain_count} koopjes{price_stats_str}</div>
 <div class="filters">
   <button data-filter="all" class="active">Alles ({total})</button>
   <button data-filter="new">Nieuw ({new_count})</button>
@@ -663,12 +699,20 @@ def render_html(listings: list[Listing], query: str) -> str:
             )
         )
 
+    stats = price_stats(listings)
+    price_stats_str = (
+        f" · gemiddeld €{stats['mean']:.0f} · mediaan €{stats['median']:.0f}"
+        if stats["count"] >= 2
+        else ""
+    )
+
     return HTML_TEMPLATE.format(
         query=html_lib.escape(query),
         generated=datetime.now().strftime("%d-%m-%Y %H:%M"),
         total=len(listings),
         new_count=sum(1 for l in listings if l.is_new),
         bargain_count=sum(1 for l in listings if l.is_bargain),
+        price_stats_str=price_stats_str,
         rows="\n".join(row_html),
     )
 
@@ -736,6 +780,21 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Skip fetching each FAST_BID listing's own page for its real minimum/current bid "
         "(faster, but those listings keep showing as FAST_BID with no price instead)",
     )
+    parser.add_argument(
+        "--open-browser",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="Open the HTML report in your browser after writing it: 'auto' only does so when "
+        "there are new listings since the last run (the default — handy for a cron/scheduled "
+        "run so it doesn't pop up a browser tab every time), 'always' every run, 'never' skips it",
+    )
+    parser.add_argument(
+        "--log-file",
+        default="bargains_log.csv",
+        help="CSV that newly found bargains get appended to on every run, building a running "
+        "history instead of just the current snapshot (default: bargains_log.csv)",
+    )
+    parser.add_argument("--no-log", action="store_true", help="Skip appending to the bargains log")
     return parser.parse_args(argv)
 
 
@@ -763,6 +822,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     history = apply_history(listings, history)
     save_history(args.history_file, history)
 
+    if not args.no_log:
+        logged = append_bargain_log(args.log_file, listings)
+        if logged:
+            print(f"Logged {logged} new bargain(s) to {args.log_file}")
+
     print_table(listings)
 
     if args.output:
@@ -772,6 +836,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not args.no_html:
         write_html(listings, args.html, args.query)
         print(f"Wrote HTML overview to {args.html}")
+
+        new_count = sum(1 for l in listings if l.is_new)
+        should_open = args.open_browser == "always" or (
+            args.open_browser == "auto" and new_count > 0
+        )
+        if should_open:
+            try:
+                webbrowser.open(Path(args.html).resolve().as_uri())
+            except webbrowser.Error as exc:
+                print(f"warning: could not open browser: {exc}", file=sys.stderr)
 
     return 0
 
