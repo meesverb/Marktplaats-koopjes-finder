@@ -1,14 +1,18 @@
 # Marktplaats koopjes finder
 
 `racefiets_jev.py` searches [Marktplaats](https://www.marktplaats.nl) for
-road bike ("racefiets") listings and flags ones priced well below the
-median of what it found — a quick way to spot bargains.
+listings matching a query — road bikes ("racefiets") by default, but `--query`
+works for anything (`--query muziekboxen`, `--query "canon eos"`, ...) — and
+flags ones priced well below the median of what it found as a quick way to
+spot bargains. The frame-height/groupset features below are bike-specific and
+simply find nothing to match on other queries, which is harmless.
 
 ## Usage
 
 ```bash
 pip install -r requirements.txt
 python racefiets_jev.py --pages 10
+python racefiets_jev.py --query muziekboxen --pages 10
 ```
 
 Listings marked with `*` are priced at or below `--bargain-ratio` (default
@@ -35,6 +39,7 @@ schedule (e.g. every 15 minutes via cron / Task Scheduler).
 | `--html` | Path to write the HTML overview to | `racefiets_report.html` |
 | `--no-html` | Skip writing the HTML overview | off |
 | `--history-file` | Path to the file that remembers which listings were already seen | `seen_listings.json` |
+| `--reference-file` | Optional CSV of known models to compare asking prices against (see below) | `reference_prices.csv` |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:
 
@@ -62,6 +67,49 @@ buckets ("53 tot 57 cm", "57 tot 61 cm", etc.). `--min-frame-height`/
 so a bike in a bucket that only partially overlaps (e.g. bucket "53 tot 57
 cm" for a `--min-frame-height 54` filter) may still show up, and a bike with
 no frame size listed at all is excluded once this filter is active.
+
+### Groupset detection (bikes)
+
+The console table and HTML report show a recognized groupset (Shimano
+Claris/Sora/Tiagra/105/Ultegra/Dura-Ace, SRAM Apex/Rival/Force/Red,
+Campagnolo Veloce/Centaur/Chorus/Record/Super Record, plus an
+"(elektronisch)" tag for Di2/eTap/AXS) when one is mentioned in the title or
+description. This is keyword matching on free text, not a structured
+Marktplaats field, so it can miss a groupset that's phrased unusually or
+only visible in a photo, and SRAM/Campagnolo tier names (e.g. "Force",
+"Record") only count when the brand name also appears somewhere in the text,
+to avoid matching on the plain Dutch/English word.
+
+### Comparing against original prices — `--reference-file`
+
+There's no free database of "every model with its original price and a
+score" to plug in, for bikes or anything else. Instead, `--reference-file`
+lets you maintain your own — a plain CSV that grows as you go, at zero cost
+and no API key:
+
+```csv
+pattern,label,original_price_eur,score
+Canyon Ultimate CF SLX 8,Canyon Ultimate CF SLX 8 (2021),4000,8.5/10
+```
+
+- `pattern`: regex (case-insensitive), matched against the listing title.
+  Put more specific patterns earlier in the file — the first match wins.
+- `label`: what to display when matched.
+- `original_price_eur`: what it cost new (optional — leave blank if unknown).
+- `score`: any rating/ranking text you want shown (optional, free text).
+
+When a listing matches, the report shows the label, what percentage of the
+original price it's being asked for now (if you filled in a price), and the
+score. See `reference_prices.example.csv` for the exact format — copy it to
+`reference_prices.csv` and fill in models you actually care about (the
+values in the example file are placeholders, not real prices). If you want
+help researching a specific model's original price, just ask — that's more
+reliable done one model at a time than guessed in bulk.
+
+`reference_prices.csv` itself is gitignored by default (like the other
+local/personal files), so it's yours to edit freely without it showing up as
+a change to commit. Remove it from `.gitignore` if you'd rather keep it
+version-controlled.
 
 ## Notes
 

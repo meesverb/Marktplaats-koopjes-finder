@@ -3,5 +3,6 @@ __pycache__/
 .venv/
 venv/
 *.csv
+!reference_prices.example.csv
 seen_listings.json
 racefiets_report.html

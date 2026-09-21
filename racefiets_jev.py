@@ -46,10 +46,16 @@ class Listing:
     date: str
     condition: str
     frame_height: str
+    groupset: str
+    groupset_tier: Optional[int]
     url: str
     is_bargain: bool = False
     is_new: bool = False
     first_seen: str = ""
+    ref_label: str = ""
+    ref_original_price: Optional[float] = None
+    ref_score: str = ""
+    ref_pct_of_original: Optional[float] = None
 
 
 def fetch_page(session: requests.Session, query: str, page: int) -> dict:
@@ -97,6 +103,54 @@ def frame_height_bounds(value: str) -> Optional[tuple[float, float]]:
     return None
 
 
+# Groupset isn't a structured Marktplaats field, so this is detected from
+# free text (title + description) by keyword. Tiers are on a rough unified
+# 1-6 scale (entry to top-of-the-line) so groupsets from different brands
+# can be compared: Shimano Claris/Sora/Tiagra/105/Ultegra/Dura-Ace, SRAM
+# Apex/Rival/Force/Red, Campagnolo Veloce/Centaur/Chorus/Record(/Super
+# Record). SRAM/Campagnolo tier words are ambiguous English/Dutch words on
+# their own ("force", "record", ...), so those require the brand name to
+# also appear somewhere in the text.
+GROUPSET_CATALOG = [
+    ("Shimano", "Dura-Ace", re.compile(r"dura[\s-]?ace", re.I), 6, False),
+    ("Shimano", "Ultegra", re.compile(r"\bultegra\b", re.I), 5, False),
+    ("Shimano", "105", re.compile(r"(?<!\d)\b105\b(?!\s*(cm|euro|eur|,-|km|mm|kg))", re.I), 4, False),
+    ("Shimano", "Tiagra", re.compile(r"\btiagra\b", re.I), 3, False),
+    ("Shimano", "Sora", re.compile(r"\bsora\b", re.I), 2, False),
+    ("Shimano", "Claris", re.compile(r"\bclaris\b", re.I), 1, False),
+    ("SRAM", "Red", re.compile(r"\bred\b", re.I), 6, True),
+    ("SRAM", "Force", re.compile(r"\bforce\b", re.I), 5, True),
+    ("SRAM", "Rival", re.compile(r"\brival\b", re.I), 4, True),
+    ("SRAM", "Apex", re.compile(r"\bapex\b", re.I), 3, True),
+    ("Campagnolo", "Super Record", re.compile(r"super\s*record", re.I), 6, True),
+    ("Campagnolo", "Record", re.compile(r"\brecord\b", re.I), 5, True),
+    ("Campagnolo", "Chorus", re.compile(r"\bchorus\b", re.I), 4, True),
+    ("Campagnolo", "Centaur", re.compile(r"\bcentaur\b", re.I), 3, True),
+    ("Campagnolo", "Veloce", re.compile(r"\bveloce\b", re.I), 2, True),
+]
+ELECTRONIC_GROUPSET_RE = re.compile(r"\bdi2\b|\betap\b|\baxs\b", re.I)
+
+
+def detect_groupset(text: str) -> tuple[str, Optional[int]]:
+    """Best-effort groupset detection from free text. Returns (label, tier)
+    for the highest-tier match found, or ("", None) if nothing recognized."""
+    text_lower = text.lower()
+    best_label = ""
+    best_tier: Optional[int] = None
+    for brand, name, pattern, tier, needs_brand in GROUPSET_CATALOG:
+        if needs_brand and brand.lower() not in text_lower:
+            continue
+        if pattern.search(text):
+            if best_tier is None or tier > best_tier:
+                best_tier = tier
+                best_label = f"{brand} {name}"
+
+    if best_label and ELECTRONIC_GROUPSET_RE.search(text):
+        best_label += " (elektronisch)"
+
+    return best_label, best_tier
+
+
 def parse_listing(raw: dict) -> Listing:
     price_info = raw.get("priceInfo", {})
     price_cents = price_info.get("priceCents")
@@ -112,15 +166,21 @@ def parse_listing(raw: dict) -> Listing:
     vip_url = raw.get("vipUrl", "")
     url = BASE_URL + vip_url if vip_url.startswith("/") else vip_url
 
+    title = raw.get("title", "")
+    description = raw.get("description", "")
+    groupset, groupset_tier = detect_groupset(f"{title} {description}")
+
     return Listing(
         item_id=raw.get("itemId", ""),
-        title=raw.get("title", ""),
+        title=title,
         price_eur=price_eur,
         price_type=price_info.get("priceType", ""),
         city=raw.get("location", {}).get("cityName", ""),
         date=raw.get("date", ""),
         condition=extract_attribute(raw, "condition"),
         frame_height=extract_attribute(raw, "frameHeight"),
+        groupset=groupset,
+        groupset_tier=groupset_tier,
         url=url,
     )
 
@@ -235,6 +295,58 @@ def apply_history(listings: list[Listing], history: dict) -> dict:
     return history
 
 
+def load_reference_data(path: str) -> list[dict]:
+    """Load a user-maintained reference file (pattern,label,original_price_eur,
+    score,notes) used to recognize known models and compare the asking price
+    against what they cost new. Returns [] if the file doesn't exist — this
+    feature is entirely optional."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    except FileNotFoundError:
+        return []
+
+    reference = []
+    for row in rows:
+        pattern = (row.get("pattern") or "").strip()
+        if not pattern:
+            continue
+        try:
+            compiled = re.compile(pattern, re.I)
+        except re.error as exc:
+            print(f"warning: skipping invalid pattern in {path}: {pattern!r} ({exc})", file=sys.stderr)
+            continue
+        original_price = row.get("original_price_eur", "").strip()
+        reference.append(
+            {
+                "regex": compiled,
+                "label": (row.get("label") or pattern).strip(),
+                "original_price_eur": float(original_price) if original_price else None,
+                "score": (row.get("score") or "").strip(),
+            }
+        )
+    return reference
+
+
+def apply_reference_data(listings: list[Listing], reference: list[dict]) -> None:
+    """Match each listing's title+description against the reference rows
+    (first match in file order wins — put more specific patterns first) and
+    fill in ref_* fields when found."""
+    if not reference:
+        return
+    for listing in listings:
+        for row in reference:
+            if row["regex"].search(listing.title):
+                listing.ref_label = row["label"]
+                listing.ref_original_price = row["original_price_eur"]
+                listing.ref_score = row["score"]
+                if listing.price_eur is not None and row["original_price_eur"]:
+                    listing.ref_pct_of_original = round(
+                        listing.price_eur / row["original_price_eur"] * 100, 1
+                    )
+                break
+
+
 def print_table(listings: list[Listing]) -> None:
     if not listings:
         print("No listings found.")
@@ -244,7 +356,7 @@ def print_table(listings: list[Listing]) -> None:
         listings,
         key=lambda l: (l.price_eur is None, l.price_eur if l.price_eur is not None else 0),
     )
-    print(f"{'':3} {'PRICE':>8}  {'FRAME':<12} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
+    print(f"{'':3} {'PRICE':>8}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
     for l in rows:
         mark = ("N" if l.is_new else " ") + ("*" if l.is_bargain else " ")
         if l.price_eur is None:
@@ -254,10 +366,19 @@ def print_table(listings: list[Listing]) -> None:
         else:
             price_str = f"€{l.price_eur:.0f}"
         print(
-            f"{mark:3} {price_str:>8}  {l.frame_height[:12]:<12} {l.condition[:20]:<20} "
-            f"{l.city[:15]:<15} {l.title[:60]}"
+            f"{mark:3} {price_str:>8}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
+            f"{l.condition[:20]:<20} {l.city[:15]:<15} {l.title[:60]}"
         )
         print(f"      {l.url}")
+        if l.ref_label:
+            bits = [l.ref_label]
+            if l.ref_original_price is not None:
+                bits.append(f"nieuw €{l.ref_original_price:.0f}")
+            if l.ref_pct_of_original is not None:
+                bits.append(f"nu {l.ref_pct_of_original:.0f}% daarvan")
+            if l.ref_score:
+                bits.append(f"score: {l.ref_score}")
+            print(f"      referentie: {' · '.join(bits)}")
 
     bargains = [l for l in listings if l.is_bargain]
     new_ones = [l for l in listings if l.is_new]
@@ -316,8 +437,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <th data-key="price">Prijs</th>
   <th data-key="title">Titel</th>
   <th data-key="frame">Framemaat</th>
+  <th data-key="groupset">Groupset</th>
   <th data-key="condition">Conditie</th>
   <th data-key="city">Plaats</th>
+  <th data-key="ref">Referentie</th>
 </tr>
 </thead>
 <tbody>
@@ -347,7 +470,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const rows = Array.from(tbody.querySelectorAll('tr'));
       rows.sort((a, b) => {{
         let av = a.dataset[key], bv = b.dataset[key];
-        if (key === 'price') {{ av = parseFloat(av); bv = parseFloat(bv); }}
+        if (key === 'price' || key === 'groupset' || key === 'ref') {{ av = parseFloat(av); bv = parseFloat(bv); }}
         if (av < bv) return asc ? -1 : 1;
         if (av > bv) return asc ? 1 : -1;
         return 0;
@@ -386,32 +509,51 @@ def render_html(listings: list[Listing], query: str) -> str:
         if l.is_bargain:
             badges += '<span class="badge bargain">KOOPJE</span>'
         price_sort_value = l.price_eur if l.price_eur is not None else -1
+
+        ref_bits = []
+        if l.ref_label:
+            ref_bits.append(l.ref_label)
+            if l.ref_pct_of_original is not None:
+                ref_bits.append(f"{l.ref_pct_of_original:.0f}% van €{l.ref_original_price:.0f} nieuw")
+            elif l.ref_original_price is not None:
+                ref_bits.append(f"nieuw €{l.ref_original_price:.0f}")
+            if l.ref_score:
+                ref_bits.append(f"score: {l.ref_score}")
+        ref_str = html_lib.escape(" · ".join(ref_bits)) if ref_bits else "—"
+        ref_sort = l.ref_pct_of_original if l.ref_pct_of_original is not None else 1e9
+
         row_html.append(
             "<tr data-new='{is_new}' data-bargain='{is_bargain}' "
             "data-price='{price_sort}' data-title='{title_attr}' "
-            "data-frame='{frame_attr}' "
-            "data-condition='{condition_attr}' data-city='{city_attr}'>"
+            "data-frame='{frame_attr}' data-groupset='{groupset_sort}' "
+            "data-condition='{condition_attr}' data-city='{city_attr}' data-ref='{ref_sort}'>"
             "<td>{badges}</td>"
             "<td class='price'>{price}</td>"
             "<td><a href='{url}' target='_blank' rel='noopener'>{title}</a></td>"
             "<td>{frame}</td>"
+            "<td>{groupset}</td>"
             "<td>{condition}</td>"
             "<td>{city}</td>"
+            "<td>{ref}</td>"
             "</tr>".format(
                 is_new="1" if l.is_new else "0",
                 is_bargain="1" if l.is_bargain else "0",
                 price_sort=price_sort_value,
                 title_attr=html_lib.escape(l.title, quote=True),
                 frame_attr=html_lib.escape(l.frame_height, quote=True),
+                groupset_sort=l.groupset_tier if l.groupset_tier is not None else -1,
                 condition_attr=html_lib.escape(l.condition, quote=True),
                 city_attr=html_lib.escape(l.city, quote=True),
+                ref_sort=ref_sort,
                 badges=badges,
                 frame=html_lib.escape(l.frame_height) or "—",
+                groupset=html_lib.escape(l.groupset) or "—",
                 price=price_str,
                 url=html_lib.escape(l.url, quote=True),
                 title=html_lib.escape(l.title),
                 condition=html_lib.escape(l.condition),
                 city=html_lib.escape(l.city),
+                ref=ref_str,
             )
         )
 
@@ -475,6 +617,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default="seen_listings.json",
         help="Path to the file that remembers which listings were already seen (default: seen_listings.json)",
     )
+    parser.add_argument(
+        "--reference-file",
+        default="reference_prices.csv",
+        help="Optional CSV of known models (pattern,label,original_price_eur,score) to match "
+        "against listing titles and compare the asking price to. Skipped if the file doesn't "
+        "exist (default: reference_prices.csv)",
+    )
     return parser.parse_args(argv)
 
 
@@ -489,6 +638,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         listings = [l for l in listings if l.price_eur is None or l.price_eur <= args.max_price]
 
     listings = filter_by_frame_height(listings, args.min_frame_height, args.max_frame_height)
+
+    reference = load_reference_data(args.reference_file)
+    apply_reference_data(listings, reference)
 
     listings = flag_bargains(listings, args.bargain_ratio)
 
