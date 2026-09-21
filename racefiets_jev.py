@@ -58,6 +58,7 @@ class Listing:
     ref_original_price: Optional[float] = None
     ref_score: str = ""
     ref_pct_of_original: Optional[float] = None
+    pct_of_median: Optional[float] = None
 
 
 def fetch_page(session: requests.Session, query: str, page: int) -> dict:
@@ -353,8 +354,10 @@ def flag_bargains(listings: list[Listing], bargain_ratio: float) -> list[Listing
     median_price = statistics.median(priced)
     threshold = median_price * bargain_ratio
     for listing in listings:
-        if listing.price_eur is not None and listing.price_eur <= threshold:
-            listing.is_bargain = True
+        if listing.price_eur is not None:
+            listing.pct_of_median = round(listing.price_eur / median_price * 100, 1)
+            if listing.price_eur <= threshold:
+                listing.is_bargain = True
     return listings
 
 
@@ -486,7 +489,7 @@ def print_table(listings: list[Listing]) -> None:
         listings,
         key=lambda l: (l.price_eur is None, l.price_eur if l.price_eur is not None else 0),
     )
-    print(f"{'':4} {'PRICE':>8}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
+    print(f"{'':4} {'PRICE':>8} {'%MED':>6}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
     for l in rows:
         mark = (
             ("N" if l.is_new else " ")
@@ -499,8 +502,9 @@ def print_table(listings: list[Listing]) -> None:
             price_str = f"€{l.price_eur:.2f}"
         else:
             price_str = f"€{l.price_eur:.0f}"
+        pct_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
         print(
-            f"{mark:4} {price_str:>8}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
+            f"{mark:4} {price_str:>8} {pct_str:>6}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
             f"{l.condition[:20]:<20} {l.city[:15]:<15} {l.title[:60]}"
         )
         print(f"      {l.url}")
@@ -575,6 +579,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <tr>
   <th data-key="flags"></th>
   <th data-key="price">Prijs</th>
+  <th data-key="pctmedian">% v. mediaan</th>
   <th data-key="title">Titel</th>
   <th data-key="frame">Framemaat</th>
   <th data-key="groupset">Groupset</th>
@@ -610,7 +615,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const rows = Array.from(tbody.querySelectorAll('tr'));
       rows.sort((a, b) => {{
         let av = a.dataset[key], bv = b.dataset[key];
-        if (key === 'price' || key === 'groupset' || key === 'ref') {{ av = parseFloat(av); bv = parseFloat(bv); }}
+        if (key === 'price' || key === 'groupset' || key === 'ref' || key === 'pctmedian') {{ av = parseFloat(av); bv = parseFloat(bv); }}
         if (av < bv) return asc ? -1 : 1;
         if (av > bv) return asc ? 1 : -1;
         return 0;
@@ -631,8 +636,8 @@ def render_html(listings: list[Listing], query: str) -> str:
             not (l.is_new and l.is_bargain),
             not l.is_new,
             not l.is_bargain,
-            l.price_eur is None,
-            l.price_eur if l.price_eur is not None else float("inf"),
+            l.pct_of_median is None,
+            l.pct_of_median if l.pct_of_median is not None else float("inf"),
         ),
     )
 
@@ -664,13 +669,18 @@ def render_html(listings: list[Listing], query: str) -> str:
         ref_str = html_lib.escape(" · ".join(ref_bits)) if ref_bits else "—"
         ref_sort = l.ref_pct_of_original if l.ref_pct_of_original is not None else 1e9
 
+        pct_median_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
+        pct_median_sort = l.pct_of_median if l.pct_of_median is not None else 1e9
+
         row_html.append(
             "<tr data-new='{is_new}' data-bargain='{is_bargain}' "
             "data-price='{price_sort}' data-title='{title_attr}' "
             "data-frame='{frame_attr}' data-groupset='{groupset_sort}' "
-            "data-condition='{condition_attr}' data-city='{city_attr}' data-ref='{ref_sort}'>"
+            "data-condition='{condition_attr}' data-city='{city_attr}' data-ref='{ref_sort}' "
+            "data-pctmedian='{pct_median_sort}'>"
             "<td>{badges}</td>"
             "<td class='price'>{price}</td>"
+            "<td>{pct_median}</td>"
             "<td><a href='{url}' target='_blank' rel='noopener'>{title}</a></td>"
             "<td>{frame}</td>"
             "<td>{groupset}</td>"
@@ -687,10 +697,12 @@ def render_html(listings: list[Listing], query: str) -> str:
                 condition_attr=html_lib.escape(l.condition, quote=True),
                 city_attr=html_lib.escape(l.city, quote=True),
                 ref_sort=ref_sort,
+                pct_median_sort=pct_median_sort,
                 badges=badges,
                 frame=html_lib.escape(l.frame_height) or "—",
                 groupset=html_lib.escape(l.groupset) or "—",
                 price=price_str,
+                pct_median=pct_median_str,
                 url=html_lib.escape(l.url, quote=True),
                 title=html_lib.escape(l.title),
                 condition=html_lib.escape(l.condition),

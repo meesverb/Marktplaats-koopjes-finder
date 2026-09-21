@@ -16,7 +16,12 @@ python racefiets_jev.py --query muziekboxen --pages 10
 ```
 
 Listings marked with `*` are priced at or below `--bargain-ratio` (default
-`0.6`, i.e. 60%) of the median price across all listings fetched.
+`0.6`, i.e. 60%) of the median price across all listings fetched. Every
+priced listing also shows `% v. mediaan` — what percentage of the median
+price it's asking, e.g. `24%` means it's asking a quarter of the median — so
+you can judge relative cheapness on a scale instead of only the binary `*`
+cutoff. In the HTML report this is a sortable column and is what listings are
+sorted by within their Nieuw/Koopje group by default.
 
 Every run also writes `racefiets_report.html` — open it in a browser for a
 sortable, filterable overview (Nieuw / Koopjes) with clickable links to each
