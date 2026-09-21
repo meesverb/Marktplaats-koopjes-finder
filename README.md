@@ -135,19 +135,26 @@ lets you maintain your own — a plain CSV that grows as you go, at zero cost
 and no API key:
 
 ```csv
-pattern,label,original_price_eur,score
-Canyon Ultimate CF SLX 8,Canyon Ultimate CF SLX 8 (2021),4000,8.5/10
+pattern,label,original_price_eur,specs,score,better_than_baseline
+Canyon Ultimate CF SLX 8,Canyon Ultimate CF SLX 8 (2021),4000,"11.7 kg, Ultegra Di2",8.5/10,1
 ```
 
 - `pattern`: regex (case-insensitive), matched against the listing title.
   Put more specific patterns earlier in the file — the first match wins.
 - `label`: what to display when matched.
 - `original_price_eur`: what it cost new (optional — leave blank if unknown).
+- `specs`: the objective specs worth comparing (power, sensitivity, weight,
+  whatever matters for that category) — optional, free text.
 - `score`: any rating/ranking text you want shown (optional, free text).
+- `better_than_baseline`: `1` if this model is better than whatever you're
+  comparing against (e.g. your own gear's reference row) — used for the
+  HTML report's "Beter dan referentie" filter tab. Leave `0`/blank otherwise.
 
-When a listing matches, the report shows the label, what percentage of the
-original price it's being asked for now (if you filled in a price), and the
-score. See `reference_prices.example.csv` for the exact format — copy it to
+When a listing matches, the report shows the label, the original price and
+what percentage of it is being asked now, the specs, and the score — in
+their own columns in the HTML report (Referentie / Nieuwprijs / Specs), plus
+a purple "BETER" badge when `better_than_baseline` is set. See
+`reference_prices.example.csv` for the exact format — copy it to
 `reference_prices.csv` and fill in models you actually care about (the
 values in the example file are placeholders, not real prices). If you want
 help researching a specific model's original price, just ask — that's more

@@ -58,6 +58,8 @@ class Listing:
     ref_original_price: Optional[float] = None
     ref_score: str = ""
     ref_pct_of_original: Optional[float] = None
+    ref_specs: str = ""
+    ref_better: bool = False
     pct_of_median: Optional[float] = None
 
 
@@ -465,9 +467,9 @@ def apply_history(listings: list[Listing], history: dict) -> dict:
 
 def load_reference_data(path: str) -> list[dict]:
     """Load a user-maintained reference file (pattern,label,original_price_eur,
-    score,notes) used to recognize known models and compare the asking price
-    against what they cost new. Returns [] if the file doesn't exist — this
-    feature is entirely optional."""
+    score,specs,better_than_baseline) used to recognize known models and
+    compare the asking price against what they cost new. Returns [] if the
+    file doesn't exist — this feature is entirely optional."""
     try:
         with open(path, encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
@@ -491,6 +493,8 @@ def load_reference_data(path: str) -> list[dict]:
                 "label": (row.get("label") or pattern).strip(),
                 "original_price_eur": float(original_price) if original_price else None,
                 "score": (row.get("score") or "").strip(),
+                "specs": (row.get("specs") or "").strip(),
+                "better": (row.get("better_than_baseline") or "").strip().lower() in ("1", "true", "yes", "ja"),
             }
         )
     return reference
@@ -508,6 +512,8 @@ def apply_reference_data(listings: list[Listing], reference: list[dict]) -> None
                 listing.ref_label = row["label"]
                 listing.ref_original_price = row["original_price_eur"]
                 listing.ref_score = row["score"]
+                listing.ref_specs = row["specs"]
+                listing.ref_better = row["better"]
                 if listing.price_eur is not None and row["original_price_eur"]:
                     listing.ref_pct_of_original = round(
                         listing.price_eur / row["original_price_eur"] * 100, 1
@@ -524,12 +530,13 @@ def print_table(listings: list[Listing]) -> None:
         listings,
         key=lambda l: (l.price_eur is None, l.price_eur if l.price_eur is not None else 0),
     )
-    print(f"{'':4} {'PRICE':>8} {'%MED':>6}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
+    print(f"{'':5} {'PRICE':>8} {'%MED':>6}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
     for l in rows:
         mark = (
             ("N" if l.is_new else " ")
             + ("*" if l.is_bargain else " ")
             + ("B" if l.price_is_bid else " ")
+            + ("!" if l.ref_better else " ")
         )
         if l.price_eur is None:
             price_str = l.price_type
@@ -539,7 +546,7 @@ def print_table(listings: list[Listing]) -> None:
             price_str = f"€{l.price_eur:.0f}"
         pct_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
         print(
-            f"{mark:4} {price_str:>8} {pct_str:>6}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
+            f"{mark:5} {price_str:>8} {pct_str:>6}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
             f"{l.condition[:20]:<20} {l.city[:15]:<15} {l.title[:60]}"
         )
         print(f"      {l.url}")
@@ -549,16 +556,21 @@ def print_table(listings: list[Listing]) -> None:
                 bits.append(f"nieuw €{l.ref_original_price:.0f}")
             if l.ref_pct_of_original is not None:
                 bits.append(f"nu {l.ref_pct_of_original:.0f}% daarvan")
+            if l.ref_specs:
+                bits.append(f"specs: {l.ref_specs}")
             if l.ref_score:
                 bits.append(f"score: {l.ref_score}")
-            print(f"      referentie: {' · '.join(bits)}")
+            marker = " [BETER DAN REFERENTIE]" if l.ref_better else ""
+            print(f"      referentie{marker}: {' · '.join(bits)}")
 
     bargains = [l for l in listings if l.is_bargain]
     new_ones = [l for l in listings if l.is_new]
     bids = [l for l in listings if l.price_is_bid]
+    better = [l for l in listings if l.ref_better]
     print(
         f"\n{len(listings)} listings, {len(bargains)} bargains (*), "
-        f"{len(new_ones)} new since last run (N), {len(bids)} bidding (B, price = huidig/minimum bod)"
+        f"{len(new_ones)} new since last run (N), {len(bids)} bidding (B, price = huidig/minimum bod), "
+        f"{len(better)} beter dan referentie (!)"
     )
 
     stats = price_stats(listings)
@@ -574,7 +586,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <style>
   :root {{
     --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1a; --muted: #6b7280;
-    --border: #e5e7eb; --new: #16a34a; --bargain: #dc2626; --accent: #2563eb;
+    --border: #e5e7eb; --new: #16a34a; --bargain: #dc2626; --accent: #2563eb; --better: #7c3aed;
   }}
   body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg);
          color: var(--text); margin: 0; padding: 24px; }}
@@ -597,6 +609,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
            border-radius: 4px; margin-right: 4px; color: white; }}
   .badge.new {{ background: var(--new); }}
   .badge.bargain {{ background: var(--bargain); }}
+  .badge.better {{ background: var(--better); }}
   .price {{ font-weight: 600; white-space: nowrap; }}
   .bid-tag {{ font-weight: 400; font-size: 0.72rem; color: var(--muted); }}
 </style>
@@ -608,6 +621,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <button data-filter="all" class="active">Alles ({total})</button>
   <button data-filter="new">Nieuw ({new_count})</button>
   <button data-filter="bargain">Koopjes ({bargain_count})</button>
+  <button data-filter="better">Beter dan referentie ({better_count})</button>
 </div>
 <table id="listings">
 <thead>
@@ -621,6 +635,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <th data-key="condition">Conditie</th>
   <th data-key="city">Plaats</th>
   <th data-key="ref">Referentie</th>
+  <th data-key="refprice">Nieuwprijs</th>
+  <th data-key="refspecs">Specs</th>
 </tr>
 </thead>
 <tbody>
@@ -690,25 +706,30 @@ def render_html(listings: list[Listing], query: str) -> str:
             badges += '<span class="badge new">NIEUW</span>'
         if l.is_bargain:
             badges += '<span class="badge bargain">KOOPJE</span>'
+        if l.ref_better:
+            badges += '<span class="badge better">BETER</span>'
         price_sort_value = l.price_eur if l.price_eur is not None else -1
 
-        ref_bits = []
-        if l.ref_label:
-            ref_bits.append(l.ref_label)
-            if l.ref_pct_of_original is not None:
-                ref_bits.append(f"{l.ref_pct_of_original:.0f}% van €{l.ref_original_price:.0f} nieuw")
-            elif l.ref_original_price is not None:
-                ref_bits.append(f"nieuw €{l.ref_original_price:.0f}")
-            if l.ref_score:
-                ref_bits.append(f"score: {l.ref_score}")
-        ref_str = html_lib.escape(" · ".join(ref_bits)) if ref_bits else "—"
+        ref_str = html_lib.escape(l.ref_label) if l.ref_label else "—"
         ref_sort = l.ref_pct_of_original if l.ref_pct_of_original is not None else 1e9
+
+        if l.ref_pct_of_original is not None:
+            ref_price_str = f"€{l.ref_original_price:.0f} ({l.ref_pct_of_original:.0f}% nu)"
+        elif l.ref_original_price is not None:
+            ref_price_str = f"€{l.ref_original_price:.0f}"
+        else:
+            ref_price_str = "—" if not l.ref_label else "onbekend"
+        ref_specs_str = html_lib.escape(l.ref_score) if l.ref_score else (
+            html_lib.escape(l.ref_specs) if l.ref_specs else "—"
+        )
+        if l.ref_specs and l.ref_score:
+            ref_specs_str = html_lib.escape(f"{l.ref_specs} — {l.ref_score}")
 
         pct_median_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
         pct_median_sort = l.pct_of_median if l.pct_of_median is not None else 1e9
 
         row_html.append(
-            "<tr data-new='{is_new}' data-bargain='{is_bargain}' "
+            "<tr data-new='{is_new}' data-bargain='{is_bargain}' data-better='{is_better}' "
             "data-price='{price_sort}' data-title='{title_attr}' "
             "data-frame='{frame_attr}' data-groupset='{groupset_sort}' "
             "data-condition='{condition_attr}' data-city='{city_attr}' data-ref='{ref_sort}' "
@@ -722,9 +743,12 @@ def render_html(listings: list[Listing], query: str) -> str:
             "<td>{condition}</td>"
             "<td>{city}</td>"
             "<td>{ref}</td>"
+            "<td>{ref_price}</td>"
+            "<td>{ref_specs}</td>"
             "</tr>".format(
                 is_new="1" if l.is_new else "0",
                 is_bargain="1" if l.is_bargain else "0",
+                is_better="1" if l.ref_better else "0",
                 price_sort=price_sort_value,
                 title_attr=html_lib.escape(l.title, quote=True),
                 frame_attr=html_lib.escape(l.frame_height, quote=True),
@@ -743,6 +767,8 @@ def render_html(listings: list[Listing], query: str) -> str:
                 condition=html_lib.escape(l.condition),
                 city=html_lib.escape(l.city),
                 ref=ref_str,
+                ref_price=ref_price_str,
+                ref_specs=ref_specs_str,
             )
         )
 
@@ -759,6 +785,7 @@ def render_html(listings: list[Listing], query: str) -> str:
         total=len(listings),
         new_count=sum(1 for l in listings if l.is_new),
         bargain_count=sum(1 for l in listings if l.is_bargain),
+        better_count=sum(1 for l in listings if l.ref_better),
         price_stats_str=price_stats_str,
         rows="\n".join(row_html),
     )
