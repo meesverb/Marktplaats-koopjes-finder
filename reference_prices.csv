@@ -1,11 +1,24 @@
 pattern,label,original_price_eur,specs,score,better_than_baseline
-Denon.*SC.?N10,Denon SC-N10 (jouw eigen boxen — referentiepunt),110,"85dB gevoeligheid, 50Hz-20kHz, 6 ohm, 60W/120W piek","Baseline waar alles tegen vergeleken wordt",0
-Wharfedale.*Diamond.*220,Wharfedale Diamond 220,,"86dB, 56Hz-20kHz, 5"" Kevlar-woofer, 25-100W","Award beste stereoluidspreker tot ±£200 (What Hi-Fi 2014)",1
+Denon.*SC.?N10,Denon SC-N10 (jouw eigen boxen — referentiepunt),110,"85dB gevoeligheid, 50Hz-20kHz, 6 ohm, 60W/120W piek",Baseline waar alles tegen vergeleken wordt,0
+Wharfedale.*Diamond.*220,Wharfedale Diamond 220,,"86dB, 56Hz-20kHz, 5"" Kevlar-woofer, 25-100W",Award beste stereoluidspreker tot ±£200 (What Hi-Fi 2014),1
 Q.?Acoustics.*3020,Q Acoustics 3020i,290,"88dB, 64Hz-30kHz, 5"" woofer, 25-75W","Zeer positief (""sound fantastic"" — Trusted Reviews/What Hi-Fi)",1
 JBL.*Arena.*130,JBL Arena 130,,"87dB, 55Hz-40kHz, 7"" woofer, 20-125W","Positieve reviews (""great sound for the price"")",1
 Monitor.?Audio.*Bronze.*50,Monitor Audio Bronze 50,585,"85dB, 40Hz-30kHz (in-room), 20W+","Zeer positief (What Hi-Fi), premium bouwkwaliteit",1
 Elac.*Debut.*B5,Elac Debut B5.2,230,"86dB, 46Hz-35kHz, 120W handling","Positief, gedetailleerd en samenhangend geluid",1
-Mission\s*732,Mission 732 (vintage boekenplank),,"87.5dB, 50-22kHz, 8 ohm","Gebruikersscore 4.4/5",1
-Mission.*700.*Leading,Mission 700 Leading Edge (1987),,"90dB, 55-20kHz, 6 ohm, 20-100W","'Smooth, gedetailleerd, European sound'",1
+Mission\s*732,Mission 732 (vintage boekenplank),,"87.5dB, 50-22kHz, 8 ohm",Gebruikersscore 4.4/5,1
+Mission\s*700(?!S)(\s*Leading)?,Mission 700 / 700 Leading Edge (1980-87),,"90dB, 55-20kHz, 6 ohm, 20-100W","'Smooth, gedetailleerd, European sound'; iconisch model, ook heruitgebracht",1
 Mission.*(Model\s*)?70\s*MK,Mission Model 70 MKII (1983),,"90dB, 60-20kHz, 8 ohm, 25-100W","Was £89 nieuw in 1983, gold als budget-klasse leider",1
-K\.?E\.?F\.?\s*C\s?30,Kef C30 (vintage jaren 80),,"90dB, 70-20kHz, 8 ohm, 100W","'Performance van duurdere KEF-modellen'",1
+K\.?E\.?F\.?\s*C\s?30,Kef C30 (vintage jaren 80),,"90dB, 70-20kHz, 8 ohm, 100W",'Performance van duurdere KEF-modellen',1
+Yamaha.*NX.?E700,Yamaha NX-E700 (sinds 2005),,"85dB, 60Hz-28kHz, 6 ohm, 40W/110W max","Kwaliteitsscore 97/100 'Excellent', crisp en helder",1
+Wharfedale.*Valdus.*100,Wharfedale Valdus 100 (vintage),,"88dB, 60Hz-20kHz, 8 ohm, 100/180W piek","'Efficient, levendig geluid, goede bas voor klein systeem'",1
+Tannoy\s*E\s?11,Tannoy E11 (1988-1991),,"88dB, 55Hz-20kHz, 8 ohm, 10-90W",Levendig maar iets fel in de hoge tonen (Stereophile),1
+JBL.*Studio.*230,JBL Studio 230,,"88dB, 52Hz-22kHz, 8 ohm, 20-150W","Gedetailleerd geluid, iets dun bij hoog volume",1
+Sansui.*ES.?200,"Sansui ES-200 (jaren 70, topmodel)",,"3-weg, 50-60W, massief hout","'Onderschat, zeer transparant en samenhangend geluid' (geen dB-spec gevonden)",1
+B\s?&\s?W\s*600i|Bowers.*Wilkins.*600i|B\s?&\s?W.*DM\s?600i,B&W DM600i (waarschijnlijk bedoeld met '600i'),,"87dB, 80Hz-20kHz, 4 ohm",Klassiek B&W-model uit de DM-serie,1
+Canton.*LE\s?107,Canton LE 107 (vloerstaand),,"87.5dB, 25Hz-26kHz, 4 ohm, 100/150W — let op: vloerstaand i.p.v. boekenplank","Gebruikersscore 4.2/5, 'goed gebouwd, nauwkeurige weergave'",1
+Wharfedale\s*E\s?30,Wharfedale E30 (1979),,"94dB(!), 63Hz-18kHz, 8 ohm, 50W","Zeer transparant, sweet top end — let op: klinkt beter met buizenversterkers dan met transistor",1
+Bose.*Studiocraft.*300\s?ST|Bose.*ML3,Bose Studiocraft 300ST / ML3 (jaren 80),,"85dB (zelfde als Denon), 20Hz-20kHz, 4-8 ohm, 15-60W, dubbele woofer","Typische warme Bose-sound, icoon jaren 80 — niet duidelijk beter dan Denon (zelfde gevoeligheid)",0
+Denon.*SC.?G\s?101,Denon SC-G101,155,geen gedetailleerde technische specs gevonden,Nieuwprijs €155 (2007) — te weinig data om te vergelijken,0
+Sony.*SS.?EX\s?50,Sony SS-EX50 (vintage),,"6 ohm, 80W, 3-weg — geen dB-spec gevonden","Positieve gebruikerservaring ('excellente clarity'), te weinig data voor harde vergelijking",0
+JVC.*SP.?F303,JVC SP-F303F (satellite-speaker),,"80dB (LAGER dan Denon), 80Hz-20kHz, kleine 5.5cm driver","Satellietluidspreker voor surround, geen vervanging voor een stereo-paar — niet beter dan Denon",0
+Philips.*22\s?AH\s?466,"Philips 22AH466/01R (vintage, jaren 70)",,"3-weg, 60W/100W piek, 4 ohm, 10""+5""+1"" drivers, 40Hz-20kHz — geen dB-spec gevonden","Gezocht vintage Philips-model, grotere drivers dan Denon",1
