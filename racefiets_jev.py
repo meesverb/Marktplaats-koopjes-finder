@@ -45,6 +45,7 @@ class Listing:
     city: str
     date: str
     condition: str
+    frame_height: str
     url: str
     is_bargain: bool = False
     is_new: bool = False
@@ -67,11 +68,33 @@ def fetch_page(session: requests.Session, query: str, page: int) -> dict:
     return data["props"]["pageProps"]["searchRequestAndResponse"]
 
 
-def extract_condition(raw_listing: dict) -> str:
-    for attr in raw_listing.get("attributes", []):
-        if attr.get("key") == "condition":
-            return attr.get("value", "")
+def extract_attribute(raw_listing: dict, key: str) -> str:
+    for group in ("attributes", "extendedAttributes"):
+        for attr in raw_listing.get(group, []):
+            if attr.get("key") == key:
+                return attr.get("value", "")
     return ""
+
+
+# Marktplaats groups frame height into fixed buckets (e.g. "53 tot 57 cm")
+# rather than exposing an exact size, so filtering can only match on
+# whichever buckets overlap the requested range.
+FRAME_HEIGHT_PATTERNS = [
+    (re.compile(r"^Minder dan (\d+)", re.I), lambda m: (0.0, float(m.group(1)))),
+    (re.compile(r"^(\d+)\s*tot\s*(\d+)", re.I), lambda m: (float(m.group(1)), float(m.group(2)))),
+    (re.compile(r"^(\d+)\s*cm of meer", re.I), lambda m: (float(m.group(1)), float("inf"))),
+    (re.compile(r"^(\d+(?:[.,]\d+)?)\s*cm$", re.I), lambda m: (float(m.group(1).replace(",", ".")),) * 2),
+]
+
+
+def frame_height_bounds(value: str) -> Optional[tuple[float, float]]:
+    """Parse a Marktplaats frame-height bucket string into a (min, max) cm range."""
+    value = value.strip()
+    for pattern, to_bounds in FRAME_HEIGHT_PATTERNS:
+        match = pattern.match(value)
+        if match:
+            return to_bounds(match)
+    return None
 
 
 def parse_listing(raw: dict) -> Listing:
@@ -96,20 +119,24 @@ def parse_listing(raw: dict) -> Listing:
         price_type=price_info.get("priceType", ""),
         city=raw.get("location", {}).get("cityName", ""),
         date=raw.get("date", ""),
-        condition=extract_condition(raw),
+        condition=extract_attribute(raw, "condition"),
+        frame_height=extract_attribute(raw, "frameHeight"),
         url=url,
     )
-
 
 
 def collect_listings(
     query: str, pages: int, delay: float, session: Optional[requests.Session] = None
 ) -> list[Listing]:
+    """Fetch listings page by page. pages <= 0 means "fetch everything
+    Marktplaats allows browsing to" (it caps pagination at a few hundred
+    listings regardless of the total match count)."""
     session = session or requests.Session()
     session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
 
     listings: dict[str, Listing] = {}
-    for page in range(1, pages + 1):
+    page = 1
+    while True:
         try:
             data = fetch_page(session, query, page)
         except (requests.RequestException, RuntimeError) as exc:
@@ -124,13 +151,35 @@ def collect_listings(
             listing = parse_listing(raw)
             listings[listing.item_id] = listing
 
-        max_page = data.get("maxAllowedPageNumber", pages)
-        if page >= max_page:
+        max_page = data.get("maxAllowedPageNumber", page)
+        reached_requested_limit = pages > 0 and page >= pages
+        reached_site_limit = page >= max_page
+        if reached_requested_limit or reached_site_limit:
             break
-        if page < pages:
-            time.sleep(delay)
+        page += 1
+        time.sleep(delay)
 
     return list(listings.values())
+
+
+def filter_by_frame_height(
+    listings: list[Listing], min_height: Optional[float], max_height: Optional[float]
+) -> list[Listing]:
+    if min_height is None and max_height is None:
+        return listings
+
+    lo = min_height if min_height is not None else 0.0
+    hi = max_height if max_height is not None else float("inf")
+
+    result = []
+    for listing in listings:
+        bounds = frame_height_bounds(listing.frame_height)
+        if bounds is None:
+            continue
+        bucket_lo, bucket_hi = bounds
+        if bucket_hi >= lo and bucket_lo <= hi:
+            result.append(listing)
+    return result
 
 
 def flag_bargains(listings: list[Listing], bargain_ratio: float) -> list[Listing]:
@@ -191,7 +240,7 @@ def print_table(listings: list[Listing]) -> None:
         listings,
         key=lambda l: (l.price_eur is None, l.price_eur if l.price_eur is not None else 0),
     )
-    print(f"{'':3} {'PRICE':>8}  {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
+    print(f"{'':3} {'PRICE':>8}  {'FRAME':<12} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
     for l in rows:
         mark = ("N" if l.is_new else " ") + ("*" if l.is_bargain else " ")
         if l.price_eur is None:
@@ -200,7 +249,10 @@ def print_table(listings: list[Listing]) -> None:
             price_str = f"€{l.price_eur:.2f}"
         else:
             price_str = f"€{l.price_eur:.0f}"
-        print(f"{mark:3} {price_str:>8}  {l.condition[:20]:<20} {l.city[:15]:<15} {l.title[:60]}")
+        print(
+            f"{mark:3} {price_str:>8}  {l.frame_height[:12]:<12} {l.condition[:20]:<20} "
+            f"{l.city[:15]:<15} {l.title[:60]}"
+        )
         print(f"      {l.url}")
 
     bargains = [l for l in listings if l.is_bargain]
@@ -259,6 +311,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <th data-key="flags"></th>
   <th data-key="price">Prijs</th>
   <th data-key="title">Titel</th>
+  <th data-key="frame">Framemaat</th>
   <th data-key="condition">Conditie</th>
   <th data-key="city">Plaats</th>
 </tr>
@@ -332,10 +385,12 @@ def render_html(listings: list[Listing], query: str) -> str:
         row_html.append(
             "<tr data-new='{is_new}' data-bargain='{is_bargain}' "
             "data-price='{price_sort}' data-title='{title_attr}' "
+            "data-frame='{frame_attr}' "
             "data-condition='{condition_attr}' data-city='{city_attr}'>"
             "<td>{badges}</td>"
             "<td class='price'>{price}</td>"
             "<td><a href='{url}' target='_blank' rel='noopener'>{title}</a></td>"
+            "<td>{frame}</td>"
             "<td>{condition}</td>"
             "<td>{city}</td>"
             "</tr>".format(
@@ -343,9 +398,11 @@ def render_html(listings: list[Listing], query: str) -> str:
                 is_bargain="1" if l.is_bargain else "0",
                 price_sort=price_sort_value,
                 title_attr=html_lib.escape(l.title, quote=True),
+                frame_attr=html_lib.escape(l.frame_height, quote=True),
                 condition_attr=html_lib.escape(l.condition, quote=True),
                 city_attr=html_lib.escape(l.city, quote=True),
                 badges=badges,
+                frame=html_lib.escape(l.frame_height) or "—",
                 price=price_str,
                 url=html_lib.escape(l.url, quote=True),
                 title=html_lib.escape(l.title),
@@ -379,9 +436,22 @@ def write_csv(listings: list[Listing], path: str) -> None:
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--query", default="racefiets", help="Search query (default: racefiets)")
-    parser.add_argument("--pages", type=int, default=1, help="Number of result pages to fetch (30 listings/page)")
+    parser.add_argument(
+        "--pages",
+        type=int,
+        default=1,
+        help="Number of result pages to fetch (30 listings/page). Use 0 to fetch "
+        "everything Marktplaats allows browsing to (a few hundred pages) — useful "
+        "for a first run to seed the full history.",
+    )
     parser.add_argument("--min-price", type=float, default=None, help="Ignore listings cheaper than this (EUR)")
     parser.add_argument("--max-price", type=float, default=None, help="Ignore listings pricier than this (EUR)")
+    parser.add_argument(
+        "--min-frame-height", type=float, default=None, help="Ignore listings with a smaller frame size (cm)"
+    )
+    parser.add_argument(
+        "--max-frame-height", type=float, default=None, help="Ignore listings with a bigger frame size (cm)"
+    )
     parser.add_argument(
         "--bargain-ratio",
         type=float,
@@ -413,6 +483,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         listings = [l for l in listings if l.price_eur is None or l.price_eur >= args.min_price]
     if args.max_price is not None:
         listings = [l for l in listings if l.price_eur is None or l.price_eur <= args.max_price]
+
+    listings = filter_by_frame_height(listings, args.min_frame_height, args.max_frame_height)
 
     listings = flag_bargains(listings, args.bargain_ratio)
 
