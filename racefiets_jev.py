@@ -173,6 +173,21 @@ def enrich_fast_bid_listings(
             time.sleep(delay)
 
 
+def extract_dominant_category(search_response: dict) -> Optional[int]:
+    """Marktplaats flags the category a query is really about (dominant:
+    true) in its RelevantCategories facet. Past a certain page depth its
+    search loosens to fuzzy/partial word matches and starts returning
+    listings from unrelated categories (e.g. "racefiets" eventually pulling
+    in PS2 games because their titles contain "racer"); this lets us filter
+    those back out."""
+    for facet in search_response.get("facets", []):
+        if facet.get("key") == "RelevantCategories":
+            for category in facet.get("categories", []):
+                if category.get("dominant"):
+                    return category.get("id")
+    return None
+
+
 def extract_attribute(raw_listing: dict, key: str) -> str:
     for group in ("attributes", "extendedAttributes"):
         for attr in raw_listing.get(group, []):
@@ -296,6 +311,8 @@ def collect_listings(
 
     print(f"Zoeken naar '{query}' op Marktplaats...", file=sys.stderr)
     listings: dict[str, Listing] = {}
+    dominant_category: Optional[int] = None
+    skipped_offtopic = 0
     page = 1
     while True:
         try:
@@ -308,7 +325,13 @@ def collect_listings(
         if not raw_listings:
             break
 
+        if dominant_category is None:
+            dominant_category = extract_dominant_category(data)
+
         for raw in raw_listings:
+            if dominant_category is not None and raw.get("categoryId") != dominant_category:
+                skipped_offtopic += 1
+                continue
             listing = parse_listing(raw)
             listings[listing.item_id] = listing
 
@@ -322,6 +345,14 @@ def collect_listings(
             break
         page += 1
         time.sleep(delay)
+
+    if skipped_offtopic:
+        print(
+            f"  {skipped_offtopic} advertenties buiten de hoofdcategorie overgeslagen "
+            "(Marktplaats' zoekresultaten waaieren op diepere pagina's uit naar losse "
+            "woord-matches)",
+            file=sys.stderr,
+        )
 
     return list(listings.values())
 

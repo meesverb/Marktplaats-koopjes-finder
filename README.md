@@ -143,6 +143,18 @@ local/personal files), so it's yours to edit freely without it showing up as
 a change to commit. Remove it from `.gitignore` if you'd rather keep it
 version-controlled.
 
+### Off-topic results on deep pages
+
+Past a certain page depth (roughly page 50+ for "racefiets"), Marktplaats'
+own search loosens from real matches to fuzzy word matches — e.g. old
+PS2/Game Boy racing games showing up because their titles contain "racer".
+The script detects Marktplaats' own "dominant category" for the query (the
+category it considers the query to really be about) and drops listings
+outside it, which removes this. It prints how many it dropped. This doesn't
+catch the rare listing a seller mis-categorized themselves (e.g. cycling
+shoes listed under "Racefietsen") — use `--exclude` for those if it becomes
+annoying (not yet implemented — ask if you want it).
+
 ## Notes
 
 This scrapes Marktplaats' public search result pages directly (no API key
