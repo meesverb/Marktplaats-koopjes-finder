@@ -22,3 +22,14 @@ Denon.*SC.?G\s?101,Denon SC-G101,155,geen gedetailleerde technische specs gevond
 Sony.*SS.?EX\s?50,Sony SS-EX50 (vintage),,"6 ohm, 80W, 3-weg — geen dB-spec gevonden","Positieve gebruikerservaring ('excellente clarity'), te weinig data voor harde vergelijking",0
 JVC.*SP.?F303,JVC SP-F303F (satellite-speaker),,"80dB (LAGER dan Denon), 80Hz-20kHz, kleine 5.5cm driver","Satellietluidspreker voor surround, geen vervanging voor een stereo-paar — niet beter dan Denon",0
 Philips.*22\s?AH\s?466,"Philips 22AH466/01R (vintage, jaren 70)",,"3-weg, 60W/100W piek, 4 ohm, 10""+5""+1"" drivers, 40Hz-20kHz — geen dB-spec gevonden","Gezocht vintage Philips-model, grotere drivers dan Denon",1
+KEF.*Model.*60S|KEF.*60S.*Uni.?Q,KEF Model 60S Uni-Q,,"89dB, 100Hz-20kHz, 75W — let op: ontworpen als compacte surround-speaker",Nauwkeurige beeldvorming dankzij Uni-Q coaxiale driver,1
+Mission\s*761(?!i),Mission 761,,"60Hz-20kHz, 6 ohm, 70W — geen dB-spec voor dit exacte model gevonden","'Bass is great voor hun formaat', gematigd positief: 'er zijn betere boxen, maar goed karakter voor de prijs'",0
+Sony.*SS.?F6000,Sony SS-F6000P (vloerstaand),,"40Hz-50kHz (zeer breed), 180W, 8 ohm, 4-weg — geen dB-spec gevonden","'Crisp highs, warme bas, goede prijs-kwaliteit', honderden positieve reviews",1
+Mission\s*M\s?70(?!i),Mission M70 (zilver),,"87dB, 68Hz-20kHz, 8 ohm, 15-75W","Klinkt groter dan zijn formaat doet vermoeden, magnetisch afgeschermd",1
+JBL.*Northridge.*E20,JBL Northridge E20,,"86dB, 68Hz-20kHz, 8 ohm, 60W/240W piek","'Good sound quality, well designed, good value'",1
+Quadral.*Argentum.*02,Quadral Argentum 02.1,278,"60/90W, 4-8 ohm — geen dB-spec of uitgebreide reviews gevonden",Nieuwprijs indicatief ca. €139 per stuk (€278/paar) — te weinig reviewdata om zeker te zijn,0
+Wharfedale.*Diamond.*IV,Wharfedale Diamond IV (vintage),,"86dB, 100W, 8 ohm","'Pleasingly euphonic', comprimeert iets bij hoog volume, klassieker uit de Diamond-lijn",1
+Jamo.*E\s?470,Jamo E470 (vloerstaand),,"3-weg, 20cm driver, 4 ohm — geen dB-spec of duidelijk reviewoordeel gevonden","Machtige bas volgens beschrijvingen, vermogenshongerig — te weinig data voor harde vergelijking",0
+Mission\s*M\s?72(?!i),Mission M72,,"56Hz-20kHz, magnetisch afgeschermd — geen dB-spec gevonden","What Hi-Fi Best Buy 2002 (surroundpakket onder £500), 'refined British sound'",1
+B\s?&\s?W\s*DM\s?330|Bowers.*Wilkins.*DM\s?330,B&W DM330 (vloerstaand),,"91dB, 48Hz-20kHz, 8 ohm, 100W","'Warm, killer thump, goede efficiency' — duidelijk beter dan Denon",1
+Bose.*301.*Series\s*II(?!I),Bose 301 Series II (1982),,10-75W aanbevolen — Bose publiceert geen dB-gevoeligheid,"4.5/5 op audioreview.com, 'favoriet onder vintage-liefhebbers' — geen vergelijkbare specs beschikbaar",0
