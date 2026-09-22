@@ -4,6 +4,8 @@ racefiets_jev.py doesn't call any of this yet (fase 1b wires it in); these
 tests work directly against db.py with throwaway files, per
 PLAN_FIETSWAARDE.md fase 1a's acceptance criteria.
 """
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -170,6 +172,27 @@ class ImportReferencePricesTest(TempDirTest):
         self.import_legacy(conn, reference_prices_path=path)
         row = conn.execute("SELECT * FROM model WHERE pattern='Mission 731'").fetchone()
         self.assertIsNone(row["original_price_eur"])
+
+    def test_an_unreadable_original_price_does_not_abort_the_import(self):
+        # This column is maintained by hand, so "ca. 300" will happen. One bad
+        # cell used to raise ValueError out of import_legacy(), which rolls
+        # back the migration of every other file with it.
+        path = self.write_reference(
+            "Mission 731,Mission 731,ca. 300,,,\n" "Wharfedale,Wharfedale Diamond,120,,,\n"
+        )
+        conn = db.connect(self.path("koopjes.db"))
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            counts = self.import_legacy(conn, reference_prices_path=path)
+
+        self.assertEqual(counts["models_from_reference"], 2)
+        self.assertIn("ca. 300", stderr.getvalue())
+        rows = {
+            r["pattern"]: r["original_price_eur"]
+            for r in conn.execute("SELECT pattern, original_price_eur FROM model")
+        }
+        self.assertIsNone(rows["Mission 731"])
+        self.assertEqual(rows["Wharfedale"], 120.0)
 
     def test_rows_without_a_pattern_are_ignored(self):
         path = self.write_reference(",Geen patroon,100,,,\n")

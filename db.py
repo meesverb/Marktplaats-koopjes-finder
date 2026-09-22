@@ -25,6 +25,7 @@ from __future__ import annotations
 import csv
 import json
 import sqlite3
+import sys
 from datetime import datetime, timezone
 
 # Each entry is one migration's DDL, applied in order. Add new entries to
@@ -252,7 +253,19 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
         if not pattern:
             continue
         label = (row.get("label") or pattern).strip()
-        original_price = (row.get("original_price_eur") or "").strip()
+        original_price_raw = (row.get("original_price_eur") or "").strip()
+        try:
+            original_price = float(original_price_raw) if original_price_raw else None
+        except ValueError:
+            # reference_prices.csv is maintained by hand, so this column will
+            # hold "ca. 300" or "?" sooner or later. One unreadable cell must
+            # not abort the migration of the whole file.
+            print(
+                f"warning: {path}: onleesbare nieuwprijs {original_price_raw!r} bij "
+                f"patroon {pattern!r} — als leeg geïmporteerd",
+                file=sys.stderr,
+            )
+            original_price = None
         better = (row.get("better_than_baseline") or "").strip().lower() in (
             "1", "true", "yes", "ja",
         )
@@ -272,7 +285,7 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
             {
                 "model": label,
                 "pattern": pattern,
-                "original_price_eur": float(original_price) if original_price else None,
+                "original_price_eur": original_price,
                 "specs_json": specs_json,
                 "score": (row.get("score") or "").strip(),
             },
