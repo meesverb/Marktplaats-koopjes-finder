@@ -5,13 +5,15 @@ mediaan en band), de database-laag op een wegwerp-koopjes.db, en het geheel
 één keer op de echte `mijn_fiets.md`, want dat bestand is de invoer waarop de
 taxatie in de praktijk draait.
 """
+import contextlib
+import io
 import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from helpers import make_listing, mp  # noqa: F401  (zet de repo-root in sys.path)
+from helpers import make_listing, mp, repo_file  # noqa: F401  (zet de repo-root in sys.path)
 
 import db
 import valuation as val
@@ -484,6 +486,29 @@ class DatabaseTest(unittest.TestCase):
         self.assertIsNotNone(factor)
         self.assertAlmostEqual(factor[0], 0.8)
         self.assertEqual(factor[1:], (20, 20))
+
+    def test_the_cli_uses_the_measured_factor_once_there_is_enough_data(self):
+        # valuation.main() computed empirical_negotiation_factor() but never
+        # passed it on, so the CLI always printed the heuristic E2 line.
+        title = "Giant Defy Composite 2012 Ultegra 10 speed"
+        quick = [make_listing(item_id=f"quick{i}", title=title, price_eur=800.0) for i in range(20)]
+        self.add_listings(quick)
+        a_week_later = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(timespec="seconds")
+        db.sweep_disappeared(self.conn, "giant defy", set(), a_week_later)
+        old_first_seen = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat(timespec="seconds")
+        stayers = [make_listing(item_id=f"stayer{i}", title=title, price_eur=1000.0) for i in range(20)]
+        db.sync_listings(self.conn, "giant defy", stayers, old_first_seen)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = val.main([
+                "--db", str(Path(self._tmp.name) / "koopjes.db"),
+                "--mijn-fiets", repo_file("mijn_fiets.md"),
+                "--dry-run",
+            ])
+        self.assertEqual(code, 0)
+        self.assertIn("E2: gemeten correctie", out.getvalue())
+        self.assertNotIn("E2: heuristische correctie", out.getvalue())
 
     def test_component_prices_are_read_per_model(self):
         self.conn.execute(

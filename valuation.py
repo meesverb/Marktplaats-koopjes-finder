@@ -1009,6 +1009,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                 subject_id=str(owned_id) if owned_id else "",
                 scenario=SCENARIOS[key],
                 extras=(wheelset,) if key == "a" else (),
+                # Zonder deze regel werd de gemeten factor wel uitgerekend maar
+                # nooit gebruikt, en viel de CLI altijd terug op de heuristiek —
+                # terwijl upgrade.py en het rapport hem wél doorgaven.
+                negotiation=negotiation,
             )
             if valuation is None:
                 print(
