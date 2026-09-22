@@ -208,11 +208,31 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "met een nieuwere database te werken."
         )
     for version, ddl in enumerate(MIGRATIONS[current:], start=current + 1):
-        conn.executescript(ddl)
-        conn.execute(
-            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-            (version, datetime.now(timezone.utc).isoformat(timespec="seconds")),
-        )
+        # The version row goes in the same script as the schema it belongs
+        # to, wrapped in one transaction. executescript() commits whatever is
+        # pending before it runs and leaves the DDL committed too, so an
+        # INSERT afterwards could be lost while the tables were already on
+        # disk — and the next start would then re-run a migration against
+        # tables that exist, leaving the database unopenable (the DDL has no
+        # IF NOT EXISTS, deliberately: a migration that half-applied is worth
+        # noticing, not papering over). SQLite rolls CREATE TABLE back like
+        # any other statement, so schema and version now land together or not
+        # at all. Both values in the INSERT are ours, not input: a version
+        # number from enumerate() and a timestamp we just formatted.
+        applied_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        try:
+            conn.executescript(
+                "BEGIN;\n"
+                + ddl
+                + "\nINSERT INTO schema_version (version, applied_at) "
+                + f"VALUES ({version}, '{applied_at}');\n"
+                + "COMMIT;"
+            )
+        except sqlite3.Error:
+            # Without this the failed transaction stays open on this
+            # connection and keeps its lock until the object is collected.
+            conn.rollback()
+            raise
     conn.commit()
 
 
@@ -293,7 +313,6 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
     except FileNotFoundError:
         return 0
 
-    count = 0
     seen_patterns: set[str] = set()
     for row in rows:
         pattern = (row.get("pattern") or "").strip()
@@ -348,8 +367,9 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
                 "score": (row.get("score") or "").strip(),
             },
         )
-        count = len(seen_patterns)
-    return count
+    # Not len(rows): a pattern listed twice is one model in the table, and the
+    # warning above has already said so.
+    return len(seen_patterns)
 
 
 def _import_reference_price_history(conn: sqlite3.Connection, path: str) -> int:

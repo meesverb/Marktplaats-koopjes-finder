@@ -7,8 +7,10 @@ PLAN_FIETSWAARDE.md fase 1a's acceptance criteria.
 import contextlib
 import io
 import json
+import sqlite3
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from helpers import mp  # noqa: F401  (adds the repo root to sys.path)
@@ -79,6 +81,29 @@ class SchemaTest(TempDirTest):
         with self.assertRaises(RuntimeError) as caught:
             db.connect(path)
         self.assertIn("schemaversie", str(caught.exception))
+
+    def test_a_failed_migration_leaves_nothing_behind(self):
+        # A migration that dies partway used to leave its tables committed
+        # while the version row was still pending, and the next start then ran
+        # the same CREATE TABLEs against tables that already existed — an
+        # error on every run from then on, with no way back but deleting the
+        # database. Schema and version have to land together.
+        path = self.path("koopjes.db")
+        broken = db.MIGRATIONS[0] + "\nCREATE TABLE crawl_run (nope INTEGER);"
+        with unittest.mock.patch.object(db, "MIGRATIONS", [broken]):
+            with self.assertRaises(sqlite3.OperationalError):
+                db.connect(path)
+
+        conn = db.connect(path)
+        tables = {
+            row["name"]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        self.assertIn("crawl_run", tables)
+        self.assertEqual(
+            conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()["v"],
+            len(db.MIGRATIONS),
+        )
 
     def test_foreign_keys_are_enforced(self):
         conn = db.connect(self.path("koopjes.db"))
