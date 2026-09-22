@@ -909,9 +909,13 @@ def format_bid_info(listing: Listing) -> str:
         # stays visible; only the framing goes. And as before, it's only worth
         # spelling out when it's really under the asking price, otherwise it
         # just repeats the "% v. mediaan" column.
+        #
+        # An unknown bid count is not a zero one (the same rule apply_bid_flags
+        # applies to VRIJ TE BIEDEN): if we never counted the bids, we can't
+        # claim nobody has bid.
         if (
             listing.bid_minimum_pct_of_median is not None
-            and listing.bid_count in (None, 0)
+            and listing.bid_count == 0
             and (
                 listing.price_eur is None
                 or listing.bid_minimum <= listing.price_eur * MEANINGFUL_MINIMUM_BID_RATIO

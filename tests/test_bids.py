@@ -294,6 +294,19 @@ class FormatBidInfoTest(unittest.TestCase):
         self.assertNotIn("mediaan", info)
         self.assertIn("1 bod", info)
 
+    def test_an_uncounted_listing_is_not_sold_as_a_cheap_way_in(self):
+        # Unknown is not zero: with the bids never counted, "nobody has bid
+        # yet" is a claim we can't make, so the invitation stays off — the
+        # same rule VRIJ TE BIEDEN follows.
+        listing = make_listing(
+            price_eur=200.0, price_is_bid=True, bid_count=None,
+            bid_minimum=120.0, bid_minimum_pct_of_median=35.0,
+        )
+        info = mp.format_bid_info(listing)
+        self.assertIn("min. €120", info)
+        self.assertNotIn("mediaan", info)
+        self.assertIn("biedingen onbekend", info)
+
     def test_a_one_cent_difference_is_not_a_discount(self):
         # Marktplaats sometimes sets the minimum a cent under the asking price;
         # calling that a discount would be noise.
