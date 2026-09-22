@@ -77,6 +77,39 @@ class EnrichBidListingsTest(unittest.TestCase):
         self.assertEqual(listing.price_eur, 150.0)
         self.assertEqual(listing.bid_count, 1)
 
+    def test_unusable_bid_values_do_not_count_and_leave_bidding_open(self):
+        # Same payload as test_values_that_are_not_numbers_are_not_bids:
+        # a bool and a numeric string are not usable bids, so bid_count
+        # must land on 0, not 2 — and with 0 usable bids, the listing is
+        # still open to bid on.
+        listing = make_listing(price_eur=50.0, price_type="MIN_BID", price_is_bid=True)
+        self.enrich(
+            listing,
+            {"currentMinimumBid": 5000, "bids": [{"value": True}, {"value": "6000"}]},
+            "all",
+        )
+        self.assertEqual(listing.bid_count, 0)
+        mp.apply_bid_flags([listing])
+        self.assertTrue(listing.bid_open)
+
+    def test_entries_without_a_value_do_not_count_as_bids(self):
+        listing = make_listing(price_eur=50.0, price_type="MIN_BID", price_is_bid=True)
+        self.enrich(
+            listing,
+            {"currentMinimumBid": 5000, "bids": [{"bidder": "anoniem"}, "niet-een-dict"]},
+            "all",
+        )
+        self.assertEqual(listing.bid_count, 0)
+
+    def test_only_the_usable_bid_is_counted(self):
+        listing = make_listing(price_eur=50.0, price_type="MIN_BID", price_is_bid=True)
+        self.enrich(
+            listing,
+            {"currentMinimumBid": 5000, "bids": [{"bidder": "anoniem"}, {"value": 6000}]},
+            "all",
+        )
+        self.assertEqual(listing.bid_count, 1)
+
     def test_mode_fast_leaves_min_bid_listings_alone(self):
         listing = make_listing(price_eur=47.50, price_type="MIN_BID", price_is_bid=True)
         session = self.enrich(listing, {"currentMinimumBid": 3500, "bids": []}, "fast")

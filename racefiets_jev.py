@@ -70,6 +70,10 @@ class Listing:
     pct_of_median: Optional[float] = None
     price_dropped: bool = False
     price_drop_from: Optional[float] = None
+    # Counts usable bids only (see usable_bid_values()) — the same count
+    # resolve_bid_price() bases the price on, so a listing's price and its
+    # bid_count never tell two different stories about the same raw list.
+    # None (lookup never ran) and 0 (ran, nothing usable) are not the same.
     bid_count: Optional[int] = None
     bid_minimum: Optional[float] = None
     bid_minimum_pct_of_median: Optional[float] = None
@@ -197,14 +201,22 @@ def fetch_bid_info(session: requests.Session, vip_url: str) -> Optional[dict]:
     return (config.get("listing") or {}).get("bidsInfo")
 
 
+def usable_bid_values(bids_info: dict) -> list[float]:
+    """The bid entries in bids_info["bids"] that carry a usable numeric
+    value — anything else (a non-dict entry, a missing/unparseable value)
+    isn't a bid we can act on. Used both to resolve the bid price and to
+    count "how many bids are there" (bid_count), so the two never diverge."""
+    bids = bids_info.get("bids") or []
+    values = [as_number(b.get("value")) for b in bids if isinstance(b, dict)]
+    return [v for v in values if v is not None]
+
+
 def resolve_bid_price(bids_info: dict) -> Optional[float]:
     """The relevant "price" for a bidding listing: the current highest bid
     if there is one, otherwise the minimum bid Marktplaats will accept."""
-    bids = bids_info.get("bids") or []
     # A bid entry without a usable value is not worth taking the run down for;
     # fall back to the minimum bid as if there were no bids at all.
-    values = [as_number(b.get("value")) for b in bids if isinstance(b, dict)]
-    values = [v for v in values if v is not None]
+    values = usable_bid_values(bids_info)
     if values:
         return max(values) / 100
     minimum = as_number(bids_info.get("currentMinimumBid"))
@@ -248,8 +260,10 @@ def enrich_bid_listings(
             continue
 
         if bids_info:
-            bids = bids_info.get("bids") or []
-            listing.bid_count = len(bids)
+            # bid_count counts usable bids, not raw entries — a bid without
+            # a parseable value doesn't move resolve_bid_price() either, so
+            # the two must count the same thing (see usable_bid_values()).
+            listing.bid_count = len(usable_bid_values(bids_info))
             minimum = as_number(bids_info.get("currentMinimumBid"))
             listing.bid_minimum = minimum / 100 if minimum else None
             price = resolve_bid_price(bids_info)
@@ -261,8 +275,9 @@ def enrich_bid_listings(
             # cheaper than fixed-price ones purely for being biddable) and the
             # minimum lands in bid_minimum. Only a real bid above the asking
             # price replaces it: below that bid the listing can't be had.
+            raw_bids = bids_info.get("bids") or []
             if price is not None and (
-                listing.price_eur is None or (bids and price > listing.price_eur)
+                listing.price_eur is None or (raw_bids and price > listing.price_eur)
             ):
                 listing.price_eur = price
                 listing.price_is_bid = True

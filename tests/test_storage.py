@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import make_listing, mp, read_csv_rows
+from helpers import FakeSession, config_page, make_listing, mp, read_csv_rows
 
 
 class TempDirTest(unittest.TestCase):
@@ -310,6 +310,25 @@ class PriceHistoryTest(TempDirTest):
         ]
         self.assertEqual(mp.append_reference_price_observations(path, listings), 2)
         self.assertEqual([r["item_id"] for r in read_csv_rows(path)], ["vrij", "vraagprijs"])
+
+    def test_a_bid_listing_with_only_unusable_bids_still_keeps_its_floor_price(self):
+        # Regression for the bid_count bug: raw bid entries without a usable
+        # value used to inflate bid_count above 0, which wrongly excluded
+        # the listing here even though resolve_bid_price() fell back to the
+        # asking price exactly as if there had been no bids at all.
+        path = self.path("prices.csv")
+        listing = make_listing(
+            item_id="onbruikbaar", is_new=True, ref_label="M", price_eur=47.5,
+            price_type="MIN_BID", price_is_bid=True,
+        )
+        session = FakeSession(
+            {listing.url: config_page({"currentMinimumBid": 3500, "bids": [{"value": True}]})}
+        )
+        with contextlib.redirect_stderr(io.StringIO()):
+            mp.enrich_bid_listings([listing], delay=0, mode="all", session=session)
+        self.assertEqual(listing.bid_count, 0)
+        self.assertEqual(mp.append_reference_price_observations(path, [listing]), 1)
+        self.assertEqual([r["item_id"] for r in read_csv_rows(path)], ["onbruikbaar"])
 
     def test_a_file_without_the_expected_columns_is_reported(self):
         # A hand-edited or pre-historic file used to raise KeyError here and
