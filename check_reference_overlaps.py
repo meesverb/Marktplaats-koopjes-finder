@@ -25,12 +25,17 @@ from racefiets_jev import load_reference_data
 
 def find_overlaps(reference: list[dict]) -> list[tuple[str, str]]:
     """Returns (pattern_owner_label, other_row_label) pairs where a row's
-    pattern unexpectedly matches a different row's label."""
+    pattern matches the label of a row *below* it in the file.
+
+    Only that direction can do damage. Matching is first-match-wins in file
+    order, so an earlier, broader pattern swallows the listings meant for a
+    later, more specific row. The other way around is harmless and normal:
+    a broad "Mission" row at the bottom matching "Mission 731" above it
+    steals nothing, because the specific row is reached first. Reporting
+    those too would make a correctly ordered file fail this check."""
     problems = []
     for i, row in enumerate(reference):
-        for j, other in enumerate(reference):
-            if i == j:
-                continue
+        for other in reference[i + 1 :]:
             if row["regex"].search(other["label"]):
                 problems.append((row["label"], other["label"]))
     return problems
@@ -57,9 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     for owner_label, other_label in problems:
         print(f"  Pattern for {owner_label!r} also matches {other_label!r}")
     print(
-        "\nThis means a listing meant for the second model could get matched to the "
-        "first row instead (rows are checked in file order, first match wins). Consider "
-        "making the first row's pattern more specific."
+        "\nThe first row comes before the second in the file, so a listing meant for "
+        "the second model gets matched to the first one instead (first match wins). "
+        "Make the first row's pattern more specific, or move the specific row above it."
     )
     return 1
 
