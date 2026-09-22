@@ -17,6 +17,9 @@ format changes. What's here:
   import_legacy() can recover from seen_listings.json alone.
 - record_crawl_run() and sweep_disappeared(), which back E2 in §6: the sweep
   must only run after a full crawl (`--pages 0`) of the same query.
+- save_watchlist()/get_watchlist()/list_watchlists()/delete_watchlist(), the
+  named searches of fase 8. racefiets_jev.py decides which filters exist and
+  how a watchlist run is kept apart from the regular queries.
 - export_csv(), which writes the `model` table back out in
   reference_prices.csv's column format, so reference_overview.py and
   check_reference_overlaps.py (both of which read that format through
@@ -649,6 +652,74 @@ def sweep_disappeared(
         count += 1
     conn.commit()
     return count
+
+
+def save_watchlist(
+    conn: sqlite3.Connection, name: str, query: str, filters: dict, active: bool = True
+) -> None:
+    """Create or replace the watchlist entry `name` (PLAN_FIETSWAARDE.md
+    fase 8). Replacing is deliberate: saving "powermeter" again with a new
+    --max-price means "this is now the powermeter search", not "add a second
+    one" — the name is what the user types to run it, so it has to stay
+    unique. Which filter keys are allowed is racefiets_jev's business (they
+    map onto its CLI flags); this layer only stores them."""
+    conn.execute(
+        """
+        INSERT INTO watchlist (name, query, filters_json, active)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+            query = excluded.query,
+            filters_json = excluded.filters_json,
+            active = excluded.active
+        """,
+        (name, query, json.dumps(filters, sort_keys=True), 1 if active else 0),
+    )
+    conn.commit()
+
+
+def _watchlist_row(row: sqlite3.Row) -> dict:
+    try:
+        filters = json.loads(row["filters_json"] or "{}")
+    except json.JSONDecodeError:
+        # Only reachable by editing the database by hand. Running the search
+        # without its filters would quietly widen it (a powermeter watch
+        # without its --max-price), so refuse instead.
+        raise ValueError(
+            f"filters_json van watchlist {row['name']!r} is niet te lezen: "
+            f"{row['filters_json']!r}"
+        )
+    if not isinstance(filters, dict):
+        raise ValueError(
+            f"filters_json van watchlist {row['name']!r} is geen object: {row['filters_json']!r}"
+        )
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "query": row["query"],
+        "filters": filters,
+        "active": bool(row["active"]),
+    }
+
+
+def get_watchlist(conn: sqlite3.Connection, name: str) -> "dict | None":
+    row = conn.execute("SELECT * FROM watchlist WHERE name = ?", (name,)).fetchone()
+    return _watchlist_row(row) if row else None
+
+
+def list_watchlists(conn: sqlite3.Connection, active_only: bool = False) -> list[dict]:
+    sql = "SELECT * FROM watchlist"
+    if active_only:
+        sql += " WHERE active = 1"
+    return [_watchlist_row(r) for r in conn.execute(sql + " ORDER BY name").fetchall()]
+
+
+def delete_watchlist(conn: sqlite3.Connection, name: str) -> bool:
+    """Remove the entry; returns whether there was one. The listings it
+    found stay in `listing` — they are market observations like any other,
+    and E1/E2 may already lean on them."""
+    cur = conn.execute("DELETE FROM watchlist WHERE name = ?", (name,))
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def _parse_iso(value: str) -> datetime:

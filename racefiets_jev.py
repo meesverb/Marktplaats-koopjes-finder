@@ -33,6 +33,7 @@ import requests
 import db
 
 BASE_URL = "https://www.marktplaats.nl"
+DEFAULT_QUERY = "racefiets"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -1775,10 +1776,14 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--query",
-        default="racefiets",
-        help="Search query (default: racefiets). Comma-separate multiple terms (e.g. "
+        # None rather than DEFAULT_QUERY, so main() can tell "--watchlist
+        # powermeter" (run only that) from "--query racefiets --watchlist
+        # powermeter" (run both). See resolve_queries().
+        default=None,
+        help=f"Search query (default: {DEFAULT_QUERY}). Comma-separate multiple terms (e.g. "
         "\"racefiets,luidsprekers\") to run them all in one go — each gets its own HTML/CSV "
-        "report (named after the query), while history/log/reference files stay shared.",
+        "report (named after the query), while history/log/reference files stay shared. "
+        "With --watchlist and no --query, only the watchlists run.",
     )
     parser.add_argument(
         "--pages",
@@ -1898,7 +1903,188 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Intake of your own bike, for the report's 'Mijn fiets' and 'Upgrade' tabs "
         "(PLAN_FIETSWAARDE.md fase 6). Missing file = those tabs say so (default: mijn_fiets.md)",
     )
+    parser.add_argument(
+        "--watchlist",
+        default=None,
+        help="Run saved searches from the database by name (comma-separated, or 'all' for every "
+        "active one), each with its own filters and its own report "
+        "(<html>_<name>.html) — PLAN_FIETSWAARDE.md fase 8. Filters given on the command line "
+        "don't apply to them, and theirs don't apply to --query",
+    )
+    parser.add_argument(
+        "--watchlist-add",
+        metavar="NAME",
+        default=None,
+        help="Save --query plus the filter flags given on this command line (--min-price, "
+        "--max-price, --reference-file, ...) as watchlist NAME, replacing an existing one. "
+        "Doesn't crawl",
+    )
+    parser.add_argument(
+        "--watchlist-remove", metavar="NAME", default=None, help="Delete watchlist NAME. Doesn't crawl"
+    )
+    parser.add_argument(
+        "--watchlist-list", action="store_true", help="List the saved watchlists. Doesn't crawl"
+    )
     return parser.parse_args(argv)
+
+
+# The flags a watchlist carries itself (fase 8): everything that decides
+# *which* listings end up in its report and what they're compared against.
+# The rest — --pages, --delay, --db, the history/log files, --open-browser —
+# is how this run is done, not what it's looking for, and stays the command
+# line's. --pages in particular: a watchlist that carried its own page count
+# could quietly turn a shallow scheduled run into a full crawl.
+WATCHLIST_FILTERS = (
+    "min_price",
+    "max_price",
+    "min_frame_height",
+    "max_frame_height",
+    "bargain_ratio",
+    "reference_file",
+    "bid_lookup",
+    "bids_only",
+    "min_score",
+)
+WATCHLIST_ALL = "all"
+
+
+def watchlist_filters_from_args(args: argparse.Namespace) -> dict:
+    """The filters to store for --watchlist-add: only those that differ from
+    the default, so a watchlist saved before a default changes follows the new
+    default instead of freezing the old one."""
+    defaults = parse_args([])
+    bid_lookup = "none" if args.no_bid_lookup else args.bid_lookup
+    current = {**{k: getattr(args, k) for k in WATCHLIST_FILTERS}, "bid_lookup": bid_lookup}
+    return {k: v for k, v in current.items() if v != getattr(defaults, k)}
+
+
+def args_for_watchlist(args: argparse.Namespace, entry: dict) -> argparse.Namespace:
+    """A copy of `args` for one watchlist run: every filter back at its
+    default, then the watchlist's own on top. Starting from the defaults
+    rather than from the command line is the point — `--max-frame-height 58
+    --watchlist powermeter` would otherwise drop every powermeter, since
+    filter_by_frame_height() drops listings without a frame size."""
+    defaults = parse_args([])
+    run_args = argparse.Namespace(**vars(args))
+    for key in WATCHLIST_FILTERS:
+        setattr(run_args, key, getattr(defaults, key))
+    run_args.no_bid_lookup = False
+
+    unknown = sorted(set(entry["filters"]) - set(WATCHLIST_FILTERS))
+    if unknown:
+        # Only reachable by editing the database by hand (--watchlist-add
+        # stores nothing else). Skipping the key would run a wider search than
+        # the one that was saved.
+        raise ValueError(
+            f"watchlist {entry['name']!r} heeft onbekende filter(s): {', '.join(unknown)}"
+        )
+    for key, value in entry["filters"].items():
+        setattr(run_args, key, value)
+    return run_args
+
+
+def resolve_queries(args: argparse.Namespace) -> list[str]:
+    """The plain --query terms to run. Without --query that's the default
+    query, unless --watchlist was given: then the watchlists are the run."""
+    if args.query is None:
+        if args.watchlist:
+            return []
+        return [DEFAULT_QUERY]
+    return [q.strip() for q in args.query.split(",") if q.strip()]
+
+
+def load_watchlists(args: argparse.Namespace) -> list[dict]:
+    """Look up every name in --watchlist before anything is crawled, so a
+    typo fails at once instead of after the regular queries have run."""
+    names = [n.strip() for n in args.watchlist.split(",") if n.strip()]
+    if not names:
+        raise ValueError("--watchlist zonder naam")
+    if not Path(args.db).exists():
+        # Not db.connect(): that would create an empty database just to say
+        # there's nothing in it.
+        raise ValueError(
+            f"geen watchlists: {args.db} bestaat nog niet. Sla er eerst een op met "
+            "--watchlist-add."
+        )
+    conn = db.connect(args.db)
+    try:
+        if names == [WATCHLIST_ALL]:
+            entries = db.list_watchlists(conn, active_only=True)
+            if not entries:
+                raise ValueError(f"geen actieve watchlists in {args.db}")
+            return entries
+        entries = []
+        for name in names:
+            entry = db.get_watchlist(conn, name)
+            if entry is None:
+                known = ", ".join(e["name"] for e in db.list_watchlists(conn)) or "geen"
+                raise ValueError(f"onbekende watchlist {name!r} (bekend: {known})")
+            entries.append(entry)
+        return entries
+    finally:
+        conn.close()
+
+
+def manage_watchlists(args: argparse.Namespace) -> int:
+    """--watchlist-add / --watchlist-remove / --watchlist-list. None of them
+    crawls: saving a search and running it are separate steps, so a typo in
+    the filters can be seen in --watchlist-list before it costs requests."""
+    if args.no_db and (args.watchlist_add or args.watchlist_remove):
+        print("error: watchlists staan in de database; laat --no-db weg.", file=sys.stderr)
+        return 1
+
+    if args.watchlist_add:
+        name = args.watchlist_add.strip()
+        if not name or name == WATCHLIST_ALL or "," in name:
+            print(
+                f"error: {name!r} kan geen watchlistnaam zijn ('{WATCHLIST_ALL}' en komma's "
+                "zijn gereserveerd voor --watchlist).",
+                file=sys.stderr,
+            )
+            return 1
+        if not args.query or not args.query.strip():
+            print("error: --watchlist-add heeft een --query nodig.", file=sys.stderr)
+            return 1
+        filters = watchlist_filters_from_args(args)
+        conn = db.connect(args.db)
+        try:
+            db.save_watchlist(conn, name, args.query.strip(), filters)
+        finally:
+            conn.close()
+        print(f"Watchlist {name!r} opgeslagen: {format_watchlist(name, args.query.strip(), filters)}")
+        return 0
+
+    if not Path(args.db).exists():
+        if args.watchlist_remove:
+            print(f"error: onbekende watchlist {args.watchlist_remove!r}", file=sys.stderr)
+            return 1
+        print(f"Geen watchlists ({args.db} bestaat nog niet).")
+        return 0
+
+    conn = db.connect(args.db)
+    try:
+        if args.watchlist_remove:
+            if not db.delete_watchlist(conn, args.watchlist_remove):
+                print(f"error: onbekende watchlist {args.watchlist_remove!r}", file=sys.stderr)
+                return 1
+            print(f"Watchlist {args.watchlist_remove!r} verwijderd.")
+            return 0
+
+        entries = db.list_watchlists(conn)
+    finally:
+        conn.close()
+    if not entries:
+        print("Geen watchlists.")
+    for e in entries:
+        status = "" if e["active"] else "  (inactief)"
+        print(format_watchlist(e["name"], e["query"], e["filters"]) + status)
+    return 0
+
+
+def format_watchlist(name: str, query: str, filters: dict) -> str:
+    parts = [f"--{k.replace('_', '-')} {v}" if v is not True else f"--{k.replace('_', '-')}"
+             for k, v in sorted(filters.items())]
+    return f"{name}: --query {query!r}" + (" " + " ".join(parts) if parts else "")
 
 
 def safe_query_slug(query: str) -> str:
@@ -1913,6 +2099,12 @@ def per_query_path(base: str, query: str, multi: bool) -> str:
         return base
     p = Path(base)
     return str(p.with_name(f"{p.stem}_{safe_query_slug(query)}{p.suffix}"))
+
+
+def report_path(base: str, query: str, multi: bool, report_name: Optional[str]) -> str:
+    if report_name is not None:
+        return per_query_path(base, report_name, True)
+    return per_query_path(base, query, multi)
 
 
 def sync_database(
@@ -1979,8 +2171,15 @@ def sync_database(
         conn.close()
 
 
-def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
-    if multi:
+def run_for_query(
+    args: argparse.Namespace, query: str, multi: bool, report_name: Optional[str] = None
+) -> None:
+    """report_name is set for a watchlist run: its HTML/CSV then always get
+    their own file named after it, so a powermeter watch never overwrites
+    the racefiets report that the same scheduled run just wrote."""
+    if report_name is not None:
+        print(f"\n=== watchlist {report_name}: {query} ===")
+    elif multi:
         print(f"\n=== {query} ===")
 
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -2066,12 +2265,12 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
     print_bid_overview(listings, headroom=bid_headroom_by_id(listings, all_stats.get("median")))
 
     if args.output:
-        output_path = per_query_path(args.output, query, multi)
+        output_path = report_path(args.output, query, multi, report_name)
         write_csv(listings, output_path)
         print(f"\nWrote {len(listings)} listings to {output_path}")
 
     if not args.no_html:
-        html_path = per_query_path(args.html, query, multi)
+        html_path = report_path(args.html, query, multi, report_name)
         panels = build_report_panels(args, listings, all_stats.get("median"))
         write_html(listings, html_path, query, stats=all_stats, panels=panels)
         print(f"Wrote HTML overview to {html_path}")
@@ -2113,14 +2312,32 @@ def notify_better_matches(listings: list[Listing]) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
-    queries = [q.strip() for q in args.query.split(",") if q.strip()]
-    if not queries:
+    if args.watchlist_add or args.watchlist_remove or args.watchlist_list:
+        return manage_watchlists(args)
+
+    queries = resolve_queries(args)
+    watch_runs = []
+    if args.watchlist:
+        try:
+            for entry in load_watchlists(args):
+                run_args = args_for_watchlist(args, entry)
+                terms = [q.strip() for q in entry["query"].split(",") if q.strip()]
+                for term in terms:
+                    name = entry["name"] if len(terms) == 1 else f"{entry['name']} {term}"
+                    watch_runs.append((run_args, term, name))
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    if not queries and not watch_runs:
         print("error: no search query given", file=sys.stderr)
         return 1
     multi = len(queries) > 1
 
     for query in queries:
         run_for_query(args, query, multi)
+    for run_args, query, name in watch_runs:
+        run_for_query(run_args, query, True, report_name=name)
 
     return 0
 

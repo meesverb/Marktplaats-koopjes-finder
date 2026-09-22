@@ -31,7 +31,9 @@ after the query), while the history/log/reference files stay shared. Only do
 this when the same filters (`--max-price`, etc.) make sense for both —
 `--min-frame-height`/`--max-frame-height` in particular would wipe out every
 result for a non-bike query, since those listings never have a frame size.
-Run the script separately per query instead when the filters need to differ.
+Run the script separately per query instead when the filters need to differ,
+or save the search as a watchlist (see below) — a watchlist carries its own
+filters.
 
 Listings marked with `*` are priced at or below `--bargain-ratio` (default
 `0.6`, i.e. 60%) of the median price across all listings fetched. That median
@@ -87,6 +89,10 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--db` | Path to the SQLite database that mirrors the CSV/JSON files (see below) | `koopjes.db` |
 | `--no-db` | Skip writing to the SQLite database | off |
 | `--mijn-fiets` | Intake of your own bike, for the report's `Mijn fiets` and `Upgrade` tabs (see below) | `mijn_fiets.md` |
+| `--watchlist` | Run saved searches by name (comma-separated, or `all` for every active one), each with its own filters and report (see below) | none |
+| `--watchlist-add NAME` | Save `--query` plus the filter flags on this command line as watchlist `NAME` (replaces an existing one); doesn't crawl | none |
+| `--watchlist-remove NAME` | Delete a watchlist; doesn't crawl | none |
+| `--watchlist-list` | List the saved watchlists; doesn't crawl | off |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:
 
@@ -335,6 +341,50 @@ the same database so it stays in sync with them. Only a full crawl
 if they no longer turn up — a shallow `--pages 3` run only looked at part of
 the market, so it never draws that conclusion. `valuation.py` reads from this
 database (see below); disable writing to it entirely with `--no-db`.
+
+### Watchlists — `--watchlist`
+
+A watchlist is a named search with its own filters, stored in `koopjes.db`
+(table `watchlist`) — for hunting a loose part such as a powermeter or a newer
+bike computer next to the bike search, without the two getting in each
+other's way. Save one once:
+
+```bash
+python racefiets_jev.py --watchlist-add powermeter --query powermeter \
+    --min-price 100 --max-price 500 --reference-file reference_bike_accessories.csv
+python racefiets_jev.py --watchlist-list
+```
+
+`--watchlist-add` stores `--query` plus whichever of these differ from their
+default: `--min-price`, `--max-price`, `--min-frame-height`,
+`--max-frame-height`, `--bargain-ratio`, `--reference-file`, `--bid-lookup`
+(`--no-bid-lookup` is stored as `none`), `--bids-only` and `--min-score`.
+Saving under an existing name replaces it; `all` and names with a comma are
+reserved. Then run it, alone or next to a regular query:
+
+```bash
+python racefiets_jev.py --watchlist powermeter
+python racefiets_jev.py --query racefiets --max-frame-height 58 --watchlist powermeter
+python racefiets_jev.py --watchlist all      # every active watchlist
+```
+
+The two sides don't share filters. A watchlist starts from the defaults and
+applies only its own — in the second example `--max-frame-height 58` applies
+to `racefiets` only (it would otherwise drop every powermeter, which has no
+frame size), and the watchlist's price range doesn't touch the bike query
+either. Everything that is about *how* the run is done rather than *what*
+it looks for — `--pages`, `--delay`, `--db`, the history/log/price-history
+files, `--open-browser` — comes from the command line, so a scheduled shallow
+run stays shallow. Each watchlist gets its own report, named after it
+(`racefiets_report_powermeter.html`, and `<output>_powermeter.csv` with
+`--output`); a watchlist whose query is comma-separated gets one per term.
+Without `--query`, only the watchlists run; an unknown name stops the run
+before anything is fetched.
+
+A watchlist's `--reference-file` is also what gets imported into `model` and
+matched into `listing_model` for its listings, so running the accessories
+with `reference_bike_accessories.csv` is how those end up linked in the
+database.
 
 ### `valuation.py` — what is my own bike worth?
 
