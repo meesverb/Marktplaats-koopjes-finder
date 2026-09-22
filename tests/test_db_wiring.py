@@ -25,9 +25,11 @@ class TempDirTest(unittest.TestCase):
     def path(self, name: str) -> str:
         return str(self.tmp / name)
 
-    def run_query(self, listings, extra_argv):
-        def fake_collect(query, pages, delay):
-            return list(listings)
+    def run_query(self, listings, extra_argv, complete=True):
+        # complete: a real crawl reports whether it saw every result; most
+        # sweep tests below are about a crawl that did.
+        def fake_collect(query, pages, delay, **crawl_options):
+            return mp.CrawlResult(listings, complete=complete, note="1 van de 26354 resultaten gezien")
 
         def fake_enrich(ls, delay, mode, session=None):
             pass
@@ -41,11 +43,12 @@ class TempDirTest(unittest.TestCase):
         ] + extra_argv
         args = mp.parse_args(argv)
 
+        self.stderr = io.StringIO()
         with mock.patch.object(mp, "collect_listings", fake_collect), mock.patch.object(
             mp, "enrich_bid_listings", fake_enrich
         ):
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
-                io.StringIO()
+                self.stderr
             ):
                 mp.run_for_query(args, "test", False)
         return args
@@ -151,6 +154,35 @@ class DisappearanceSweepTest(TempDirTest):
         self.assertIsNone(rows["duur"]["disappeared_at"])
         self.assertIsNone(rows["duur"]["days_online"])
         self.assertIsNone(rows["goedkoop"]["disappeared_at"])
+
+    def test_an_incomplete_full_crawl_never_sweeps(self):
+        # --pages 0 on "racefiets" sees ~5000 of 26000+ results (Marktplaats
+        # stops paging there), and a failed page ends a crawl early. Neither
+        # may mark the rest as sold.
+        db_path = self.path("koopjes.db")
+        self.run_query([make_listing(item_id="a")], ["--db", db_path, "--pages", "0"])
+        self.run_query([make_listing(item_id="b")], ["--db", db_path, "--pages", "0"], complete=False)
+
+        conn = db.connect(db_path)
+        row = conn.execute("SELECT disappeared_at FROM listing WHERE item_id='a'").fetchone()
+        self.assertIsNone(row["disappeared_at"])
+        self.assertIn("verdwijn-sweep overgeslagen", self.stderr.getvalue())
+        self.assertIn("1 van de 26354", self.stderr.getvalue())
+
+    def test_a_crawl_that_says_nothing_about_completeness_never_sweeps(self):
+        db_path = self.path("koopjes.db")
+        self.run_query([make_listing(item_id="a")], ["--db", db_path, "--pages", "0"])
+        with mock.patch.object(mp, "collect_listings", lambda q, p, d, **kw: []):
+            args = mp.parse_args(["--db", db_path, "--pages", "0", "--no-html", "--no-log",
+                                  "--no-price-history", "--no-notify-better",
+                                  "--history-file", self.path("history.json"),
+                                  "--reference-file", self.path("geen-referentie.csv"),
+                                  "--price-history-file", self.path("geen-price-history.csv")])
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                mp.run_for_query(args, "test", False)
+        conn = db.connect(db_path)
+        row = conn.execute("SELECT disappeared_at FROM listing WHERE item_id='a'").fetchone()
+        self.assertIsNone(row["disappeared_at"])
 
     def test_a_listing_that_reappears_is_no_longer_disappeared(self):
         db_path = self.path("koopjes.db")

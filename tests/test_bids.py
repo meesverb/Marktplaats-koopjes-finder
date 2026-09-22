@@ -26,6 +26,11 @@ class ResolveBidPriceTest(unittest.TestCase):
         self.assertIsNone(mp.resolve_bid_price({"bids": []}))
         self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": 0, "bids": []}))
 
+    def test_minus_one_means_no_minimum_not_a_negative_price(self):
+        # What Marktplaats actually sends for "bieden zonder minimum". It used
+        # to become a price of EUR -0.01 and a 100/100 Topdeal.
+        self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": -1, "bids": []}))
+
     def test_values_that_are_not_numbers_are_not_bids(self):
         # bool passes an isinstance(x, (int, float)) check, so a "value": true
         # would count as a bid of one cent and win over a real minimum.
@@ -45,6 +50,13 @@ class EnrichBidListingsTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             mp.enrich_bid_listings([listing], delay=0, mode=mode, session=session)
         return session
+
+    def test_fast_bid_without_minimum_or_bids_stays_priceless(self):
+        listing = make_listing(price_eur=None, price_type="FAST_BID", price_is_bid=True)
+        self.enrich(listing, {"currentMinimumBid": -1, "bids": []}, "fast")
+        self.assertIsNone(listing.price_eur)
+        self.assertIsNone(listing.bid_minimum)
+        self.assertEqual(listing.bid_count, 0)
 
     def test_fast_bid_gets_a_price_it_did_not_have(self):
         listing = make_listing(price_eur=None, price_type="FAST_BID", price_is_bid=True)
@@ -210,8 +222,8 @@ class LookupOrderTest(unittest.TestCase):
     def run_query(self, listings, extra_argv, enrich=None):
         handed_to_lookup = []
 
-        def fake_collect(query, pages, delay):
-            return list(listings)
+        def fake_collect(query, pages, delay, **crawl_options):
+            return mp.CrawlResult(listings, complete=True)
 
         def fake_enrich(ls, delay, mode, session=None):
             handed_to_lookup.extend(l.item_id for l in ls)

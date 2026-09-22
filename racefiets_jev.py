@@ -26,13 +26,14 @@ from dataclasses import dataclass, asdict, fields as dataclass_fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote_plus, urlencode
 
 import requests
 
 import db
 
 BASE_URL = "https://www.marktplaats.nl"
+DEFAULT_QUERY = "racefiets"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -99,14 +100,63 @@ def as_number(value) -> Optional[float]:
     return float(value)
 
 
+PAGE_SIZE = 30
+
+# The search API the site's own "sorteer op"/category menus call. The HTML
+# page ignores sort parameters in its URL (tested: ?sortBy=... and the #sortBy
+# fragment both come back unsorted), so sorting by date and restricting to a
+# category server-side can only go through here.
+SEARCH_API_PATH = "/lrp/api/search"
+SORT_OPTIONS = {
+    # Marktplaats' default ("Standaard"). Not by date: on a 40-page crawl of
+    # "racefiets" today's listings were spread over all 40 pages, only 83 of
+    # 314 on the first three — and 1200 result slots held just 951 distinct
+    # listings, the rest repeats.
+    "optimized": ("OPTIMIZED", "DECREASING"),
+    "newest": ("SORT_INDEX", "DECREASING"),
+}
+
+
+class CrawlResult(list):
+    """collect_listings()'s listings, plus whether the crawl provably saw
+    every result for the query. Only then may the disappearance sweep treat
+    "not seen" as "gone": Marktplaats stops paging at maxAllowedPageNumber
+    (167 pages, ~5000 listings, for "racefiets" with 26000+ results), and a
+    page that fails to load ends the crawl early."""
+
+    def __init__(self, listings=(), complete: bool = False, note: str = ""):
+        super().__init__(listings)
+        self.complete = complete
+        self.note = note
+
+
+def check_page_offset(data: dict, page: int) -> None:
+    """Marktplaats answers a page it doesn't like by redirecting to page 1
+    rather than with an error — that's how every multi-word query used to
+    get page 1 over and over. The response says which offset it served;
+    refuse anything but the one asked for, so the crawl stops loudly instead
+    of storing page 1 N times and calling it N pages."""
+    pagination = (data.get("searchRequest") or {}).get("pagination") or {}
+    offset = as_number(pagination.get("offset"))
+    limit = as_number(pagination.get("limit")) or PAGE_SIZE
+    if offset is not None and page > 1 and offset != (page - 1) * limit:
+        raise RuntimeError(
+            f"Marktplaats gaf offset {int(offset)} terug voor pagina {page} "
+            f"(verwacht {(page - 1) * int(limit)}) — de paginering werkt niet meer zoals "
+            "het script verwacht."
+        )
+
+
 def fetch_page(session: requests.Session, query: str, page: int) -> dict:
     """Fetch one Marktplaats search results page and return its embedded JSON data."""
     # The query goes into the URL *path*, so it has to be encoded as one.
     # requests leaves "?", "#" and "&" alone (they're legal in a URL, just not
     # in a path segment), so a query like "wat?" would turn into an empty
     # query string and a search for "wat". safe="" also catches a slash, which
-    # would otherwise add a path segment.
-    quoted = quote(query, safe="")
+    # would otherwise add a path segment. A space has to become "+", not
+    # "%20": Marktplaats 301-redirects /q/giant%20defy/p/2/ to /q/giant+defy/
+    # — page 1 — so every page of a multi-word query used to be page 1.
+    quoted = quote_plus(query, safe="")
     path = f"/q/{quoted}/" if page <= 1 else f"/q/{quoted}/p/{page}/"
     resp = session.get(BASE_URL + path, timeout=15)
     resp.raise_for_status()
@@ -118,7 +168,49 @@ def fetch_page(session: requests.Session, query: str, page: int) -> dict:
             "changed its page structure or shown a verification challenge."
         )
     data = json.loads(match.group(1))
-    return data["props"]["pageProps"]["searchRequestAndResponse"]
+    result = data["props"]["pageProps"]["searchRequestAndResponse"]
+    check_page_offset(result, page)
+    return result
+
+
+def fetch_api_page(
+    session: requests.Session,
+    query: str,
+    page: int,
+    sort: str = "optimized",
+    category_filter: Optional[tuple[int, list[int]]] = None,
+) -> dict:
+    """Like fetch_page(), through the search API: same response shape, but
+    it honours a sort order and a server-side category restriction.
+    category_filter is (l1 id, [l2 ids]) as resolve_categories() makes it."""
+    sort_by, sort_order = SORT_OPTIONS[sort]
+    params = [
+        ("query", query),
+        ("limit", PAGE_SIZE),
+        ("offset", (page - 1) * PAGE_SIZE),
+        ("sortBy", sort_by),
+        ("sortOrder", sort_order),
+    ]
+    if category_filter is not None:
+        l1, l2s = category_filter
+        params.append(("l1CategoryId", l1))
+        # Plural and repeated: "l2CategoryId" (singular) is silently ignored
+        # and returns every category.
+        params.extend(("l2CategoryIds", l2) for l2 in l2s)
+    resp = session.get(BASE_URL + SEARCH_API_PATH + "?" + urlencode(params), timeout=15)
+    resp.raise_for_status()
+    try:
+        data = json.loads(resp.text)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict) or "listings" not in data:
+        raise RuntimeError(
+            "De zoek-API van Marktplaats gaf geen advertentielijst terug — mogelijk is die "
+            "gewijzigd of werd er een verificatie getoond. Draai zonder --sort/--category "
+            "om de gewone zoekpagina te gebruiken."
+        )
+    check_page_offset(data, page)
+    return data
 
 
 CONFIG_MARKER = "window.__CONFIG__ = "
@@ -220,10 +312,22 @@ def resolve_bid_price(bids_info: dict) -> Optional[float]:
     values = usable_bid_values(bids_info)
     if values:
         return max(values) / 100
-    minimum = as_number(bids_info.get("currentMinimumBid"))
-    if minimum:
-        return minimum / 100
+    minimum = real_minimum_bid(bids_info)
+    if minimum is not None:
+        return minimum
     return None
+
+
+def real_minimum_bid(bids_info: dict) -> Optional[float]:
+    """currentMinimumBid in euros, or None when there is no minimum.
+    Marktplaats sends -1 for "bieden zonder minimum" (seen on every FAST_BID
+    listing without bids we checked, 2026-09-22), and 0 means the same. The
+    old truthiness test let -1 through as a price of EUR -0.01, which
+    scored every such listing 100/100 "Topdeal" at "min. €-0"."""
+    minimum = as_number(bids_info.get("currentMinimumBid"))
+    if minimum is None or minimum <= 0:
+        return None
+    return minimum / 100
 
 
 def enrich_bid_listings(
@@ -265,8 +369,7 @@ def enrich_bid_listings(
             # a parseable value doesn't move resolve_bid_price() either, so
             # the two must count the same thing (see usable_bid_values()).
             listing.bid_count = len(usable_bid_values(bids_info))
-            minimum = as_number(bids_info.get("currentMinimumBid"))
-            listing.bid_minimum = minimum / 100 if minimum else None
+            listing.bid_minimum = real_minimum_bid(bids_info)
             price = resolve_bid_price(bids_info)
             # A MIN_BID listing already has a price from the search results
             # (what the seller is asking) and Marktplaats will accept a
@@ -651,36 +754,158 @@ def parse_listing(raw: dict) -> Listing:
     )
 
 
+def relevant_categories(search_response: dict) -> list[dict]:
+    for facet in search_response.get("facets", []):
+        if facet.get("key") == "RelevantCategories":
+            return facet.get("categories") or []
+    return []
+
+
+def resolve_categories(search_response: dict, wanted: list[str]) -> tuple[int, list[int]]:
+    """Turn --category values (a Marktplaats category key such as
+    "fietsonderdelen", or its number) into what fetch_api_page() sends: one
+    main category and the subcategories under it. Resolved against the
+    query's own RelevantCategories facet, which lists every category the
+    query has results in, with its parent — so a category that isn't in
+    there has nothing to find anyway, and the error can list what is."""
+    by_name: dict[str, dict] = {}
+    for cat in relevant_categories(search_response):
+        if cat.get("id") is None:
+            continue
+        by_name[str(cat["id"])] = cat
+        if cat.get("key"):
+            by_name[str(cat["key"]).lower()] = cat
+
+    chosen = []
+    for name in wanted:
+        cat = by_name.get(name.strip().lower())
+        if cat is None:
+            counted = [c for c in relevant_categories(search_response) if c.get("histogramCount")]
+            counted.sort(key=lambda c: as_number(c.get("histogramCount")) or 0, reverse=True)
+            available = ", ".join(
+                f"{c.get('key')} ({c.get('histogramCount')})" for c in counted[:10]
+            )
+            raise ValueError(
+                f"categorie {name!r} komt niet voor in de resultaten voor deze zoekterm. "
+                f"Wel: {available or 'geen'}"
+            )
+        chosen.append(cat)
+
+    main_ids = {c.get("parentId") or c["id"] for c in chosen}
+    if len(main_ids) > 1:
+        raise ValueError(
+            "de gekozen categorieën vallen onder verschillende hoofdcategorieën; "
+            "Marktplaats zoekt er maar één tegelijk. Maak er twee zoekopdrachten van."
+        )
+    l1 = int(main_ids.pop())
+    if any(not c.get("parentId") for c in chosen):
+        # The main category itself was asked for: that already covers every
+        # subcategory under it.
+        return l1, []
+    return l1, [int(c["id"]) for c in chosen]
+
+
+# A "wanted" ad: someone looking to buy, listed in the same category as the
+# things for sale. Nothing in the listing data marks it (adType and traits
+# look like any other ad's), so the title is all there is. Only where the
+# word stands alone — at the start, at the end, or in brackets — since "veel
+# gezocht model" is a seller's sales pitch. Without this they came out on top:
+# no price, a "bieden" button, and a 100/100 Topdeal.
+WANTED_AD_RE = re.compile(
+    r"^\W*gezocht\b|\(\s*gezocht\s*\)|(?<!veel )(?<!zeer )(?<!vaak )\bgezocht\W*$",
+    re.I,
+)
+
+
+def is_wanted_ad(title: str) -> bool:
+    return bool(WANTED_AD_RE.search(title or ""))
+
+
+def other_dominant_categories(search_response: dict, kept: Optional[int]) -> list[dict]:
+    return [
+        c for c in relevant_categories(search_response) if c.get("dominant") and c.get("id") != kept
+    ]
+
+
 def collect_listings(
-    query: str, pages: int, delay: float, session: Optional[requests.Session] = None
-) -> list[Listing]:
+    query: str,
+    pages: int,
+    delay: float,
+    session: Optional[requests.Session] = None,
+    *,
+    sort: str = "optimized",
+    categories: Optional[list[str]] = None,
+) -> CrawlResult:
     """Fetch listings page by page. pages <= 0 means "fetch everything
     Marktplaats allows browsing to" (it caps pagination at a few hundred
-    listings regardless of the total match count)."""
+    listings regardless of the total match count).
+
+    sort "newest" and categories go through the search API
+    (fetch_api_page()); the default goes through the search page as it
+    always has. With categories, the first request is an unrestricted one
+    to resolve them (see resolve_categories()), and Marktplaats does the
+    category filtering from there — instead of the dominant-category guess
+    below, which keeps only one category."""
     session = session or requests.Session()
     session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
 
     print(f"Zoeken naar '{query}' op Marktplaats...", file=sys.stderr)
+    category_filter: Optional[tuple[int, list[int]]] = None
+    if categories:
+        try:
+            first = fetch_api_page(session, query, 1, sort)
+            category_filter = resolve_categories(first, categories)
+        except (requests.RequestException, RuntimeError, ValueError) as exc:
+            print(f"error: --category: {exc}", file=sys.stderr)
+            return CrawlResult([], complete=False, note=f"--category: {exc}")
+        time.sleep(delay)
+
+    use_api = sort != "optimized" or category_filter is not None
+
+    def fetch(page_number: int) -> dict:
+        if use_api:
+            return fetch_api_page(session, query, page_number, sort, category_filter)
+        return fetch_page(session, query, page_number)
+
     listings: dict[str, Listing] = {}
+    raw_ids: set = set()
+    total_results: Optional[float] = None
     dominant_category: Optional[int] = None
     skipped_offtopic = 0
     skipped_without_id = 0
+    skipped_wanted = 0
+    fetch_error: Optional[str] = None
+    reached_end = False
     page = 1
     while True:
         try:
-            data = fetch_page(session, query, page)
+            data = fetch(page)
         except (requests.RequestException, RuntimeError) as exc:
             print(f"warning: failed to fetch page {page}: {exc}", file=sys.stderr)
+            fetch_error = f"pagina {page} kon niet worden opgehaald"
             break
 
         raw_listings = data.get("listings", [])
         if not raw_listings:
+            reached_end = True
             break
 
-        if dominant_category is None:
+        if total_results is None:
+            total_results = as_number(data.get("totalResultCount"))
+        if dominant_category is None and category_filter is None:
             dominant_category = extract_dominant_category(data)
+            others = other_dominant_categories(data, dominant_category)
+            if dominant_category is not None and others:
+                names = ", ".join(f"{c.get('key')} ({c.get('histogramCount')})" for c in others)
+                print(
+                    f"  let op: Marktplaats noemt voor '{query}' ook {names} als hoofdcategorie; "
+                    "die worden overgeslagen. Neem ze mee met --category.",
+                    file=sys.stderr,
+                )
 
         for raw in raw_listings:
+            if raw.get("itemId"):
+                raw_ids.add(raw.get("itemId"))
             if dominant_category is not None and raw.get("categoryId") != dominant_category:
                 skipped_offtopic += 1
                 continue
@@ -691,6 +916,9 @@ def collect_listings(
                 # without one they would overwrite each other and be "new"
                 # forever. Rather drop them than merge two ads into one.
                 skipped_without_id += 1
+                continue
+            if is_wanted_ad(listing.title):
+                skipped_wanted += 1
                 continue
             listings[listing.item_id] = listing
 
@@ -705,6 +933,8 @@ def collect_listings(
 
         reached_requested_limit = pages > 0 and page >= pages
         reached_site_limit = page >= max_page
+        if reached_site_limit:
+            reached_end = True
         if reached_requested_limit or reached_site_limit:
             break
         page += 1
@@ -716,6 +946,12 @@ def collect_listings(
             "(niet uit elkaar te houden en niet te onthouden)",
             file=sys.stderr,
         )
+    if skipped_wanted:
+        print(
+            f"  {skipped_wanted} 'gezocht'-advertentie(s) overgeslagen (iemand die zoekt, "
+            "geen aanbod)",
+            file=sys.stderr,
+        )
     if skipped_offtopic:
         print(
             f"  {skipped_offtopic} advertenties buiten de hoofdcategorie overgeslagen "
@@ -724,7 +960,24 @@ def collect_listings(
             file=sys.stderr,
         )
 
-    return list(listings.values())
+    # Complete = every result for the query went past us: no page failed,
+    # paging ran to the end, and the distinct listings seen (before any
+    # filtering) add up to the total Marktplaats reports. The last test is
+    # what catches the page cap, and also the default sort's habit of
+    # serving the same listing on several pages while skipping others.
+    if fetch_error:
+        complete, note = False, fetch_error
+    elif not reached_end:
+        complete, note = False, "niet alle pagina's opgehaald"
+    elif total_results is not None and len(raw_ids) < total_results:
+        complete = False
+        note = (
+            f"{len(raw_ids)} van de {int(total_results)} resultaten gezien — Marktplaats "
+            "toont er niet meer, of herhaalde advertenties over pagina's heen"
+        )
+    else:
+        complete, note = True, ""
+    return CrawlResult(listings.values(), complete=complete, note=note)
 
 
 def filter_by_price(
@@ -742,8 +995,16 @@ def filter_by_price(
 
 
 def filter_by_frame_height(
-    listings: list[Listing], min_height: Optional[float], max_height: Optional[float]
+    listings: list[Listing],
+    min_height: Optional[float],
+    max_height: Optional[float],
+    keep_unknown: bool = False,
 ) -> list[Listing]:
+    """keep_unknown decides what happens to a listing without a (readable)
+    frame size. The CLI keeps them unless --strict-frame-height: on a
+    40-page crawl of "racefiets", 76% of the bikes had no size filled in, so
+    dropping them hid three out of four bikes — most of which just say
+    "maat 56" in the text instead."""
     if min_height is None and max_height is None:
         return listings
 
@@ -754,6 +1015,8 @@ def filter_by_frame_height(
     for listing in listings:
         bounds = frame_height_bounds(listing.frame_height)
         if bounds is None:
+            if keep_unknown:
+                result.append(listing)
             continue
         bucket_lo, bucket_hi = bounds
         if bucket_hi >= lo and bucket_lo <= hi:
@@ -1775,10 +2038,14 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--query",
-        default="racefiets",
-        help="Search query (default: racefiets). Comma-separate multiple terms (e.g. "
+        # None rather than DEFAULT_QUERY, so main() can tell "--watchlist
+        # powermeter" (run only that) from "--query racefiets --watchlist
+        # powermeter" (run both). See resolve_queries().
+        default=None,
+        help=f"Search query (default: {DEFAULT_QUERY}). Comma-separate multiple terms (e.g. "
         "\"racefiets,luidsprekers\") to run them all in one go — each gets its own HTML/CSV "
-        "report (named after the query), while history/log/reference files stay shared.",
+        "report (named after the query), while history/log/reference files stay shared. "
+        "With --watchlist and no --query, only the watchlists run.",
     )
     parser.add_argument(
         "--pages",
@@ -1795,6 +2062,28 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--max-frame-height", type=float, default=None, help="Ignore listings with a bigger frame size (cm)"
+    )
+    parser.add_argument(
+        "--strict-frame-height",
+        action="store_true",
+        help="With --min/--max-frame-height, also drop listings that don't state a frame size. "
+        "By default they're kept: most bikes on Marktplaats have no size filled in",
+    )
+    parser.add_argument(
+        "--sort",
+        choices=sorted(SORT_OPTIONS),
+        default="optimized",
+        help="Result order to crawl in: 'optimized' (default, Marktplaats' own 'Standaard' "
+        "order via the search page) or 'newest' (newest first, via Marktplaats' search API) — "
+        "use newest for scheduled runs, so a few pages cover everything new since the last run",
+    )
+    parser.add_argument(
+        "--category",
+        default=None,
+        help="Only search in these Marktplaats categories (comma-separated key or number, e.g. "
+        "'fietsonderdelen' or 'fietsaccessoires-fietscomputers'), filtered by Marktplaats "
+        "itself. Replaces the automatic main-category guess, which keeps only one category. "
+        "An unknown category lists the ones that do have results",
     )
     parser.add_argument(
         "--bargain-ratio",
@@ -1898,7 +2187,238 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Intake of your own bike, for the report's 'Mijn fiets' and 'Upgrade' tabs "
         "(PLAN_FIETSWAARDE.md fase 6). Missing file = those tabs say so (default: mijn_fiets.md)",
     )
+    parser.add_argument(
+        "--watchlist",
+        default=None,
+        help="Run saved searches from the database by name (comma-separated, or 'all' for every "
+        "active one), each with its own filters and its own report "
+        "(<html>_<name>.html) — PLAN_FIETSWAARDE.md fase 8. Filters given on the command line "
+        "don't apply to them, and theirs don't apply to --query",
+    )
+    parser.add_argument(
+        "--watchlist-add",
+        metavar="NAME",
+        default=None,
+        help="Save --query plus the filter flags given on this command line (--min-price, "
+        "--max-price, --reference-file, --category, ...) as watchlist NAME, replacing an existing one. "
+        "Doesn't crawl",
+    )
+    parser.add_argument(
+        "--watchlist-remove", metavar="NAME", default=None, help="Delete watchlist NAME. Doesn't crawl"
+    )
+    parser.add_argument(
+        "--watchlist-list", action="store_true", help="List the saved watchlists. Doesn't crawl"
+    )
     return parser.parse_args(argv)
+
+
+# The flags a watchlist carries itself (fase 8): everything that decides
+# *which* listings end up in its report and what they're compared against.
+# The rest — --pages, --sort, --bid-lookup, --delay, --db, the history/log
+# files, --open-browser — is how this run is done, not what it's looking
+# for, and stays the command line's. That's also everything that decides how
+# many requests a run makes: a watchlist that carried its own page count or
+# bid lookup could quietly turn a shallow scheduled run into a full crawl,
+# or ignore a --bid-lookup none given for exactly that reason.
+WATCHLIST_FILTERS = {
+    "min_price": "number",
+    "max_price": "number",
+    "min_frame_height": "number",
+    "max_frame_height": "number",
+    "strict_frame_height": "flag",
+    "bargain_ratio": "number",
+    "reference_file": "text",
+    "category": "text",
+    "bids_only": "flag",
+    "min_score": "number",
+}
+WATCHLIST_ALL = "all"
+
+
+def watchlist_filters_from_args(args: argparse.Namespace) -> dict:
+    """The filters to store for --watchlist-add: only those that differ from
+    the default, so a watchlist saved before a default changes follows the new
+    default instead of freezing the old one."""
+    defaults = parse_args([])
+    current = {k: getattr(args, k) for k in WATCHLIST_FILTERS}
+    return {k: v for k, v in current.items() if v != getattr(defaults, k)}
+
+
+def args_for_watchlist(args: argparse.Namespace, entry: dict) -> argparse.Namespace:
+    """A copy of `args` for one watchlist run: every filter back at its
+    default, then the watchlist's own on top. Starting from the defaults
+    rather than from the command line is the point — `--max-frame-height 58
+    --watchlist powermeter` would otherwise drop every powermeter, since
+    filter_by_frame_height() drops listings without a frame size."""
+    defaults = parse_args([])
+    run_args = argparse.Namespace(**vars(args))
+    for key in WATCHLIST_FILTERS:
+        setattr(run_args, key, getattr(defaults, key))
+
+    filters = dict(entry["filters"])
+    if "bid_lookup" in filters:
+        # Stored by the first version of --watchlist-add, before bid lookup
+        # moved to the command line's side (see WATCHLIST_FILTERS).
+        filters.pop("bid_lookup")
+        print(
+            f"warning: watchlist {entry['name']!r} heeft een opgeslagen bid_lookup; die wordt "
+            "genegeerd, --bid-lookup komt van de commandoregel. Sla hem opnieuw op om dit te "
+            "laten verdwijnen.",
+            file=sys.stderr,
+        )
+    unknown = sorted(set(filters) - set(WATCHLIST_FILTERS))
+    if unknown:
+        # Only reachable by editing the database by hand (--watchlist-add
+        # stores nothing else). Skipping the key would run a wider search than
+        # the one that was saved.
+        raise ValueError(
+            f"watchlist {entry['name']!r} heeft onbekende filter(s): {', '.join(unknown)}"
+        )
+    for key, value in filters.items():
+        kind = WATCHLIST_FILTERS[key]
+        # Same reasoning as the unknown-key check: a value that was edited
+        # into the wrong type would otherwise fail halfway through the run
+        # ("400" < 350), or worse, be compared as a string without failing.
+        if kind == "number":
+            ok = value is None or (isinstance(value, (int, float)) and not isinstance(value, bool))
+        elif kind == "flag":
+            ok = isinstance(value, bool)
+        elif kind == "text":
+            ok = value is None or isinstance(value, str)
+        else:
+            ok = value in kind
+        if not ok:
+            raise ValueError(
+                f"watchlist {entry['name']!r}: filter {key} heeft een ongeldige waarde {value!r}"
+            )
+        setattr(run_args, key, value)
+    return run_args
+
+
+def warn_missing_reference_file(name: str, path: Optional[str]) -> None:
+    """load_reference_data() treats a missing file as "no reference data",
+    which is right for the default path but not for one a watchlist names on
+    purpose: its report would silently lose every model match and new-price
+    comparison. A relative path is looked up from the directory the script
+    is started in, which a scheduled task doesn't always share."""
+    if path and not Path(path).exists():
+        print(
+            f"warning: watchlist {name!r}: referentiebestand {path} niet gevonden "
+            f"(gezocht vanuit {Path.cwd()}); deze run vergelijkt zonder referentiemodellen.",
+            file=sys.stderr,
+        )
+
+
+def resolve_queries(args: argparse.Namespace) -> list[str]:
+    """The plain --query terms to run. Without --query that's the default
+    query, unless --watchlist was given: then the watchlists are the run."""
+    if args.query is None:
+        if args.watchlist:
+            return []
+        return [DEFAULT_QUERY]
+    return [q.strip() for q in args.query.split(",") if q.strip()]
+
+
+def load_watchlists(args: argparse.Namespace) -> list[dict]:
+    """Look up every name in --watchlist before anything is crawled, so a
+    typo fails at once instead of after the regular queries have run."""
+    names = [n.strip() for n in args.watchlist.split(",") if n.strip()]
+    if not names:
+        raise ValueError("--watchlist zonder naam")
+    if not Path(args.db).exists():
+        # Not db.connect(): that would create an empty database just to say
+        # there's nothing in it.
+        raise ValueError(
+            f"geen watchlists: {args.db} bestaat nog niet. Sla er eerst een op met "
+            "--watchlist-add."
+        )
+    conn = db.connect(args.db)
+    try:
+        if names == [WATCHLIST_ALL]:
+            entries = db.list_watchlists(conn, active_only=True)
+            if not entries:
+                raise ValueError(f"geen actieve watchlists in {args.db}")
+            return entries
+        entries = []
+        for name in names:
+            entry = db.get_watchlist(conn, name)
+            if entry is None:
+                known = ", ".join(e["name"] for e in db.list_watchlists(conn)) or "geen"
+                raise ValueError(f"onbekende watchlist {name!r} (bekend: {known})")
+            entries.append(entry)
+        return entries
+    finally:
+        conn.close()
+
+
+def manage_watchlists(args: argparse.Namespace) -> int:
+    """--watchlist-add / --watchlist-remove / --watchlist-list. None of them
+    crawls: saving a search and running it are separate steps, so a typo in
+    the filters can be seen in --watchlist-list before it costs requests."""
+    if args.watchlist:
+        print(
+            "error: --watchlist draait zoekopdrachten, --watchlist-add/-remove/-list beheert "
+            "ze; doe dat in twee aparte commando's.",
+            file=sys.stderr,
+        )
+        return 1
+    if args.no_db and (args.watchlist_add or args.watchlist_remove):
+        print("error: watchlists staan in de database; laat --no-db weg.", file=sys.stderr)
+        return 1
+
+    if args.watchlist_add:
+        name = args.watchlist_add.strip()
+        if not name or name == WATCHLIST_ALL or "," in name:
+            print(
+                f"error: {name!r} kan geen watchlistnaam zijn ('{WATCHLIST_ALL}' en komma's "
+                "zijn gereserveerd voor --watchlist).",
+                file=sys.stderr,
+            )
+            return 1
+        if not args.query or not args.query.strip():
+            print("error: --watchlist-add heeft een --query nodig.", file=sys.stderr)
+            return 1
+        filters = watchlist_filters_from_args(args)
+        warn_missing_reference_file(name, filters.get("reference_file"))
+        conn = db.connect(args.db)
+        try:
+            db.save_watchlist(conn, name, args.query.strip(), filters)
+        finally:
+            conn.close()
+        print(f"Watchlist {name!r} opgeslagen: {format_watchlist(name, args.query.strip(), filters)}")
+        return 0
+
+    if not Path(args.db).exists():
+        if args.watchlist_remove:
+            print(f"error: onbekende watchlist {args.watchlist_remove!r}", file=sys.stderr)
+            return 1
+        print(f"Geen watchlists ({args.db} bestaat nog niet).")
+        return 0
+
+    conn = db.connect(args.db)
+    try:
+        if args.watchlist_remove:
+            if not db.delete_watchlist(conn, args.watchlist_remove):
+                print(f"error: onbekende watchlist {args.watchlist_remove!r}", file=sys.stderr)
+                return 1
+            print(f"Watchlist {args.watchlist_remove!r} verwijderd.")
+            return 0
+
+        entries = db.list_watchlists(conn)
+    finally:
+        conn.close()
+    if not entries:
+        print("Geen watchlists.")
+    for e in entries:
+        status = "" if e["active"] else "  (inactief)"
+        print(format_watchlist(e["name"], e["query"], e["filters"]) + status)
+    return 0
+
+
+def format_watchlist(name: str, query: str, filters: dict) -> str:
+    parts = [f"--{k.replace('_', '-')} {v}" if v is not True else f"--{k.replace('_', '-')}"
+             for k, v in sorted(filters.items())]
+    return f"{name}: --query {query!r}" + (" " + " ".join(parts) if parts else "")
 
 
 def safe_query_slug(query: str) -> str:
@@ -1915,6 +2435,12 @@ def per_query_path(base: str, query: str, multi: bool) -> str:
     return str(p.with_name(f"{p.stem}_{safe_query_slug(query)}{p.suffix}"))
 
 
+def report_path(base: str, query: str, multi: bool, report_name: Optional[str]) -> str:
+    if report_name is not None:
+        return per_query_path(base, report_name, True)
+    return per_query_path(base, query, multi)
+
+
 def sync_database(
     args: argparse.Namespace,
     query: str,
@@ -1924,6 +2450,8 @@ def sync_database(
     started_at: str,
     finished_at: str,
     reference_matches: Optional[dict[str, list[str]]] = None,
+    crawl_complete: bool = False,
+    crawl_note: str = "",
 ) -> None:
     """Mirror this run into koopjes.db, alongside the CSV/JSON files that
     stay the ones actually read elsewhere (reference_overview.py etc.) —
@@ -1963,7 +2491,18 @@ def sync_database(
         # collect_listings' own convention) has actually looked at every
         # listing for this query — a shallow --pages 3 run would otherwise
         # mark everything past page 3 as disappeared.
-        if args.pages <= 0:
+        if args.pages <= 0 and not crawl_complete:
+            # --pages 0 is a request, not a guarantee: Marktplaats stops
+            # paging at ~5000 results, and a failed page ends the crawl
+            # early. Sweeping then marks everything the crawl didn't reach as
+            # sold, with a days_online that E2 would take at face value.
+            print(
+                f"verdwijn-sweep overgeslagen: de crawl van '{query}' was niet compleet "
+                f"({crawl_note or 'onbekende reden'}). Een smallere zoekterm, --category of "
+                "--sort newest maakt hem compleet.",
+                file=sys.stderr,
+            )
+        elif args.pages <= 0:
             # Against everything the crawl saw, not against what survived the
             # filters: with --max-price 150 the listings above it are still
             # online, they just aren't in this report. Sweeping on the
@@ -1979,15 +2518,30 @@ def sync_database(
         conn.close()
 
 
-def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
-    if multi:
+def run_for_query(
+    args: argparse.Namespace, query: str, multi: bool, report_name: Optional[str] = None
+) -> None:
+    """report_name is set for a watchlist run: its HTML/CSV then always get
+    their own file named after it, so a powermeter watch never overwrites
+    the racefiets report that the same scheduled run just wrote."""
+    if report_name is not None:
+        print(f"\n=== watchlist {report_name}: {query} ===")
+    elif multi:
         print(f"\n=== {query} ===")
 
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    listings = collect_listings(query, args.pages, args.delay)
+    categories = [c.strip() for c in (args.category or "").split(",") if c.strip()]
+    listings = collect_listings(
+        query, args.pages, args.delay, sort=args.sort, categories=categories or None
+    )
     # Kept before any filtering: this is what the crawl actually saw, which is
     # what "has this listing disappeared?" has to be answered against.
     crawled_item_ids = {listing.item_id for listing in listings}
+    # A plain list (only a test's stand-in returns one) says nothing about
+    # completeness, so it counts as incomplete: the sweep is the one step
+    # where guessing wrong corrupts data.
+    crawl_complete = getattr(listings, "complete", False)
+    crawl_note = getattr(listings, "note", "")
 
     # Filter on what the search results already tell us before the bid lookup,
     # which costs one request (plus --delay) per bidding listing: a listing
@@ -1997,7 +2551,12 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
     # yet, so they all pass), but under --bid-lookup all it saves a request
     # for every MIN_BID outside the range.
     listings = filter_by_price(listings, args.min_price, args.max_price)
-    listings = filter_by_frame_height(listings, args.min_frame_height, args.max_frame_height)
+    listings = filter_by_frame_height(
+        listings,
+        args.min_frame_height,
+        args.max_frame_height,
+        keep_unknown=not args.strict_frame_height,
+    )
 
     bid_lookup = "none" if args.no_bid_lookup else args.bid_lookup
     enrich_bid_listings(listings, args.delay, bid_lookup)
@@ -2047,6 +2606,8 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
             started_at=started_at,
             finished_at=finished_at,
             reference_matches=reference_matches,
+            crawl_complete=crawl_complete,
+            crawl_note=crawl_note,
         )
 
     # Captured before --bids-only/--min-score filter the list for the
@@ -2066,12 +2627,12 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
     print_bid_overview(listings, headroom=bid_headroom_by_id(listings, all_stats.get("median")))
 
     if args.output:
-        output_path = per_query_path(args.output, query, multi)
+        output_path = report_path(args.output, query, multi, report_name)
         write_csv(listings, output_path)
         print(f"\nWrote {len(listings)} listings to {output_path}")
 
     if not args.no_html:
-        html_path = per_query_path(args.html, query, multi)
+        html_path = report_path(args.html, query, multi, report_name)
         panels = build_report_panels(args, listings, all_stats.get("median"))
         write_html(listings, html_path, query, stats=all_stats, panels=panels)
         print(f"Wrote HTML overview to {html_path}")
@@ -2113,14 +2674,33 @@ def notify_better_matches(listings: list[Listing]) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
 
-    queries = [q.strip() for q in args.query.split(",") if q.strip()]
-    if not queries:
+    if args.watchlist_add or args.watchlist_remove or args.watchlist_list:
+        return manage_watchlists(args)
+
+    queries = resolve_queries(args)
+    watch_runs = []
+    if args.watchlist:
+        try:
+            for entry in load_watchlists(args):
+                run_args = args_for_watchlist(args, entry)
+                warn_missing_reference_file(entry["name"], entry["filters"].get("reference_file"))
+                terms = [q.strip() for q in entry["query"].split(",") if q.strip()]
+                for term in terms:
+                    name = entry["name"] if len(terms) == 1 else f"{entry['name']} {term}"
+                    watch_runs.append((run_args, term, name))
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    if not queries and not watch_runs:
         print("error: no search query given", file=sys.stderr)
         return 1
     multi = len(queries) > 1
 
     for query in queries:
         run_for_query(args, query, multi)
+    for run_args, query, name in watch_runs:
+        run_for_query(run_args, query, True, report_name=name)
 
     return 0
 
