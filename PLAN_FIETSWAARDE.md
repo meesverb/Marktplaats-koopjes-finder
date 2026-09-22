@@ -75,19 +75,21 @@ bestand voordat je aan de taxatie begint. Samengevat: Giant Defy **Composite**
 — dus scenario B (fiets compleet met stockwielen, carbon wielset apart) kan
 doorgerekend worden.
 
-Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open):
+Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open): de staat
+(kilometerstand, slijtage, schade), wat er meegaat bij verkoop, de
+verkoopregio, en of er geld bij mag boven op de opbrengst.
 
-1. **Was de Ultegra 6700 fabrieksuitrusting of een upgrade?** 6700 is
-   periode-correct voor 2012, dus mogelijk valt er helemaal geen
-   upgrade-investering terug te verdienen. Zoek uit waar de 2012 Defy
-   Composite mee geleverd werd vóórdat je de "upgrade recovery"-berekening uit
-   §6 presenteert.
-2. Merk, velghoogte en tubeless-ja/nee van de AliExpress-wielset.
-3. Staat: kilometerstand, schade, slijtage ketting/cassette, leeftijd banden.
-4. Wat er meegaat bij verkoop (pedalen, houder, de Roam zelf).
-5. Verkoopregio; verzenden of alleen ophalen.
-6. Budgetruimte — mag er geld bij? *(Aanname tot dan: budget = midden-taxatie,
-   plus een getoonde band van +€250.)*
+Twee eerder kritieke punten zijn inmiddels beantwoord en veranderen het werk:
+
+- **De Ultegra zat er al op bij aankoop.** Er valt dus aan de groepset niets
+  terug te verdienen; de upgrade-recovery-berekening uit §6 gaat alléén over de
+  wielset van €300. Dat maakt de taxatie simpeler: comps op Defy Composite
+  2012, plus de wielset als aparte post.
+- **De wielset is een CSC 50 mm carbon clincher** (25 mm buiten / 18 mm binnen,
+  naven AS511SB/FS522SB — vrijwel zeker Novatec). Herkenbaar merk en
+  herkenbare naven, dus géén "naamloos carbon" in de waardering. Maar wel
+  clincher, velrem en met 18 mm binnenbreedte gebouwd rond 25 mm banden: een
+  smalle, krimpende koperskring.
 
 **Uitvoer van deze fase:** `mijn_fiets.md` (bestaat) plus rijen in de tabel
 `owned_item` (§5) zodra fase 1 er is — fase 1 importeert `mijn_fiets.md`.
@@ -227,10 +229,16 @@ presenteer het gewoon.
 
 ### Specifieke aandachtspunten voor deze fiets
 
-- **AliExpress carbon wielen**: naamloos carbon wordt door kopers zwaar
-  afgeprijsd, en "AliExpress" in de advertentietekst kan de gepercipieerde
-  waarde van de hele fiets omlaag trekken. Zoek de werkelijke vraagprijzen op
-  Marktplaats op, ga niet uit van een percentage van €300.
+- **De CSC-wielset**: zoek comps op de werkelijke kenmerken (50 mm carbon
+  clincher, velrem, Novatec-naven), niet op "AliExpress wielen" en niet als
+  percentage van de €300 nieuwprijs. Drie dingen duwen tegengesteld: merknaam
+  en herkenbare naven duwen omhoog, velrem + clincher + 18 mm binnenbreedte
+  duwen omlaag. Zoek daarom apart op vergelijkbare Chinese carbon velremsets
+  (CSC, Elitewheels, Superteam, Yoeleo, Winspace) in plaats van op merkloze
+  sets, anders schat je te laag.
+- **Velrem-carbon is een krimpende markt.** Dit onderdeel veroudert sneller dan
+  de rest van de fiets. Als de eigenaar twijfelt over het moment van verkopen:
+  hier is wachten duurder dan bij het frame.
 - **Pirelli P Zero Race banden**: gebruikte banden voegen in de praktijk
   nauwelijks iets toe aan de verkoopprijs. Waarderen als klein plusje, niet als
   component.
@@ -270,7 +278,17 @@ Kandidaat = `past_qua_maat` ∧ `kwaliteitsscore > baseline + marge` ∧
 `effectieve_prijs ≤ budget`.
 
 - `budget` = midden-taxatie van het gekozen scenario (A of B), plus een
-  instelbare marge.
+  instelbare marge. **Het scenario hangt af van de kandidaat**, want de
+  CSC-wielset is een velremset:
+  - kandidaat met **velremmen** → de wielset kan mee naar de nieuwe fiets.
+    Budget = opbrengst van de fiets met de originele wielen (scenario B, alleen
+    het fietsdeel), en de kandidaat krijgt in de score de waarde van de
+    meeverhuisde wielen erbij.
+  - kandidaat met **schijfremmen** → de wielset kan niet mee en moet verkocht
+    worden. Budget = scenario B volledig (fiets + wielset).
+
+  Dat is geen detail: het verschil bepaalt of een schijfremfiets binnen bereik
+  ligt. Reken het per kandidaat uit in plaats van één budget vooraf te kiezen.
 - `effectieve_prijs` = vraagprijs × onderhandelingsfactor voor vaste prijzen,
   of het huidige bod voor biedadvertenties. Toon altijd **beide**: vraagprijs
   én verwachte biedprijs. "Bieden" hoort in de rekensom te zitten, niet als

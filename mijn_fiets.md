@@ -11,11 +11,12 @@ en de open punten staan eronder. Fase 1 importeert dit naar `owned_item`.
 | Framemateriaal | Carbon |
 | Framemaat | 56 |
 | Groepset | Shimano **Ultegra 6700**, mechanisch (geen Di2) |
-| Wielset (gemonteerd) | Carbon, AliExpress, nieuwprijs ca. €300 |
+| Wielset (gemonteerd) | **CSC** carbon clincher, 50 mm hoog, 25 mm buiten / 18 mm binnen, naven AS511SB (voor) / FS522SB (achter). Via AliExpress, nieuwprijs ca. €300 |
 | Originele wielen | **Nog in bezit** — scenario B is mogelijk |
 | Banden | Pirelli P Zero Race |
 | Fietscomputer | Wahoo Elemnt Roam (v1) |
 | Framenummer | Niet te koppelen aan een modeljaar/uitvoering |
+| Herkomst groepset | **Zat er al op bij aankoop** — geen eigen investering |
 
 ## Wat hier direct uit volgt
 
@@ -35,6 +36,33 @@ uitvoerende agent verifieert ze alsnog met bronnen (zie §4 van het plan).
   zijn zowel veel kopers als veel vergelijkbare advertenties. Dat betekent een
   hogere `n` voor de comps (E1) en dus een betrouwbaardere taxatie dan bij een
   extreme maat.
+- **De groepset is geen eigen investering.** Hij zat er al op bij aankoop, dus
+  er valt aan de Ultegra niets "terug te verdienen" — de enige post waarvoor de
+  upgrade-recovery-berekening uit §6 zin heeft, is de wielset van €300. Dat
+  maakt de taxatie een stuk rechttoe-rechtaan: comps op Defy Composite 2012,
+  plus de wielset apart. *(Let op: "zat er al op" bewijst niet dat het de
+  fabrieksuitrusting is — een vorige eigenaar kan het gedaan hebben. Voor de
+  taxatie maakt dat niet uit, voor het bepalen van de exacte trim wel.)*
+- **De naven zijn een verkoopargument.** AS511SB/FS522SB zijn vrijwel zeker
+  Novatec-naaftypes: breed gebruikt in Chinese carbon-bouwsels, serviceerbaar
+  en met verkrijgbare onderdelen. Samen met de merknaam CSC tilt dat de wielset
+  uit de categorie "naamloos AliExpress" naar een herkenbaar product. Dat is
+  geen marketingtruc maar de juiste omschrijving, en het scheelt in de vraag.
+  **Advies voor de advertentie:** zet er "CSC 50 mm carbon clincher, Novatec
+  AS511SB/FS522SB naven, 25 mm buiten / 18 mm binnen" boven, niet "AliExpress
+  wielen". Zelfde product, andere koperskring.
+- **18 mm binnenbreedte en clincher dateren de wielset.** Modern is 21-25 mm
+  binnen en tubeless-ready. 18 mm binnen is gebouwd rond 25 mm banden en werkt
+  slecht met de 28-32 mm die nu de norm is. Dat verkleint de koperskring,
+  ongeacht hoe goed de wielen zijn.
+- **Carbon clincher met velrem is het zwakste punt van de hele fiets.**
+  Remwarmte loopt bij een clincher via het velgbed direct naar de binnenband —
+  precies het scenario waar carbon velremvelgen berucht om zijn op lange
+  afdalingen. Kopers die dit weten, prijzen het af. 50 mm hoogte is wél een
+  gewilde maat, dus het is niet alleen slecht nieuws.
+- **De wielset past niet op een schijfremfiets.** Relevant voor de volgende
+  fiets: koopt hij iets met schijfremmen, dan kan de CSC-set niet mee en
+  *moet* hij verkocht worden. Zie §7 van het plan.
 - **Composite ≠ Advanced.** Binnen Giants carbon-aanbod is Composite de
   instapcarbon en Advanced de hogere laag. Vergelijk in de comps dus niet
   klakkeloos met Defy Advanced-advertenties; dat trekt de schatting te hoog.
@@ -45,23 +73,16 @@ uitvoerende agent verifieert ze alsnog met bronnen (zie §4 van het plan).
 
 ## Nog open
 
-1. **Was de Ultegra 6700 de originele uitrusting of een upgrade?** Dit bepaalt
-   of er überhaupt een "geïnvesteerd bedrag" terug te verdienen valt. 6700 is
-   periode-correct voor een 2012 Defy, dus de kans is reëel dat het gewoon de
-   fabrieksuitrusting is en er niets terug te verdienen valt. **Eerst
-   uitzoeken waar de 2012 Defy Composite mee geleverd werd** (Composite 1 vs 2
-   verschilden in spec) voordat de "upgrade recovery"-berekening uit §6 iets
-   betekent.
-2. **Welk merk is de AliExpress-wielset?** (Elitewheels, Winspace, Superteam,
-   Yoeleo, Trifox, of naamloos.) Plus velghoogte en of hij tubeless is. Een
-   herkenbaar merk verkoopt merkbaar beter dan naamloos carbon.
-3. **Staat**: geschatte kilometerstand, schade aan frame of velgen, slijtage
+1. **Staat**: geschatte kilometerstand, schade aan frame of velgen, slijtage
    van ketting en cassette, ouderdom van de banden.
-4. **Wat gaat er mee** bij verkoop: pedalen, computerhouder, de Roam zelf?
-5. **Verkoopregio** en of verzenden een optie is of alleen ophalen.
-6. **Budgetruimte**: alleen de verkoopopbrengst, of mag er geld bij? Zo ja,
-   hoeveel? *(Aanname tot de eigenaar iets anders zegt: budget = midden-taxatie,
-   en het rapport toont daarnaast een band van +€250.)*
+2. **Wat gaat er mee** bij verkoop: pedalen, computerhouder, de Roam zelf?
+3. **Verkoopregio** en of verzenden een optie is of alleen ophalen.
+4. **Budgetruimte**: alleen de verkoopopbrengst, of mag er geld bij? Zo ja,
+   hoeveel? *(Aanname tot de eigenaar iets anders zegt: budget =
+   midden-taxatie, en het rapport toont daarnaast een band van +€250.)*
+5. Welke trim de 2012 Defy Composite precies was (Composite 1 vs 2) en wat die
+   nieuw kostte — nodig voor de `model`-rij in fase 7, niet voor de taxatie
+   zelf.
 
 ## Voor de scoring
 
@@ -76,7 +97,7 @@ groupset_tier    = 5   (Ultegra, bestaande GROUPSET_CATALOG-schaal)
 speeds           = 10
 electronic       = nee
 brake_type       = velrem
-wheel_type       = carbon, naamloos/AliExpress, velrem
+wheel_type       = carbon clincher 50mm, CSC (Novatec-naven), velrem, 18mm binnen
 extras           = fietscomputer (Wahoo Elemnt Roam v1)
 ```
 
