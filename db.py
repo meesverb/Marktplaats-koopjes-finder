@@ -192,6 +192,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
     )
     row = conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
     current = row["v"] or 0
+    if current > len(MIGRATIONS):
+        # Slicing past the end is empty, so without this the older code would
+        # just carry on against a schema it doesn't know, and write into
+        # tables that may since have changed shape.
+        raise RuntimeError(
+            f"deze database staat op schemaversie {current}, maar deze versie van "
+            f"db.py kent er maar {len(MIGRATIONS)}. Werk de code bij in plaats van "
+            "met een nieuwere database te werken."
+        )
     for version, ddl in enumerate(MIGRATIONS[current:], start=current + 1):
         conn.executescript(ddl)
         conn.execute(
@@ -207,6 +216,17 @@ def _import_seen_listings(conn: sqlite3.Connection, path: str) -> int:
         with open(path, encoding="utf-8") as f:
             history = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
+        return 0
+
+    if not isinstance(history, dict):
+        # Valid JSON, wrong shape (hand-edited, or another file under this
+        # name). racefiets_jev.load_history() treats that as "no history";
+        # do the same rather than dying on .items().
+        print(
+            f"warning: {path} bevat geen advertentie-geschiedenis "
+            f"({type(history).__name__}); overgeslagen.",
+            file=sys.stderr,
+        )
         return 0
 
     for item_id, entry in history.items():
@@ -484,6 +504,18 @@ def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _format_price(value) -> str:
+    """Write a whole number back as "110", not "110.0". SQLite hands back a
+    REAL, so without this every priced row in reference_prices.csv changes
+    the moment the file is exported — a diff full of noise in a file that is
+    maintained (and reviewed) by hand."""
+    if value is None:
+        return ""
+    if float(value).is_integer():
+        return str(int(value))
+    return str(float(value))
+
+
 def export_csv(conn: sqlite3.Connection, path: str) -> int:
     """Write the `model` table back out as reference_prices.csv's exact
     column format (pattern,label,original_price_eur,specs,score,
@@ -505,7 +537,7 @@ def export_csv(conn: sqlite3.Connection, path: str) -> int:
                 [
                     row["pattern"],
                     row["model"],
-                    row["original_price_eur"] if row["original_price_eur"] is not None else "",
+                    _format_price(row["original_price_eur"]),
                     extra.get("specs", ""),
                     row["score"] or "",
                     "1" if extra.get("better_than_baseline") else "0",
