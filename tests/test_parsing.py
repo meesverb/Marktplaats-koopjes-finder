@@ -177,8 +177,32 @@ class GroupsetDetectionTest(unittest.TestCase):
         self.assertEqual(label, "Shimano 105")
 
     def test_electronic_tag(self):
-        label, _ = mp.detect_groupset("Ultegra Di2 elektronisch")
-        self.assertEqual(label, "Shimano Ultegra (elektronisch)")
+        for text in ("Ultegra Di2 elektronisch", "Shimano Ultegra R8050 Di2 groepset",
+                     "Di2 Ultegra 11 speed", "Shimano Ultegra/Di2"):
+            with self.subTest(text=text):
+                label, _ = mp.detect_groupset(text)
+                self.assertEqual(label, "Shimano Ultegra (elektronisch)")
+
+    def test_an_electronic_marker_needs_the_matching_brand(self):
+        # Di2 is Shimano's; a Campagnolo groupset doesn't become electronic
+        # because the seller also has a Shimano part lying around.
+        label, _ = mp.detect_groupset("Campagnolo Record, verkoop ook een Di2 achterderailleur")
+        self.assertEqual(label, "Campagnolo Record")
+
+    def test_an_electronic_marker_outside_the_groupset_name_does_not_count(self):
+        # "Di2" elsewhere in the text is about something the bike hasn't got:
+        # an upgrade you could do, or parts sold separately. Tagging the
+        # groupset electronic on that puts a wrong spec into every comparison
+        # that follows.
+        for text in ("Shimano 105, Di2-upgrade mogelijk",
+                     "Shimano Ultegra groepset, 11 speed, banden nieuw, ook Di2 onderdelen"):
+            with self.subTest(text=text):
+                label, _ = mp.detect_groupset(text)
+                self.assertNotIn("elektronisch", label)
+
+    def test_sram_markers(self):
+        label, _ = mp.detect_groupset("SRAM Force eTap AXS 12 speed")
+        self.assertEqual(label, "SRAM Force (elektronisch)")
 
     def test_nothing_recognized(self):
         self.assertEqual(mp.detect_groupset("Gewone stadsfiets"), ("", None))

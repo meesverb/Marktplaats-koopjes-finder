@@ -223,6 +223,14 @@ only visible in a photo, and SRAM/Campagnolo tier names (e.g. "Force",
 "Record") only count when the brand name also appears somewhere in the text,
 to avoid matching on the plain Dutch/English word.
 
+The "(elektronisch)" tag needs the marker to belong to the groupset itself:
+Di2 only counts for a Shimano groupset and eTap/AXS only for a SRAM one, and
+the word has to sit in the same phrase as the groupset name ("Shimano Ultegra
+R8050 Di2"). A mention further along in the text is usually about something
+the bike hasn't got — "Shimano 105, Di2-upgrade mogelijk" is a mechanical 105
+— so that one stays untagged, at the price of missing an ad that only names
+its groupset and its Di2 in separate sentences.
+
 ### Comparing against original prices — `--reference-file`
 
 There's no free database of "every model with its original price and a

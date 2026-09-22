@@ -350,7 +350,38 @@ GROUPSET_CATALOG = [
     ("Campagnolo", "Centaur", re.compile(r"\bcentaur\b", re.I), 3, True),
     ("Campagnolo", "Veloce", re.compile(r"\bveloce\b", re.I), 2, True),
 ]
-ELECTRONIC_GROUPSET_RE = re.compile(r"\bdi2\b|\betap\b|\baxs\b", re.I)
+# Di2 is Shimano's electronic groupset, eTap and AXS are SRAM's — a mention of
+# one says nothing about a groupset from the other brand. (Campagnolo's EPS is
+# deliberately absent: no rows in the catalog need it yet.)
+ELECTRONIC_MARKERS = {
+    "Shimano": re.compile(r"\bdi2\b", re.I),
+    "SRAM": re.compile(r"\betap\b|\baxs\b", re.I),
+}
+# The marker has to belong to the same phrase as the groupset name: close by,
+# with nothing but words, digits, spaces, hyphens or slashes in between.
+# "Shimano Ultegra R8050 Di2" is one name; in "Shimano 105, Di2-upgrade
+# mogelijk" the comma separates the groupset that's for sale from a sales
+# pitch about one that isn't, and tagging that 105 as electronic would put a
+# wrong spec in front of every later comparison.
+ELECTRONIC_MAX_GAP = 30
+ELECTRONIC_GAP_RE = re.compile(r"[\w\s/-]*")
+
+
+def mentions_electronic(text: str, brand: str, groupset_match: re.Match) -> bool:
+    """Whether `text` says the groupset found at `groupset_match` is the
+    electronic version of itself."""
+    marker = ELECTRONIC_MARKERS.get(brand)
+    if marker is None:
+        return False
+    for found in marker.finditer(text):
+        between = (
+            text[groupset_match.end():found.start()]
+            if found.start() >= groupset_match.end()
+            else text[found.end():groupset_match.start()]
+        )
+        if len(between) <= ELECTRONIC_MAX_GAP and ELECTRONIC_GAP_RE.fullmatch(between):
+            return True
+    return False
 
 
 def detect_groupset(text: str) -> tuple[str, Optional[int]]:
@@ -359,15 +390,19 @@ def detect_groupset(text: str) -> tuple[str, Optional[int]]:
     text_lower = text.lower()
     best_label = ""
     best_tier: Optional[int] = None
+    best_brand = ""
+    best_match: Optional[re.Match] = None
     for brand, name, pattern, tier, needs_brand in GROUPSET_CATALOG:
         if needs_brand and brand.lower() not in text_lower:
             continue
-        if pattern.search(text):
-            if best_tier is None or tier > best_tier:
-                best_tier = tier
-                best_label = f"{brand} {name}"
+        match = pattern.search(text)
+        if match and (best_tier is None or tier > best_tier):
+            best_tier = tier
+            best_label = f"{brand} {name}"
+            best_brand = brand
+            best_match = match
 
-    if best_label and ELECTRONIC_GROUPSET_RE.search(text):
+    if best_match is not None and mentions_electronic(text, best_brand, best_match):
         best_label += " (elektronisch)"
 
     return best_label, best_tier
