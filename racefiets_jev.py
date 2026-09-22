@@ -1439,24 +1439,64 @@ def print_table(listings: list[Listing], stats: Optional[dict] = None) -> None:
         )
 
 
-def print_bid_overview(listings: list[Listing], limit: int = 25) -> None:
+def bid_overview_order(
+    bids: list[Listing], headroom: Optional[dict[str, Optional[float]]] = None
+) -> list[Listing]:
+    """The order the bid overview is printed in.
+
+    Without headroom figures this is the original order: listings nobody has
+    bid on yet first (there the minimum bid is still the real price), each
+    group by deal score. With them, the panel sorts on headroom instead —
+    estimated value minus what it costs to get in — because that, not the
+    price column, is what says which bid listing is underbid (see
+    PLAN_FIETSWAARDE.md §7). Listings whose headroom is unknown keep the old
+    ordering and sink below the ones that have a number: unknown is not the
+    same as no room."""
+    known: list[Listing] = []
+    unknown = bids
+    if headroom:
+        known = [l for l in bids if headroom.get(l.item_id) is not None]
+        known.sort(key=lambda l: headroom[l.item_id], reverse=True)
+        unknown = [l for l in bids if headroom.get(l.item_id) is None]
+    return (
+        known
+        + sort_by_score([l for l in unknown if l.bid_open])
+        + sort_by_score([l for l in unknown if not l.bid_open])
+    )
+
+
+def print_bid_overview(
+    listings: list[Listing],
+    limit: int = 25,
+    headroom: Optional[dict[str, Optional[float]]] = None,
+) -> None:
     """A separate look at the bidding listings — what it would cost to be the
-    first bidder, and how that compares to the median and to what the model is
-    known to go for. Listings nobody has bid on yet come first: there the
-    minimum bid is still the real price."""
+    first bidder, how much room there is between that and what the thing is
+    worth, and how it compares to the median and to what the model is known to
+    go for."""
     bids = bid_listings(listings)
     if not bids:
         return
 
     open_bids = open_bid_listings(listings)
     print(f"\nBIED-OVERZICHT — {len(bids)} bied-advertenties, waarvan {len(open_bids)} nog zonder bod")
-    print(f"  {'SCORE':>5} {'PRIJS':>8} {'%MED':>6}  {'BOD':<42} {'REFERENTIE':<28} TITEL")
+    room_header = f"{'RUIMTE':>8} " if headroom else ""
+    print(
+        f"  {'SCORE':>5} {'PRIJS':>8} {'%MED':>6} {room_header} {'BOD':<42} "
+        f"{'REFERENTIE':<28} TITEL"
+    )
 
-    ordered = sort_by_score(open_bids) + sort_by_score([l for l in bids if not l.bid_open])
+    ordered = bid_overview_order(bids, headroom)
     for l in ordered[:limit]:
         score_str = f"{l.deal_score:.0f}" if l.deal_score is not None else "—"
         price_str = f"€{l.price_eur:.0f}" if l.price_eur is not None else l.price_type
         pct_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
+        room_str = ""
+        if headroom:
+            room = headroom.get(l.item_id)
+            # A missing headroom prints as a dash, never as EUR 0 — that
+            # distinction is the whole point of the column.
+            room_str = f"{('€%.0f' % room) if room is not None else '—':>8} "
         status = format_bid_info(l) or "bod"
         if l.ref_label:
             ref = l.ref_label
@@ -1467,12 +1507,27 @@ def print_bid_overview(listings: list[Listing], limit: int = 25) -> None:
         else:
             ref = "—"
         print(
-            f"  {score_str:>5} {price_str:>8} {pct_str:>6}  {status[:42]:<42} {ref[:28]:<28} {l.title[:40]}"
+            f"  {score_str:>5} {price_str:>8} {pct_str:>6} {room_str} {status[:42]:<42} "
+            f"{ref[:28]:<28} {l.title[:40]}"
         )
         print(f"        {l.url}")
 
     if len(ordered) > limit:
         print(f"  ... en nog {len(ordered) - limit} (zie het HTML-rapport, tab 'Bieden')")
+
+
+def bid_headroom_by_id(
+    listings: list[Listing], median: Optional[float]
+) -> dict[str, Optional[float]]:
+    """Headroom per bidding listing, for the overview above.
+
+    The import is local on purpose: upgrade.py reads this module, so this
+    module can only reach back into it from inside a function (the same way
+    scoring.main() imports valuation). Keeping the result a plain dict of
+    euros means nothing else here has to know about upgrade.py's types."""
+    import upgrade
+
+    return {row.listing.item_id: row.headroom_eur for row in upgrade.bid_panel(listings, median)}
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -2073,7 +2128,7 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
         ]
 
     print_table(listings, stats=all_stats)
-    print_bid_overview(listings)
+    print_bid_overview(listings, headroom=bid_headroom_by_id(listings, all_stats.get("median")))
 
     if args.output:
         output_path = per_query_path(args.output, query, multi)

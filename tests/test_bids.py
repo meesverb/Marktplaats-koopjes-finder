@@ -352,5 +352,83 @@ class FormatBidInfoTest(unittest.TestCase):
         self.assertNotIn("v. mediaan", info)
 
 
+class BidOverviewOrderTest(unittest.TestCase):
+    """The bid panel sorts on headroom once fase 5 can supply it, and keeps
+    the original order where it can't (PLAN_FIETSWAARDE.md §7)."""
+
+    def bid(self, item_id, **overrides):
+        fields = dict(price_is_bid=True, price_type="FAST_BID", price_eur=100.0)
+        fields.update(overrides)
+        return make_listing(item_id=item_id, **fields)
+
+    def test_without_headroom_the_open_bids_still_come_first(self):
+        bid_on = self.bid("bid_on", bid_count=2, deal_score=90.0)
+        still_open = self.bid("open", bid_count=0, bid_open=True, deal_score=10.0)
+        order = mp.bid_overview_order([bid_on, still_open])
+        self.assertEqual([l.item_id for l in order], ["open", "bid_on"])
+
+    def test_headroom_decides_the_order(self):
+        small = self.bid("small", deal_score=90.0)
+        large = self.bid("large", deal_score=10.0)
+        order = mp.bid_overview_order([small, large], {"small": 50.0, "large": 400.0})
+        self.assertEqual([l.item_id for l in order], ["large", "small"])
+
+    def test_unknown_headroom_sinks_below_the_known_ones(self):
+        # Unknown is not the same as no room, so it doesn't get to lead the
+        # panel — but it doesn't disappear either.
+        known = self.bid("known", deal_score=10.0)
+        unknown = self.bid("unknown", bid_count=0, bid_open=True, deal_score=99.0)
+        order = mp.bid_overview_order([known, unknown], {"known": 25.0, "unknown": None})
+        self.assertEqual([l.item_id for l in order], ["known", "unknown"])
+
+    def test_every_bid_listing_stays_in_the_panel(self):
+        listings = [self.bid("a", deal_score=1.0), self.bid("b"), self.bid("c")]
+        order = mp.bid_overview_order(listings, {"a": 10.0})
+        self.assertEqual({l.item_id for l in order}, {"a", "b", "c"})
+
+
+class BidHeadroomWiringTest(unittest.TestCase):
+    def test_headroom_reaches_the_overview(self):
+        listings = [
+            make_listing(item_id="bid", price_is_bid=True, price_type="FAST_BID",
+                         price_eur=100.0, bid_count=1),
+            make_listing(item_id="fixed", price_eur=500.0),
+        ]
+        headroom = mp.bid_headroom_by_id(listings, median=1000.0)
+        # Only bidding listings get a row, and the number is the value estimate
+        # minus what it costs to get in — not the raw median.
+        self.assertEqual(set(headroom), {"bid"})
+        self.assertGreater(headroom["bid"], 0)
+
+    def test_a_bid_that_was_never_looked_up_has_no_headroom(self):
+        listings = [
+            make_listing(item_id="bid", price_is_bid=True, price_type="FAST_BID",
+                         price_eur=None, bid_count=None),
+        ]
+        self.assertIsNone(mp.bid_headroom_by_id(listings, median=1000.0)["bid"])
+
+    def test_printing_the_overview_with_headroom_shows_the_column(self):
+        listings = [
+            make_listing(item_id="bid", title="Biedfiets", price_is_bid=True,
+                         price_type="FAST_BID", price_eur=100.0, bid_count=1),
+        ]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mp.print_bid_overview(listings, headroom={"bid": 250.0})
+        printed = out.getvalue()
+        self.assertIn("RUIMTE", printed)
+        self.assertIn("€250", printed)
+
+    def test_an_unknown_headroom_never_prints_as_zero(self):
+        listings = [
+            make_listing(item_id="bid", title="Biedfiets", price_is_bid=True,
+                         price_type="MIN_BID", price_eur=100.0),
+        ]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mp.print_bid_overview(listings, headroom={"bid": None})
+        self.assertNotIn("€0", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

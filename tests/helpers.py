@@ -6,9 +6,18 @@ from pathlib import Path
 
 # Tests are run from the repository root (`python -m unittest discover -s tests`),
 # but make the import work regardless of where they're started from.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 import racefiets_jev as mp  # noqa: E402
+
+
+def repo_file(name: str) -> str:
+    """A data file next to the code (scoring_config.json, mijn_fiets.md, ...).
+    Tests that read one go through here rather than through a bare relative
+    path, so a run started from inside tests/ finds the same file as one
+    started from the repository root."""
+    return str(REPO_ROOT / name)
 
 
 def make_listing(**overrides) -> mp.Listing:

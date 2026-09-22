@@ -5,13 +5,13 @@ Niet te verwarren met tests/test_scoring.py, dat racefiets_jev.score_listing()
 CLAUDE.md."""
 import unittest
 
-from helpers import mp  # noqa: F401  (zet de repo-root in sys.path)
+from helpers import mp, repo_file  # noqa: F401  (zet de repo-root in sys.path)
 
 import scoring as sc
 
 
 def load_config():
-    return sc.load_config("scoring_config.json")
+    return sc.load_config(repo_file("scoring_config.json"))
 
 
 class WheelBrandDetectionTest(unittest.TestCase):
