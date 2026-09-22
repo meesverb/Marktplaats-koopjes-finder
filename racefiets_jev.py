@@ -21,10 +21,11 @@ import statistics
 import sys
 import time
 import webbrowser
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields as dataclass_fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 import requests
 
@@ -78,9 +79,18 @@ class Listing:
     deal_reasons: str = ""
 
 
+LISTING_FIELDS = [f.name for f in dataclass_fields(Listing)]
+
+
 def fetch_page(session: requests.Session, query: str, page: int) -> dict:
     """Fetch one Marktplaats search results page and return its embedded JSON data."""
-    path = f"/q/{query}/" if page <= 1 else f"/q/{query}/p/{page}/"
+    # The query goes into the URL *path*, so it has to be encoded as one.
+    # requests leaves "?", "#" and "&" alone (they're legal in a URL, just not
+    # in a path segment), so a query like "wat?" would turn into an empty
+    # query string and a search for "wat". safe="" also catches a slash, which
+    # would otherwise add a path segment.
+    quoted = quote(query, safe="")
+    path = f"/q/{quoted}/" if page <= 1 else f"/q/{quoted}/p/{page}/"
     resp = session.get(BASE_URL + path, timeout=15)
     resp.raise_for_status()
 
@@ -170,15 +180,21 @@ def fetch_bid_info(session: requests.Session, vip_url: str) -> Optional[dict]:
     if config is None:
         warn_bid_structure_changed("JSON achter de marker niet te lezen")
         return None
-    return config.get("listing", {}).get("bidsInfo")
+    # "listing" can be present and null — .get()'s default only covers a
+    # missing key, not a null value.
+    return (config.get("listing") or {}).get("bidsInfo")
 
 
 def resolve_bid_price(bids_info: dict) -> Optional[float]:
     """The relevant "price" for a bidding listing: the current highest bid
     if there is one, otherwise the minimum bid Marktplaats will accept."""
     bids = bids_info.get("bids") or []
-    if bids:
-        return max(b["value"] for b in bids) / 100
+    # A bid entry without a usable value is not worth taking the run down for;
+    # fall back to the minimum bid as if there were no bids at all.
+    values = [b.get("value") for b in bids if isinstance(b, dict)]
+    values = [v for v in values if isinstance(v, (int, float))]
+    if values:
+        return max(values) / 100
     minimum = bids_info.get("currentMinimumBid")
     if minimum:
         return minimum / 100
@@ -265,7 +281,9 @@ def extract_dominant_category(search_response: dict) -> Optional[int]:
 
 def extract_attribute(raw_listing: dict, key: str) -> str:
     for group in ("attributes", "extendedAttributes"):
-        for attr in raw_listing.get(group, []):
+        # `or []`: Marktplaats can send the key with a null value, and the
+        # default of .get() only covers a missing key.
+        for attr in raw_listing.get(group) or []:
             if attr.get("key") == key:
                 return attr.get("value", "")
     return ""
@@ -394,6 +412,7 @@ def collect_listings(
     listings: dict[str, Listing] = {}
     dominant_category: Optional[int] = None
     skipped_offtopic = 0
+    skipped_without_id = 0
     page = 1
     while True:
         try:
@@ -414,6 +433,13 @@ def collect_listings(
                 skipped_offtopic += 1
                 continue
             listing = parse_listing(raw)
+            if not listing.item_id:
+                # Listings are keyed by item id from here on (deduplicating
+                # across pages, and everything the history remembers), so
+                # without one they would overwrite each other and be "new"
+                # forever. Rather drop them than merge two ads into one.
+                skipped_without_id += 1
+                continue
             listings[listing.item_id] = listing
 
         max_page = data.get("maxAllowedPageNumber", page)
@@ -427,6 +453,12 @@ def collect_listings(
         page += 1
         time.sleep(delay)
 
+    if skipped_without_id:
+        print(
+            f"  {skipped_without_id} advertentie(s) zonder item-id overgeslagen "
+            "(niet uit elkaar te houden en niet te onthouden)",
+            file=sys.stderr,
+        )
     if skipped_offtopic:
         print(
             f"  {skipped_offtopic} advertenties buiten de hoofdcategorie overgeslagen "
@@ -519,7 +551,7 @@ def existing_csv_header(path: str) -> Optional[list[str]]:
     """The header row of a CSV we're about to append to, or None when there
     isn't one yet (no file, or an empty one)."""
     try:
-        with open(path, newline="", encoding="utf-8") as f:
+        with open(path, newline="", encoding=CSV_READ_ENCODING) as f:
             return next(csv.reader(f), None)
     except FileNotFoundError:
         return None
@@ -534,7 +566,7 @@ def append_bargain_log(path: str, listings: list[Listing]) -> int:
         return 0
 
     logged_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    current_fields = ["logged_at"] + list(asdict(new_bargains[0]).keys())
+    current_fields = ["logged_at"] + LISTING_FIELDS
     # An existing log was written with the columns of whatever version of
     # Listing wrote it. Writing today's columns under yesterday's header shifts
     # every value one place over as soon as a field is added anywhere but at
@@ -566,13 +598,20 @@ def append_bargain_log(path: str, listings: list[Listing]) -> int:
     return len(new_bargains)
 
 
+# Save a CSV from Excel and it starts with a UTF-8 BOM, which lands in the
+# first column's name ("\ufeffpattern") and makes every lookup by that name
+# miss. Reading as utf-8-sig strips it when it's there and changes nothing
+# when it isn't. Writing stays plain utf-8: we don't add one ourselves.
+CSV_READ_ENCODING = "utf-8-sig"
+
+
 def load_reference_market_stats(path: str) -> dict:
     """Build actual observed secondhand asking prices per reference model
     from every past run's price_history.csv rows — a self-growing market
     price database, distinct from the (often unknown/outdated) original
     retail price in reference_prices.csv."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             reader = csv.DictReader(f)
             rows = list(reader)
             fieldnames = reader.fieldnames or []
@@ -668,7 +707,10 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
 
 def load_history(path: str) -> dict:
     try:
-        with open(path, encoding="utf-8") as f:
+        # utf-8-sig here too: a history file opened and saved in an editor can
+        # come back with a BOM, and json.load() rejects that outright — which
+        # this function would report as "no history at all".
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             history = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
@@ -747,7 +789,7 @@ def load_reference_data(path: str) -> list[dict]:
     compare the asking price against what they cost new. Returns [] if the
     file doesn't exist — this feature is entirely optional."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             rows = list(csv.DictReader(f))
     except FileNotFoundError:
         return []
@@ -1423,11 +1465,16 @@ def write_html(listings: list[Listing], path: str, query: str) -> None:
 
 def write_csv(listings: list[Listing], path: str) -> None:
     if not listings:
-        # The file is still written (a stale one from a previous run would be
-        # worse), but a zero-byte CSV looks exactly like a successful export.
-        print(f"warning: niets te exporteren, {path} wordt leeg.", file=sys.stderr)
+        # The file is still written (leaving a stale one from a previous run
+        # would be worse), but with its column headers rather than as a blank
+        # line — that way it opens as an empty table instead of looking like a
+        # corrupt file.
+        print(
+            f"warning: niets te exporteren; {path} bevat alleen de kolomkoppen.",
+            file=sys.stderr,
+        )
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(asdict(listings[0]).keys()) if listings else [])
+        writer = csv.DictWriter(f, fieldnames=LISTING_FIELDS)
         writer.writeheader()
         for listing in listings:
             writer.writerow(asdict(listing))

@@ -80,6 +80,29 @@ class EnrichBidListingsTest(unittest.TestCase):
         self.assertIsNone(listing.bid_count)
 
 
+class MalformedPageTest(unittest.TestCase):
+    """What the site can hand back that is valid JSON but not what we expect.
+    None of it is worth ending a run over."""
+
+    def test_a_null_listing_is_not_bid_data(self):
+        url = "https://www.marktplaats.nl/v/x/m1-test"
+        page = '<html><script>window.__CONFIG__ = {"listing": null};</script></html>'
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertIsNone(mp.fetch_bid_info(FakeSession({url: page}), url))
+
+    def test_a_bid_without_a_value_falls_back_to_the_minimum(self):
+        info = {"currentMinimumBid": 3500, "bids": [{"bidder": "iemand"}]}
+        self.assertEqual(mp.resolve_bid_price(info), 35.0)
+
+    def test_a_usable_bid_next_to_a_broken_one_still_counts(self):
+        info = {"currentMinimumBid": 3500, "bids": [{"bidder": "x"}, {"value": 8000}]}
+        self.assertEqual(mp.resolve_bid_price(info), 80.0)
+
+    def test_null_attributes_are_not_a_crash(self):
+        raw = {"attributes": None, "extendedAttributes": [{"key": "condition", "value": "Gebruikt"}]}
+        self.assertEqual(mp.extract_attribute(raw, "condition"), "Gebruikt")
+
+
 class BidStructureWarningTest(unittest.TestCase):
     """A changed page structure has to be loud: silently returning "no bid
     info" looks exactly like a run where nobody happened to be bidding, so

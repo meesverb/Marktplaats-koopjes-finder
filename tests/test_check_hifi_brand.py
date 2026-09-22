@@ -65,5 +65,24 @@ class CheckBrandTest(unittest.TestCase):
         )
 
 
+class ListingBoundaryTest(CheckBrandTest):
+    def test_a_listing_without_counts_does_not_borrow_the_next_one_s(self):
+        # ".*?" with re.DOTALL is "as little as possible", not "not across a
+        # listing boundary": it used to run on to the next listing's numbers
+        # and hang them on the model that had none.
+        page = """
+<div id="l1" class="linklisting">
+<h4 class="linktitle">Mission<a href="/zonder">Zonder Views</a></h4>
+<div class="small">geen cijfers hier</div>
+</div>
+<div id="l2" class="linklisting">
+<h4 class="linktitle">Mission<a href="/met">Met Views</a></h4>
+<div class="small">(1,234 views : 5 votes : 2 reviews)</div>
+</div>
+"""
+        _, models = self.fetch("Mission", page)
+        self.assertEqual(models, [("Met Views", "/met", 1234, 5, 2)])
+
+
 if __name__ == "__main__":
     unittest.main()

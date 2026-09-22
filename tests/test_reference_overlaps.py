@@ -45,5 +45,29 @@ class FindOverlapsTest(unittest.TestCase):
         self.assertEqual(self.overlaps("Mission,Mission", "Wharfedale,Wharfedale"), [])
 
 
+class DeadPatternTest(FindOverlapsTest):
+    """A typo in a pattern has no symptom: the row simply never matches."""
+
+    def dead(self, *rows: str):
+        path = self.tmp / "ref.csv"
+        path.write_text(
+            "pattern,label,original_price_eur,specs,score,better_than_baseline\n"
+            + "".join(f"{r},,,,\n" for r in rows),
+            encoding="utf-8",
+        )
+        return cro.find_dead_patterns(mp.load_reference_data(str(path)))
+
+    def test_a_pattern_that_cannot_match_its_own_label_is_reported(self):
+        self.assertEqual(self.dead(r"Mission\s*7[0-3]2,Mission 731"), ["Mission 731"])
+
+    def test_a_working_pattern_is_not_reported(self):
+        self.assertEqual(self.dead(r"Mission\s*73[12],Mission 731"), [])
+
+    def test_the_real_reference_file_has_none(self):
+        # Also a guard on the check itself: it should not start flagging the
+        # 43 rows that are actually in use.
+        self.assertEqual(cro.find_dead_patterns(mp.load_reference_data("reference_prices.csv")), [])
+
+
 if __name__ == "__main__":
     unittest.main()

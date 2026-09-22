@@ -69,6 +69,24 @@ class FakeSession:
         return FakeResponse(self.pages.get(url, ""))
 
 
+def search_page(listings: list[dict], max_page: int = 1, facets: list | None = None) -> str:
+    """A search-results page as fetch_page() digs the JSON out of it."""
+    import json
+
+    data = {
+        "props": {
+            "pageProps": {
+                "searchRequestAndResponse": {
+                    "listings": listings,
+                    "maxAllowedPageNumber": max_page,
+                    "facets": facets or [],
+                }
+            }
+        }
+    }
+    return f'<script id="__NEXT_DATA__" type="application/json">{json.dumps(data)}</script>'
+
+
 def config_page(bids_info: dict) -> str:
     """A listing page with a window.__CONFIG__ blob, as fetch_bid_info parses it."""
     import json

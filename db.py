@@ -175,6 +175,12 @@ MIGRATIONS: list[str] = [
 ]
 
 
+# A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
+# the first column's name and makes every row look like it is missing that
+# column. Same reasoning as racefiets_jev.CSV_READ_ENCODING.
+CSV_READ_ENCODING = "utf-8-sig"
+
+
 def connect(path: str) -> sqlite3.Connection:
     """Open (creating if needed) the koopjes.db at `path` and bring it up to
     the latest schema version."""
@@ -213,7 +219,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
 def _import_seen_listings(conn: sqlite3.Connection, path: str) -> int:
     """seen_listings.json -> listing + listing_price."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             history = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return 0
@@ -229,7 +235,13 @@ def _import_seen_listings(conn: sqlite3.Connection, path: str) -> int:
         )
         return 0
 
+    imported = 0
+    skipped = 0
     for item_id, entry in history.items():
+        if not isinstance(entry, dict):
+            # One hand-edited entry shouldn't cost the whole migration.
+            skipped += 1
+            continue
         conn.execute(
             """
             INSERT INTO listing (item_id, title, price_eur, first_seen, last_seen)
@@ -256,7 +268,15 @@ def _import_seen_listings(conn: sqlite3.Connection, path: str) -> int:
                 "VALUES (?, ?, ?)",
                 (item_id, last_seen, last_price),
             )
-    return len(history)
+        imported += 1
+
+    if skipped:
+        print(
+            f"warning: {path}: {skipped} regel(s) overgeslagen die geen "
+            "advertentie-gegevens bevatten.",
+            file=sys.stderr,
+        )
+    return imported
 
 
 def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
@@ -268,16 +288,28 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
     {"specs": ..., "better_than_baseline": ...}. export_csv() reverses this.
     """
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             rows = list(csv.DictReader(f))
     except FileNotFoundError:
         return 0
 
     count = 0
+    seen_patterns: set[str] = set()
     for row in rows:
         pattern = (row.get("pattern") or "").strip()
         if not pattern:
             continue
+        if pattern in seen_patterns:
+            # The upsert is on (kind, pattern), so the second row overwrites
+            # the first and the table ends up with one model where the file
+            # has two. Counting both would report an import that didn't
+            # happen; the file is the thing that needs fixing.
+            print(
+                f"warning: {path}: patroon {pattern!r} staat meer dan één keer in het "
+                "bestand; alleen de laatste rij blijft over.",
+                file=sys.stderr,
+            )
+        seen_patterns.add(pattern)
         label = (row.get("label") or pattern).strip()
         original_price_raw = (row.get("original_price_eur") or "").strip()
         try:
@@ -316,7 +348,7 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
                 "score": (row.get("score") or "").strip(),
             },
         )
-        count += 1
+        count = len(seen_patterns)
     return count
 
 
@@ -329,7 +361,7 @@ def _import_reference_price_history(conn: sqlite3.Connection, path: str) -> int:
     than letting the foreign key fail.
     """
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             rows = list(csv.DictReader(f))
     except FileNotFoundError:
         return 0
@@ -516,14 +548,24 @@ def _format_price(value) -> str:
     return str(float(value))
 
 
-def export_csv(conn: sqlite3.Connection, path: str) -> int:
-    """Write the `model` table back out as reference_prices.csv's exact
+def export_csv(conn: sqlite3.Connection, path: str, kind: str = "other") -> int:
+    """Write one kind of `model` row back out as reference_prices.csv's exact
     column format (pattern,label,original_price_eur,specs,score,
     better_than_baseline), so racefiets_jev.load_reference_data() — and
     therefore reference_overview.py and check_reference_overlaps.py — can
-    still read it. Returns the number of rows written."""
+    still read it. Returns the number of rows written.
+
+    The kind filter is the point, not a detail: `model` is one table for
+    speakers, bikes, groupsets and accessories alike, while
+    reference_prices.csv is read as one flat list of patterns matched against
+    whatever query is running. Exporting every kind at once would put a
+    "Giant Defy" pattern in the same file as the speaker rows, where it gets
+    matched against speaker titles. Fase 7 adds bike rows, so each kind needs
+    its own file."""
     rows = conn.execute(
-        "SELECT pattern, model, original_price_eur, specs_json, score FROM model ORDER BY id"
+        "SELECT pattern, model, original_price_eur, specs_json, score FROM model "
+        "WHERE kind = ? ORDER BY id",
+        (kind,),
     ).fetchall()
 
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -532,7 +574,15 @@ def export_csv(conn: sqlite3.Connection, path: str) -> int:
             ["pattern", "label", "original_price_eur", "specs", "score", "better_than_baseline"]
         )
         for row in rows:
-            extra = json.loads(row["specs_json"] or "{}")
+            try:
+                extra = json.loads(row["specs_json"] or "{}")
+            except json.JSONDecodeError:
+                print(
+                    f"warning: specs_json van {row['model']!r} is niet te lezen; "
+                    "specs en better_than_baseline blijven leeg.",
+                    file=sys.stderr,
+                )
+                extra = {}
             writer.writerow(
                 [
                     row["pattern"],
