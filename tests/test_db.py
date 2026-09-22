@@ -64,6 +64,22 @@ class SchemaTest(TempDirTest):
         rows = conn.execute("SELECT COUNT(*) AS n FROM schema_version").fetchone()
         self.assertEqual(rows["n"], 1)
 
+    def test_a_database_from_a_newer_version_is_refused(self):
+        # The migration slice is empty in that case, so the old code would
+        # otherwise carry on writing into a schema it does not know.
+        path = self.path("koopjes.db")
+        conn = db.connect(path)
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+            (len(db.MIGRATIONS) + 1, "2026-01-01T00:00:00+00:00"),
+        )
+        conn.commit()
+        conn.close()
+
+        with self.assertRaises(RuntimeError) as caught:
+            db.connect(path)
+        self.assertIn("schemaversie", str(caught.exception))
+
     def test_foreign_keys_are_enforced(self):
         conn = db.connect(self.path("koopjes.db"))
         with self.assertRaises(Exception):
@@ -83,6 +99,19 @@ class ImportSeenListingsTest(TempDirTest):
         conn = db.connect(self.path("koopjes.db"))
         counts = self.import_legacy(conn, seen_listings_path=self.path("nope.json"))
         self.assertEqual(counts["listings_from_history"], 0)
+
+    def test_json_that_is_not_a_history_is_skipped_with_a_warning(self):
+        # Valid JSON, wrong shape: used to die on .items() and take the whole
+        # migration down with it.
+        path = self.path("seen_listings.json")
+        Path(path).write_text('["m1", "m2"]', encoding="utf-8")
+        conn = db.connect(self.path("koopjes.db"))
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            counts = self.import_legacy(conn, seen_listings_path=path)
+        self.assertEqual(counts["listings_from_history"], 0)
+        self.assertIn("geen advertentie-geschiedenis", stderr.getvalue())
 
     def test_entries_become_listing_and_listing_price_rows(self):
         path = self.write_history(
@@ -305,6 +334,26 @@ class ExportCsvTest(TempDirTest):
 
         reloaded = mp.load_reference_data(out_path)
         self.assertEqual([r["label"] for r in reloaded], ["Specifiek", "Algemeen"])
+
+    def test_a_whole_new_price_is_written_back_without_a_decimal(self):
+        # SQLite hands REALs back as 110.0. Writing that into
+        # reference_prices.csv turns every priced row into a diff the moment
+        # the file is exported, in a file that is reviewed by hand.
+        path = self.path("reference_prices.csv")
+        Path(path).write_text(
+            "pattern,label,original_price_eur,specs,score,better_than_baseline\n"
+            "Heel,Heel getal,110,,,\n"
+            "Half,Half getal,47.5,,,\n"
+            "Leeg,Geen prijs,,,,\n",
+            encoding="utf-8",
+        )
+        conn = db.connect(self.path("koopjes.db"))
+        self.import_legacy(conn, reference_prices_path=path)
+
+        out = self.path("export.csv")
+        db.export_csv(conn, out)
+        prices = [line.split(",")[2] for line in Path(out).read_text(encoding="utf-8").splitlines()[1:]]
+        self.assertEqual(prices, ["110", "47.5", ""])
 
     def test_empty_model_table_still_writes_a_header(self):
         conn = db.connect(self.path("koopjes.db"))
