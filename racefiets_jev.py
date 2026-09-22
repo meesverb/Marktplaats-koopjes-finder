@@ -1069,7 +1069,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="nl">
 <head>
 <meta charset="utf-8">
-<title>Racefiets koopjes — {query}</title>
+<title>Koopjes — {query}</title>
 <style>
   :root {{
     --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1a; --muted: #6b7280;
@@ -1115,7 +1115,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>Racefiets koopjes — "{query}"</h1>
+<h1>Koopjes — "{query}"</h1>
 <div class="meta">Bijgewerkt {generated} · {total} advertenties · {new_count} nieuw sinds vorige run · {bargain_count} koopjes · {bid_count} bieden ({open_bid_count} zonder bod){price_stats_str}</div>
 <div class="meta">Gesorteerd op dealscore (0-100, hoger = goedkoper dan zijn ijkpunten). Beweeg over een score voor de onderbouwing.</div>
 <div class="filters">

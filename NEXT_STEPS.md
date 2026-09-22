@@ -82,5 +82,3 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    Neem daarbij mee wat de taxatie van 22-09 opleverde: verkopers schrijven
    nooit "Composite", maar "Defy Advanced" of "Defy carbon" — daar moeten de
    patronen op passen.
-5. **Kleinigheid**: de HTML-titel is nog hardcoded "Racefiets koopjes", ook
-   bij `--query luidsprekers`.
