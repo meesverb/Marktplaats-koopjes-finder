@@ -522,6 +522,63 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
     conn.commit()
 
 
+def sync_listing_specs(
+    conn: sqlite3.Connection, specs_by_listing: dict, source: str = "regex"
+) -> int:
+    """Write racefiets_jev.extract_specs() output into `spec`, keyed by
+    listing item_id. A listing's previous rows from this source are deleted
+    first, so re-running the crawl on an ad whose text hasn't changed doesn't
+    pile up duplicate spec rows every run. Returns how many rows were
+    written."""
+    count = 0
+    for listing_id, specs in specs_by_listing.items():
+        conn.execute(
+            "DELETE FROM spec WHERE listing_id = ? AND source = ?", (listing_id, source)
+        )
+        for key, value in specs.items():
+            conn.execute(
+                "INSERT INTO spec (listing_id, key, value, source, confidence) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (listing_id, key, value, source, 1.0),
+            )
+            count += 1
+    conn.commit()
+    return count
+
+
+def sync_listing_models(
+    conn: sqlite3.Connection, matches_by_listing: dict, kind: str = "other"
+) -> int:
+    """Write every matched reference pattern (racefiets_jev.apply_reference_data()'s
+    return value) into `listing_model` — one row per (listing, model) pair,
+    not just the one match that wins the report's ref_* columns. A pattern
+    with no corresponding `model` row (import_legacy() hasn't run yet, or the
+    kind differs) is silently skipped: this table is additive bookkeeping for
+    fase 3+, nothing in the current report depends on it. Returns how many
+    rows were written."""
+    count = 0
+    for listing_id, patterns in matches_by_listing.items():
+        for pattern in patterns:
+            row = conn.execute(
+                "SELECT id FROM model WHERE kind = ? AND pattern = ?", (kind, pattern)
+            ).fetchone()
+            if row is None:
+                continue
+            conn.execute(
+                """
+                INSERT INTO listing_model (listing_id, model_id, matched_on, confidence)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(listing_id, model_id) DO UPDATE SET
+                    matched_on = excluded.matched_on,
+                    confidence = excluded.confidence
+                """,
+                (listing_id, row["id"], "title+description", 1.0),
+            )
+            count += 1
+    conn.commit()
+    return count
+
+
 def sweep_disappeared(
     conn: sqlite3.Connection, query: str, seen_item_ids, observed_at: str
 ) -> int:

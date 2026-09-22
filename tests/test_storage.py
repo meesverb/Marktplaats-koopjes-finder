@@ -203,6 +203,30 @@ class ReferenceFileTest(TempDirTest):
         mp.apply_reference_data([listing], mp.load_reference_data(path))
         self.assertEqual(listing.ref_label, "Mission 731")
 
+    def test_every_matching_pattern_is_returned_not_just_the_winner(self):
+        # PLAN_FIETSWAARDE.md fase 2: the report's ref_* fields still reflect
+        # only the first match (test above), but every match is now also
+        # returned for db.sync_listing_models() to write to listing_model.
+        path = self.write_reference(
+            "Mission 731,Specifiek,300,,,\n"
+            "Mission,Algemeen,100,,,\n"
+        )
+        listing = make_listing(item_id="a", title="Mission 731 speakers", price_eur=60.0)
+        matches = mp.apply_reference_data([listing], mp.load_reference_data(path))
+        self.assertEqual(matches, {"a": ["Mission 731", "Mission"]})
+        # Unchanged: the report still only sees the first match's fields.
+        self.assertEqual(listing.ref_label, "Specifiek")
+
+    def test_a_listing_with_no_match_is_absent_from_the_result(self):
+        path = self.write_reference("Mission 731,Mission 731,,,,\n")
+        listing = make_listing(item_id="a", title="Something else entirely")
+        matches = mp.apply_reference_data([listing], mp.load_reference_data(path))
+        self.assertEqual(matches, {})
+
+    def test_no_reference_data_returns_an_empty_dict(self):
+        listing = make_listing(item_id="a", title="Anything")
+        self.assertEqual(mp.apply_reference_data([listing], []), {})
+
 
 class PriceHistoryTest(TempDirTest):
     """reference_price_history.csv — the self-growing secondhand price record."""

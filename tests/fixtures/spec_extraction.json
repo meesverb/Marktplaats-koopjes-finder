@@ -1,0 +1,424 @@
+[
+  {
+    "note": "volledige speurneus: alle velden aanwezig",
+    "text": "Giant Defy Composite bouwjaar 2012, carbon frame, Shimano Ultegra 6700, velrem, carbon wielset, 7,9 kg, incl. Garmin Edge 530 en Stages powermeter.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "velrem",
+      "wheel_type": "carbon",
+      "model_year": "2012",
+      "weight_kg": "7.9",
+      "has_powermeter": "1",
+      "has_computer": "1"
+    }
+  },
+  {
+    "note": "moderne discfiets, hydraulisch, 12-speed; tekst noemt alleen carbon wielen, niet het frame, dus frame_material blijft terecht leeg",
+    "text": "Canyon Aeroad CFR met Dura-Ace Di2, hydraulische schijfremmen, 12-speed, carbon velgen, 7.1 kg.",
+    "expected": {
+      "brake_type": "hydraulische schijfrem",
+      "speeds": "12",
+      "wheel_type": "carbon",
+      "weight_kg": "7.1"
+    }
+  },
+  {
+    "note": "instapfiets alu, mechanische schijfrem",
+    "text": "Specialized Allez, aluminium frame, mechanische schijfrem, 10-speed cassette.",
+    "expected": {
+      "frame_material": "aluminium",
+      "brake_type": "mechanische schijfrem",
+      "speeds": "10"
+    }
+  },
+  {
+    "note": "generieke schijfrem zonder mechanisch/hydraulisch label",
+    "text": "Trek Emonda SL6, carbon frame en carbon velgen, disc brakes, 11-speed, incl. Garmin Edge 530.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "schijfrem",
+      "speeds": "11",
+      "wheel_type": "carbon",
+      "has_computer": "1"
+    }
+  },
+  {
+    "note": "oldtimer, stalen frame",
+    "text": "Koga Miyata uit de jaren 80, stalen frame, velgrem, 6 speed.",
+    "expected": {
+      "frame_material": "staal",
+      "brake_type": "velrem"
+    }
+  },
+  {
+    "note": "titanium frame met velgrem",
+    "text": "Bianchi Infinito, titanium frame, Campagnolo Record, rim brakes.",
+    "expected": {
+      "frame_material": "titanium",
+      "brake_type": "velrem"
+    }
+  },
+  {
+    "note": "powermeter en fietscomputer los vermeld, geen frame-info",
+    "text": "Cervelo S5 met Stages powermeter en Wahoo Elemnt Roam erbij, samen 6,8kg.",
+    "expected": {
+      "weight_kg": "6.8",
+      "has_powermeter": "1",
+      "has_computer": "1"
+    }
+  },
+  {
+    "note": "geen enkele herkenbare spec, alleen prijs en telefoonnummer",
+    "text": "Racefiets te koop, vraagprijs 250 euro, bel 0612345678 voor info.",
+    "expected": {}
+  },
+  {
+    "note": "versnellingen buiten het racefiets-bereik worden bewust genegeerd",
+    "text": "Kinderfiets met 21 speed en 24-speed derailleur, aluminium frame.",
+    "expected": {
+      "frame_material": "aluminium"
+    }
+  },
+  {
+    "note": "jaartal zonder label mag niet als model_year gelden",
+    "text": "Deze fiets heb ik sinds 2015 in bezit en rijd er nog steeds fijn op, carbon frame.",
+    "expected": {
+      "frame_material": "carbon"
+    }
+  },
+  {
+    "note": "model jaar met label 'model'",
+    "text": "Giant TCR, model 2018, aluminium, 11-speed 105.",
+    "expected": {
+      "frame_material": "aluminium",
+      "speeds": "11",
+      "model_year": "2018"
+    }
+  },
+  {
+    "note": "'uit' als jaar-label",
+    "text": "Colnago C40 uit 1998, carbon frame, velgrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "velrem",
+      "model_year": "1998"
+    }
+  },
+  {
+    "note": "carbon frame, maar geen carbon wielen (aparte alu velgen)",
+    "text": "Look 585, carbon frame, met aluminium velgen erop, velgrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "velrem",
+      "wheel_type": "aluminium"
+    }
+  },
+  {
+    "note": "alu frame + carbon wielset apart, allebei moeten kloppen",
+    "text": "Trek Madone, aluminium frame, later voorzien van een carbon wielset, schijfrem.",
+    "expected": {
+      "frame_material": "aluminium",
+      "brake_type": "schijfrem",
+      "wheel_type": "carbon"
+    }
+  },
+  {
+    "note": "gewicht met punt-notatie",
+    "text": "Lichtgewicht climber, 6.5 kg, carbon frame en carbon wielen, 11-speed.",
+    "expected": {
+      "frame_material": "carbon",
+      "wheel_type": "carbon",
+      "speeds": "11",
+      "weight_kg": "6.5"
+    }
+  },
+  {
+    "note": "chromoly frame herkend als staal",
+    "text": "Retro randonneur, chromoly frame, velgrem, 8-speed.",
+    "expected": {
+      "frame_material": "staal",
+      "brake_type": "velrem",
+      "speeds": "8"
+    }
+  },
+  {
+    "note": "cro-mo variant spelling",
+    "text": "Surly Cross Check, cro-mo frame, velgrem.",
+    "expected": {
+      "frame_material": "staal",
+      "brake_type": "velrem"
+    }
+  },
+  {
+    "note": "9-speed met expliciet 'v' notatie",
+    "text": "Campagnolo Centaur 9v groepset, aluminium frame, velgrem.",
+    "expected": {
+      "frame_material": "aluminium",
+      "brake_type": "velrem",
+      "speeds": "9"
+    }
+  },
+  {
+    "note": "quarq powermeter merk zonder het woord powermeter zelf",
+    "text": "Specialized Tarmac met Quarq erop gemonteerd, carbon frame.",
+    "expected": {
+      "frame_material": "carbon",
+      "has_powermeter": "1"
+    }
+  },
+  {
+    "note": "favero merk als powermeter-signaal",
+    "text": "Cannondale SuperSix met Favero Assioma pedalen, aluminium frame.",
+    "expected": {
+      "frame_material": "aluminium",
+      "has_powermeter": "1"
+    }
+  },
+  {
+    "note": "4iiii powermeter merk",
+    "text": "Merida Scultura met 4iiii powermeter crank, carbon frame.",
+    "expected": {
+      "frame_material": "carbon",
+      "has_powermeter": "1"
+    }
+  },
+  {
+    "note": "srm powermeter merk",
+    "text": "Pinarello Dogma met SRM krukstel, carbon frame, schijfrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "schijfrem",
+      "has_powermeter": "1"
+    }
+  },
+  {
+    "note": "wahoo als losse fietscomputer",
+    "text": "Verkoop mijn fiets, Wahoo Elemnt Bolt blijft erbij, aluminium frame.",
+    "expected": {
+      "frame_material": "aluminium",
+      "has_computer": "1"
+    }
+  },
+  {
+    "note": "garmin edge nummer als computer-signaal",
+    "text": "Compleet met Garmin Edge 1030, carbon frame, 11-speed.",
+    "expected": {
+      "frame_material": "carbon",
+      "speeds": "11",
+      "has_computer": "1"
+    }
+  },
+  {
+    "note": "beide hydraulisch EN mechanisch genoemd -> hydraulisch wint (eerst in lijst)",
+    "text": "Fiets is omgebouwd van mechanische schijfrem naar hydraulische schijfrem.",
+    "expected": {
+      "brake_type": "hydraulische schijfrem"
+    }
+  },
+  {
+    "note": "engelse spelling disc brake enkelvoud",
+    "text": "Road bike with disc brake, aluminium frame, 105 groupset.",
+    "expected": {
+      "frame_material": "aluminium",
+      "brake_type": "schijfrem"
+    }
+  },
+  {
+    "note": "engelse rim brake enkelvoud",
+    "text": "Vintage road bike, rim brake, steel frame.",
+    "expected": {
+      "frame_material": "staal",
+      "brake_type": "velrem"
+    }
+  },
+  {
+    "note": "gewicht met komma en decimalen, geen spatie voor kg",
+    "text": "Weegt slechts 6,9kg, carbon frame, carbon wielen.",
+    "expected": {
+      "frame_material": "carbon",
+      "wheel_type": "carbon",
+      "weight_kg": "6.9"
+    }
+  },
+  {
+    "note": "alu wordt herkend als afkorting",
+    "text": "Alu frame, velgrem, 9-speed 105 groepset.",
+    "expected": {
+      "frame_material": "aluminium",
+      "brake_type": "velrem",
+      "speeds": "9"
+    }
+  },
+  {
+    "note": "bouwjaar los van model, met dubbele punt",
+    "text": "Bouwjaar: 2009, carbon frame, velgrem, 10 speed.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "velrem",
+      "speeds": "10",
+      "model_year": "2009"
+    }
+  },
+  {
+    "note": "geen frame materiaal genoemd, wel wielen",
+    "text": "Nieuwe carbon wielset gemonteerd op deze fiets, 11-speed.",
+    "expected": {
+      "wheel_type": "carbon",
+      "speeds": "11"
+    }
+  },
+  {
+    "note": "carbon zonder wiel/velg context geeft geen wheel_type",
+    "text": "Volledig carbon fiets, verder in prima staat, velgrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "velrem"
+    }
+  },
+  {
+    "note": "titaan spelling zonder ium",
+    "text": "Litespeed, titaan frame, velgrem, 10-speed.",
+    "expected": {
+      "frame_material": "titanium",
+      "brake_type": "velrem",
+      "speeds": "10"
+    }
+  },
+  {
+    "note": "prijs met kg-achtige cijfers mag niet als gewicht matchen",
+    "text": "Vraagprijs is 12.500 euro voor de hele set, carbon frame.",
+    "expected": {
+      "frame_material": "carbon"
+    }
+  },
+  {
+    "note": "framenummer met cijfers mag geen jaartal opleveren",
+    "text": "Framenummer WTU2012B4, aluminium frame, velgrem.",
+    "expected": {
+      "frame_material": "aluminium",
+      "brake_type": "velrem"
+    }
+  },
+  {
+    "note": "13-speed net binnen bereik",
+    "text": "Nieuwste groepset, 13-speed, carbon frame, schijfrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "schijfrem",
+      "speeds": "13"
+    }
+  },
+  {
+    "note": "7-speed net buiten bereik, mag niet matchen",
+    "text": "Ouderwetse 7-speed vrijloop, stalen frame, velgrem.",
+    "expected": {
+      "frame_material": "staal",
+      "brake_type": "velrem"
+    }
+  },
+  {
+    "note": "14-speed net buiten bereik, mag niet matchen",
+    "text": "Sturmey Archer 14-speed naaf, stalen frame.",
+    "expected": {
+      "frame_material": "staal"
+    }
+  },
+  {
+    "note": "modeljaar aan elkaar geschreven",
+    "text": "Modeljaar 2016, carbon frame, 11-speed Ultegra.",
+    "expected": {
+      "frame_material": "carbon",
+      "speeds": "11",
+      "model_year": "2016"
+    }
+  },
+  {
+    "note": "gemengde talen, engelse aluminium spelling",
+    "text": "Aluminum frame, rim brakes, 9 speed.",
+    "expected": {
+      "brake_type": "velrem",
+      "speeds": "9"
+    }
+  },
+  {
+    "note": "geen enkel signaal behalve merknaam en model",
+    "text": "Giant Defy in goede staat, weinig gereden, nette fiets.",
+    "expected": {}
+  },
+  {
+    "note": "spd als speed-afkorting",
+    "text": "11spd cassette, carbon frame, schijfrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "schijfrem",
+      "speeds": "11"
+    }
+  },
+  {
+    "note": "beschrijving bevat zowel carbon frame als carbon wielset apart vermeld",
+    "text": "Frame: carbon. Wielen: carbon wielset (Novatec naven). Remmen: velgrem. Versnellingen: 10-speed.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "velrem",
+      "wheel_type": "carbon",
+      "speeds": "10"
+    }
+  },
+  {
+    "note": "meerdere jaartallen, alleen het gelabelde telt",
+    "text": "Ik heb hem in 2020 gekocht, bouwjaar 2014, carbon frame.",
+    "expected": {
+      "frame_material": "carbon",
+      "model_year": "2014"
+    }
+  },
+  {
+    "note": "power meter los geschreven met spatie",
+    "text": "Inclusief power meter in de rechter crank, aluminium frame.",
+    "expected": {
+      "frame_material": "aluminium",
+      "has_powermeter": "1"
+    }
+  },
+  {
+    "note": "vermogensmeter, nederlands woord",
+    "text": "Met vermogensmeter in het achterwiel, carbon frame, schijfrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "schijfrem",
+      "has_powermeter": "1"
+    }
+  },
+  {
+    "note": "bike computer engelse spelling met spatie",
+    "text": "Inclusief bike computer houder, aluminium frame.",
+    "expected": {
+      "frame_material": "aluminium",
+      "has_computer": "1"
+    }
+  },
+  {
+    "note": "combinatie van alle vier remsoorten in tekst, hydraulisch wint als eerst gevonden",
+    "text": "Origineel had hij velgrem, nu omgebouwd naar hydraulische schijfrem.",
+    "expected": {
+      "brake_type": "hydraulische schijfrem"
+    }
+  },
+  {
+    "note": "gewicht zonder kg-eenheid mag niet matchen",
+    "text": "Weegt 7.5, carbon frame, velgrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "velrem"
+    }
+  },
+  {
+    "note": "twee cijfers voor de komma bij gewicht",
+    "text": "Gewicht 10,20 kg (met pedalen), stalen frame, velgrem.",
+    "expected": {
+      "frame_material": "staal",
+      "brake_type": "velrem",
+      "weight_kg": "10.20"
+    }
+  }
+]

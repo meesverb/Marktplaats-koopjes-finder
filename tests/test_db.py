@@ -467,5 +467,83 @@ class ExportCsvTest(TempDirTest):
         self.assertEqual(mp.load_reference_data(out_path), [])
 
 
+class SyncListingSpecsTest(TempDirTest):
+    """spec — fase 2: racefiets_jev.extract_specs() written per listing."""
+
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect(self.path("koopjes.db"))
+        self.conn.execute(
+            "INSERT INTO listing (item_id, title) VALUES ('a', 'Test')"
+        )
+        self.conn.commit()
+
+    def test_specs_become_rows(self):
+        db.sync_listing_specs(self.conn, {"a": {"frame_material": "carbon", "speeds": "11"}})
+        rows = {
+            r["key"]: r["value"]
+            for r in self.conn.execute("SELECT key, value FROM spec WHERE listing_id='a'")
+        }
+        self.assertEqual(rows, {"frame_material": "carbon", "speeds": "11"})
+
+    def test_a_listing_with_no_specs_writes_no_rows(self):
+        db.sync_listing_specs(self.conn, {"a": {}})
+        n = self.conn.execute("SELECT COUNT(*) AS n FROM spec").fetchone()["n"]
+        self.assertEqual(n, 0)
+
+    def test_resyncing_replaces_rather_than_duplicates(self):
+        db.sync_listing_specs(self.conn, {"a": {"frame_material": "aluminium"}})
+        db.sync_listing_specs(self.conn, {"a": {"frame_material": "carbon"}})
+        rows = self.conn.execute("SELECT value FROM spec WHERE listing_id='a'").fetchall()
+        self.assertEqual([r["value"] for r in rows], ["carbon"])
+
+    def test_a_different_source_is_left_alone(self):
+        self.conn.execute(
+            "INSERT INTO spec (listing_id, key, value, source, confidence) "
+            "VALUES ('a', 'weight_kg', '7.8', 'handmatig', 1.0)"
+        )
+        self.conn.commit()
+        db.sync_listing_specs(self.conn, {"a": {"frame_material": "carbon"}})
+        rows = {r["key"]: r["source"] for r in self.conn.execute("SELECT key, source FROM spec")}
+        self.assertEqual(rows, {"weight_kg": "handmatig", "frame_material": "regex"})
+
+
+class SyncListingModelsTest(TempDirTest):
+    """listing_model — fase 2: every matching pattern, not just the winner."""
+
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect(self.path("koopjes.db"))
+        self.conn.execute(
+            "INSERT INTO listing (item_id, title) VALUES ('a', 'Test')"
+        )
+        self.conn.execute(
+            "INSERT INTO model (kind, model, pattern) VALUES ('other', 'Specifiek', 'Mission 731')"
+        )
+        self.conn.execute(
+            "INSERT INTO model (kind, model, pattern) VALUES ('other', 'Algemeen', 'Mission')"
+        )
+        self.conn.commit()
+
+    def test_every_matched_pattern_gets_its_own_row(self):
+        written = db.sync_listing_models(self.conn, {"a": ["Mission 731", "Mission"]})
+        self.assertEqual(written, 2)
+        rows = self.conn.execute(
+            "SELECT m.model FROM listing_model lm JOIN model m ON m.id = lm.model_id "
+            "WHERE lm.listing_id = 'a' ORDER BY m.model"
+        ).fetchall()
+        self.assertEqual([r["model"] for r in rows], ["Algemeen", "Specifiek"])
+
+    def test_a_pattern_without_a_matching_model_row_is_skipped(self):
+        written = db.sync_listing_models(self.conn, {"a": ["Geen zo'n patroon"]})
+        self.assertEqual(written, 0)
+
+    def test_resyncing_does_not_duplicate_rows(self):
+        db.sync_listing_models(self.conn, {"a": ["Mission 731"]})
+        db.sync_listing_models(self.conn, {"a": ["Mission 731"]})
+        n = self.conn.execute("SELECT COUNT(*) AS n FROM listing_model").fetchone()["n"]
+        self.assertEqual(n, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
