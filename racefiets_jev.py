@@ -18,6 +18,7 @@ import json
 import os
 import re
 import statistics
+import string
 import sys
 import time
 import webbrowser
@@ -1530,137 +1531,26 @@ def bid_headroom_by_id(
     return {row.listing.item_id: row.headroom_eur for row in upgrade.bid_panel(listings, median)}
 
 
-HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="nl">
-<head>
-<meta charset="utf-8">
-<title>Koopjes — {query}</title>
-<style>
-  :root {{
-    --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1a; --muted: #6b7280;
-    --border: #e5e7eb; --new: #16a34a; --bargain: #dc2626; --accent: #2563eb; --better: #7c3aed;
-    --dropped: #ea580c; --bid: #0891b2;
-    --score-top: #15803d; --score-good: #65a30d; --score-ok: #6b7280; --score-low: #b0b4bb;
-  }}
-  body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg);
-         color: var(--text); margin: 0; padding: 24px; }}
-  h1 {{ font-size: 1.4rem; margin: 0 0 4px; }}
-  .meta {{ color: var(--muted); font-size: 0.9rem; margin-bottom: 16px; }}
-  .filters {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }}
-  .filters button {{ border: 1px solid var(--border); background: var(--card); padding: 6px 14px;
-                     border-radius: 999px; cursor: pointer; font-size: 0.85rem; }}
-  .filters button.active {{ background: var(--accent); color: white; border-color: var(--accent); }}
-  .table-wrap {{ overflow-x: auto; }}
-  table {{ width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px;
-          overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-  th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }}
-  th {{ user-select: none; color: var(--muted); font-weight: 600; white-space: nowrap; }}
-  /* Only the sortable columns look clickable — the badge column has nothing
-     to sort on, and a header that does nothing on click reads as broken. */
-  th[data-key] {{ cursor: pointer; }}
-  th[data-key]:hover {{ color: var(--text); }}
-  tr:last-child td {{ border-bottom: none; }}
-  tr.hidden {{ display: none; }}
-  a {{ color: var(--accent); text-decoration: none; }}
-  a:hover {{ text-decoration: underline; }}
-  .badge {{ display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 2px 7px;
-           border-radius: 4px; margin-right: 4px; color: white; }}
-  .badge.new {{ background: var(--new); }}
-  .badge.bargain {{ background: var(--bargain); }}
-  .badge.better {{ background: var(--better); }}
-  .badge.dropped {{ background: var(--dropped); }}
-  .badge.bid {{ background: var(--bid); }}
-  .score-pill {{ display: inline-block; min-width: 30px; text-align: center; font-weight: 700;
-                font-size: 0.85rem; padding: 3px 8px; border-radius: 6px; color: white;
-                background: var(--score-ok); }}
-  .score-pill.top {{ background: var(--score-top); }}
-  .score-pill.good {{ background: var(--score-good); }}
-  .score-pill.low {{ background: var(--score-low); }}
-  .score-label {{ font-size: 0.7rem; color: var(--muted); margin-top: 2px; white-space: nowrap; }}
-  td.score {{ cursor: help; }}
-  .price {{ font-weight: 600; white-space: nowrap; }}
-  .bid-tag {{ font-weight: 400; font-size: 0.72rem; color: var(--muted); }}
-</style>
-</head>
-<body>
-<h1>Koopjes — "{query}"</h1>
-<div class="meta">Bijgewerkt {generated} · {total} advertenties · {new_count} nieuw sinds vorige run · {bargain_count} koopjes · {bid_count} bieden ({open_bid_count} zonder bod){price_stats_str}</div>
-<div class="meta">Gesorteerd op dealscore (0-100, hoger = goedkoper dan zijn ijkpunten). Beweeg over een score voor de onderbouwing.</div>
-<div class="filters">
-  <button data-filter="all" class="active">Alles ({total})</button>
-  <button data-filter="new">Nieuw ({new_count})</button>
-  <button data-filter="bargain">Koopjes ({bargain_count})</button>
-  <button data-filter="better">Beter dan referentie ({better_count})</button>
-  <button data-filter="dropped">Prijsverlaging ({dropped_count})</button>
-  <button data-filter="topdeal">Topdeals ({topdeal_count})</button>
-  <button data-filter="bidding">Bieden ({bid_count})</button>
-  <button data-filter="openbid">Vrij te bieden ({open_bid_count})</button>
-</div>
-<div class="table-wrap">
-<table id="listings">
-<thead>
-<tr>
-  <th></th>
-  <th data-key="score">Score</th>
-  <th data-key="price">Prijs</th>
-  <th data-key="bid">Bod</th>
-  <th data-key="pctmedian">% v. mediaan</th>
-  <th data-key="title">Titel</th>
-  <th data-key="frame">Framemaat</th>
-  <th data-key="groupset">Groupset</th>
-  <th data-key="condition">Conditie</th>
-  <th data-key="city">Plaats</th>
-  <th data-key="ref">Referentie</th>
-  <th data-key="refprice">Nieuwprijs</th>
-  <th data-key="refspecs">Specs</th>
-</tr>
-</thead>
-<tbody>
-{rows}
-</tbody>
-</table>
-</div>
-<script>
-  const table = document.getElementById('listings');
-  const tbody = table.querySelector('tbody');
-  document.querySelectorAll('.filters button').forEach(btn => {{
-    btn.addEventListener('click', () => {{
-      document.querySelectorAll('.filters button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const filter = btn.dataset.filter;
-      tbody.querySelectorAll('tr').forEach(row => {{
-        const show = filter === 'all' || row.dataset[filter] === '1';
-        row.classList.toggle('hidden', !show);
-      }});
-    }});
-  }});
-  let sortState = {{}};
-  table.querySelectorAll('th[data-key]').forEach(th => {{
-    th.addEventListener('click', () => {{
-      const key = th.dataset.key;
-      // Score is the one column you want highest-first on the first click.
-      const asc = key in sortState ? !sortState[key] : key !== 'score';
-      sortState = {{ [key]: asc }};
-      const rows = Array.from(tbody.querySelectorAll('tr'));
-      rows.sort((a, b) => {{
-        let av = a.dataset[key], bv = b.dataset[key];
-        if (['price', 'groupset', 'ref', 'pctmedian', 'score', 'bid'].includes(key)) {{ av = parseFloat(av); bv = parseFloat(bv); }}
-        // NaN compares false both ways, so a column that ever holds something
-        // unparseable would return 0 for every pair and the sort would look
-        // random. Park those rows at the bottom, whichever way we are sorting.
-        if (Number.isNaN(av)) av = asc ? Infinity : -Infinity;
-        if (Number.isNaN(bv)) bv = asc ? Infinity : -Infinity;
-        if (av < bv) return asc ? -1 : 1;
-        if (av > bv) return asc ? 1 : -1;
-        return 0;
-      }});
-      rows.forEach(r => tbody.appendChild(r));
-    }});
-  }});
-</script>
-</body>
-</html>
-"""
+# The report's HTML lives in its own file (PLAN_FIETSWAARDE.md §8). It used to
+# be a str.format() string in here, where every brace in the CSS and the
+# JavaScript had to be doubled — writing an object literal in that was an
+# accident waiting to happen. string.Template's $-placeholders leave braces
+# alone; the one character to watch in the template is now `$` itself (write
+# `$$` for a literal one).
+REPORT_TEMPLATE_PATH = Path(__file__).resolve().parent / "report_template.html"
+
+
+def load_report_template(path: Path = REPORT_TEMPLATE_PATH) -> string.Template:
+    """Read the template at render time rather than at import, so a missing
+    file only matters to a run that actually writes a report (--no-html runs
+    and the tools that import this module don't need it)."""
+    try:
+        return string.Template(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise SystemExit(
+            f"error: HTML-sjabloon {path} ontbreekt — dat bestand hoort naast "
+            f"{Path(__file__).name}; zet het terug of draai met --no-html"
+        ) from None
 
 
 def score_css_class(score: Optional[float]) -> str:
@@ -1672,7 +1562,14 @@ def score_css_class(score: Optional[float]) -> str:
     return "low"
 
 
-def render_html(listings: list[Listing], query: str, stats: Optional[dict] = None) -> str:
+def render_html(
+    listings: list[Listing], query: str, stats: Optional[dict] = None, panels=None
+) -> str:
+    """`panels` is a report.Panels (the Biedpaneel / Upgrade / Mijn fiets
+    tabs). Left out, only the bid panel is filled — it needs nothing but the
+    listings — and the other two say there is no bike to compare against.
+    The import is local for the same reason as in bid_headroom_by_id():
+    report.py reads this module."""
     rows_sorted = sort_by_score(listings)
 
     row_html = []
@@ -1800,8 +1697,17 @@ def render_html(listings: list[Listing], query: str, stats: Optional[dict] = Non
         if stats["count"] >= 2
         else ""
     )
+    if panels is None:
+        import report
 
-    return HTML_TEMPLATE.format(
+        panels = report.build_panels(
+            listings, stats.get("median"),
+            owner_problem="Geen eigen fiets meegegeven aan dit rapport.",
+        )
+
+    # substitute(), not safe_substitute(): a placeholder in the template that
+    # nobody fills in should fail here, not end up as literal text in the page.
+    return load_report_template().substitute(
         query=html_lib.escape(query),
         generated=datetime.now().strftime("%d-%m-%Y %H:%M"),
         total=len(listings),
@@ -1816,13 +1722,36 @@ def render_html(listings: list[Listing], query: str, stats: Optional[dict] = Non
         open_bid_count=len(open_bid_listings(listings)),
         price_stats_str=price_stats_str,
         rows="\n".join(row_html),
+        bidpanel_count=panels.bid_row_count,
+        upgrade_count=panels.upgrade_count,
+        bid_panel=panels.bids_html,
+        upgrade_panel=panels.upgrade_html,
+        bike_panel=panels.bike_html,
     )
 
 
 def write_html(
-    listings: list[Listing], path: str, query: str, stats: Optional[dict] = None
+    listings: list[Listing], path: str, query: str, stats: Optional[dict] = None, panels=None
 ) -> None:
-    Path(path).write_text(render_html(listings, query, stats=stats), encoding="utf-8")
+    Path(path).write_text(
+        render_html(listings, query, stats=stats, panels=panels), encoding="utf-8"
+    )
+
+
+def build_report_panels(args: argparse.Namespace, listings: list[Listing], median: Optional[float]):
+    """The report's extra tabs for this run. The own-bike valuation reads
+    koopjes.db — which sync_database() has just written, so it already holds
+    this crawl — but never writes to it. With --no-db there is nothing to
+    value against, and the tabs say that rather than guess a budget."""
+    import report
+
+    owner, problem = report.load_owner_context(
+        args.mijn_fiets, None if args.no_db else args.db
+    )
+    reason = problem or (owner.valuation_problem if owner else None)
+    if reason:
+        print(f"Rapport, tabs 'Mijn fiets'/'Upgrade': {reason}", file=sys.stderr)
+    return report.build_panels(listings, median, owner=owner, owner_problem=problem)
 
 
 def write_csv(listings: list[Listing], path: str) -> None:
@@ -1962,6 +1891,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--no-db", action="store_true", help="Skip writing to the SQLite database"
+    )
+    parser.add_argument(
+        "--mijn-fiets",
+        default="mijn_fiets.md",
+        help="Intake of your own bike, for the report's 'Mijn fiets' and 'Upgrade' tabs "
+        "(PLAN_FIETSWAARDE.md fase 6). Missing file = those tabs say so (default: mijn_fiets.md)",
     )
     return parser.parse_args(argv)
 
@@ -2137,7 +2072,8 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
 
     if not args.no_html:
         html_path = per_query_path(args.html, query, multi)
-        write_html(listings, html_path, query, stats=all_stats)
+        panels = build_report_panels(args, listings, all_stats.get("median"))
+        write_html(listings, html_path, query, stats=all_stats, panels=panels)
         print(f"Wrote HTML overview to {html_path}")
 
         new_count = sum(1 for l in listings if l.is_new)

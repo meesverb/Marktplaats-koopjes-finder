@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 249 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 396 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -62,9 +62,10 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
   met `git add -f` toegevoegd omdat er echt onderzoek in zit. Houd dat zo.
   Persoonlijke data (`seen_listings.json`, `*_history.csv`, `koopjes.db`)
   hoort níet in git.
-- **`HTML_TEMPLATE` is een `.format()`-string** met verdubbelde accolades
-  `{{ }}`. Er JavaScript met object-literals in schrijven is foutgevoelig.
-  Fase 6 van het plan haalt hem daarom uit het script.
+- **Het rapport-sjabloon staat in `report_template.html`** en is een
+  `string.Template` (`$naam`/`${naam}`), niet meer een `.format()`-string in
+  het script. Accolades in CSS/JS zijn daar dus gewoon enkel; het teken om op
+  te letten is nu `$` zelf — schrijf `$$` voor een letterlijke.
 - **Twee verschillende scores, niet vermengen.** `Listing.deal_score` (0-100,
   uit % van mediaan / 2e-hands gemiddelde / nieuwprijs) bestaat al. De
   `waardescore` uit het plan (`geschatte waarde / gevraagde prijs`) is iets
@@ -85,6 +86,8 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | Bestand | Wat |
 | --- | --- |
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
+| `report.py` | rapportpanelen (fase 6): Biedpaneel, Upgrade, Mijn fiets, plus de waardescore-kolom; alleen lezen uit `koopjes.db` |
+| `report_template.html` | HTML-sjabloon van het rapport (`string.Template`), wordt runtime ingelezen |
 | `db.py` | SQLite-schema, migraties, import van de oude bestanden, CSV-export; sinds fase 1b aangesloten op het script (`--db`/`--no-db`) |
 | `valuation.py` | waarderingsmotor (fase 3): E1/E2/E3 op de comps in `koopjes.db`, schrijft naar `valuation` + `valuation_evidence`. Leest `mijn_fiets.md` |
 | `tests/` | stdlib-unittests; `helpers.py` heeft `make_listing()` en een `FakeSession` |

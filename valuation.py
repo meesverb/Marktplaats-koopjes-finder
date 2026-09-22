@@ -285,17 +285,22 @@ class Rung:
 # 2012"), terwijl extract_specs() met opzet alleen een gelábeld bouwjaar
 # accepteert — in een omschrijving is "sinds 2018 in bezit" net zo goed een
 # 20xx. In een titel is dat risico veel kleiner, en hier telt het alleen mee
-# voor de vraag welke advertenties vergelijkbaar zijn. Het wordt niet als spec
+# voor de vraag welke advertenties vergelijkbaar zijn (en, via upgrade.py, voor
+# het leeftijdsverval in de kwaliteitsscore). Het wordt niet als spec
 # weggeschreven.
 TITLE_YEAR_RE = re.compile(r"\b(19[89]\d|20[0-4]\d)\b")
+
+
+def title_year(title: str) -> Optional[int]:
+    match = TITLE_YEAR_RE.search(title)
+    return int(match.group(1)) if match else None
 
 
 def candidate_year(candidate: CompCandidate) -> Optional[int]:
     year = candidate.specs.get("model_year")
     if year and year.isdigit():
         return int(year)
-    match = TITLE_YEAR_RE.search(candidate.title)
-    return int(match.group(1)) if match else None
+    return title_year(candidate.title)
 
 
 def _text_matches(candidate: CompCandidate, patterns: Sequence[str], *, all_of: bool) -> bool:
@@ -1009,6 +1014,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                 subject_id=str(owned_id) if owned_id else "",
                 scenario=SCENARIOS[key],
                 extras=(wheelset,) if key == "a" else (),
+                # Zonder deze regel werd de gemeten factor wel uitgerekend maar
+                # nooit gebruikt, en viel de CLI altijd terug op de heuristiek —
+                # terwijl upgrade.py en het rapport hem wél doorgaven.
+                negotiation=negotiation,
             )
             if valuation is None:
                 print(
