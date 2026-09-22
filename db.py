@@ -220,10 +220,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # at all. Both values in the INSERT are ours, not input: a version
         # number from enumerate() and a timestamp we just formatted.
         applied_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        # rstrip/";": a migration string whose last statement forgets its
+        # semicolon would otherwise run straight into the INSERT below, and
+        # the syntax error would point at the wrong line.
+        statements = ddl.strip().rstrip(";") + ";"
         try:
             conn.executescript(
                 "BEGIN;\n"
-                + ddl
+                + statements
                 + "\nINSERT INTO schema_version (version, applied_at) "
                 + f"VALUES ({version}, '{applied_at}');\n"
                 + "COMMIT;"
