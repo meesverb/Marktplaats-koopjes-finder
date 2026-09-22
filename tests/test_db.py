@@ -113,6 +113,21 @@ class ImportSeenListingsTest(TempDirTest):
         self.assertEqual(counts["listings_from_history"], 0)
         self.assertIn("geen advertentie-geschiedenis", stderr.getvalue())
 
+    def test_an_entry_that_is_not_a_listing_is_skipped(self):
+        path = self.path("seen_listings.json")
+        Path(path).write_text(
+            '{"m1": {"title": "Goed", "last_seen": "2026-01-01", "last_price": 50}, '
+            '"m2": "kapot"}',
+            encoding="utf-8",
+        )
+        conn = db.connect(self.path("koopjes.db"))
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            counts = self.import_legacy(conn, seen_listings_path=path)
+
+        self.assertEqual(counts["listings_from_history"], 1)
+        self.assertIn("overgeslagen", stderr.getvalue())
+
     def test_entries_become_listing_and_listing_price_rows(self):
         path = self.write_history(
             {
@@ -233,6 +248,21 @@ class ImportReferencePricesTest(TempDirTest):
         conn = db.connect(self.path("koopjes.db"))
         counts = self.import_legacy(conn, reference_prices_path=path)
         self.assertEqual(counts["models_from_reference"], 1)
+
+    def test_a_duplicate_pattern_is_reported_and_counted_once(self):
+        # The upsert is on (kind, pattern): two rows with the same pattern
+        # leave one model behind, so reporting two would be a lie about what
+        # is in the database.
+        path = self.write_reference("Mission 731,Eerste,100,,,\n" "Mission 731,Tweede,200,,,\n")
+        conn = db.connect(self.path("koopjes.db"))
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            counts = self.import_legacy(conn, reference_prices_path=path)
+
+        self.assertEqual(counts["models_from_reference"], 1)
+        self.assertIn("meer dan één keer", stderr.getvalue())
+        rows = conn.execute("SELECT model FROM model").fetchall()
+        self.assertEqual([r["model"] for r in rows], ["Tweede"])
 
     def test_rows_without_a_pattern_are_ignored(self):
         path = self.write_reference(",Geen patroon,100,,,\n")
@@ -365,6 +395,44 @@ class ExportCsvTest(TempDirTest):
         db.export_csv(conn, out)
         prices = [line.split(",")[2] for line in Path(out).read_text(encoding="utf-8").splitlines()[1:]]
         self.assertEqual(prices, ["110", "47.5", ""])
+
+    def test_only_the_asked_for_kind_is_exported(self):
+        # reference_prices.csv is read as one flat list of patterns matched
+        # against whatever query runs, so a bike pattern in the speakers file
+        # would start matching speaker titles. Fase 7 adds bike rows.
+        conn = db.connect(self.path("koopjes.db"))
+        for kind, model, pattern in (
+            ("other", "Mission 731", "Mission 731"),
+            ("bike", "Giant Defy", "Giant Defy"),
+        ):
+            conn.execute(
+                "INSERT INTO model (kind, model, pattern, specs_json, score) "
+                "VALUES (?, ?, ?, '{}', '')",
+                (kind, model, pattern),
+            )
+        conn.commit()
+
+        out = self.path("export.csv")
+        self.assertEqual(db.export_csv(conn, out), 1)
+        self.assertIn("Mission 731", Path(out).read_text(encoding="utf-8"))
+        self.assertNotIn("Giant Defy", Path(out).read_text(encoding="utf-8"))
+        self.assertEqual(db.export_csv(conn, out, kind="bike"), 1)
+        self.assertIn("Giant Defy", Path(out).read_text(encoding="utf-8"))
+
+    def test_an_unreadable_specs_json_does_not_stop_the_export(self):
+        conn = db.connect(self.path("koopjes.db"))
+        conn.execute(
+            "INSERT INTO model (kind, model, pattern, specs_json, score) "
+            "VALUES ('other', 'Stuk', 'stuk', '{kapot', '')"
+        )
+        conn.commit()
+
+        out = self.path("export.csv")
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(db.export_csv(conn, out), 1)
+        self.assertIn("specs_json", stderr.getvalue())
+        self.assertIn("Stuk", Path(out).read_text(encoding="utf-8"))
 
     def test_empty_model_table_still_writes_a_header(self):
         conn = db.connect(self.path("koopjes.db"))
