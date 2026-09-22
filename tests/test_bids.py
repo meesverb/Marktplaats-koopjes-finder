@@ -239,6 +239,19 @@ class FormatBidInfoTest(unittest.TestCase):
         )
         self.assertIn("min. €120 (35% v. mediaan)", mp.format_bid_info(listing))
 
+    def test_the_minimum_stops_being_a_discount_once_someone_has_bid(self):
+        # With a standing bid the price column already shows that bid, and the
+        # minimum no longer buys the listing. It stays visible as a number, but
+        # advertising it as a cheap way in would be misleading.
+        listing = make_listing(
+            price_eur=150.0, price_is_bid=True, bid_count=1,
+            bid_minimum=80.0, bid_minimum_pct_of_median=30.0,
+        )
+        info = mp.format_bid_info(listing)
+        self.assertIn("min. €80", info)
+        self.assertNotIn("mediaan", info)
+        self.assertIn("1 bod", info)
+
     def test_a_one_cent_difference_is_not_a_discount(self):
         # Marktplaats sometimes sets the minimum a cent under the asking price;
         # calling that a discount would be noise.

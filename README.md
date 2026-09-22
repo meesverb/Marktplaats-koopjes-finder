@@ -183,7 +183,9 @@ against fixed-price listings — the minimum bid is shown separately, in its own
 also prints a `BIED-OVERZICHT` section: all bidding listings, the ones nobody
 has bid on first and each group sorted by dealscore, showing the minimum bid,
 what percentage of the median that minimum is, and the reference model if one
-matched. Those are the ones where you can still get in at the seller's own
+matched. That percentage is only shown while nobody has bid yet: once there is
+a bid, the minimum no longer buys the listing, so it stays visible as a plain
+number without being presented as a cheap way in. Those are the ones where you can still get in at the seller's own
 floor price instead of bidding against someone.
 
 A listing only counts as "still free to bid on" when its bid count was

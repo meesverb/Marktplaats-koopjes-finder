@@ -772,11 +772,21 @@ def format_bid_info(listing: Listing) -> str:
     bits = []
     if listing.bid_minimum is not None:
         minimum = f"min. €{listing.bid_minimum:.0f}"
-        # Only worth spelling out when the minimum bid is really under the
-        # asking price — otherwise it repeats the "% v. mediaan" column.
-        if listing.bid_minimum_pct_of_median is not None and (
-            listing.price_eur is None
-            or listing.bid_minimum <= listing.price_eur * MEANINGFUL_MINIMUM_BID_RATIO
+        # The "% v. mediaan" here is an invitation: that's what opening the
+        # bidding would cost you. It only holds while nobody has bid — after
+        # that the listing can't be had for the minimum any more (the price
+        # column has moved up to the standing bid, see resolve_bid_price), so
+        # presenting it as a cheap way in would be wrong. The minimum itself
+        # stays visible; only the framing goes. And as before, it's only worth
+        # spelling out when it's really under the asking price, otherwise it
+        # just repeats the "% v. mediaan" column.
+        if (
+            listing.bid_minimum_pct_of_median is not None
+            and listing.bid_count in (None, 0)
+            and (
+                listing.price_eur is None
+                or listing.bid_minimum <= listing.price_eur * MEANINGFUL_MINIMUM_BID_RATIO
+            )
         ):
             minimum += f" ({listing.bid_minimum_pct_of_median:.0f}% v. mediaan)"
         bits.append(minimum)
