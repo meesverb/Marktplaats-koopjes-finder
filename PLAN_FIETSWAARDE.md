@@ -101,9 +101,11 @@ bestand voordat je aan de taxatie begint. Samengevat: Giant Defy **Composite**
 — dus scenario B (fiets compleet met stockwielen, carbon wielset apart) kan
 doorgerekend worden.
 
-Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open): de staat
-(kilometerstand, slijtage, schade), wat er meegaat bij verkoop, de
-verkoopregio, en of er geld bij mag boven op de opbrengst.
+Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open) blokkeert de
+taxatie niet: verkoopregio, eventuele schade, en de exacte trim. Verder bekend
+en gunstig: **minder dan 10.000 km**, en cassette én ketting zijn ca. 1500 km
+oud. De Wahoo Elemnt Roam gaat **niet** mee bij verkoop. Het budget voor de
+volgende fiets is de **verkoopopbrengst + maximaal €250**.
 
 Twee eerder kritieke punten zijn inmiddels beantwoord en veranderen het werk:
 
@@ -283,7 +285,7 @@ Per dimensie 0-100, gewichten in `scoring_config.json` (JSON, geen TOML —
 | `drivetrain` | groepsettier 1-6 (bestaat al: `GROUPSET_CATALOG`) + elektronisch + aantal versnellingen |
 | `brakes` | velrem 40 / mechanische schijf 60 / hydraulische schijf 100 |
 | `wheels` | alu 40 / naamloos carbon 60 / merk-carbon 85 |
-| `extras` | powermeter, fietscomputer, extra wielset, pedalen |
+| `extras` | powermeter, fietscomputer, extra wielset, pedalen — **relatief aan wat hij al heeft**: hij houdt zijn Wahoo Elemnt Roam, dus een fietscomputer bij een advertentie is alleen doorverkoopwaarde waard, een powermeter telt volledig mee |
 | `fit` | **geen score maar een harde poort** — verkeerde framemaat = uitgesloten |
 
 De eigen fiets wordt met dezelfde functie gescoord; dat getal is de baseline.
@@ -325,6 +327,18 @@ Kandidaat = `past_qua_maat` ∧ `kwaliteitsscore > baseline + marge` ∧
   én verwachte biedprijs. "Bieden" hoort in de rekensom te zitten, niet als
   voetnoot.
 - Rangschikken op **upgrade per euro**: `(score − baseline) / effectieve_prijs`.
+- **Verwachting bij dit budget (opbrengst + max €250):** de velremroute wint
+  bijna altijd, omdat de CSC-wielset dan meeverhuist en effectief waarde
+  meeneemt. Bouw de finder daar echter **niet** op vast: schijfremkandidaten
+  moeten zichtbaar blijven, want juist een uitgesproken koopje daar is de reden
+  dat dit gereedschap bestaat. Sorteer op upgrade per euro en laat de
+  rangschikking het werk doen, in plaats van een remtype vooraf uit te sluiten.
+- **Het budget is krap, dus de bied-kant is hier niet optioneel.** Met deze
+  marge is de kans op een generatiesprong via een gewone vaste-prijsadvertentie
+  klein; een onderbeboden biedadvertentie is de realistische route. Het
+  biedoverzicht zelf bestaat al (zie hieronder) — wat ontbreekt is de
+  **speelruimte**-sortering, en die heeft de taxatie uit fase 3 nodig. Geef
+  die voorrang boven cosmetische verbeteringen elders.
 
 ### Biedadvertenties
 
@@ -527,7 +541,7 @@ ze vóór én na elke stap: `python -m unittest discover -s tests -t tests`.
 
 ## 12. Voortgang
 
-- [x] Fase 0 — intake eigen fiets *(kern vastgesteld in `mijn_fiets.md`; zes detailpunten nog open, zie §4)*
+- [x] Fase 0 — intake eigen fiets *(`mijn_fiets.md` is compleet genoeg om op te taxeren; drie verfijningen open, zie §4)*
 - [x] Testsuite *(87 tests in `tests/`; hoorde bij fase 1, is vooruit gedaan)*
 - [ ] Fase 1a — `db.py` los, nog niet aangesloten
 - [ ] Fase 1b — aansluiten op het script
