@@ -82,7 +82,16 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    Neem daarbij mee wat de taxatie van 22-09 opleverde: verkopers schrijven
    nooit "Composite", maar "Defy Advanced" of "Defy carbon" — daar moeten de
    patronen op passen.
-5. **Nog te verifiëren aan een echte advertentie**: of Marktplaats'
+5. **"(elektronisch)" bij een groepset die pas een zin later Di2 noemt.** De
+   tag eist nu dat Di2/eTap/AXS in dezelfde zinsnede staat als de
+   groepsetnaam én van hetzelfde merk is, zodat "Shimano 105, Di2-upgrade
+   mogelijk" geen elektronische 105 meer oplevert. Daarmee mist hij wel een
+   advertentie die de groepset en de Di2 in losse zinnen noemt, en
+   "Di2-upgrade uitgevoerd" (wél elektronisch) is nog steeds niet te
+   onderscheiden van "Di2-upgrade mogelijk". Dat is te beslissen met de ~50
+   echte advertentieteksten die fase 2 in `tests/fixtures/` verzamelt — niet
+   met meer giswerk over hoe verkopers het opschrijven.
+6. **Nog te verifiëren aan een echte advertentie**: of Marktplaats'
    `currentMinimumBid` op een advertentie waar al geboden is écht onder het
    hoogste bod kan liggen, of dat het dan simpelweg het eerstvolgende
    toegestane bod is. De code gaat van het eerste uit (`resolve_bid_price`
