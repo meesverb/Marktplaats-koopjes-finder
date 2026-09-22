@@ -130,6 +130,28 @@ class DisappearanceSweepTest(TempDirTest):
         still_here = conn.execute("SELECT disappeared_at FROM listing WHERE item_id='b'").fetchone()
         self.assertIsNone(still_here["disappeared_at"])
 
+    def test_a_filter_does_not_make_listings_look_disappeared(self):
+        # The sweep has to compare against what the crawl saw, not against
+        # what survived --max-price: those listings are still online, they
+        # are only out of this report. Marking them gone also writes a
+        # days_online that fase 3 would later take at face value.
+        db_path = self.path("koopjes.db")
+        listings = [
+            make_listing(item_id="goedkoop", price_eur=50.0),
+            make_listing(item_id="duur", price_eur=2000.0),
+        ]
+        self.run_query(listings, ["--db", db_path, "--pages", "0"])
+        self.run_query(listings, ["--db", db_path, "--pages", "0", "--max-price", "150"])
+
+        conn = db.connect(db_path)
+        rows = {
+            r["item_id"]: r
+            for r in conn.execute("SELECT item_id, disappeared_at, days_online FROM listing")
+        }
+        self.assertIsNone(rows["duur"]["disappeared_at"])
+        self.assertIsNone(rows["duur"]["days_online"])
+        self.assertIsNone(rows["goedkoop"]["disappeared_at"])
+
     def test_a_listing_that_reappears_is_no_longer_disappeared(self):
         db_path = self.path("koopjes.db")
         self.run_query([make_listing(item_id="a")], ["--db", db_path, "--pages", "0"])

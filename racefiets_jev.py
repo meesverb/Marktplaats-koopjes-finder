@@ -1623,6 +1623,7 @@ def sync_database(
     query: str,
     listings: list[Listing],
     *,
+    crawled_item_ids: set[str],
     started_at: str,
     finished_at: str,
 ) -> None:
@@ -1655,8 +1656,12 @@ def sync_database(
         # listing for this query — a shallow --pages 3 run would otherwise
         # mark everything past page 3 as disappeared.
         if args.pages <= 0:
-            seen_ids = {listing.item_id for listing in listings}
-            swept = db.sweep_disappeared(conn, query, seen_ids, finished_at)
+            # Against everything the crawl saw, not against what survived the
+            # filters: with --max-price 150 the listings above it are still
+            # online, they just aren't in this report. Sweeping on the
+            # filtered set marks those as disappeared and writes a days_online
+            # for them — exactly the number fase 3 wants to trust later.
+            swept = db.sweep_disappeared(conn, query, crawled_item_ids, finished_at)
             if swept:
                 print(
                     f"{swept} advertentie(s) gemarkeerd als verdwenen na volledige crawl",
@@ -1672,6 +1677,9 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
 
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     listings = collect_listings(query, args.pages, args.delay)
+    # Kept before any filtering: this is what the crawl actually saw, which is
+    # what "has this listing disappeared?" has to be answered against.
+    crawled_item_ids = {listing.item_id for listing in listings}
 
     # Filter on what the search results already tell us before the bid lookup,
     # which costs one request (plus --delay) per bidding listing: a listing
@@ -1723,7 +1731,14 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
 
     if not args.no_db:
         finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        sync_database(args, query, listings, started_at=started_at, finished_at=finished_at)
+        sync_database(
+            args,
+            query,
+            listings,
+            crawled_item_ids=crawled_item_ids,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
 
     if args.bids_only:
         listings = bid_listings(listings)
