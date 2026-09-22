@@ -83,6 +83,8 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--no-bid-lookup` | Alias for `--bid-lookup none` | off |
 | `--bids-only` | Only report bidding listings | off |
 | `--min-score` | Only report listings with at least this dealscore (0-100) | none |
+| `--db` | Path to the SQLite database that mirrors the CSV/JSON files (see below) | `koopjes.db` |
+| `--no-db` | Skip writing to the SQLite database | off |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:
 
@@ -266,6 +268,20 @@ This needs no research or original price at all, grows automatically the
 more you run the script, and is arguably more useful than a decades-old
 retail price for judging whether an asking price is reasonable. Disable
 with `--no-price-history`.
+
+### SQLite mirror — `--db`
+
+Every run also mirrors its listings into a local SQLite database
+(`koopjes.db` by default, created automatically), on top of — not instead
+of — the CSV/JSON files above: every field the script parses (price, city,
+condition, frame size, bid status, ...) gets upserted per listing, a
+`crawl_run` row logs the query and page count, and `seen_listings.json` /
+`reference_prices.csv` / `reference_price_history.csv` get re-imported into
+the same database so it stays in sync with them. Only a full crawl
+(`--pages 0`) marks previously-seen listings for that query as disappeared
+if they no longer turn up — a shallow `--pages 3` run only looked at part of
+the market, so it never draws that conclusion. Nothing yet reads from this
+database (see `PLAN_FIETSWAARDE.md`); disable it entirely with `--no-db`.
 
 ### `check_hifi_brand.py` — a research aid for filling in the reference file
 

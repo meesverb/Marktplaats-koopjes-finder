@@ -1,8 +1,9 @@
 """SQLite storage for koopjes.db.
 
-Fase 1a of PLAN_FIETSWAARDE.md: this module stands on its own.
-racefiets_jev.py does not import it yet (that wiring is fase 1b), so nothing
-about the script's behaviour changes here. What's here:
+Fase 1a of PLAN_FIETSWAARDE.md built this module standalone. Fase 1b wires it
+into racefiets_jev.py, which now writes to koopjes.db on every run (unless
+--no-db) alongside the CSV/JSON files it already wrote — nothing about their
+format changes. What's here:
 
 - the schema from PLAN_FIETSWAARDE.md §5, applied via connect()
 - import_legacy(), which migrates the three existing on-disk files that carry
@@ -11,6 +12,11 @@ about the script's behaviour changes here. What's here:
   deliberately left out: the plan keeps it as a pure derived export, and
   writing scored/derived listing fields back into the DB would make later
   valuations circular.
+- sync_listings(), which upserts a crawl's own listings (query, url, price
+  type, ...) straight into `listing`/`listing_price` — richer than what
+  import_legacy() can recover from seen_listings.json alone.
+- record_crawl_run() and sweep_disappeared(), which back E2 in §6: the sweep
+  must only run after a full crawl (`--pages 0`) of the same query.
 - export_csv(), which writes the `model` table back out in
   reference_prices.csv's column format, so reference_overview.py and
   check_reference_overlaps.py (both of which read that format through
@@ -357,6 +363,125 @@ def import_legacy(
     }
     conn.commit()
     return counts
+
+
+def record_crawl_run(
+    conn: sqlite3.Connection,
+    *,
+    query: str,
+    pages_requested: int,
+    pages_fetched: "int | None",
+    listing_count: int,
+    started_at: str,
+    finished_at: str,
+) -> int:
+    """Log one crawl in `crawl_run` and return its id. This is what the
+    disappearance sweep (E2 in PLAN_FIETSWAARDE.md §6) needs to tell a
+    shallow crawl from a full one — sweep_disappeared() must only run after
+    a full crawl of the same query, never a `--pages 3` one."""
+    cur = conn.execute(
+        """
+        INSERT INTO crawl_run (query, pages_requested, pages_fetched, listing_count,
+                                started_at, finished_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (query, pages_requested, pages_fetched, listing_count, started_at, finished_at),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: str) -> None:
+    """Upsert this run's listings into `listing`, and record one
+    `listing_price` observation per priced listing. A listing that reappears
+    after being marked disappeared has its disappeared_at cleared — it's
+    back."""
+    for listing in listings:
+        conn.execute(
+            """
+            INSERT INTO listing (item_id, title, description, price_eur, price_type, is_bid,
+                                  city, posted_date, condition, frame_height, url, query,
+                                  first_seen, last_seen)
+            VALUES (:item_id, :title, :description, :price_eur, :price_type, :is_bid,
+                    :city, :posted_date, :condition, :frame_height, :url, :query,
+                    :first_seen, :last_seen)
+            ON CONFLICT(item_id) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                price_eur = excluded.price_eur,
+                price_type = excluded.price_type,
+                is_bid = excluded.is_bid,
+                city = excluded.city,
+                posted_date = excluded.posted_date,
+                condition = excluded.condition,
+                frame_height = excluded.frame_height,
+                url = excluded.url,
+                query = excluded.query,
+                last_seen = excluded.last_seen,
+                disappeared_at = NULL
+            """,
+            {
+                "item_id": listing.item_id,
+                "title": listing.title,
+                "description": listing.description,
+                "price_eur": listing.price_eur,
+                "price_type": listing.price_type,
+                "is_bid": 1 if listing.price_is_bid else 0,
+                "city": listing.city,
+                "posted_date": listing.date,
+                "condition": listing.condition,
+                "frame_height": listing.frame_height,
+                "url": listing.url,
+                "query": query,
+                "first_seen": listing.first_seen or observed_at,
+                "last_seen": observed_at,
+            },
+        )
+        if listing.price_eur is not None:
+            conn.execute(
+                "INSERT OR IGNORE INTO listing_price (item_id, observed_at, price_eur) "
+                "VALUES (?, ?, ?)",
+                (listing.item_id, observed_at, listing.price_eur),
+            )
+    conn.commit()
+
+
+def sweep_disappeared(
+    conn: sqlite3.Connection, query: str, seen_item_ids, observed_at: str
+) -> int:
+    """Mark every listing for `query` that isn't in `seen_item_ids` and isn't
+    already marked as disappeared. Call this only after a full crawl
+    (`--pages 0`) of that exact query — a shallow crawl only sees the first
+    few pages, and would otherwise mark everything past that depth as gone.
+    Returns how many rows were newly marked."""
+    rows = conn.execute(
+        "SELECT item_id, first_seen FROM listing WHERE query = ? AND disappeared_at IS NULL",
+        (query,),
+    ).fetchall()
+
+    count = 0
+    for row in rows:
+        if row["item_id"] in seen_item_ids:
+            continue
+        days_online = None
+        first_seen = row["first_seen"]
+        if first_seen:
+            try:
+                delta = _parse_iso(observed_at) - _parse_iso(first_seen)
+                days_online = delta.days
+            except ValueError:
+                days_online = None
+        conn.execute(
+            "UPDATE listing SET disappeared_at = ?, days_online = ? WHERE item_id = ?",
+            (observed_at, days_online, row["item_id"]),
+        )
+        count += 1
+    conn.commit()
+    return count
+
+
+def _parse_iso(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def export_csv(conn: sqlite3.Connection, path: str) -> int:

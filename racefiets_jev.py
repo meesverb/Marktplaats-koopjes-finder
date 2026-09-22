@@ -28,6 +28,8 @@ from typing import Optional
 
 import requests
 
+import db
+
 BASE_URL = "https://www.marktplaats.nl"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -1513,6 +1515,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Skip the sound/highlighted-line notification when a new listing beats the reference baseline",
     )
+    parser.add_argument(
+        "--db",
+        default="koopjes.db",
+        help="Path to the SQLite database that mirrors the CSV/JSON files (PLAN_FIETSWAARDE.md "
+        "fase 1b) — every run upserts its listings, logs a crawl_run, and re-imports the legacy "
+        "files (default: koopjes.db)",
+    )
+    parser.add_argument(
+        "--no-db", action="store_true", help="Skip writing to the SQLite database"
+    )
     return parser.parse_args(argv)
 
 
@@ -1530,10 +1542,59 @@ def per_query_path(base: str, query: str, multi: bool) -> str:
     return str(p.with_name(f"{p.stem}_{safe_query_slug(query)}{p.suffix}"))
 
 
+def sync_database(
+    args: argparse.Namespace,
+    query: str,
+    listings: list[Listing],
+    *,
+    started_at: str,
+    finished_at: str,
+) -> None:
+    """Mirror this run into koopjes.db, alongside the CSV/JSON files that
+    stay the ones actually read elsewhere (reference_overview.py etc.) —
+    PLAN_FIETSWAARDE.md fase 1b. All three legacy paths are passed
+    explicitly: db.import_legacy()'s own defaults point at the working
+    directory, and leaving one out here would silently import whatever
+    happens to sit there instead of the file this run actually used."""
+    conn = db.connect(args.db)
+    try:
+        db.import_legacy(
+            conn,
+            seen_listings_path=args.history_file,
+            reference_prices_path=args.reference_file,
+            reference_price_history_path=args.price_history_file,
+        )
+        db.sync_listings(conn, query, listings, finished_at)
+        db.record_crawl_run(
+            conn,
+            query=query,
+            pages_requested=args.pages,
+            pages_fetched=None,
+            listing_count=len(listings),
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        # Only a full crawl (--pages 0, or any non-positive value per
+        # collect_listings' own convention) has actually looked at every
+        # listing for this query — a shallow --pages 3 run would otherwise
+        # mark everything past page 3 as disappeared.
+        if args.pages <= 0:
+            seen_ids = {listing.item_id for listing in listings}
+            swept = db.sweep_disappeared(conn, query, seen_ids, finished_at)
+            if swept:
+                print(
+                    f"{swept} advertentie(s) gemarkeerd als verdwenen na volledige crawl",
+                    file=sys.stderr,
+                )
+    finally:
+        conn.close()
+
+
 def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
     if multi:
         print(f"\n=== {query} ===")
 
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     listings = collect_listings(query, args.pages, args.delay)
 
     # Filter on what the search results already tell us before the bid lookup,
@@ -1583,6 +1644,10 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
         logged = append_bargain_log(args.log_file, listings)
         if logged:
             print(f"Logged {logged} new bargain(s) to {args.log_file}")
+
+    if not args.no_db:
+        finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        sync_database(args, query, listings, started_at=started_at, finished_at=finished_at)
 
     if args.bids_only:
         listings = bid_listings(listings)

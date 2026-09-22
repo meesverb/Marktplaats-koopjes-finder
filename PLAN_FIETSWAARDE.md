@@ -564,7 +564,7 @@ ze vóór én na elke stap: `python -m unittest discover -s tests -t tests`.
 - [x] Testsuite *(87 tests in `tests/`; hoorde bij fase 1, is vooruit gedaan)*
 - [x] Eerste handmatige taxatie *(`taxatie_2026-09-22.md` — trede 2/3, n klein; fase 3 automatiseert dit)*
 - [x] Fase 1a — `db.py` los, nog niet aangesloten *(schema uit §5, `import_legacy()` voor de drie databestanden, `export_csv()`; `racefiets_jev.py` ongewijzigd, 107 tests groen. Voor 1b: `listing_model` blijft leeg — many-to-many matching is fase 2 — en `bargains_log.csv` is bewust niet meegenomen, zie §5.)*
-- [ ] Fase 1b — aansluiten op het script
+- [x] Fase 1b — aansluiten op het script *(`racefiets_jev.py` schrijft nu ook naar `koopjes.db` via `db.sync_listings()`/`record_crawl_run()`, naast de bestaande CSV/JSON-bestanden die ongewijzigd blijven; `--db`/`--no-db` toegevoegd. `import_legacy()` krijgt in `sync_database()` altijd alle drie de paden expliciet uit `args`. De verdwijn-sweep (`db.sweep_disappeared()`) draait alleen bij `--pages 0`; er is geen echte cron/scheduler gebouwd, dat blijft aan de gebruiker om in te plannen zoals in de fase beschreven. `pages_fetched` in `crawl_run` wordt niet ingevuld — `collect_listings()` telt dat zelf niet bij en het was niet nodig voor de acceptatiecriteria van deze fase. Tests in `tests/test_db_wiring.py`, 135 tests groen.)*
 - [ ] Fase 2 — spec-extractie en meervoudige matches
 - [ ] Fase 3 — waarderingsmotor
 - [ ] Fase 4 — scoring

@@ -150,6 +150,7 @@ class LookupOrderTest(unittest.TestCase):
             "--history-file", str(self.tmp / "history.json"),
             "--reference-file", str(self.tmp / "geen-referentie.csv"),
             "--output", str(self.tmp / "out.csv"),
+            "--no-db",
         ] + extra_argv
         args = mp.parse_args(argv)
 
