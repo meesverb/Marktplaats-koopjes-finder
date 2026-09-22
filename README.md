@@ -163,6 +163,11 @@ This means one extra request per `FAST_BID` listing found, so a run with a lot
 of them takes longer. `--bid-lookup none` (or `--no-bid-lookup`) skips it and
 goes back to treating those listings as priceless.
 
+Your filters run before the lookup, so a listing that `--min-price`,
+`--max-price` or the frame-size filters already exclude never costs a request.
+A `FAST_BID` has no price to filter on at that point, so those are looked up
+first and then held against the price range like everything else.
+
 **What a `MIN_BID` price actually is.** The number in the search results is
 what the seller is asking; the minimum bid Marktplaats will really accept is
 on the listing page and is often well below it — a listing asking €200 took

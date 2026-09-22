@@ -436,6 +436,20 @@ def collect_listings(
     return list(listings.values())
 
 
+def filter_by_price(
+    listings: list[Listing], min_price: Optional[float], max_price: Optional[float]
+) -> list[Listing]:
+    """Drop listings outside the price range. A listing without a price at all
+    passes: a FAST_BID reports none in the search results, and unknown isn't
+    the same as out of range — it gets tested again once the bid lookup has
+    given it a price."""
+    if min_price is not None:
+        listings = [l for l in listings if l.price_eur is None or l.price_eur >= min_price]
+    if max_price is not None:
+        listings = [l for l in listings if l.price_eur is None or l.price_eur <= max_price]
+    return listings
+
+
 def filter_by_frame_height(
     listings: list[Listing], min_height: Optional[float], max_height: Optional[float]
 ) -> list[Listing]:
@@ -1467,16 +1481,25 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
 
     listings = collect_listings(query, args.pages, args.delay)
 
+    # Filter on what the search results already tell us before the bid lookup,
+    # which costs one request (plus --delay) per bidding listing: a listing
+    # that's out of range or the wrong frame size gets dropped either way, so
+    # fetching its bids first is time spent on nothing. Under the default
+    # --bid-lookup fast this changes little (FAST_BID listings carry no price
+    # yet, so they all pass), but under --bid-lookup all it saves a request
+    # for every MIN_BID outside the range.
+    listings = filter_by_price(listings, args.min_price, args.max_price)
+    listings = filter_by_frame_height(listings, args.min_frame_height, args.max_frame_height)
+
     bid_lookup = "none" if args.no_bid_lookup else args.bid_lookup
     enrich_bid_listings(listings, args.delay, bid_lookup)
     apply_bid_flags(listings)
 
-    if args.min_price is not None:
-        listings = [l for l in listings if l.price_eur is None or l.price_eur >= args.min_price]
-    if args.max_price is not None:
-        listings = [l for l in listings if l.price_eur is None or l.price_eur <= args.max_price]
-
-    listings = filter_by_frame_height(listings, args.min_frame_height, args.max_frame_height)
+    # FAST_BID listings passed the filter above untested, for lack of a price.
+    # Now that the lookup has given them one, the range applies to them too —
+    # without this second pass a bid of EUR 2000 would sail through
+    # --max-price 150.
+    listings = filter_by_price(listings, args.min_price, args.max_price)
 
     reference = load_reference_data(args.reference_file)
     apply_reference_data(listings, reference)

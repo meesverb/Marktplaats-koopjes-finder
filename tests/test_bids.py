@@ -6,9 +6,12 @@ minimum bid Marktplaats accepts lives on the listing page and is often lower.
 """
 import contextlib
 import io
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
-from helpers import FakeSession, config_page, make_listing, mp
+from helpers import FakeSession, config_page, make_listing, mp, read_csv_rows
 
 
 class ResolveBidPriceTest(unittest.TestCase):
@@ -117,6 +120,86 @@ class BidStructureWarningTest(unittest.TestCase):
             for _ in range(3):
                 mp.fetch_bid_info(session, url)
         self.assertEqual(stderr.getvalue().count("paginastructuur"), 1)
+
+
+class LookupOrderTest(unittest.TestCase):
+    """Every bid lookup is its own request plus a --delay wait, so the filters
+    that the search results alone can already decide run first — and the price
+    range runs again afterwards, because a FAST_BID has no price to judge
+    until the lookup has been done."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def run_query(self, listings, extra_argv, enrich=None):
+        handed_to_lookup = []
+
+        def fake_collect(query, pages, delay):
+            return list(listings)
+
+        def fake_enrich(ls, delay, mode, session=None):
+            handed_to_lookup.extend(l.item_id for l in ls)
+            if enrich is not None:
+                enrich(ls, mode)
+
+        argv = [
+            "--query", "test", "--no-html", "--no-log", "--no-price-history",
+            "--no-notify-better", "--open-browser", "never",
+            "--history-file", str(self.tmp / "history.json"),
+            "--reference-file", str(self.tmp / "geen-referentie.csv"),
+            "--output", str(self.tmp / "out.csv"),
+        ] + extra_argv
+        args = mp.parse_args(argv)
+
+        with mock.patch.object(mp, "collect_listings", fake_collect), mock.patch.object(
+            mp, "enrich_bid_listings", fake_enrich
+        ):
+            with contextlib.redirect_stdout(io.StringIO()):
+                mp.run_for_query(args, "test", False)
+
+        reported = [r["item_id"] for r in read_csv_rows(str(self.tmp / "out.csv"))]
+        return handed_to_lookup, reported
+
+    def test_a_listing_outside_the_range_is_never_looked_up(self):
+        listings = [
+            make_listing(item_id="binnen", price_eur=50.0),
+            make_listing(item_id="buiten", price_eur=2000.0, price_type="MIN_BID", price_is_bid=True),
+        ]
+        looked_up, reported = self.run_query(
+            listings, ["--max-price", "150", "--bid-lookup", "all"]
+        )
+        self.assertNotIn("buiten", looked_up)
+        self.assertEqual(reported, ["binnen"])
+
+    def test_the_wrong_frame_size_is_never_looked_up_either(self):
+        listings = [
+            make_listing(item_id="klein", frame_height="50 cm", price_type="MIN_BID", price_is_bid=True),
+            make_listing(item_id="groot", frame_height="62 cm", price_type="MIN_BID", price_is_bid=True),
+        ]
+        looked_up, _ = self.run_query(
+            listings, ["--min-frame-height", "58", "--bid-lookup", "all"]
+        )
+        self.assertEqual(looked_up, ["groot"])
+
+    def test_a_bid_that_turns_out_too_high_still_drops_out(self):
+        # The whole reason the range is applied twice: filtering only before
+        # the lookup would let a FAST_BID standing at EUR 2000 through
+        # --max-price 150, because at filter time it had no price at all.
+        listings = [
+            make_listing(item_id="duur", price_eur=None, price_type="FAST_BID", price_is_bid=True),
+            make_listing(item_id="koopje", price_eur=None, price_type="FAST_BID", price_is_bid=True),
+        ]
+        prices = {"duur": 2000.0, "koopje": 40.0}
+
+        def enrich(ls, mode):
+            for l in ls:
+                l.price_eur = prices[l.item_id]
+
+        looked_up, reported = self.run_query(listings, ["--max-price", "150"], enrich=enrich)
+        self.assertEqual(sorted(looked_up), ["duur", "koopje"])
+        self.assertEqual(reported, ["koopje"])
 
 
 class OpenBidTest(unittest.TestCase):
