@@ -4,8 +4,11 @@
 listings matching a query — road bikes ("racefiets") by default, but `--query`
 works for anything (`--query luidsprekers`, `--query "canon eos"`, ...) — and
 flags ones priced well below the median of what it found as a quick way to
-spot bargains. The frame-height/groupset features below are bike-specific and
-simply find nothing to match on other queries, which is harmless.
+spot bargains. Every listing also gets a single 0-100 **dealscore** combining
+all the price signals it knows about, and the report is sorted by it, so the
+best deal is the top row (see "Dealscore" below). The frame-height/groupset
+features below are bike-specific and simply find nothing to match on other
+queries, which is harmless.
 
 Pick a query term that's actually specific to what you want: Marktplaats'
 own category data is used to filter out unrelated results (see "Off-topic
@@ -35,12 +38,13 @@ Listings marked with `*` are priced at or below `--bargain-ratio` (default
 priced listing also shows `% v. mediaan` — what percentage of the median
 price it's asking, e.g. `24%` means it's asking a quarter of the median — so
 you can judge relative cheapness on a scale instead of only the binary `*`
-cutoff. In the HTML report this is a sortable column and is what listings are
-sorted by within their Nieuw/Koopje group by default.
+cutoff. In the HTML report this is a sortable column; it also feeds the
+dealscore the report is sorted by.
 
 Every run also writes `racefiets_report.html` — open it in a browser for a
-sortable, filterable overview (Nieuw / Koopjes) with clickable links to each
-listing, and the average/median price of what was found. It compares against
+sortable, filterable overview (Nieuw / Koopjes / Topdeals / Bieden / ...) with
+clickable links to each listing, and the average/median price of what was
+found. It compares against
 `seen_listings.json` (created automatically) so listings you've already seen
 in a previous run are marked accordingly instead of showing up as "new" every
 time — handy if you run this script on a schedule (e.g. every 15 minutes via
@@ -72,7 +76,10 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--price-history-file` | CSV that logs observed prices of reference-matched listings (builds your own market price database) | `reference_price_history.csv` |
 | `--no-price-history` | Skip recording/using observed secondhand prices | off |
 | `--no-notify-better` | Skip the sound/notification when a listing beats the reference baseline | off |
-| `--no-bid-lookup` | Skip fetching each FAST_BID listing's own page for its real bid amount (faster) | off |
+| `--bid-lookup` | Which bidding listings to fetch bid details for: `fast` (FAST_BID only), `all` (also MIN_BID), `none` | `fast` |
+| `--no-bid-lookup` | Alias for `--bid-lookup none` | off |
+| `--bids-only` | Only report bidding listings | off |
+| `--min-score` | Only report listings with at least this dealscore (0-100) | none |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:
 
@@ -101,22 +108,96 @@ so a bike in a bucket that only partially overlaps (e.g. bucket "53 tot 57
 cm" for a `--min-frame-height 54` filter) may still show up, and a bike with
 no frame size listed at all is excluded once this filter is active.
 
+### Dealscore
+
+Each listing gets one 0-100 score that folds together every price signal the
+script has for it, so you don't have to weigh the individual columns yourself.
+The console table and the HTML report are both sorted by it (best first), the
+HTML report has a sortable `Score` column with a label (Topdeal / Goede deal /
+Redelijk / Aan de prijs / Duur) and a `Topdeals` filter tab, and hovering a
+score shows exactly which signals produced it. `--min-score 70` drops
+everything below that score from the report.
+
+Three price signals feed in, each comparing the asking price to a benchmark.
+Each is scaled so that sitting exactly on its benchmark scores 50:
+
+| Signal | Benchmark | Weight |
+| --- | --- | --- |
+| % of median | the median price of everything found for this query | 1 |
+| % of secondhand average | what this exact model went for in your own past runs (needs 2+ sightings) | 2 |
+| % of original price | what the model cost new, from `reference_prices.csv` | 0.75 |
+
+The secondhand average weighs heaviest because it's the most honest benchmark:
+it's what this specific model actually gets asked for, observed first-hand.
+The original retail price weighs least — for anything vintage, every listing
+sits far below it, so it barely separates a good deal from a bad one.
+
+Only signals that are actually available count, and the weights are
+renormalized over those, so a listing with no reference data is scored on what
+is known rather than penalized for the empty columns. That does mean a score
+can rest on a single signal, which is why every score comes with the list of
+signals behind it. On top of the average come two bonuses: up to +10 for a
+price drop (scaled to how big it was) and +8 for a `better_than_baseline`
+reference match.
+
+A few things the score deliberately does not do. It says nothing about
+condition, completeness or how far away the seller is — it's a price signal,
+not a verdict. Anything at or above 1.7x the median scores 0, so it doesn't
+rank "expensive" against "absurd". And a bidding listing's price is wherever
+the bidding stands now, not what it will sell for, so its score is an upper
+bound — the score breakdown says so on those listings.
+
 ### Bidding listings (FAST_BID / MIN_BID)
 
-Some listings ("Bieden") don't have a fixed price — Marktplaats' search
+Some listings ("Bieden") don't have a fixed price. Marktplaats' search
 results always report €0 for these (`FAST_BID`), even though the listing
-itself has a real minimum starting bid, or a real current highest bid once
-someone has bid. By default the script fetches each `FAST_BID` listing's own
-page to get that real number (marked `B` in the table, "bod" in the HTML
-report) and uses it everywhere — price filters, the bargain comparison, all
-of it — instead of treating it as priceless. `MIN_BID` listings already
-report a real number in search results, so no extra request is needed for
-those, but they're marked `B` too since it's still a bid, not a fixed
-asking price.
+itself has a real minimum bid, or a real current highest bid once someone has
+bid. By default the script fetches each `FAST_BID` listing's own page to get
+that real number (marked `B` in the table, "bod" in the HTML report) and uses
+it everywhere — price filters, the bargain comparison, the dealscore, all of
+it — instead of treating it as priceless. `MIN_BID` listings already report a
+number in search results, so no extra request is needed for those, but they're
+marked `B` too since it's still a bid, not a fixed asking price.
 
-This means one extra request per `FAST_BID` listing found, so a run with a
-lot of them takes longer. Use `--no-bid-lookup` to skip it and go back to
-treating those listings as priceless.
+This means one extra request per `FAST_BID` listing found, so a run with a lot
+of them takes longer. `--bid-lookup none` (or `--no-bid-lookup`) skips it and
+goes back to treating those listings as priceless.
+
+**What a `MIN_BID` price actually is.** The number in the search results is
+what the seller is asking; the minimum bid Marktplaats will really accept is
+on the listing page and is often well below it — a listing asking €200 took
+bids from €120, one asking €47.50 from €35. `--bid-lookup all` fetches those
+pages too (one extra request per `MIN_BID` listing) and fills in both the real
+minimum bid and how many bids have been placed. The asking price stays the
+price used for filters and the score, because that's what compares fairly
+against fixed-price listings — the minimum bid is shown separately, in its own
+`Bod` column, as what it would cost to open the bidding.
+
+**Still free to bid on.** Bidding listings nobody has bid on yet get a
+`VRIJ TE BIEDEN` badge and their own filter tab in the HTML report. Every run
+also prints a `BIED-OVERZICHT` section: all bidding listings, the ones nobody
+has bid on first and each group sorted by dealscore, showing the minimum bid,
+what percentage of the median that minimum is, and the reference model if one
+matched. Those are the ones where you can still get in at the seller's own
+floor price instead of bidding against someone.
+
+A listing only counts as "still free to bid on" when its bid count was
+actually looked up and came back zero — a `MIN_BID` listing without
+`--bid-lookup all` has an unknown bid count, which is not the same as zero,
+and stays out of that tab. So for a full picture of what's biddable:
+
+```bash
+python racefiets_jev.py --query luidsprekers --pages 5 --bid-lookup all --bids-only
+```
+
+`--bids-only` limits the report to bidding listings. The median, the
+secondhand averages and the dealscore are still computed over everything found
+first, so the comparison stays against the whole market rather than only
+against other bidding listings.
+
+Keep in mind that a bid listing's price is where the bidding stands now, not
+what it will sell for, so its dealscore is an upper bound — the score
+breakdown says as much on those listings.
 
 ### Groupset detection (bikes)
 

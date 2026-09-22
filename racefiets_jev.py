@@ -66,6 +66,13 @@ class Listing:
     pct_of_median: Optional[float] = None
     price_dropped: bool = False
     price_drop_from: Optional[float] = None
+    bid_count: Optional[int] = None
+    bid_minimum: Optional[float] = None
+    bid_minimum_pct_of_median: Optional[float] = None
+    bid_open: bool = False
+    deal_score: Optional[float] = None
+    deal_label: str = ""
+    deal_reasons: str = ""
 
 
 def fetch_page(session: requests.Session, query: str, page: int) -> dict:
@@ -139,7 +146,7 @@ def fetch_bid_info(session: requests.Session, vip_url: str) -> Optional[dict]:
 
 def resolve_bid_price(bids_info: dict) -> Optional[float]:
     """The relevant "price" for a bidding listing: the current highest bid
-    if there is one, otherwise the seller's minimum starting bid."""
+    if there is one, otherwise the minimum bid Marktplaats will accept."""
     bids = bids_info.get("bids") or []
     if bids:
         return max(b["value"] for b in bids) / 100
@@ -149,12 +156,26 @@ def resolve_bid_price(bids_info: dict) -> Optional[float]:
     return None
 
 
-def enrich_fast_bid_listings(
-    listings: list[Listing], delay: float, session: Optional[requests.Session] = None
+def enrich_bid_listings(
+    listings: list[Listing],
+    delay: float,
+    mode: str = "fast",
+    session: Optional[requests.Session] = None,
 ) -> None:
-    """FAST_BID listings report €0 in search results; fetch their own page
-    to fill in the real minimum/current bid."""
+    """Fetch bid details from bidding listings' own pages. FAST_BID listings
+    report €0 in search results, so without this they have no usable price at
+    all; MIN_BID listings do report an asking price, so for those this adds
+    the minimum bid that's actually accepted (usually lower) and how many
+    bids have already been placed (mode "all").
+
+    mode: "fast" (default, FAST_BID only), "all" (also MIN_BID), "none".
+    """
+    if mode == "none":
+        return
+
     targets = [l for l in listings if l.price_type == "FAST_BID" and l.price_eur is None]
+    if mode == "all":
+        targets += [l for l in listings if l.price_type == "MIN_BID"]
     if not targets:
         return
 
@@ -170,8 +191,22 @@ def enrich_fast_bid_listings(
             continue
 
         if bids_info:
+            bids = bids_info.get("bids") or []
+            listing.bid_count = len(bids)
+            minimum = bids_info.get("currentMinimumBid")
+            listing.bid_minimum = minimum / 100 if minimum else None
             price = resolve_bid_price(bids_info)
-            if price is not None:
+            # A MIN_BID listing already has a price from the search results
+            # (what the seller is asking) and Marktplaats will accept a
+            # *lower* minimum bid than that — seen in the wild: asking €47.50,
+            # minimum bid €35. Those are two different numbers, so the asking
+            # price stays the price (otherwise these listings would look
+            # cheaper than fixed-price ones purely for being biddable) and the
+            # minimum lands in bid_minimum. Only a real bid above the asking
+            # price replaces it: below that bid the listing can't be had.
+            if price is not None and (
+                listing.price_eur is None or (bids and price > listing.price_eur)
+            ):
                 listing.price_eur = price
                 listing.price_is_bid = True
 
@@ -308,6 +343,11 @@ def parse_listing(raw: dict) -> Listing:
         groupset=groupset,
         groupset_tier=groupset_tier,
         url=url,
+        # A MIN_BID listing's search-result price is what the seller is
+        # asking; the minimum bid Marktplaats actually accepts (usually lower)
+        # and the number of bids placed are only on the listing page itself,
+        # so bid_minimum/bid_count stay empty until --bid-lookup all fills
+        # them in.
         price_is_bid=price_type in ("MIN_BID", "FAST_BID"),
     )
 
@@ -401,6 +441,13 @@ def flag_bargains(listings: list[Listing], bargain_ratio: float) -> list[Listing
             listing.pct_of_median = round(listing.price_eur / median_price * 100, 1)
             if listing.price_eur <= threshold:
                 listing.is_bargain = True
+        # What being the first bidder would cost, on the same scale — for a
+        # listing whose accepted minimum bid sits well under the asking price,
+        # that's the number that says whether it's worth a try.
+        if listing.bid_minimum is not None:
+            listing.bid_minimum_pct_of_median = round(
+                listing.bid_minimum / median_price * 100, 1
+            )
     return listings
 
 
@@ -593,16 +640,220 @@ def apply_reference_data(listings: list[Listing], reference: list[dict]) -> None
                 break
 
 
+def apply_bid_flags(listings: list[Listing]) -> None:
+    """Mark bidding listings nobody has bid on yet — for those the seller's
+    minimum bid is still the whole asking price, so they're the ones where
+    you can actually still get in cheap. Listings whose bid count was never
+    looked up (MIN_BID without --bid-lookup all) stay unmarked: unknown is
+    not the same as zero."""
+    for listing in listings:
+        listing.bid_open = listing.price_is_bid and listing.bid_count == 0
+
+
+def open_bid_listings(listings: list[Listing]) -> list[Listing]:
+    return [l for l in listings if l.bid_open]
+
+
+def bid_listings(listings: list[Listing]) -> list[Listing]:
+    return [l for l in listings if l.price_is_bid]
+
+
+# Marktplaats' accepted minimum bid is sometimes a cent under the asking
+# price (€174.99 on a €175 listing) — that's not a discount worth pointing at,
+# so only a minimum this far below the asking price counts as one.
+MEANINGFUL_MINIMUM_BID_RATIO = 0.98
+
+
+def format_bid_info(listing: Listing) -> str:
+    """Short human-readable summary of a listing's bid state."""
+    if not listing.price_is_bid:
+        return ""
+    bits = []
+    if listing.bid_minimum is not None:
+        minimum = f"min. €{listing.bid_minimum:.0f}"
+        # Only worth spelling out when the minimum bid is really under the
+        # asking price — otherwise it repeats the "% v. mediaan" column.
+        if listing.bid_minimum_pct_of_median is not None and (
+            listing.price_eur is None
+            or listing.bid_minimum <= listing.price_eur * MEANINGFUL_MINIMUM_BID_RATIO
+        ):
+            minimum += f" ({listing.bid_minimum_pct_of_median:.0f}% v. mediaan)"
+        bits.append(minimum)
+    if listing.bid_count is None:
+        bits.append("biedingen onbekend")
+    elif listing.bid_count == 0:
+        bits.append("nog geen bod")
+    elif listing.bid_count == 1:
+        bits.append("1 bod")
+    else:
+        bits.append(f"{listing.bid_count} biedingen")
+    return " · ".join(bits)
+
+
+# --- Deal score -------------------------------------------------------------
+#
+# The report already carries several independent price signals (share of the
+# median of this search, share of the original retail price, share of the
+# secondhand average observed in past runs, price drops, better-than-baseline).
+# Judging a listing meant weighing those columns by hand every time, so they're
+# folded into one 0-100 number: 50 is roughly "priced like everything else",
+# higher is cheaper than its benchmarks.
+#
+# Each signal is a price ratio (1.0 = exactly at that benchmark) mapped onto
+# 0-100 between a "this is a steal" and a "this is expensive" ratio, then
+# averaged with the weights below. Only signals that are actually available
+# count, and the weights are renormalized over those, so a listing with no
+# reference data is scored on what's known instead of being penalized for the
+# missing columns. That does mean a score can rest on a single signal, so
+# every listing also carries deal_reasons — the signals that actually went
+# into its score, shown in the console and as the HTML score cell's tooltip.
+
+# (best ratio -> 100, worst ratio -> 0, weight). Each range is centered so
+# that sitting exactly on its benchmark scores 50 — that way a 50 means the
+# same thing ("priced normally") no matter which signals a listing happened to
+# have, and the weights below are the only thing that shifts the balance.
+SCORE_MEDIAN_RANGE = (0.30, 1.70, 1.0)
+# The secondhand average is the strongest signal — it's what this exact model
+# actually goes for, observed first-hand, rather than a retail price from
+# whenever it was new. It needs a couple of sightings to mean anything.
+SCORE_MARKET_RANGE = (0.40, 1.60, 2.0)
+SCORE_MARKET_MIN_OBSERVATIONS = 2
+# Original retail price is the weakest: for anything vintage, every listing
+# sits far below it, so it barely separates a good deal from a bad one.
+SCORE_ORIGINAL_RANGE = (0.15, 0.85, 0.75)
+
+SCORE_DROP_BONUS_MAX = 10.0
+SCORE_BETTER_BONUS = 8.0
+
+# (score at or above -> label, CSS class for the HTML score pill), best first.
+SCORE_LABELS = [
+    (80.0, "Topdeal", "top"),
+    (65.0, "Goede deal", "good"),
+    (45.0, "Redelijk", "ok"),
+    (25.0, "Aan de prijs", "low"),
+    (0.0, "Duur", "low"),
+]
+TOP_DEAL_SCORE = SCORE_LABELS[0][0]
+
+
+def ratio_score(ratio: float, best: float, worst: float) -> float:
+    """Map a price ratio (1.0 = at the benchmark) onto 0-100, where `best`
+    (a low ratio, i.e. cheap) is 100 and `worst` (a high ratio) is 0."""
+    if ratio <= best:
+        return 100.0
+    if ratio >= worst:
+        return 0.0
+    return (worst - ratio) / (worst - best) * 100.0
+
+
+def score_listing(listing: Listing) -> None:
+    """Fill in deal_score / deal_label / deal_reasons for one listing."""
+    if listing.price_eur is None:
+        return
+
+    parts: list[tuple[float, float, str]] = []  # (score, weight, explanation)
+
+    if listing.pct_of_median is not None:
+        best, worst, weight = SCORE_MEDIAN_RANGE
+        ratio = listing.pct_of_median / 100
+        parts.append(
+            (ratio_score(ratio, best, worst), weight, f"{listing.pct_of_median:.0f}% van mediaan")
+        )
+
+    if (
+        listing.ref_market_avg
+        and listing.ref_market_count >= SCORE_MARKET_MIN_OBSERVATIONS
+    ):
+        best, worst, weight = SCORE_MARKET_RANGE
+        ratio = listing.price_eur / listing.ref_market_avg
+        parts.append(
+            (
+                ratio_score(ratio, best, worst),
+                weight,
+                f"{ratio * 100:.0f}% van 2e-hands gem. (n={listing.ref_market_count})",
+            )
+        )
+
+    if listing.ref_pct_of_original is not None:
+        best, worst, weight = SCORE_ORIGINAL_RANGE
+        ratio = listing.ref_pct_of_original / 100
+        parts.append(
+            (
+                ratio_score(ratio, best, worst),
+                weight,
+                f"{listing.ref_pct_of_original:.0f}% van nieuwprijs",
+            )
+        )
+
+    if not parts:
+        return
+
+    total_weight = sum(w for _, w, _ in parts)
+    score = sum(s * w for s, w, _ in parts) / total_weight
+    reasons = [text for _, _, text in parts]
+
+    # Bonuses, on top of the price signals rather than averaged into them: a
+    # listing without a price drop shouldn't be scored as if it had a bad one.
+    if listing.price_dropped and listing.price_drop_from:
+        drop_pct = (listing.price_drop_from - listing.price_eur) / listing.price_drop_from * 100
+        bonus = min(SCORE_DROP_BONUS_MAX, drop_pct / 2)
+        score += bonus
+        reasons.append(f"prijsdaling {drop_pct:.0f}% (+{bonus:.0f})")
+
+    if listing.ref_better:
+        score += SCORE_BETTER_BONUS
+        reasons.append(f"beter dan referentie (+{SCORE_BETTER_BONUS:.0f})")
+
+    # A bid listing's price is where the bidding stands now, not what it will
+    # sell for, so its score is an upper bound — say so rather than quietly
+    # ranking it above fixed-price listings it may well end up more expensive
+    # than.
+    if listing.price_is_bid:
+        reasons.append("bod — eindprijs kan hoger uitvallen")
+
+    # Rounded to a whole number, and the label/threshold work off that same
+    # number — otherwise a 79.6 would show as "80" while being sorted and
+    # counted as something below the Topdeal cutoff. Whole numbers are also
+    # about as much precision as a heuristic like this honestly has.
+    listing.deal_score = float(round(max(0.0, min(100.0, score))))
+    listing.deal_reasons = " · ".join(reasons)
+    for threshold, label, _ in SCORE_LABELS:
+        if listing.deal_score >= threshold:
+            listing.deal_label = label
+            break
+
+
+def score_listings(listings: list[Listing]) -> None:
+    """Combine every price signal collected so far into one score per listing.
+    Run this last — it reads pct_of_median, the reference match, the observed
+    secondhand average and the price-drop flag, so all of those have to be
+    filled in already."""
+    for listing in listings:
+        score_listing(listing)
+
+
+def sort_by_score(listings: list[Listing]) -> list[Listing]:
+    """Best deal first; unscored listings (no price) last."""
+    return sorted(
+        listings,
+        key=lambda l: (
+            l.deal_score is None,
+            -(l.deal_score if l.deal_score is not None else 0),
+            l.price_eur if l.price_eur is not None else float("inf"),
+        ),
+    )
+
+
 def print_table(listings: list[Listing]) -> None:
     if not listings:
         print("No listings found.")
         return
 
-    rows = sorted(
-        listings,
-        key=lambda l: (l.price_eur is None, l.price_eur if l.price_eur is not None else 0),
+    rows = sort_by_score(listings)
+    print(
+        f"{'':6} {'SCORE':>6} {'PRICE':>8} {'%MED':>6}  {'FRAME':<12} {'GROUPSET':<22} "
+        f"{'CONDITION':<20} {'CITY':<15} {'TITLE'}"
     )
-    print(f"{'':6} {'PRICE':>8} {'%MED':>6}  {'FRAME':<12} {'GROUPSET':<22} {'CONDITION':<20} {'CITY':<15} {'TITLE'}")
     for l in rows:
         mark = (
             ("N" if l.is_new else " ")
@@ -618,11 +869,18 @@ def print_table(listings: list[Listing]) -> None:
         else:
             price_str = f"€{l.price_eur:.0f}"
         pct_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
+        score_str = f"{l.deal_score:.0f}" if l.deal_score is not None else "—"
         print(
-            f"{mark:6} {price_str:>8} {pct_str:>6}  {l.frame_height[:12]:<12} {l.groupset[:22]:<22} "
-            f"{l.condition[:20]:<20} {l.city[:15]:<15} {l.title[:60]}"
+            f"{mark:6} {score_str:>6} {price_str:>8} {pct_str:>6}  {l.frame_height[:12]:<12} "
+            f"{l.groupset[:22]:<22} {l.condition[:20]:<20} {l.city[:15]:<15} {l.title[:60]}"
         )
         print(f"      {l.url}")
+        if l.deal_score is not None:
+            print(f"      score {l.deal_score:.0f}/100 ({l.deal_label}): {l.deal_reasons}")
+        if l.price_is_bid:
+            bid_info = format_bid_info(l)
+            if bid_info:
+                print(f"      bieden: {bid_info}")
         if l.price_dropped:
             print(f"      prijsverlaging: €{l.price_drop_from:.0f} → €{l.price_eur:.0f}")
         if l.ref_label:
@@ -645,15 +903,55 @@ def print_table(listings: list[Listing]) -> None:
     bids = [l for l in listings if l.price_is_bid]
     better = [l for l in listings if l.ref_better]
     dropped = [l for l in listings if l.price_dropped]
+    open_bids = open_bid_listings(listings)
+    top_deals = [l for l in listings if l.deal_score is not None and l.deal_score >= TOP_DEAL_SCORE]
     print(
         f"\n{len(listings)} listings, {len(bargains)} bargains (*), "
-        f"{len(new_ones)} new since last run (N), {len(bids)} bidding (B, price = huidig/minimum bod), "
-        f"{len(better)} beter dan referentie (!), {len(dropped)} prijsverlaging (v)"
+        f"{len(new_ones)} new since last run (N), {len(bids)} bidding (B, price = huidig/minimum bod, "
+        f"waarvan {len(open_bids)} zonder bod), "
+        f"{len(better)} beter dan referentie (!), {len(dropped)} prijsverlaging (v), "
+        f"{len(top_deals)} topdeals (score >= {TOP_DEAL_SCORE:.0f})"
     )
 
     stats = price_stats(listings)
     if stats["count"] >= 2:
         print(f"gemiddelde prijs: €{stats['mean']:.0f} · mediaan: €{stats['median']:.0f} (over {stats['count']} geprijsde advertenties)")
+
+
+def print_bid_overview(listings: list[Listing], limit: int = 25) -> None:
+    """A separate look at the bidding listings — what it would cost to be the
+    first bidder, and how that compares to the median and to what the model is
+    known to go for. Listings nobody has bid on yet come first: there the
+    minimum bid is still the real price."""
+    bids = bid_listings(listings)
+    if not bids:
+        return
+
+    open_bids = open_bid_listings(listings)
+    print(f"\nBIED-OVERZICHT — {len(bids)} bied-advertenties, waarvan {len(open_bids)} nog zonder bod")
+    print(f"  {'SCORE':>5} {'PRIJS':>8} {'%MED':>6}  {'BOD':<42} {'REFERENTIE':<28} TITEL")
+
+    ordered = sort_by_score(open_bids) + sort_by_score([l for l in bids if not l.bid_open])
+    for l in ordered[:limit]:
+        score_str = f"{l.deal_score:.0f}" if l.deal_score is not None else "—"
+        price_str = f"€{l.price_eur:.0f}" if l.price_eur is not None else l.price_type
+        pct_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
+        status = format_bid_info(l) or "bod"
+        if l.ref_label:
+            ref = l.ref_label
+            if l.ref_market_count > 0:
+                ref += f" (2e-hands gem. €{l.ref_market_avg:.0f})"
+            elif l.ref_original_price is not None:
+                ref += f" (nieuw €{l.ref_original_price:.0f})"
+        else:
+            ref = "—"
+        print(
+            f"  {score_str:>5} {price_str:>8} {pct_str:>6}  {status[:42]:<42} {ref[:28]:<28} {l.title[:40]}"
+        )
+        print(f"        {l.url}")
+
+    if len(ordered) > limit:
+        print(f"  ... en nog {len(ordered) - limit} (zie het HTML-rapport, tab 'Bieden')")
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -665,16 +963,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   :root {{
     --bg: #f7f7f8; --card: #ffffff; --text: #1a1a1a; --muted: #6b7280;
     --border: #e5e7eb; --new: #16a34a; --bargain: #dc2626; --accent: #2563eb; --better: #7c3aed;
-    --dropped: #ea580c;
+    --dropped: #ea580c; --bid: #0891b2;
+    --score-top: #15803d; --score-good: #65a30d; --score-ok: #6b7280; --score-low: #b0b4bb;
   }}
   body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg);
          color: var(--text); margin: 0; padding: 24px; }}
   h1 {{ font-size: 1.4rem; margin: 0 0 4px; }}
   .meta {{ color: var(--muted); font-size: 0.9rem; margin-bottom: 16px; }}
-  .filters {{ display: flex; gap: 8px; margin-bottom: 16px; }}
+  .filters {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }}
   .filters button {{ border: 1px solid var(--border); background: var(--card); padding: 6px 14px;
                      border-radius: 999px; cursor: pointer; font-size: 0.85rem; }}
   .filters button.active {{ background: var(--accent); color: white; border-color: var(--accent); }}
+  .table-wrap {{ overflow-x: auto; }}
   table {{ width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px;
           overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }}
@@ -690,25 +990,41 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .badge.bargain {{ background: var(--bargain); }}
   .badge.better {{ background: var(--better); }}
   .badge.dropped {{ background: var(--dropped); }}
+  .badge.bid {{ background: var(--bid); }}
+  .score-pill {{ display: inline-block; min-width: 30px; text-align: center; font-weight: 700;
+                font-size: 0.85rem; padding: 3px 8px; border-radius: 6px; color: white;
+                background: var(--score-ok); }}
+  .score-pill.top {{ background: var(--score-top); }}
+  .score-pill.good {{ background: var(--score-good); }}
+  .score-pill.low {{ background: var(--score-low); }}
+  .score-label {{ font-size: 0.7rem; color: var(--muted); margin-top: 2px; white-space: nowrap; }}
+  td.score {{ cursor: help; }}
   .price {{ font-weight: 600; white-space: nowrap; }}
   .bid-tag {{ font-weight: 400; font-size: 0.72rem; color: var(--muted); }}
 </style>
 </head>
 <body>
 <h1>Racefiets koopjes — "{query}"</h1>
-<div class="meta">Bijgewerkt {generated} · {total} advertenties · {new_count} nieuw sinds vorige run · {bargain_count} koopjes{price_stats_str}</div>
+<div class="meta">Bijgewerkt {generated} · {total} advertenties · {new_count} nieuw sinds vorige run · {bargain_count} koopjes · {bid_count} bieden ({open_bid_count} zonder bod){price_stats_str}</div>
+<div class="meta">Gesorteerd op dealscore (0-100, hoger = goedkoper dan zijn ijkpunten). Beweeg over een score voor de onderbouwing.</div>
 <div class="filters">
   <button data-filter="all" class="active">Alles ({total})</button>
   <button data-filter="new">Nieuw ({new_count})</button>
   <button data-filter="bargain">Koopjes ({bargain_count})</button>
   <button data-filter="better">Beter dan referentie ({better_count})</button>
   <button data-filter="dropped">Prijsverlaging ({dropped_count})</button>
+  <button data-filter="topdeal">Topdeals ({topdeal_count})</button>
+  <button data-filter="bidding">Bieden ({bid_count})</button>
+  <button data-filter="openbid">Vrij te bieden ({open_bid_count})</button>
 </div>
+<div class="table-wrap">
 <table id="listings">
 <thead>
 <tr>
   <th data-key="flags"></th>
+  <th data-key="score">Score</th>
   <th data-key="price">Prijs</th>
+  <th data-key="bid">Bod</th>
   <th data-key="pctmedian">% v. mediaan</th>
   <th data-key="title">Titel</th>
   <th data-key="frame">Framemaat</th>
@@ -724,6 +1040,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 {rows}
 </tbody>
 </table>
+</div>
 <script>
   const table = document.getElementById('listings');
   const tbody = table.querySelector('tbody');
@@ -742,12 +1059,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   table.querySelectorAll('th[data-key]').forEach(th => {{
     th.addEventListener('click', () => {{
       const key = th.dataset.key;
-      const asc = !sortState[key];
+      // Score is the one column you want highest-first on the first click.
+      const asc = key in sortState ? !sortState[key] : key !== 'score';
       sortState = {{ [key]: asc }};
       const rows = Array.from(tbody.querySelectorAll('tr'));
       rows.sort((a, b) => {{
         let av = a.dataset[key], bv = b.dataset[key];
-        if (key === 'price' || key === 'groupset' || key === 'ref' || key === 'pctmedian') {{ av = parseFloat(av); bv = parseFloat(bv); }}
+        if (['price', 'groupset', 'ref', 'pctmedian', 'score', 'bid'].includes(key)) {{ av = parseFloat(av); bv = parseFloat(bv); }}
         if (av < bv) return asc ? -1 : 1;
         if (av > bv) return asc ? 1 : -1;
         return 0;
@@ -761,17 +1079,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 
+def score_css_class(score: Optional[float]) -> str:
+    """The pill colour for a score — same tiers as its label."""
+    if score is not None:
+        for threshold, _, css_class in SCORE_LABELS:
+            if score >= threshold:
+                return css_class
+    return "low"
+
+
 def render_html(listings: list[Listing], query: str) -> str:
-    rows_sorted = sorted(
-        listings,
-        key=lambda l: (
-            not (l.is_new and l.is_bargain),
-            not l.is_new,
-            not l.is_bargain,
-            l.pct_of_median is None,
-            l.pct_of_median if l.pct_of_median is not None else float("inf"),
-        ),
-    )
+    rows_sorted = sort_by_score(listings)
 
     row_html = []
     for l in rows_sorted:
@@ -791,7 +1109,28 @@ def render_html(listings: list[Listing], query: str) -> str:
             badges += '<span class="badge better">BETER</span>'
         if l.price_dropped:
             badges += f'<span class="badge dropped">-€{l.price_drop_from - l.price_eur:.0f}</span>'
+        if l.bid_open:
+            badges += '<span class="badge bid">VRIJ TE BIEDEN</span>'
         price_sort_value = l.price_eur if l.price_eur is not None else -1
+
+        if l.deal_score is not None:
+            score_cell = (
+                f"<span class='score-pill {score_css_class(l.deal_score)}'>{l.deal_score:.0f}</span>"
+                f"<div class='score-label'>{html_lib.escape(l.deal_label)}</div>"
+            )
+        else:
+            score_cell = "<span class='score-pill low'>—</span>"
+        score_sort = l.deal_score if l.deal_score is not None else -1
+        score_title = html_lib.escape(l.deal_reasons, quote=True)
+
+        bid_str = html_lib.escape(format_bid_info(l)) or "—"
+        # Sort the Bod column by what it would cost to bid right now.
+        if l.bid_minimum is not None:
+            bid_sort = l.bid_minimum
+        elif l.price_is_bid and l.price_eur is not None:
+            bid_sort = l.price_eur
+        else:
+            bid_sort = -1
 
         ref_str = html_lib.escape(l.ref_label) if l.ref_label else "—"
         ref_sort = l.ref_pct_of_original if l.ref_pct_of_original is not None else 1e9
@@ -815,13 +1154,16 @@ def render_html(listings: list[Listing], query: str) -> str:
 
         row_html.append(
             "<tr data-new='{is_new}' data-bargain='{is_bargain}' data-better='{is_better}' "
-            "data-dropped='{is_dropped}' "
+            "data-dropped='{is_dropped}' data-topdeal='{is_topdeal}' "
+            "data-bidding='{is_bidding}' data-openbid='{is_openbid}' "
             "data-price='{price_sort}' data-title='{title_attr}' "
             "data-frame='{frame_attr}' data-groupset='{groupset_sort}' "
             "data-condition='{condition_attr}' data-city='{city_attr}' data-ref='{ref_sort}' "
-            "data-pctmedian='{pct_median_sort}'>"
+            "data-pctmedian='{pct_median_sort}' data-score='{score_sort}' data-bid='{bid_sort}'>"
             "<td>{badges}</td>"
+            "<td class='score' title='{score_title}'>{score_cell}</td>"
             "<td class='price'>{price}</td>"
+            "<td>{bid}</td>"
             "<td>{pct_median}</td>"
             "<td><a href='{url}' target='_blank' rel='noopener'>{title}</a></td>"
             "<td>{frame}</td>"
@@ -836,7 +1178,15 @@ def render_html(listings: list[Listing], query: str) -> str:
                 is_bargain="1" if l.is_bargain else "0",
                 is_better="1" if l.ref_better else "0",
                 is_dropped="1" if l.price_dropped else "0",
+                is_topdeal="1" if (l.deal_score is not None and l.deal_score >= TOP_DEAL_SCORE) else "0",
+                is_bidding="1" if l.price_is_bid else "0",
+                is_openbid="1" if l.bid_open else "0",
                 price_sort=price_sort_value,
+                score_sort=score_sort,
+                score_title=score_title,
+                score_cell=score_cell,
+                bid=bid_str,
+                bid_sort=bid_sort,
                 title_attr=html_lib.escape(l.title, quote=True),
                 frame_attr=html_lib.escape(l.frame_height, quote=True),
                 groupset_sort=l.groupset_tier if l.groupset_tier is not None else -1,
@@ -874,6 +1224,11 @@ def render_html(listings: list[Listing], query: str) -> str:
         bargain_count=sum(1 for l in listings if l.is_bargain),
         better_count=sum(1 for l in listings if l.ref_better),
         dropped_count=sum(1 for l in listings if l.price_dropped),
+        topdeal_count=sum(
+            1 for l in listings if l.deal_score is not None and l.deal_score >= TOP_DEAL_SCORE
+        ),
+        bid_count=len(bid_listings(listings)),
+        open_bid_count=len(open_bid_listings(listings)),
         price_stats_str=price_stats_str,
         rows="\n".join(row_html),
     )
@@ -943,10 +1298,33 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "exist (default: reference_prices.csv)",
     )
     parser.add_argument(
+        "--bid-lookup",
+        choices=["fast", "all", "none"],
+        default="fast",
+        help="Which bidding listings to fetch bid details for (one extra request each): "
+        "'fast' (default) only FAST_BID listings, which report no price in search results at "
+        "all; 'all' also fetches MIN_BID listings, which do report an asking price but not the "
+        "(usually lower) minimum bid that's actually accepted, nor whether anyone has bid yet; "
+        "'none' skips it entirely (FAST_BID listings then stay priceless)",
+    )
+    parser.add_argument(
         "--no-bid-lookup",
         action="store_true",
-        help="Skip fetching each FAST_BID listing's own page for its real minimum/current bid "
-        "(faster, but those listings keep showing as FAST_BID with no price instead)",
+        help="Alias for --bid-lookup none",
+    )
+    parser.add_argument(
+        "--bids-only",
+        action="store_true",
+        help="Only report bidding listings (Bieden). Prices, the median and the deal score are "
+        "still computed over everything found, so the comparison stays against the whole market "
+        "rather than only against other bidding listings",
+    )
+    parser.add_argument(
+        "--min-score",
+        type=float,
+        default=None,
+        help="Only report listings with at least this deal score (0-100). Listings with no "
+        "price, and so no score, are dropped by this filter too",
     )
     parser.add_argument(
         "--open-browser",
@@ -1002,8 +1380,9 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
 
     listings = collect_listings(query, args.pages, args.delay)
 
-    if not args.no_bid_lookup:
-        enrich_fast_bid_listings(listings, args.delay)
+    bid_lookup = "none" if args.no_bid_lookup else args.bid_lookup
+    enrich_bid_listings(listings, args.delay, bid_lookup)
+    apply_bid_flags(listings)
 
     if args.min_price is not None:
         listings = [l for l in listings if l.price_eur is None or l.price_eur >= args.min_price]
@@ -1030,6 +1409,8 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
         if recorded:
             print(f"Recorded {recorded} price observation(s) to {args.price_history_file}")
 
+    score_listings(listings)
+
     if not args.no_notify_better:
         notify_better_matches(listings)
 
@@ -1038,7 +1419,15 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
         if logged:
             print(f"Logged {logged} new bargain(s) to {args.log_file}")
 
+    if args.bids_only:
+        listings = bid_listings(listings)
+    if args.min_score is not None:
+        listings = [
+            l for l in listings if l.deal_score is not None and l.deal_score >= args.min_score
+        ]
+
     print_table(listings)
+    print_bid_overview(listings)
 
     if args.output:
         output_path = per_query_path(args.output, query, multi)
