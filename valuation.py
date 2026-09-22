@@ -453,7 +453,9 @@ def fetch_comp_candidates(
         sql.append("AND (last_seen IS NULL OR last_seen >= ?)")
         params.append(_iso_days_ago(window_days))
     if query:
-        sql.append("AND query = ?")
+        # Via listing_query: listing.query is alleen de laatste zoekopdracht
+        # die de advertentie zag.
+        sql.append("AND item_id IN (SELECT listing_id FROM listing_query WHERE query = ?)")
         params.append(query)
     rows = conn.execute("\n".join(sql), params).fetchall()
 

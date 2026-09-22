@@ -251,5 +251,26 @@ class SpecAndModelWiringTest(TempDirTest):
         self.assertEqual(listing.ref_label, "Specifiek")
 
 
+
+class SweepAcrossQueriesTest(TempDirTest):
+    def test_a_listing_last_seen_by_another_query_is_still_swept(self):
+        # The recommended schedule: "racefiets" by day, a complete "giant
+        # defy" crawl at night. A Defy seen by both, then sold, used to stay
+        # "online" forever because the day run had overwritten its query.
+        db_path = self.path("koopjes.db")
+        conn = db.connect(db_path)
+        db.sync_listings(conn, "giant defy", [mp_listing("defy")], "2026-09-20T03:00:00+00:00")
+        db.sync_listings(conn, "racefiets", [mp_listing("defy")], "2026-09-20T13:30:00+00:00")
+        swept = db.sweep_disappeared(conn, "giant defy", set(), "2026-09-21T03:00:00+00:00")
+        row = conn.execute("SELECT disappeared_at FROM listing WHERE item_id = 'defy'").fetchone()
+        conn.close()
+        self.assertEqual(swept, 1)
+        self.assertIsNotNone(row["disappeared_at"])
+
+
+def mp_listing(item_id):
+    return make_listing(item_id=item_id, title="Giant Defy Composite")
+
+
 if __name__ == "__main__":
     unittest.main()

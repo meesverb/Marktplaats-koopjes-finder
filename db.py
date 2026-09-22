@@ -175,6 +175,24 @@ MIGRATIONS: list[str] = [
         active INTEGER NOT NULL DEFAULT 1
     );
     """,
+    # 2: which queries found a listing, not just the last one. listing.query
+    # is overwritten by every run that sees the listing, so with a day run on
+    # "racefiets" and a nightly full crawl of "giant defy", a Defy last seen
+    # by the day run was never considered by the nightly sweep — and a sold
+    # Defy was never counted as sold. The sweep and the --query filters of
+    # valuation.py/upgrade.py read this table instead. listing.query stays
+    # (last query that saw it), so nothing that reads it breaks.
+    """
+    CREATE TABLE listing_query (
+        listing_id TEXT NOT NULL REFERENCES listing(item_id),
+        query TEXT NOT NULL,
+        first_seen TEXT,
+        last_seen TEXT,
+        PRIMARY KEY (listing_id, query)
+    );
+    INSERT INTO listing_query (listing_id, query, first_seen, last_seen)
+        SELECT item_id, query, first_seen, last_seen FROM listing WHERE query IS NOT NULL;
+    """,
 ]
 
 
@@ -561,6 +579,14 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "last_seen": observed_at,
             },
         )
+        conn.execute(
+            """
+            INSERT INTO listing_query (listing_id, query, first_seen, last_seen)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(listing_id, query) DO UPDATE SET last_seen = excluded.last_seen
+            """,
+            (listing.item_id, query, observed_at, observed_at),
+        )
         if listing.price_eur is not None:
             conn.execute(
                 "INSERT OR IGNORE INTO listing_price (item_id, observed_at, price_eur) "
@@ -640,13 +666,16 @@ def sync_listing_models(
 def sweep_disappeared(
     conn: sqlite3.Connection, query: str, seen_item_ids, observed_at: str
 ) -> int:
-    """Mark every listing for `query` that isn't in `seen_item_ids` and isn't
+    """Mark every listing `query` ever found (listing_query, not the
+    overwritten listing.query) that isn't in `seen_item_ids` and isn't
     already marked as disappeared. Call this only after a full crawl
     (`--pages 0`) of that exact query — a shallow crawl only sees the first
     few pages, and would otherwise mark everything past that depth as gone.
     Returns how many rows were newly marked."""
     rows = conn.execute(
-        "SELECT item_id, first_seen FROM listing WHERE query = ? AND disappeared_at IS NULL",
+        "SELECT l.item_id, l.first_seen FROM listing l "
+        "JOIN listing_query lq ON lq.listing_id = l.item_id "
+        "WHERE lq.query = ? AND l.disappeared_at IS NULL",
         (query,),
     ).fetchall()
 
