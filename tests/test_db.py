@@ -223,6 +223,17 @@ class ImportReferencePricesTest(TempDirTest):
         self.assertIsNone(rows["Mission 731"])
         self.assertEqual(rows["Wharfedale"], 120.0)
 
+    def test_a_file_saved_from_excel_still_imports(self):
+        path = self.path("reference_prices.csv")
+        Path(path).write_text(
+            "\ufeffpattern,label,original_price_eur,specs,score,better_than_baseline\n"
+            "Mission 731,Mission 731,300,,,\n",
+            encoding="utf-8",
+        )
+        conn = db.connect(self.path("koopjes.db"))
+        counts = self.import_legacy(conn, reference_prices_path=path)
+        self.assertEqual(counts["models_from_reference"], 1)
+
     def test_rows_without_a_pattern_are_ignored(self):
         path = self.write_reference(",Geen patroon,100,,,\n")
         conn = db.connect(self.path("koopjes.db"))

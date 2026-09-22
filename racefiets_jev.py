@@ -517,7 +517,7 @@ def existing_csv_header(path: str) -> Optional[list[str]]:
     """The header row of a CSV we're about to append to, or None when there
     isn't one yet (no file, or an empty one)."""
     try:
-        with open(path, newline="", encoding="utf-8") as f:
+        with open(path, newline="", encoding=CSV_READ_ENCODING) as f:
             return next(csv.reader(f), None)
     except FileNotFoundError:
         return None
@@ -564,13 +564,20 @@ def append_bargain_log(path: str, listings: list[Listing]) -> int:
     return len(new_bargains)
 
 
+# Save a CSV from Excel and it starts with a UTF-8 BOM, which lands in the
+# first column's name ("\ufeffpattern") and makes every lookup by that name
+# miss. Reading as utf-8-sig strips it when it's there and changes nothing
+# when it isn't. Writing stays plain utf-8: we don't add one ourselves.
+CSV_READ_ENCODING = "utf-8-sig"
+
+
 def load_reference_market_stats(path: str) -> dict:
     """Build actual observed secondhand asking prices per reference model
     from every past run's price_history.csv rows — a self-growing market
     price database, distinct from the (often unknown/outdated) original
     retail price in reference_prices.csv."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             reader = csv.DictReader(f)
             rows = list(reader)
             fieldnames = reader.fieldnames or []
@@ -666,7 +673,10 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
 
 def load_history(path: str) -> dict:
     try:
-        with open(path, encoding="utf-8") as f:
+        # utf-8-sig here too: a history file opened and saved in an editor can
+        # come back with a BOM, and json.load() rejects that outright — which
+        # this function would report as "no history at all".
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             history = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
@@ -745,7 +755,7 @@ def load_reference_data(path: str) -> list[dict]:
     compare the asking price against what they cost new. Returns [] if the
     file doesn't exist — this feature is entirely optional."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             rows = list(csv.DictReader(f))
     except FileNotFoundError:
         return []

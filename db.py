@@ -169,6 +169,12 @@ MIGRATIONS: list[str] = [
 ]
 
 
+# A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
+# the first column's name and makes every row look like it is missing that
+# column. Same reasoning as racefiets_jev.CSV_READ_ENCODING.
+CSV_READ_ENCODING = "utf-8-sig"
+
+
 def connect(path: str) -> sqlite3.Connection:
     """Open (creating if needed) the koopjes.db at `path` and bring it up to
     the latest schema version."""
@@ -207,7 +213,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
 def _import_seen_listings(conn: sqlite3.Connection, path: str) -> int:
     """seen_listings.json -> listing + listing_price."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             history = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return 0
@@ -262,7 +268,7 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
     {"specs": ..., "better_than_baseline": ...}. export_csv() reverses this.
     """
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             rows = list(csv.DictReader(f))
     except FileNotFoundError:
         return 0
@@ -323,7 +329,7 @@ def _import_reference_price_history(conn: sqlite3.Connection, path: str) -> int:
     than letting the foreign key fail.
     """
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=CSV_READ_ENCODING) as f:
             rows = list(csv.DictReader(f))
     except FileNotFoundError:
         return 0

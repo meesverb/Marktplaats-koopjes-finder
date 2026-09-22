@@ -146,6 +146,20 @@ class ReferenceFileTest(TempDirTest):
         self.assertIsNone(row["original_price_eur"])
         self.assertFalse(row["better"])
 
+    def test_a_file_saved_from_excel_still_loads(self):
+        # Excel writes a UTF-8 BOM, which lands in the first column's name
+        # ("\ufeffpattern"). Every row then looked like it had no pattern at
+        # all, so the whole reference database quietly came back empty.
+        path = self.path("ref.csv")
+        Path(path).write_text(
+            "\ufeffpattern,label,original_price_eur,specs,score,better_than_baseline\n"
+            "mission,Mission 731,300,,,\n",
+            encoding="utf-8",
+        )
+        (row,) = mp.load_reference_data(path)
+        self.assertEqual(row["label"], "Mission 731")
+        self.assertEqual(row["original_price_eur"], 300.0)
+
     def test_an_unreadable_original_price_is_treated_as_empty(self):
         # The new-price column is filled in by hand, so "ca. 300" is a matter
         # of time. The row still has to match; only the price goes missing.
@@ -299,6 +313,20 @@ class PriceHistoryTest(TempDirTest):
         stats = mp.load_reference_market_stats(path)
         self.assertEqual(stats["Model A"]["count"], 1)
         self.assertEqual(stats["Model A"]["mean"], 50.0)
+
+    def test_a_bom_does_not_look_like_a_different_file_format(self):
+        # Open the history in Excel once and it comes back with a BOM. The
+        # column check would then refuse to append and report "andere
+        # kolommen", which is both wrong and unfixable-looking.
+        path = self.path("prices.csv")
+        Path(path).write_text(
+            "\ufeffdate,ref_label,item_id,price_eur,title\n", encoding="utf-8"
+        )
+        recorded = mp.append_reference_price_observations(
+            path, [make_listing(item_id="a", is_new=True, ref_label="M", price_eur=50.0)]
+        )
+        self.assertEqual(recorded, 1)
+        self.assertEqual([r["item_id"] for r in read_csv_rows(path)], ["a"])
 
     def test_a_file_with_other_columns_is_left_alone(self):
         # Appending under a header that isn't ours would misalign the file that
