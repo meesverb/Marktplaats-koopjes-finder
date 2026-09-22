@@ -180,6 +180,11 @@ MIGRATIONS: list[str] = [
 # column. Same reasoning as racefiets_jev.CSV_READ_ENCODING.
 CSV_READ_ENCODING = "utf-8-sig"
 
+# The `kind` values from PLAN_FIETSWAARDE.md §5. A reference file may say
+# which one a row is (fase 7's bike files do); anything else is a typo, and a
+# typo'd kind would quietly start its own UNIQUE(kind, pattern) namespace.
+MODEL_KINDS = ("bike", "frameset", "groupset", "wheelset", "computer", "powermeter", "other")
+
 
 def connect(path: str) -> sqlite3.Connection:
     """Open (creating if needed) the koopjes.db at `path` and bring it up to
@@ -310,6 +315,14 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
     have their own columns on `model` (that table is shared with bike/part
     models that don't have either concept), so both go into specs_json as
     {"specs": ..., "better_than_baseline": ...}. export_csv() reverses this.
+
+    Three optional columns go straight into `model`: `kind`, `brand` and
+    `source_url`. reference_prices.csv has none of them and imports exactly
+    as before (kind 'other'); fase 7's reference_bikes.csv and
+    reference_bike_accessories.csv carry them, because the plan wants a
+    source per researched row and a real kind per model.
+    load_reference_data() ignores columns it doesn't know, so the script
+    reads those files unchanged.
     """
     try:
         with open(path, encoding=CSV_READ_ENCODING) as f:
@@ -353,22 +366,37 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
         specs_json = json.dumps(
             {"specs": (row.get("specs") or "").strip(), "better_than_baseline": better}
         )
+        kind = (row.get("kind") or "").strip().lower() or "other"
+        if kind not in MODEL_KINDS:
+            print(
+                f"warning: {path}: onbekend kind {kind!r} bij patroon {pattern!r} — "
+                f"als 'other' geïmporteerd (geldig: {', '.join(MODEL_KINDS)})",
+                file=sys.stderr,
+            )
+            kind = "other"
         conn.execute(
             """
-            INSERT INTO model (kind, model, pattern, original_price_eur, specs_json, score)
-            VALUES ('other', :model, :pattern, :original_price_eur, :specs_json, :score)
+            INSERT INTO model (kind, brand, model, pattern, original_price_eur, specs_json,
+                               score, source_url)
+            VALUES (:kind, :brand, :model, :pattern, :original_price_eur, :specs_json,
+                    :score, :source_url)
             ON CONFLICT(kind, pattern) DO UPDATE SET
+                brand = excluded.brand,
                 model = excluded.model,
                 original_price_eur = excluded.original_price_eur,
                 specs_json = excluded.specs_json,
-                score = excluded.score
+                score = excluded.score,
+                source_url = excluded.source_url
             """,
             {
+                "kind": kind,
+                "brand": (row.get("brand") or "").strip() or None,
                 "model": label,
                 "pattern": pattern,
                 "original_price_eur": original_price,
                 "specs_json": specs_json,
                 "score": (row.get("score") or "").strip(),
+                "source_url": (row.get("source_url") or "").strip() or None,
             },
         )
     # Not len(rows): a pattern listed twice is one model in the table, and the
@@ -547,7 +575,7 @@ def sync_listing_specs(
 
 
 def sync_listing_models(
-    conn: sqlite3.Connection, matches_by_listing: dict, kind: str = "other"
+    conn: sqlite3.Connection, matches_by_listing: dict, kind: str | None = None
 ) -> int:
     """Write every matched reference pattern (racefiets_jev.apply_reference_data()'s
     return value) into `listing_model` — one row per (listing, model) pair,
@@ -555,26 +583,36 @@ def sync_listing_models(
     with no corresponding `model` row (import_legacy() hasn't run yet, or the
     kind differs) is silently skipped: this table is additive bookkeeping for
     fase 3+, nothing in the current report depends on it. Returns how many
-    rows were written."""
+    rows were written.
+
+    `kind=None` (the default) links a pattern to its model whatever its kind.
+    The script only knows the patterns of the one --reference-file it ran
+    with, and since fase 7 that file can hold 'bike' rows as well as the
+    speakers' 'other' — pinning this to 'other' would silently drop every
+    bike match. Pass a kind to restrict it."""
     count = 0
     for listing_id, patterns in matches_by_listing.items():
         for pattern in patterns:
-            row = conn.execute(
-                "SELECT id FROM model WHERE kind = ? AND pattern = ?", (kind, pattern)
-            ).fetchone()
-            if row is None:
-                continue
-            conn.execute(
-                """
-                INSERT INTO listing_model (listing_id, model_id, matched_on, confidence)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(listing_id, model_id) DO UPDATE SET
-                    matched_on = excluded.matched_on,
-                    confidence = excluded.confidence
-                """,
-                (listing_id, row["id"], "title+description", 1.0),
-            )
-            count += 1
+            if kind is None:
+                rows = conn.execute(
+                    "SELECT id FROM model WHERE pattern = ?", (pattern,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id FROM model WHERE kind = ? AND pattern = ?", (kind, pattern)
+                ).fetchall()
+            for row in rows:
+                conn.execute(
+                    """
+                    INSERT INTO listing_model (listing_id, model_id, matched_on, confidence)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(listing_id, model_id) DO UPDATE SET
+                        matched_on = excluded.matched_on,
+                        confidence = excluded.confidence
+                    """,
+                    (listing_id, row["id"], "title+description", 1.0),
+                )
+                count += 1
     conn.commit()
     return count
 

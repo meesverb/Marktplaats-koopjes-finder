@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 396 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 409 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -95,4 +95,5 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |
 | `NEXT_STEPS.md` | stand van zaken en losse eindjes |
 | `reference_prices.csv` | handmatig onderzochte modellen (43, alleen luidsprekers) |
+| `reference_bikes.csv`, `reference_bike_accessories.csv` | fase 7: fietsen resp. fietscomputers/powermeters, met `kind`/`brand`/`source_url`. Ook met `git add -f` toegevoegd. Accessoires niet in het fietsbestand zetten — zie README |
 | `check_hifi_brand.py`, `check_reference_overlaps.py`, `reference_overview.py` | hulpscripts bij het onderhouden van die database |

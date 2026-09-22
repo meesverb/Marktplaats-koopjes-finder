@@ -13,7 +13,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from helpers import mp  # noqa: F401  (adds the repo root to sys.path)
+from helpers import mp, repo_file  # noqa: F401  (adds the repo root to sys.path)
 
 import db
 
@@ -361,6 +361,61 @@ class ImportReferencePriceHistoryTest(TempDirTest):
         self.assertEqual(counts["prices_from_reference_history"], 0)
 
 
+class ReferenceKindAndSourceTest(TempDirTest):
+    """Fase 7: the bike reference files carry kind/brand/source_url columns
+    that reference_prices.csv doesn't have."""
+
+    def test_optional_columns_land_in_model(self):
+        path = self.path("reference_bikes.csv")
+        Path(path).write_text(
+            "pattern,label,original_price_eur,specs,score,better_than_baseline,kind,brand,source_url\n"
+            '"Defy.{0,20}Composite",Giant Defy Composite,,carbon,,0,bike,Giant,https://example.org/defy\n',
+            encoding="utf-8",
+        )
+        conn = db.connect(self.path("koopjes.db"))
+        self.import_legacy(conn, reference_prices_path=path)
+        row = conn.execute("SELECT kind, brand, source_url FROM model").fetchone()
+        self.assertEqual(
+            (row["kind"], row["brand"], row["source_url"]),
+            ("bike", "Giant", "https://example.org/defy"),
+        )
+
+    def test_a_file_without_those_columns_imports_as_before(self):
+        path = self.path("reference_prices.csv")
+        Path(path).write_text(
+            "pattern,label,original_price_eur,specs,score,better_than_baseline\n"
+            "Mission 731,Mission 731,300,,,1\n",
+            encoding="utf-8",
+        )
+        conn = db.connect(self.path("koopjes.db"))
+        self.import_legacy(conn, reference_prices_path=path)
+        row = conn.execute("SELECT kind, brand, source_url FROM model").fetchone()
+        self.assertEqual((row["kind"], row["brand"], row["source_url"]), ("other", None, None))
+
+    def test_an_unknown_kind_warns_and_falls_back_to_other(self):
+        # A typo'd kind would otherwise open its own UNIQUE(kind, pattern)
+        # namespace and never be exported or matched with its siblings.
+        path = self.path("ref.csv")
+        Path(path).write_text(
+            "pattern,label,kind\nEdge 530,Garmin Edge 530,compuetr\n", encoding="utf-8"
+        )
+        conn = db.connect(self.path("koopjes.db"))
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.import_legacy(conn, reference_prices_path=path)
+        self.assertIn("compuetr", stderr.getvalue())
+        self.assertEqual(conn.execute("SELECT kind FROM model").fetchone()["kind"], "other")
+
+    def test_the_checked_in_bike_files_import_with_a_source_on_every_row(self):
+        conn = db.connect(self.path("koopjes.db"))
+        for name in ("reference_bikes.csv", "reference_bike_accessories.csv"):
+            self.import_legacy(conn, reference_prices_path=repo_file(name))
+        rows = conn.execute("SELECT kind, model, source_url FROM model").fetchall()
+        self.assertGreater(len(rows), 0)
+        self.assertNotIn("other", {r["kind"] for r in rows})
+        self.assertEqual([r["model"] for r in rows if not r["source_url"]], [])
+
+
 class ExportCsvTest(TempDirTest):
     def test_export_round_trips_through_load_reference_data(self):
         reference_path = self.path("reference_prices.csv")
@@ -537,6 +592,17 @@ class SyncListingModelsTest(TempDirTest):
     def test_a_pattern_without_a_matching_model_row_is_skipped(self):
         written = db.sync_listing_models(self.conn, {"a": ["Geen zo'n patroon"]})
         self.assertEqual(written, 0)
+
+    def test_a_bike_model_is_linked_without_naming_its_kind(self):
+        # racefiets_jev.sync_database() calls this without a kind. Before
+        # fase 7 that meant 'other' only, which would drop every bike match.
+        self.conn.execute(
+            "INSERT INTO model (kind, model, pattern) VALUES ('bike', 'Defy', 'Giant Defy')"
+        )
+        self.assertEqual(db.sync_listing_models(self.conn, {"a": ["Giant Defy"]}), 1)
+        self.assertEqual(
+            db.sync_listing_models(self.conn, {"a": ["Giant Defy"]}, kind="other"), 0
+        )
 
     def test_resyncing_does_not_duplicate_rows(self):
         db.sync_listing_models(self.conn, {"a": ["Mission 731"]})
