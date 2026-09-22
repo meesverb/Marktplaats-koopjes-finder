@@ -13,7 +13,7 @@ Dit plan is geschreven na een gesprek met de eigenaar; zijn keuzes staan in
 De eigenaar rijdt een **Giant Defy uit 2012** met:
 
 - een carbon wielset van AliExpress (nieuwprijs ca. €300),
-- een Shimano Ultegra groepset (generatie nog te bepalen),
+- een Shimano Ultegra 6700 groepset (10-speed, mechanisch),
 - Pirelli P Zero Race banden,
 - een Wahoo Elemnt Roam (v1) als fietscomputer.
 
@@ -60,54 +60,44 @@ Deze zijn met de eigenaar afgestemd. Niet heroverwegen.
 | Onderwerp | Keuze |
 | --- | --- |
 | Opslag | **SQLite** wordt de bron van waarheid. Bestaande CSV's worden geïmporteerd en blijven als export bestaan, zodat niets breekt. |
-| Welk frame | **Onbekend** — alu Defy 1/2/3 of carbon Defy Advanced/Composite. Fase 0 lost dit op; de taxatie rekent tot die tijd twee scenario's door. |
-| Verkoopvorm | Twee scenario's: **(A)** compleet mét carbon wielset, **(B)** compleet met de originele wielen + carbon wielset apart verkocht. Volledig strippen en alles los verkopen is **niet** gewenst. |
+| Welk frame | **Giant Defy Composite 2012**, carbon, maat 56, velremmen. Vastgesteld in fase 0, zie `mijn_fiets.md`. |
+| Verkoopvorm | Twee scenario's: **(A)** compleet mét carbon wielset, **(B)** compleet met de originele wielen + carbon wielset apart verkocht — de originele wielen zijn nog in bezit, dus B kan echt. Volledig strippen en alles los verkopen is **niet** gewenst. |
 | "Beter" betekent | Moderner (schijfremmen, 12-speed) **én** lichter/hogere frameklasse **én** elektronisch schakelen **én** puur meer fiets per euro. Alle vier wegen mee, met instelbare gewichten. |
 | Accessoires | Tellen expliciet mee. Een powermeter of fietscomputer bij een advertentie is een grote plus. Losse accessoires moeten ook als **eigen zoekopdracht** gejaagd kunnen worden. |
 | Bieden | Biedadvertenties zijn eersterangs, geen bijvangst. Zie §7. |
 
 ## 4. Fase 0 — intake (data, geen code)
 
-De taxatie is waardeloos zolang deze punten open staan. Een agent kan dit
-samen met de eigenaar afwerken; fase 1 t/m 4 kunnen ondertussen doorlopen met
-placeholderdata.
+**Grotendeels afgerond.** De antwoorden staan in `mijn_fiets.md`; lees dat
+bestand voordat je aan de taxatie begint. Samengevat: Giant Defy **Composite**
+2012, **carbon**, maat **56**, Shimano **Ultegra 6700** (10-speed, mechanisch),
+**velremmen**, carbon AliExpress-wielset, en de **originele wielen zijn er nog**
+— dus scenario B (fiets compleet met stockwielen, carbon wielset apart) kan
+doorgerekend worden.
 
-**Kritiek (bepaalt de uitkomst het meest):**
+Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open):
 
-1. **Alu of carbon frame?** Dit halveert of verdubbelt de taxatie.
-   Betrouwbaarste test zonder kennis: kijk naar de buisverbindingen. Zichtbare
-   lasnaden = aluminium (ALUXX). Gladde, vloeiende overgangen = carbon
-   (Advanced/Composite). Modelnaam staat meestal op de onderbuis of bovenbuis;
-   serienummer onder de trapas.
-2. **Framemaat in cm** (staat vaak op een sticker op de zadelbuis, anders
-   meten: hart trapas tot bovenkant zadelbuis). Nodig als harde filter — een
-   fiets die niet past is voor hem €0 waard.
-3. **Welke Ultegra-generatie?** Nummer op de achterderailleur/crank:
-   6600 / 6700 / 6800 / R8000 / R8100, en of het Di2 is. Scheelt makkelijk
-   een paar honderd euro en bepaalt of het 10- of 11-speed is.
-4. **Zijn de originele wielen er nog?** Scenario B valt of staat hiermee.
+1. **Was de Ultegra 6700 fabrieksuitrusting of een upgrade?** 6700 is
+   periode-correct voor 2012, dus mogelijk valt er helemaal geen
+   upgrade-investering terug te verdienen. Zoek uit waar de 2012 Defy
+   Composite mee geleverd werd vóórdat je de "upgrade recovery"-berekening uit
+   §6 presenteert.
+2. Merk, velghoogte en tubeless-ja/nee van de AliExpress-wielset.
+3. Staat: kilometerstand, schade, slijtage ketting/cassette, leeftijd banden.
+4. Wat er meegaat bij verkoop (pedalen, houder, de Roam zelf).
+5. Verkoopregio; verzenden of alleen ophalen.
+6. Budgetruimte — mag er geld bij? *(Aanname tot dan: budget = midden-taxatie,
+   plus een getoonde band van +€250.)*
 
-**Belangrijk:**
+**Uitvoer van deze fase:** `mijn_fiets.md` (bestaat) plus rijen in de tabel
+`owned_item` (§5) zodra fase 1 er is — fase 1 importeert `mijn_fiets.md`.
 
-5. Merk/type van de AliExpress-wielset (Elitewheels, Winspace, Superteam,
-   Yoeleo, Trifox, no-name?), velghoogte, velrem of schijfrem, tubeless of
-   niet. Naamloos carbon verkoopt merkbaar slechter dan een herkenbaar merk.
-6. Staat: kilometerstand bij benadering, schade aan frame/velgen, slijtage
-   ketting/cassette, hoe oud de banden zijn.
-7. Wat gaat er mee bij verkoop: pedalen, computerhouder, extra wielset,
-   powermeter?
-8. Verkoopregio en of hij bereid is te verzenden of alleen ophalen.
-9. Budgetruimte: alleen de verkoopopbrengst, of mag er geld bij? Zo ja, hoeveel?
-   (Aanname tot hij iets anders zegt: budget = midden-taxatie, en het rapport
-   toont ook een band van +€250 zodat hij ziet wat net buiten bereik ligt.)
-
-**Uitvoer van deze fase:** rijen in de tabel `owned_item` (§5), plus een kort
-`mijn_fiets.md` met de foto's/bevindingen waarop de identificatie rust.
-
-**Let op:** de agent die dit doet verifieert de 2012 Defy-line-up en de
-Ultegra-generaties met bronvermelding via webonderzoek. Niet uit het hoofd
-invullen — modeljaren en spec-niveaus zijn precies het soort detail waar een
-taalmodel overtuigend naast zit.
+**Let op bij het afmaken:** verifieer de 2012 Defy-line-up (Composite 1 vs 2,
+nieuwprijs, standaard groepset) en de Ultegra-generaties met bronvermelding via
+webonderzoek. Niet uit het hoofd invullen — modeljaren, spec-niveaus en
+nieuwprijzen zijn precies het soort detail waar een taalmodel overtuigend naast
+zit. Vergelijk in de comps ook niet met Defy **Advanced**: dat is een hogere
+carbonlaag en trekt de schatting te hoog.
 
 ## 5. Datamodel (SQLite)
 
@@ -263,7 +253,12 @@ Per dimensie 0-100, gewichten in `scoring_config.json` (JSON, geen TOML —
 | `fit` | **geen score maar een harde poort** — verkeerde framemaat = uitgesloten |
 
 De eigen fiets wordt met dezelfde functie gescoord; dat getal is de baseline.
-`beter_dan_mijn` = score > baseline + marge.
+`beter_dan_mijn` = score > baseline + marge. De invoer voor die baseline staat
+onderaan `mijn_fiets.md`: carbon instap-frame uit 2012, Ultegra 10-speed
+mechanisch, velremmen, naamloos carbon velremwielen, plus een fietscomputer.
+Dat is een lage baseline op `brakes` en `drivetrain` en een middelmatige op
+`frame` — verwacht dus veel kandidaten en laat de maat-poort (56) het zware
+filterwerk doen.
 
 **Uitlegbaarheid is een eis, geen extra.** Het rapport moet de uitsplitsing per
 dimensie tonen. Een niet-uitlegbaar totaalcijfer wordt niet vertrouwd en dus
@@ -429,7 +424,7 @@ fase 7 raken alleen data en mogen parallel met alles lopen.
 
 ## 12. Voortgang
 
-- [ ] Fase 0 — intake eigen fiets
+- [x] Fase 0 — intake eigen fiets *(kern vastgesteld in `mijn_fiets.md`; zes detailpunten nog open, zie §4)*
 - [ ] Fase 1 — SQLite-fundament
 - [ ] Fase 2 — spec-extractie en meervoudige matches
 - [ ] Fase 3 — waarderingsmotor
