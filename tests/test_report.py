@@ -4,6 +4,8 @@ Phase 6 of PLAN_FIETSWAARDE.md pulls HTML_TEMPLATE out of racefiets_jev.py
 into its own file. These tests describe what the report must still do
 afterwards, so that refactor can be verified instead of eyeballed.
 """
+import contextlib
+import io
 import re
 import unittest
 
@@ -93,6 +95,61 @@ class ScoreCellTest(unittest.TestCase):
         ]
         html = render(listings)
         self.assertLess(html.index("Topdeal hier"), html.index("Matige deal"))
+
+
+class UnfilteredStatsTest(unittest.TestCase):
+    """print_table() and render_html() take an optional `stats` so a caller
+    that filters the list before printing (--bids-only, --min-score) can
+    still show the median the "% v. mediaan" column was measured against —
+    not the median of only what's left after filtering."""
+
+    def _listings(self):
+        # 9 fixed-price ads plus 2 bidding ads far below them: the full
+        # 11-listing median is 100, the 2 bidding ads alone median 35.
+        fixed_prices = [80, 90, 95, 100, 105, 110, 120, 150, 200]
+        fixed = [
+            make_listing(item_id=f"vast{i}", price_eur=float(p))
+            for i, p in enumerate(fixed_prices)
+        ]
+        bids = [
+            make_listing(
+                item_id="bod1", price_eur=30.0, price_type="MIN_BID",
+                price_is_bid=True, bid_count=0,
+            ),
+            make_listing(
+                item_id="bod2", price_eur=40.0, price_type="MIN_BID",
+                price_is_bid=True, bid_count=0,
+            ),
+        ]
+        listings = fixed + bids
+        mp.flag_bargains(listings, 0.6)
+        return listings, bids
+
+    def test_print_table_footer_uses_the_unfiltered_median(self):
+        listings, bids = self._listings()
+        all_stats = mp.price_stats(listings)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mp.print_table(bids, stats=all_stats)
+        footer = [line for line in out.getvalue().splitlines() if "mediaan" in line]
+        self.assertTrue(footer, "no footer line with a median found")
+        self.assertIn("mediaan: €100", footer[0])
+        self.assertNotIn("mediaan: €35", footer[0])
+
+    def test_print_table_footer_falls_back_to_its_own_list_without_stats(self):
+        listings, bids = self._listings()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            mp.print_table(bids)
+        footer = [line for line in out.getvalue().splitlines() if "mediaan" in line]
+        self.assertIn("mediaan: €35", footer[0])
+
+    def test_render_html_uses_the_unfiltered_median(self):
+        listings, bids = self._listings()
+        all_stats = mp.price_stats(listings)
+        html = mp.render_html(bids, "racefiets", stats=all_stats)
+        self.assertIn("mediaan €100", html)
+        self.assertNotIn("mediaan €35", html)
 
 
 if __name__ == "__main__":

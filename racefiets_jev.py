@@ -1359,7 +1359,7 @@ def sort_by_score(listings: list[Listing]) -> list[Listing]:
     )
 
 
-def print_table(listings: list[Listing]) -> None:
+def print_table(listings: list[Listing], stats: Optional[dict] = None) -> None:
     if not listings:
         print("No listings found.")
         return
@@ -1428,9 +1428,15 @@ def print_table(listings: list[Listing]) -> None:
         f"{len(top_deals)} topdeals (score >= {TOP_DEAL_SCORE:.0f})"
     )
 
-    stats = price_stats(listings)
+    if stats is None:
+        stats = price_stats(listings)
     if stats["count"] >= 2:
-        print(f"gemiddelde prijs: €{stats['mean']:.0f} · mediaan: €{stats['median']:.0f} (over {stats['count']} geprijsde advertenties)")
+        shown_count = len(market_prices(listings))
+        suffix = f" ({shown_count} van {stats['count']} getoond)" if shown_count != stats["count"] else ""
+        print(
+            f"gemiddelde prijs: €{stats['mean']:.0f} · mediaan: €{stats['median']:.0f} "
+            f"(over {stats['count']} geprijsde advertenties){suffix}"
+        )
 
 
 def print_bid_overview(listings: list[Listing], limit: int = 25) -> None:
@@ -1611,7 +1617,7 @@ def score_css_class(score: Optional[float]) -> str:
     return "low"
 
 
-def render_html(listings: list[Listing], query: str) -> str:
+def render_html(listings: list[Listing], query: str, stats: Optional[dict] = None) -> str:
     rows_sorted = sort_by_score(listings)
 
     row_html = []
@@ -1732,7 +1738,8 @@ def render_html(listings: list[Listing], query: str) -> str:
             )
         )
 
-    stats = price_stats(listings)
+    if stats is None:
+        stats = price_stats(listings)
     price_stats_str = (
         f" · gemiddeld €{stats['mean']:.0f} · mediaan €{stats['median']:.0f}"
         if stats["count"] >= 2
@@ -1757,8 +1764,10 @@ def render_html(listings: list[Listing], query: str) -> str:
     )
 
 
-def write_html(listings: list[Listing], path: str, query: str) -> None:
-    Path(path).write_text(render_html(listings, query), encoding="utf-8")
+def write_html(
+    listings: list[Listing], path: str, query: str, stats: Optional[dict] = None
+) -> None:
+    Path(path).write_text(render_html(listings, query, stats=stats), encoding="utf-8")
 
 
 def write_csv(listings: list[Listing], path: str) -> None:
@@ -2050,6 +2059,12 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
             reference_matches=reference_matches,
         )
 
+    # Captured before --bids-only/--min-score filter the list for the
+    # report: the "% v. mediaan" column (set in flag_bargains, above) is
+    # already measured against the unfiltered set, and the footer under the
+    # table has to report the same median or it contradicts its own column.
+    all_stats = price_stats(listings)
+
     if args.bids_only:
         listings = bid_listings(listings)
     if args.min_score is not None:
@@ -2057,7 +2072,7 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
             l for l in listings if l.deal_score is not None and l.deal_score >= args.min_score
         ]
 
-    print_table(listings)
+    print_table(listings, stats=all_stats)
     print_bid_overview(listings)
 
     if args.output:
@@ -2067,7 +2082,7 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
 
     if not args.no_html:
         html_path = per_query_path(args.html, query, multi)
-        write_html(listings, html_path, query)
+        write_html(listings, html_path, query, stats=all_stats)
         print(f"Wrote HTML overview to {html_path}")
 
         new_count = sum(1 for l in listings if l.is_new)

@@ -202,10 +202,13 @@ and stays out of that tab. So for a full picture of what's biddable:
 python racefiets_jev.py --query luidsprekers --pages 5 --bid-lookup all --bids-only
 ```
 
-`--bids-only` limits the report to bidding listings. The median, the
-secondhand averages and the dealscore are still computed over everything found
-first, so the comparison stays against the whole market rather than only
-against other bidding listings.
+`--bids-only` limits the report to bidding listings. The `% v. mediaan`
+column and the median printed in the footer under the table (and its HTML
+equivalent) are both still measured against everything found first, not
+just what's left after `--bids-only`/`--min-score` filter the rows shown —
+so the comparison stays against the whole market rather than only against
+other bidding listings, and the column and the footer never disagree about
+which median they mean.
 
 Keep in mind that a bid listing's price is where the bidding stands now, not
 what it will sell for, so its dealscore is an upper bound — the score
