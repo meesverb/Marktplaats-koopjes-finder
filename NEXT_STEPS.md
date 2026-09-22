@@ -78,8 +78,9 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    opgezocht). Verder omhoog nog niet gestart.
 4. **Fietsen-referenties.** `reference_prices.csv` bevat nog geen enkel
    fietsmodel — dezelfde prijssegment-aanpak als bij luidsprekers zou daar
-   ook waarde toevoegen. Zie ook `PLAN_FIETSWAARDE.md` op de branch
-   `claude/clever-dijkstra-64tu8z`, waar dit onderdeel van een groter plan
-   is.
+   ook waarde toevoegen. Dit is fase 7 van `PLAN_FIETSWAARDE.md` (op `main`).
+   Neem daarbij mee wat de taxatie van 22-09 opleverde: verkopers schrijven
+   nooit "Composite", maar "Defy Advanced" of "Defy carbon" — daar moeten de
+   patronen op passen.
 5. **Kleinigheid**: de HTML-titel is nog hardcoded "Racefiets koopjes", ook
    bij `--query luidsprekers`.
