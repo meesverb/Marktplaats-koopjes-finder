@@ -543,6 +543,7 @@ ze vóór én na elke stap: `python -m unittest discover -s tests -t tests`.
 
 - [x] Fase 0 — intake eigen fiets *(`mijn_fiets.md` is compleet genoeg om op te taxeren; drie verfijningen open, zie §4)*
 - [x] Testsuite *(87 tests in `tests/`; hoorde bij fase 1, is vooruit gedaan)*
+- [x] Eerste handmatige taxatie *(`taxatie_2026-09-22.md` — trede 2/3, n klein; fase 3 automatiseert dit)*
 - [ ] Fase 1a — `db.py` los, nog niet aangesloten
 - [ ] Fase 1b — aansluiten op het script
 - [ ] Fase 2 — spec-extractie en meervoudige matches
