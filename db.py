@@ -188,6 +188,11 @@ CSV_READ_ENCODING = "utf-8-sig"
 # typo'd kind would quietly start its own UNIQUE(kind, pattern) namespace.
 MODEL_KINDS = ("bike", "frameset", "groupset", "wheelset", "computer", "powermeter", "other")
 
+# Same values racefiets_jev.extract_specs() writes for frame_material, so a
+# reference model's material and one read from a listing's text compare
+# directly.
+FRAME_MATERIALS = ("carbon", "aluminium", "staal", "titanium")
+
 
 def connect(path: str) -> sqlite3.Connection:
     """Open (creating if needed) the koopjes.db at `path` and bring it up to
@@ -320,7 +325,7 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
     {"specs": ..., "better_than_baseline": ...}. export_csv() reverses this.
 
     Three optional columns go straight into `model`: `kind`, `brand` and
-    `source_url`. reference_prices.csv has none of them and imports exactly
+    `source_url`. A fourth, `frame_material`, goes into specs_json. reference_prices.csv has none of them and imports exactly
     as before (kind 'other'); fase 7's reference_bikes.csv and
     reference_bike_accessories.csv carry them, because the plan wants a
     source per researched row and a real kind per model.
@@ -366,9 +371,21 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
         better = (row.get("better_than_baseline") or "").strip().lower() in (
             "1", "true", "yes", "ja",
         )
-        specs_json = json.dumps(
-            {"specs": (row.get("specs") or "").strip(), "better_than_baseline": better}
-        )
+        extra = {"specs": (row.get("specs") or "").strip(), "better_than_baseline": better}
+        # Optional, only in reference_bikes.csv, and only filled where the
+        # row's own sourced specs name the material. The valuation uses it to
+        # keep an aluminium "Giant Defy 1" out of the comps for a carbon Defy
+        # Composite — the listing text rarely says "alu" itself.
+        material = (row.get("frame_material") or "").strip().lower()
+        if material and material not in FRAME_MATERIALS:
+            print(
+                f"warning: {path}: onbekend frame_material {material!r} bij patroon "
+                f"{pattern!r} — genegeerd (geldig: {', '.join(FRAME_MATERIALS)})",
+                file=sys.stderr,
+            )
+        elif material:
+            extra["frame_material"] = material
+        specs_json = json.dumps(extra)
         kind = (row.get("kind") or "").strip().lower() or "other"
         if kind not in MODEL_KINDS:
             print(

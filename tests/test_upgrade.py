@@ -649,5 +649,43 @@ class SharedConstantsTest(unittest.TestCase):
         )
 
 
+
+class ReviewFixesTest(unittest.TestCase):
+    def test_parts_are_never_upgrade_candidates(self):
+        # Gevonden in een echte run: crankstel, powermeter en kettingblad
+        # stonden op 1, 2 en 3.
+        crank = upgrade_listing(
+            item_id="crank",
+            url="https://www.marktplaats.nl/v/fietsen-en-brommers/fietsonderdelen/m1-sram-force-axs-crank",
+        )
+        bike = upgrade_listing(
+            item_id="fiets",
+            url="https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/m2-giant-tcr",
+        )
+        result = find([crank, bike])
+        self.assertEqual([c.listing.item_id for c in result.candidates], ["fiets"])
+        self.assertIn("geen complete racefiets (categorie fietsonderdelen)",
+                      [r.reason for r in result.rejected])
+
+    def test_a_url_without_category_is_not_rejected_for_it(self):
+        result = find([upgrade_listing(url="https://www.marktplaats.nl/v/x/m1")])
+        self.assertEqual(len(result.candidates), 1)
+
+    def test_manual_sale_price(self):
+        self.assertEqual(up.manual_sale_price_from({"verkoopprijs_handmatig": "€ 450"}), 450.0)
+        self.assertEqual(up.manual_sale_price_from({"verkoopprijs_handmatig": "450,50"}), 450.5)
+        for value in ["", "onbekend", "0"]:
+            self.assertIsNone(up.manual_sale_price_from({"verkoopprijs_handmatig": value}))
+        self.assertIsNone(up.manual_sale_price_from({}))
+
+    def test_a_manual_budget_says_where_it_comes_from(self):
+        budgets = up.budgets_from_valuation(
+            450, extra_budget_eur=250, source=up.manual_budget_source(450)
+        )
+        self.assertEqual(budgets.rim.amount, 700)
+        self.assertIn("zelf opgegeven", budgets.rim.reasons[0])
+        self.assertNotIn("taxatie scenario B", " ".join(budgets.rim.reasons))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -131,7 +131,15 @@ extras           = geen (de Roam gaat niet mee)
 drivetrain_wear  = cassette + ketting ca. 1500 km oud
 total_km         = < 10.000
 budget_extra     = max €250 boven op de opbrengst
+verkoopprijs_handmatig =
 ```
+
+`verkoopprijs_handmatig` is een terugval, geen taxatie. Staat er een bedrag,
+dan rekent de upgrade-finder daarmee zolang de automatische taxatie te weinig
+vergelijkbare advertenties vindt (een Defy Composite uit 2012 staat er vaak
+nul of één keer tegelijk op). De bron is dan jijzelf, bijvoorbeeld
+`taxatie_2026-09-22.md`, en het rapport zegt dat erbij. Leeg laten = geen
+terugval.
 
 Alles wat daarboven scoort is een upgrade-kandidaat. Let op dat de
 maat-poort (56) hard is: een fiets die niet past valt af, hoe goed hij ook

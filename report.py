@@ -138,10 +138,27 @@ def load_owner_context(
             valuations[key] = valuation
 
     if "b" not in valuations:
-        return _without_valuation(
-            context,
+        manual = up.manual_sale_price_from(bike.specs)
+        problem = (
             f"geen vergelijkbare advertenties in {db_path} ({len(comps)} advertenties met een "
-            "vraagprijs in het meetvenster). Crawl eerst met --query op dit model.",
+            "vraagprijs in het meetvenster). Crawl eerst met --query op dit model."
+        )
+        if manual is None:
+            return _without_valuation(
+                context,
+                problem + f" Of zet {up.MANUAL_SALE_PRICE_KEY} in het scoringsblok van "
+                "mijn_fiets.md; dan werkt de upgrade-finder met dat bedrag.",
+            ), None
+        # Geen taxatie, wel een budget: de upgrade-finder draait op het
+        # bedrag van de eigenaar, en het budgetblok zegt waar het vandaan komt.
+        return replace(
+            _without_valuation(context, problem),
+            budgets=up.budgets_from_valuation(
+                manual,
+                wheelset_value_eur=context.wheelset.market_value,
+                extra_budget_eur=context.extra_budget_eur,
+                source=up.manual_budget_source(manual),
+            ),
         ), None
 
     budgets = up.budgets_from_valuation(
@@ -212,6 +229,9 @@ def render_bike_panel(context: Optional[OwnerContext], problem: Optional[str]) -
     parts.append("<h3>Taxatie</h3>")
     if context.valuation_problem:
         parts.append(f"<p class='notice'>{esc(context.valuation_problem)}</p>")
+        if context.budgets is not None:
+            parts.append("<h3>Budget voor de upgrade-finder</h3>")
+            parts.append(_budget_block(context.budgets))
     else:
         # §6: nooit één getal zonder band en zonder n.
         n = f"n={context.comp_count}" if context.comp_count is not None else "n onbekend"

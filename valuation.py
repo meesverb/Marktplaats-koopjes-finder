@@ -46,7 +46,7 @@ import racefiets_jev as mp
 
 # Staat in elke valuation-rij, zodat een latere fase kan zien met welke methode
 # een opgeslagen taxatie gemaakt is. Ophogen zodra de rekenwijze verandert.
-METHOD_VERSION = "e1e2e3-1"
+METHOD_VERSION = "e1e2e3-2"
 
 # Onder dit aantal comps is de mediaan geen hard getal meer (§6). De taxatie
 # gaat wel door — met een lager vertrouwen en een bewijsregel die het zegt.
@@ -126,6 +126,10 @@ class CompCandidate:
     disappeared: bool = False
     specs: dict[str, str] = field(default_factory=dict)
     groupset_tier: Optional[int] = None
+    # Framemateriaal van de referentiemodellen (reference_bikes.csv) waar de
+    # advertentie aan gekoppeld is, via listing_model. Alleen gevuld als die
+    # modellen het eens zijn; zie candidate_material().
+    reference_material: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -303,6 +307,19 @@ def candidate_year(candidate: CompCandidate) -> Optional[int]:
     return title_year(candidate.title)
 
 
+def candidate_material(candidate: CompCandidate) -> Optional[str]:
+    """Het framemateriaal van een comp. Het referentiemodel gaat vóór de
+    tekst: "Giant Defy 1" noemt zelden "alu", maar het patroon voor de
+    aluminium Defy 0-5 herkent hem wel — en een tekst die "carbon" zegt gaat
+    bij zo'n fiets meestal over de vork of de wielen."""
+    return candidate.reference_material or candidate.specs.get("frame_material") or None
+
+
+def _material_conflicts(subject: Subject, candidate: CompCandidate) -> bool:
+    material = candidate_material(candidate)
+    return bool(subject.frame_material and material and material != subject.frame_material)
+
+
 def _text_matches(candidate: CompCandidate, patterns: Sequence[str], *, all_of: bool) -> bool:
     if not patterns:
         return False
@@ -324,6 +341,7 @@ def _year_within(subject: Subject, candidate: CompCandidate, slack: int) -> bool
 def _same_model(subject: Subject, candidate: CompCandidate) -> bool:
     return (
         not _excluded(subject, candidate)
+        and not _material_conflicts(subject, candidate)
         and _text_matches(candidate, subject.model_patterns, all_of=True)
         and _year_within(subject, candidate, 2)
         and candidate.groupset_tier is not None
@@ -332,8 +350,13 @@ def _same_model(subject: Subject, candidate: CompCandidate) -> bool:
 
 
 def _same_family(subject: Subject, candidate: CompCandidate) -> bool:
+    # Het materiaal telt hier ook, niet alleen op trede 3: een modelfamilie
+    # kan beide hebben. De aluminium Defy 1 (2012) kwam in een echte run als
+    # enige comp binnen voor de carbon Defy Composite en zette de taxatie op
+    # €219.
     return (
         not _excluded(subject, candidate)
+        and not _material_conflicts(subject, candidate)
         and _text_matches(candidate, subject.family_patterns, all_of=False)
         and _year_within(subject, candidate, 3)
     )
@@ -345,8 +368,7 @@ def _same_segment(subject: Subject, candidate: CompCandidate) -> bool:
     year = candidate_year(candidate)
     if year is None or not subject.segment_years[0] <= year <= subject.segment_years[1]:
         return False
-    material = candidate.specs.get("frame_material")
-    if subject.frame_material and material and material != subject.frame_material:
+    if _material_conflicts(subject, candidate):
         return False
     brake = candidate.specs.get("brake_type")
     if subject.brake_type and brake and brake != subject.brake_type:
@@ -360,6 +382,16 @@ def _same_segment(subject: Subject, candidate: CompCandidate) -> bool:
     return any(candidate.specs.get(key) for key in ("frame_material", "brake_type", "speeds"))
 
 
+def _is_complete_bike(candidate: CompCandidate) -> bool:
+    """Een advertentie buiten de categorie racefietsen is geen comp voor een
+    complete fiets, wat de tekst ook zegt: een los "Defy Composite frame" in
+    fietsonderdelen raakt elk patroon en trekt de schatting naar een
+    frameprijs. Dat kan sinds watchlists onderdelen in dezelfde database
+    zetten. Een URL zonder herkenbare categorie mag door."""
+    category = mp.category_from_url(candidate.url)
+    return category is None or category == mp.ROAD_BIKE_CATEGORY
+
+
 RUNGS = [
     Rung(1, "zelfde model, bouwjaar ±2, zelfde groepsettier", "hoog", _same_model),
     Rung(2, "zelfde modelfamilie, bouwjaar ±3", "midden", _same_family),
@@ -371,6 +403,8 @@ def select_comps(subject: Subject, candidates: Sequence[CompCandidate]) -> Optio
     """De hoogste trede die genoeg comps oplevert. Haalt geen enkele trede de
     drempel, dan wint de breedste trede die überhaupt iets vindt — met
     'indicatief' als vertrouwen, want dat is wat het dan is."""
+    if subject.kind == "bike":
+        candidates = [c for c in candidates if _is_complete_bike(c)]
     found: list[CompSet] = []
     for rung in RUNGS:
         comps = tuple(c for c in candidates if rung.matches(subject, c))
@@ -428,10 +462,35 @@ def fetch_comp_candidates(
         specs_by_listing.setdefault(spec_row["listing_id"], {})[spec_row["key"]] = spec_row["value"]
 
     as_of = as_of or datetime.now(timezone.utc)
+    materials = reference_materials(conn)
     return [
-        candidate_from_row(row, specs_by_listing.get(row["item_id"], {}), as_of=as_of)
+        candidate_from_row(
+            row,
+            specs_by_listing.get(row["item_id"], {}),
+            as_of=as_of,
+            reference_material=materials.get(row["item_id"]),
+        )
         for row in rows
     ]
+
+
+def reference_materials(conn: sqlite3.Connection) -> dict[str, str]:
+    """Per advertentie het framemateriaal van de gekoppelde referentiemodellen
+    (listing_model → model.specs_json). Spreken twee gekoppelde modellen
+    elkaar tegen, dan geen materiaal: dan weet de referentie het niet."""
+    found: dict[str, set[str]] = {}
+    rows = conn.execute(
+        "SELECT lm.listing_id, m.specs_json FROM listing_model lm "
+        "JOIN model m ON m.id = lm.model_id WHERE m.kind = 'bike'"
+    ).fetchall()
+    for row in rows:
+        try:
+            material = json.loads(row["specs_json"] or "{}").get("frame_material")
+        except (json.JSONDecodeError, AttributeError):
+            material = None
+        if material:
+            found.setdefault(row["listing_id"], set()).add(material)
+    return {item_id: next(iter(m)) for item_id, m in found.items() if len(m) == 1}
 
 
 def _derive_days_online(first_seen: Optional[str], as_of: datetime) -> Optional[int]:
@@ -453,7 +512,11 @@ def _derive_days_online(first_seen: Optional[str], as_of: datetime) -> Optional[
 
 
 def candidate_from_row(
-    row, specs: dict[str, str], *, as_of: Optional[datetime] = None
+    row,
+    specs: dict[str, str],
+    *,
+    as_of: Optional[datetime] = None,
+    reference_material: Optional[str] = None,
 ) -> CompCandidate:
     """Eén databaserij als comp-kandidaat. De groepsettier wordt hier opnieuw
     uit de tekst afgeleid in plaats van uit `spec` gelezen: extract_specs()
@@ -485,6 +548,7 @@ def candidate_from_row(
         disappeared=disappeared,
         specs=specs,
         groupset_tier=tier,
+        reference_material=reference_material,
     )
 
 

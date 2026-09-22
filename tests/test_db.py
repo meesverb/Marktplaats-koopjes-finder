@@ -611,5 +611,39 @@ class SyncListingModelsTest(TempDirTest):
         self.assertEqual(n, 1)
 
 
+
+class FrameMaterialImportTest(unittest.TestCase):
+    def test_frame_material_goes_into_specs_json_and_bad_values_are_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ref = Path(tmp) / "ref.csv"
+            ref.write_text(
+                "pattern,label,original_price_eur,specs,score,better_than_baseline,kind,brand,source_url,frame_material\n"
+                "Alu,Alu,,,,0,bike,X,https://x,aluminium\n"
+                "Hout,Hout,,,,0,bike,X,https://x,bamboe\n"
+                "Leeg,Leeg,,,,0,bike,X,https://x,\n",
+                encoding="utf-8",
+            )
+            conn = db.connect(str(Path(tmp) / "k.db"))
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                db.import_legacy(conn, seen_listings_path=str(Path(tmp) / "g.json"),
+                                 reference_prices_path=str(ref),
+                                 reference_price_history_path=str(Path(tmp) / "g.csv"))
+            got = {r["pattern"]: json.loads(r["specs_json"]).get("frame_material")
+                   for r in conn.execute("SELECT pattern, specs_json FROM model")}
+            conn.close()
+        self.assertEqual(got, {"Alu": "aluminium", "Hout": None, "Leeg": None})
+        self.assertIn("bamboe", err.getvalue())
+
+    def test_the_real_bike_file_only_names_materials_its_specs_name(self):
+        import csv
+        with open(repo_file("reference_bikes.csv"), encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                material = row["frame_material"]
+                if material:
+                    self.assertIn(material[:4].lower(), row["specs"].lower() + row["label"].lower(),
+                                  row["label"])
+
+
 if __name__ == "__main__":
     unittest.main()

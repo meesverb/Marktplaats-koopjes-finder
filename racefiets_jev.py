@@ -754,6 +754,25 @@ def parse_listing(raw: dict) -> Listing:
     )
 
 
+# The category a complete road bike is listed in. The upgrade finder and the
+# valuation both need "is this a bike at all": once a watchlist crawls
+# fietsonderdelen, koopjes.db also holds cranksets and powermeters, and a
+# "Defy Composite frame" in the parts category is no comp for a complete
+# Defy Composite.
+ROAD_BIKE_CATEGORY = "fietsen-racefietsen"
+LISTING_URL_CATEGORY_RE = re.compile(r"/v/[^/]+/([^/]+)/")
+
+
+def category_from_url(url: str) -> Optional[str]:
+    """The subcategory key from a listing URL. Marktplaats builds every
+    listing URL as /v/<main category>/<subcategory>/<id>-<slug> (vipUrl in the
+    search results), and the database has that URL for every listing it ever
+    stored — unlike categoryId, which was never saved. None when the URL
+    doesn't have that shape."""
+    match = LISTING_URL_CATEGORY_RE.search(url or "")
+    return match.group(1) if match else None
+
+
 def relevant_categories(search_response: dict) -> list[dict]:
     for facet in search_response.get("facets", []):
         if facet.get("key") == "RelevantCategories":

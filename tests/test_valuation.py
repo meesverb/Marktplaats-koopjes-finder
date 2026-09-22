@@ -584,5 +584,73 @@ class EndToEndTest(DatabaseTest):
         self.assertEqual(stored, len(result.evidence))
 
 
+
+class ReviewFixesTest(unittest.TestCase):
+    """Gevonden bij een taxatie op echte data (22-09-2026): de enige comp was
+    een aluminium "Giant Defy 1" van €250, en losse onderdelen konden als
+    comp meetellen zodra een watchlist ze in de database zette."""
+
+    def test_a_family_comp_with_another_frame_material_is_not_a_comp(self):
+        alu = [
+            candidate(item_id=f"alu{i}", title="Racefiets Giant Defy 1 2012", groupset_tier=4,
+                      specs={}, reference_material="aluminium")
+            for i in range(6)
+        ]
+        self.assertIsNone(val.select_comps(DEFY, alu))
+
+    def test_the_reference_material_wins_over_the_text(self):
+        # "carbon" in de tekst van een alu Defy gaat meestal over de vork of
+        # de wielen; het referentiepatroon kent het model.
+        found = candidate(specs={"frame_material": "carbon"}, reference_material="aluminium")
+        self.assertEqual(val.candidate_material(found), "aluminium")
+        self.assertEqual(val.candidate_material(candidate(specs={"frame_material": "carbon"})), "carbon")
+
+    def test_unknown_material_still_counts_on_the_family_rung(self):
+        comps = [
+            candidate(item_id=f"m{i}", title="Giant Defy 2 2013", groupset_tier=3, specs={})
+            for i in range(6)
+        ]
+        self.assertEqual(val.select_comps(DEFY, comps).rung, 2)
+
+    def test_a_listing_outside_the_road_bike_category_is_no_comp(self):
+        parts = [
+            candidate(item_id=f"p{i}",
+                      url=f"https://www.marktplaats.nl/v/fietsen-en-brommers/fietsonderdelen/p{i}-frame")
+            for i in range(6)
+        ]
+        self.assertIsNone(val.select_comps(DEFY, parts))
+        bikes = [
+            candidate(item_id=f"b{i}",
+                      url=f"https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/b{i}-defy")
+            for i in range(6)
+        ]
+        self.assertEqual(val.select_comps(DEFY, bikes).rung, 1)
+
+    def test_reference_material_comes_from_the_linked_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ref = Path(tmp) / "ref.csv"
+            ref.write_text(
+                "pattern,label,original_price_eur,specs,score,better_than_baseline,kind,brand,source_url,frame_material\n"
+                "Defy\\s*[0-5]\\b,Giant Defy 0-5 (aluminium),,,,0,bike,Giant,https://x,aluminium\n"
+                '"Defy.{0,20}Composite",Giant Defy Composite,,,,0,bike,Giant,https://x,carbon\n',
+                encoding="utf-8",
+            )
+            conn = db.connect(str(Path(tmp) / "k.db"))
+            db.import_legacy(conn, seen_listings_path=str(Path(tmp) / "geen.json"),
+                             reference_prices_path=str(ref),
+                             reference_price_history_path=str(Path(tmp) / "geen.csv"))
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            db.sync_listings(conn, "giant defy", [
+                make_listing(item_id="alu", title="Racefiets Giant Defy 1", price_eur=250.0),
+                make_listing(item_id="carbon", title="Giant Defy Composite", price_eur=650.0),
+                make_listing(item_id="los", title="Giant Defy", price_eur=400.0),
+            ], now)
+            db.sync_listing_models(conn, {"alu": [r"Defy\s*[0-5]\b"],
+                                          "carbon": ["Defy.{0,20}Composite"]})
+            found = {c.item_id: c.reference_material for c in val.fetch_comp_candidates(conn)}
+            conn.close()
+        self.assertEqual(found, {"alu": "aluminium", "carbon": "carbon", "los": None})
+
+
 if __name__ == "__main__":
     unittest.main()
