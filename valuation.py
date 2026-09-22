@@ -59,7 +59,9 @@ NEGOTIATION_DEFAULT = (0.85, 0.875, 0.90)  # laag, midden, hoog
 
 # Vanaf hier mag de gemeten factor de default overschrijven (§6: n>=20 per
 # categorie). Een advertentie die binnen 14 dagen verdwijnt was realistisch
-# geprijsd; eentje die na 60 dagen nog staat niet.
+# geprijsd; de "blijvers" zijn elke advertentie die na 60 dagen nog staat —
+# verdwenen óf nog altijd online, dat maakt voor "blijver" niet uit — die was
+# dat niet.
 EMPIRICAL_MIN_N = 20
 QUICK_SALE_DAYS = 14
 STALE_DAYS = 60
@@ -215,6 +217,12 @@ def empirical_negotiation_factor(
     die snel weg waren, gedeeld door die van advertenties die bleven hangen.
     Geeft (factor, n_snel, n_blijvers) of None zolang er te weinig van beide
     is.
+
+    "Blijvers" zijn niet alleen advertenties die uiteindelijk (na 60+ dagen)
+    verdwenen — dat zou alleen de slechtst geprijsde staart van de blijvers
+    meten. Een advertentie die na 60+ dagen nog altijd online staat telt net
+    zo goed mee; candidate_from_row() leidt days_online voor zo'n advertentie
+    af uit first_seen zodra de kolom zelf NULL is.
 
     Let op wat dit *niet* is: verdwenen is niet verkocht — een advertentie kan
     ook ingetrokken of verlopen zijn. Het is een proxy, en de bewijsregel die
@@ -385,6 +393,7 @@ def fetch_comp_candidates(
     *,
     window_days: int = DEFAULT_COMP_WINDOW_DAYS,
     query: Optional[str] = None,
+    as_of: Optional[datetime] = None,
 ) -> list[CompCandidate]:
     """Alle advertenties met een bruikbare vraagprijs uit het meetvenster, met
     hun specs erbij. Filteren op vergelijkbaarheid gebeurt níet hier maar in
@@ -396,7 +405,7 @@ def fetch_comp_candidates(
     al buiten de waarderingsdata houdt."""
     sql = [
         "SELECT item_id, title, description, price_eur, url, is_bid, days_online,",
-        "       disappeared_at, last_seen",
+        "       disappeared_at, last_seen, first_seen",
         "FROM listing",
         "WHERE price_eur IS NOT NULL AND price_eur > 0 AND is_bid = 0",
     ]
@@ -413,17 +422,53 @@ def fetch_comp_candidates(
     for spec_row in conn.execute("SELECT listing_id, key, value FROM spec").fetchall():
         specs_by_listing.setdefault(spec_row["listing_id"], {})[spec_row["key"]] = spec_row["value"]
 
-    return [candidate_from_row(row, specs_by_listing.get(row["item_id"], {})) for row in rows]
+    as_of = as_of or datetime.now(timezone.utc)
+    return [
+        candidate_from_row(row, specs_by_listing.get(row["item_id"], {}), as_of=as_of)
+        for row in rows
+    ]
 
 
-def candidate_from_row(row, specs: dict[str, str]) -> CompCandidate:
+def _derive_days_online(first_seen: Optional[str], as_of: datetime) -> Optional[int]:
+    """Dagen sinds first_seen — sinds wíj de advertentie zagen, niet de
+    plaatsdatum op Marktplaats (dat veld, `posted_date`, lezen we hier niet:
+    het echte formaat ervan is niet vastgesteld, zie CLAUDE.md). None als
+    first_seen ontbreekt of onleesbaar is, dezelfde twee vangnetten als
+    sweep_disappeared() in db.py: import_legacy() kan een lege string
+    wegschrijven, en een onleesbare datum mag deze taxatie niet laten
+    crashen. Een stille NULL in de database blijft zo een stille NULL —
+    er wordt niets verzonnen."""
+    if not first_seen:
+        return None
+    try:
+        delta = as_of - db._parse_iso(first_seen)
+    except ValueError:
+        return None
+    return delta.days
+
+
+def candidate_from_row(
+    row, specs: dict[str, str], *, as_of: Optional[datetime] = None
+) -> CompCandidate:
     """Eén databaserij als comp-kandidaat. De groepsettier wordt hier opnieuw
     uit de tekst afgeleid in plaats van uit `spec` gelezen: extract_specs()
     laat de groepset met opzet aan detect_groupset() over, en een afgeleide
-    waarde hoort niet in de ruwe tabellen."""
+    waarde hoort niet in de ruwe tabellen.
+
+    days_online komt uit de kolom als die er staat. Staat hij op NULL en is
+    de advertentie nog online, dan wordt hij hier afgeleid uit first_seen —
+    dat gebeurt alleen bij het lezen, nooit teruggeschreven, dus de ruwe
+    kolom blijft een ruwe waarneming. Een verdwenen advertentie zonder
+    days_online (de parse in sweep_disappeared() faalde toen) wordt hier niet
+    alsnog berekend: dat zou een ander getal kunnen geven dan wat op het
+    moment van verdwijnen vastgesteld is."""
     title = row["title"] or ""
     description = row["description"] or ""
     _, tier = mp.detect_groupset(f"{title} {description}")
+    disappeared = row["disappeared_at"] is not None
+    days_online = row["days_online"]
+    if days_online is None and not disappeared:
+        days_online = _derive_days_online(row["first_seen"], as_of or datetime.now(timezone.utc))
     return CompCandidate(
         item_id=row["item_id"],
         title=title,
@@ -431,8 +476,8 @@ def candidate_from_row(row, specs: dict[str, str]) -> CompCandidate:
         price_eur=float(row["price_eur"]),
         text=f"{title} {description}".lower(),
         is_bid=bool(row["is_bid"]),
-        days_online=row["days_online"],
-        disappeared=row["disappeared_at"] is not None,
+        days_online=days_online,
+        disappeared=disappeared,
         specs=specs,
         groupset_tier=tier,
     )
@@ -717,7 +762,8 @@ def value_subject(
                 note=(
                     f"E2: gemeten correctie vraagprijs → verkoopprijs ×{dutch(factor)} "
                     f"(mediaan van {n_quick} snel verdwenen advertenties tegen "
-                    f"{n_stale} blijvers; verdwenen is niet hetzelfde als verkocht)"
+                    f"{n_stale} blijvers — verdwenen óf nog altijd online, 60+ dagen "
+                    "sinds we ze zagen; verdwenen is niet hetzelfde als verkocht)"
                 ),
                 weight=factor,
             )

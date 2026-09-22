@@ -315,10 +315,12 @@ Three estimators, mixed into one band:
   the estimate is marked `indicatief` and says so in its own evidence line.
 - **E2 — asking price → selling price.** Marktplaats publishes asking
   prices, not selling prices. Once at least 20 listings have disappeared
-  within two weeks and 20 others have been sitting online for 60+ days, the
-  ratio between those two medians becomes a measured correction factor per
-  category; until then a heuristic 10-15% is applied and labelled as such.
-  Disappeared is not the same as sold — that caveat is in the output.
+  within two weeks and 20 others have been sitting online for 60+ days —
+  disappeared *or* still online, both count, "sitting online" is measured
+  from when we first saw the listing, not its Marktplaats posting date —
+  the ratio between those two medians becomes a measured correction factor
+  per category; until then a heuristic 10-15% is applied and labelled as
+  such. Disappeared is not the same as sold — that caveat is in the output.
 - **E3 — sum of the parts.** Component prices from `component_price` times a
   bundle factor. With that table empty it contributes nothing, and every
   component without observations gets an evidence line saying so.

@@ -18,7 +18,32 @@ import valuation as val
 
 
 def candidate(**overrides) -> val.CompCandidate:
-    """Een comp-kandidaat met bruikbare defaults; geef alleen mee wat telt."""
+    """Een comp-kandidaat met bruikbare defaults; geef alleen mee wat telt.
+
+    Met `first_seen` gaat de kandidaat via het echte databasepad
+    (candidate_from_row()) in plaats van days_online rechtstreeks op
+    CompCandidate te zetten — zo dekt een test met deze helper ook de
+    days_online-afleiding die fetch_comp_candidates() in het echt gebruikt,
+    niet alleen een synthetische waarde die toevallig lijkt op wat die
+    afleiding zou opleveren."""
+    if "first_seen" in overrides:
+        row = dict(
+            item_id="m1",
+            title="Giant Defy Composite 2012",
+            description="",
+            price_eur=500.0,
+            url="https://www.marktplaats.nl/v/x/m1",
+            is_bid=0,
+            days_online=None,
+            disappeared_at=None,
+        )
+        as_of = overrides.pop("as_of", None)
+        specs = overrides.pop("specs", {})
+        if overrides.pop("disappeared", False):
+            overrides.setdefault("disappeared_at", "2020-01-01T00:00:00+00:00")
+        row.update(overrides)
+        return val.candidate_from_row(row, specs, as_of=as_of)
+
     fields = dict(
         item_id="m1",
         title="Giant Defy Composite 2012",
@@ -90,6 +115,50 @@ class NegotiationFactorTest(unittest.TestCase):
         self.assertIsNone(
             val.empirical_negotiation_factor(self.candidates(20, 20, quick_price=200.0))
         )
+
+    def test_a_still_online_listing_counts_as_a_stayer_too(self):
+        # Regression: days_online was only ever set by sweep_disappeared(),
+        # so a listing that's simply been online for 90 days without being
+        # swept had days_online=NULL and never made it into the "blijvers"
+        # group at all — only the worst-priced tail that had disappeared did.
+        as_of = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        first_seen_90_days_ago = (as_of - timedelta(days=90)).isoformat(timespec="seconds")
+        quick = [
+            candidate(item_id=f"q{i}", price_eur=800.0, days_online=7, disappeared=True)
+            for i in range(20)
+        ]
+        still_online = [
+            candidate(
+                item_id=f"s{i}", price_eur=1000.0,
+                first_seen=first_seen_90_days_ago, as_of=as_of,
+            )
+            for i in range(20)
+        ]
+        factor = val.empirical_negotiation_factor(quick + still_online)
+        self.assertIsNotNone(factor)
+        self.assertAlmostEqual(factor[0], 0.8)
+        self.assertEqual(factor[1:], (20, 20))
+
+
+class DeriveDaysOnlineTest(unittest.TestCase):
+    """_derive_days_online() — the pure function candidate_from_row() calls
+    to fill in days_online for a still-online listing whose column is NULL.
+    Same two safety nets as sweep_disappeared() in db.py: import_legacy()
+    can write an empty first_seen, and an unreadable date must not crash a
+    taxatie run."""
+
+    def test_missing_first_seen_yields_none(self):
+        as_of = datetime.now(timezone.utc)
+        self.assertIsNone(val._derive_days_online("", as_of))
+        self.assertIsNone(val._derive_days_online(None, as_of))
+
+    def test_unparseable_first_seen_yields_none(self):
+        self.assertIsNone(val._derive_days_online("niet-een-datum", datetime.now(timezone.utc)))
+
+    def test_derives_days_since_first_seen(self):
+        as_of = datetime(2026, 4, 1, tzinfo=timezone.utc)
+        first_seen = "2026-01-01T00:00:00+00:00"
+        self.assertEqual(val._derive_days_online(first_seen, as_of), 90)
 
 
 class CompLadderTest(unittest.TestCase):
@@ -394,6 +463,27 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(
             self.conn.execute("SELECT COUNT(*) AS n FROM component_price").fetchone()["n"], 0
         )
+
+    def test_negotiation_factor_counts_still_online_listings_via_the_real_db_path(self):
+        # 20 quick sales: added now, then swept a week later so
+        # sweep_disappeared() marks them gone with days_online=7.
+        quick = [make_listing(item_id=f"quick{i}", price_eur=800.0) for i in range(20)]
+        self.add_listings(quick)
+        a_week_later = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(timespec="seconds")
+        db.sweep_disappeared(self.conn, "giant defy", set(), a_week_later)
+
+        # 20 stayers: added afterwards with a first_seen 90 days back and
+        # never swept, so days_online is NULL on disk and must be derived
+        # from first_seen on read, not left out of the "blijvers" group.
+        old_first_seen = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat(timespec="seconds")
+        stayers = [make_listing(item_id=f"stayer{i}", price_eur=1000.0) for i in range(20)]
+        db.sync_listings(self.conn, "giant defy", stayers, old_first_seen)
+
+        candidates = val.fetch_comp_candidates(self.conn)
+        factor = val.empirical_negotiation_factor(candidates)
+        self.assertIsNotNone(factor)
+        self.assertAlmostEqual(factor[0], 0.8)
+        self.assertEqual(factor[1:], (20, 20))
 
     def test_component_prices_are_read_per_model(self):
         self.conn.execute(
