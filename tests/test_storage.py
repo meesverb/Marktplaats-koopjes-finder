@@ -114,6 +114,21 @@ class ReferenceFileTest(TempDirTest):
         self.assertIsNone(row["original_price_eur"])
         self.assertFalse(row["better"])
 
+    def test_an_unreadable_original_price_is_treated_as_empty(self):
+        # The new-price column is filled in by hand, so "ca. 300" is a matter
+        # of time. The row still has to match; only the price goes missing.
+        path = self.path("ref.csv")
+        Path(path).write_text(
+            "pattern,label,original_price_eur\nmission,Mission 731,ca. 300\n",
+            encoding="utf-8",
+        )
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            (row,) = mp.load_reference_data(path)
+        self.assertEqual(row["label"], "Mission 731")
+        self.assertIsNone(row["original_price_eur"])
+        self.assertIn("ca. 300", stderr.getvalue())
+
     def test_invalid_regex_is_skipped_not_fatal(self):
         path = self.write_reference("Mission [731,Kapot,,,,\nWharfedale,Wharfedale,100,,,\n")
         # The loader warns on stderr about the bad pattern; that's the point of
@@ -192,6 +207,43 @@ class PriceHistoryTest(TempDirTest):
 
     def test_missing_file_gives_no_stats(self):
         self.assertEqual(mp.load_reference_market_stats(self.path("nope.csv")), {})
+
+    def test_a_free_listing_is_not_a_price_observation(self):
+        # priceType FREE is a giveaway, not an asking price; logging EUR 0
+        # would pull the model's observed secondhand average down for good.
+        path = self.path("prices.csv")
+        recorded = mp.append_reference_price_observations(
+            path,
+            [make_listing(item_id="gratis", is_new=True, ref_label="M", price_eur=0.0)],
+        )
+        self.assertEqual(recorded, 0)
+
+    def test_a_file_without_the_expected_columns_is_reported(self):
+        # A hand-edited or pre-historic file used to raise KeyError here and
+        # take the whole run down with it.
+        path = self.path("prices.csv")
+        Path(path).write_text("date,item_id,price_eur\n2026-01-01,a,50\n", encoding="utf-8")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            stats = mp.load_reference_market_stats(path)
+        self.assertEqual(stats, {})
+        self.assertIn("ref_label", stderr.getvalue())
+
+    def test_unreadable_and_free_rows_are_skipped_not_fatal(self):
+        path = self.path("prices.csv")
+        Path(path).write_text(
+            "date,ref_label,item_id,price_eur,title\n"
+            "2026-01-01,Model A,a,50,Eerste\n"
+            "2026-01-01,Model A,b,kapot,Tweede\n"
+            "2026-01-01,Model A,c,0,Gratis\n"
+            "2026-01-01,,d,70,Zonder label\n"
+            "2026-01-01,Model A,e\n",
+            encoding="utf-8",
+        )
+        stats = mp.load_reference_market_stats(path)
+        self.assertEqual(stats["Model A"]["count"], 1)
+        self.assertEqual(stats["Model A"]["mean"], 50.0)
 
     def test_a_file_with_other_columns_is_left_alone(self):
         # Appending under a header that isn't ours would misalign the file that
@@ -284,10 +336,13 @@ class CsvExportTest(TempDirTest):
         for field in ("item_id", "price_eur", "deal_score", "bid_open", "ref_label"):
             self.assertIn(field, header)
 
-    def test_empty_result_still_writes_a_file(self):
+    def test_empty_result_still_writes_a_file_but_says_so(self):
         path = self.path("out.csv")
-        mp.write_csv([], path)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            mp.write_csv([], path)
         self.assertTrue(Path(path).exists())
+        self.assertIn("leeg", stderr.getvalue())
 
 
 class QueryPathTest(unittest.TestCase):

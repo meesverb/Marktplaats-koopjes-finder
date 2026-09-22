@@ -470,8 +470,16 @@ def filter_by_frame_height(
     return result
 
 
+def market_prices(listings: list[Listing]) -> list[float]:
+    """The prices that say something about what a thing costs here. A listing
+    without a price is out for obvious reasons, and so is a EUR 0 one: that's
+    a FREE listing (priceType FREE — see parse_listing), a giveaway rather
+    than an asking price, and averaging it in drags every benchmark down."""
+    return [l.price_eur for l in listings if l.price_eur]
+
+
 def flag_bargains(listings: list[Listing], bargain_ratio: float) -> list[Listing]:
-    priced = [l.price_eur for l in listings if l.price_eur]
+    priced = market_prices(listings)
     if len(priced) < 2:
         return listings
 
@@ -493,7 +501,9 @@ def flag_bargains(listings: list[Listing], bargain_ratio: float) -> list[Listing
 
 
 def price_stats(listings: list[Listing]) -> dict:
-    priced = [l.price_eur for l in listings if l.price_eur is not None]
+    # Same definition as flag_bargains uses, so the median printed under the
+    # table is the median the "% v. mediaan" column is measured against.
+    priced = market_prices(listings)
     if not priced:
         return {"count": 0, "mean": None, "median": None}
     return {
@@ -561,17 +571,34 @@ def load_reference_market_stats(path: str) -> dict:
     retail price in reference_prices.csv."""
     try:
         with open(path, encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            fieldnames = reader.fieldnames or []
     except FileNotFoundError:
+        return {}
+
+    missing = [name for name in ("ref_label", "price_eur") if name not in fieldnames]
+    if rows and missing:
+        print(
+            f"warning: {path} mist de kolom(men) {', '.join(missing)}; er worden geen "
+            "2e-hands gemiddelden uit gehaald.",
+            file=sys.stderr,
+        )
         return {}
 
     by_label: dict[str, list[float]] = {}
     for row in rows:
+        # A short row hands back None for its missing cells and a hand-edited
+        # one can hold anything at all; neither is worth taking the run down
+        # for. EUR 0 is skipped for the same reason as in market_prices().
         try:
-            price = float(row["price_eur"])
-        except (KeyError, ValueError):
+            price = float(row.get("price_eur"))
+        except (TypeError, ValueError):
             continue
-        by_label.setdefault(row["ref_label"], []).append(price)
+        label = (row.get("ref_label") or "").strip()
+        if not label or not price:
+            continue
+        by_label.setdefault(label, []).append(price)
 
     stats = {}
     for label, prices in by_label.items():
@@ -599,7 +626,9 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
     so future runs can compute the real observed secondhand price for
     that model. Only logs on first sighting (is_new) so the same active
     ad isn't counted again every run."""
-    observations = [l for l in listings if l.is_new and l.ref_label and l.price_eur is not None]
+    # EUR 0 is a giveaway, not an asking price; recording it would pull the
+    # model's observed secondhand average down for good.
+    observations = [l for l in listings if l.is_new and l.ref_label and l.price_eur]
     if not observations:
         return 0
 
@@ -705,12 +734,24 @@ def load_reference_data(path: str) -> list[dict]:
         except re.error as exc:
             print(f"warning: skipping invalid pattern in {path}: {pattern!r} ({exc})", file=sys.stderr)
             continue
-        original_price = row.get("original_price_eur", "").strip()
+        original_price_raw = (row.get("original_price_eur") or "").strip()
+        try:
+            original_price = float(original_price_raw) if original_price_raw else None
+        except ValueError:
+            # This column gets filled in by hand, so "ca. 300" or "?" is a
+            # matter of time. An empty new-price costs one signal; a crash
+            # costs the whole run.
+            print(
+                f"warning: {path}: onleesbare nieuwprijs {original_price_raw!r} bij "
+                f"patroon {pattern!r} — als leeg behandeld",
+                file=sys.stderr,
+            )
+            original_price = None
         reference.append(
             {
                 "regex": compiled,
                 "label": (row.get("label") or pattern).strip(),
-                "original_price_eur": float(original_price) if original_price else None,
+                "original_price_eur": original_price,
                 "score": (row.get("score") or "").strip(),
                 "specs": (row.get("specs") or "").strip(),
                 "better": (row.get("better_than_baseline") or "").strip().lower() in ("1", "true", "yes", "ja"),
@@ -1350,6 +1391,10 @@ def write_html(listings: list[Listing], path: str, query: str) -> None:
 
 
 def write_csv(listings: list[Listing], path: str) -> None:
+    if not listings:
+        # The file is still written (a stale one from a previous run would be
+        # worse), but a zero-byte CSV looks exactly like a successful export.
+        print(f"warning: niets te exporteren, {path} wordt leeg.", file=sys.stderr)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(asdict(listings[0]).keys()) if listings else [])
         writer.writeheader()

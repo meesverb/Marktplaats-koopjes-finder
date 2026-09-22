@@ -34,7 +34,10 @@ result for a non-bike query, since those listings never have a frame size.
 Run the script separately per query instead when the filters need to differ.
 
 Listings marked with `*` are priced at or below `--bargain-ratio` (default
-`0.6`, i.e. 60%) of the median price across all listings fetched. Every
+`0.6`, i.e. 60%) of the median price across all listings fetched. That median
+(and the average next to it) is taken over listings with a real asking price:
+a priceless one and a "gratis" one at €0 are both left out, since neither says
+anything about what the thing costs. Every
 priced listing also shows `% v. mediaan` — what percentage of the median
 price it's asking, e.g. `24%` means it's asking a quarter of the median — so
 you can judge relative cheapness on a scale instead of only the binary `*`

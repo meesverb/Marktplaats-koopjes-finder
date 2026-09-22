@@ -35,6 +35,22 @@ class BargainFlaggingTest(unittest.TestCase):
         self.assertEqual(stats["count"], 1)
         self.assertEqual(mp.price_stats([])["count"], 0)
 
+    def test_the_printed_median_is_the_one_the_percentages_use(self):
+        # A free listing (priceType FREE, EUR 0) used to count towards the
+        # median printed under the table while flag_bargains left it out, so
+        # the "% v. mediaan" column was measured against a different number
+        # than the one shown.
+        listings = [
+            make_listing(item_id="a", price_eur=100.0),
+            make_listing(item_id="b", price_eur=200.0),
+            make_listing(item_id="gratis", price_eur=0.0),
+        ]
+        mp.flag_bargains(listings, 0.6)
+        stats = mp.price_stats(listings)
+        self.assertEqual(stats["count"], 2)
+        self.assertEqual(stats["median"], 150.0)
+        self.assertEqual(listings[0].pct_of_median, 66.7)
+
 
 class RatioScoreTest(unittest.TestCase):
     def test_sitting_on_the_benchmark_scores_fifty(self):
