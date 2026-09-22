@@ -602,12 +602,23 @@ def price_stats(listings: list[Listing]) -> dict:
 
 def existing_csv_header(path: str) -> Optional[list[str]]:
     """The header row of a CSV we're about to append to, or None when there
-    isn't one yet (no file, or an empty one)."""
+    isn't one yet (no file, an empty one, or one that opens with blank
+    lines)."""
     try:
         with open(path, newline="", encoding=CSV_READ_ENCODING) as f:
-            return next(csv.reader(f), None)
+            for row in csv.reader(f):
+                # A blank first line reads as an empty row, not as no row at
+                # all — and these files get hand-edited. Taken at face value
+                # it's a header with no columns in it, which is neither the
+                # "no header yet, write one" case nor a real header to append
+                # under: the callers would write rows with no header above
+                # them, or refuse to write at all over columns that aren't
+                # there. Skip past the blanks to whatever the file really has.
+                if any(cell.strip() for cell in row):
+                    return row
     except FileNotFoundError:
         return None
+    return None
 
 
 def append_bargain_log(path: str, listings: list[Listing]) -> int:
@@ -639,7 +650,12 @@ def append_bargain_log(path: str, listings: list[Listing]) -> int:
             file=sys.stderr,
         )
 
-    with open(path, "a", newline="", encoding="utf-8") as f:
+    # No header found means the file is missing, empty, or holds nothing but
+    # blank lines — no data to lose in any of those cases, so it's written
+    # from scratch. Appending instead would leave the header sitting under a
+    # blank first line, where csv.DictReader takes the blank for the header
+    # and the file reads as columnless.
+    with open(path, "a" if existing_fields else "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         if existing_fields is None:
             writer.writeheader()
@@ -749,7 +765,9 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
         )
         return 0
 
-    with open(path, "a", newline="", encoding="utf-8") as f:
+    # "w" when there's no header: see append_bargain_log() — a file of blank
+    # lines has nothing in it worth appending to.
+    with open(path, "a" if existing_fields else "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if existing_fields is None:
             writer.writerow(PRICE_HISTORY_FIELDS)

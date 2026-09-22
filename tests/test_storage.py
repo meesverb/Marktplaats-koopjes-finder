@@ -299,6 +299,20 @@ class PriceHistoryTest(TempDirTest):
         self.assertEqual(stats, {})
         self.assertIn("ref_label", stderr.getvalue())
 
+    def test_a_blank_first_line_does_not_look_like_wrong_columns(self):
+        # [] is not a header with the wrong columns in it; refusing to write
+        # over a file that only has a blank line in it loses the run's
+        # observations for nothing.
+        path = self.path("prices.csv")
+        Path(path).write_text("\n", encoding="utf-8")
+        listings = [make_listing(item_id="a", is_new=True, ref_label="Model X", price_eur=50.0)]
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(mp.append_reference_price_observations(path, listings), 1)
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual([r["item_id"] for r in read_csv_rows(path)], ["a"])
+
     def test_unreadable_and_free_rows_are_skipped_not_fatal(self):
         path = self.path("prices.csv")
         Path(path).write_text(
@@ -391,6 +405,32 @@ class BargainLogTest(TempDirTest):
         self.assertEqual(row["item_id"], "a")
         self.assertEqual(row["price_eur"], "42.0")
         self.assertEqual(len(row), len(header))
+
+    def test_a_file_that_starts_with_a_blank_line_still_gets_a_header(self):
+        # An empty first row is not a header, but it isn't "no header" either:
+        # the rows used to be appended under no column names at all, and the
+        # file could never be read back.
+        path = self.path("log.csv")
+        Path(path).write_text("\n", encoding="utf-8")
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            mp.append_bargain_log(path, [make_listing(item_id="a", is_new=True, is_bargain=True)])
+        (row,) = read_csv_rows(path)
+        self.assertEqual(row["item_id"], "a")
+
+    def test_a_header_below_a_blank_line_is_still_the_header(self):
+        path = self.path("log.csv")
+        Path(path).write_text("\nlogged_at,item_id,title\n", encoding="utf-8")
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            mp.append_bargain_log(path, [make_listing(item_id="a", is_new=True, is_bargain=True)])
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+        # The file's own columns win, no second header is written under them,
+        # and the blank line the file came with is left where it was — there
+        # are rows under it, so this one is not ours to rewrite.
+        self.assertEqual(lines[0], "")
+        self.assertEqual(lines[1], "logged_at,item_id,title")
+        self.assertEqual(len(lines[2].split(",")), 3)
 
     def test_columns_the_file_lacks_are_reported_not_dropped_in_silence(self):
         path = self.path("log.csv")
