@@ -82,3 +82,10 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    Neem daarbij mee wat de taxatie van 22-09 opleverde: verkopers schrijven
    nooit "Composite", maar "Defy Advanced" of "Defy carbon" — daar moeten de
    patronen op passen.
+5. **Nog te verifiëren aan een echte advertentie**: of Marktplaats'
+   `currentMinimumBid` op een advertentie waar al geboden is écht onder het
+   hoogste bod kan liggen, of dat het dan simpelweg het eerstvolgende
+   toegestane bod is. De code gaat van het eerste uit (`resolve_bid_price`
+   pakt het hoogste bod, `format_bid_info` toont het minimum ernaast). Kijk
+   één keer op een lopende bied-advertentie met biedingen en noteer het hier
+   — niet gokken, dit soort details staat nergens gedocumenteerd.
