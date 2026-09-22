@@ -18,7 +18,8 @@ en de open punten staan eronder. Fase 1 importeert dit naar `owned_item`.
 | Framenummer | Niet te koppelen aan een modeljaar/uitvoering |
 | Herkomst groepset | **Zat er al op bij aankoop** — geen eigen investering |
 | Aandrijving | Cassette **en** ketting vervangen, ca. **1500 km** geleden |
-| Budget volgende fiets | Opbrengst **plus** eigen geld; bedrag nog te bepalen |
+| Kilometerstand | **Minder dan 10.000 km** |
+| Budget volgende fiets | Verkoopopbrengst **+ maximaal €250** eigen geld |
 
 ## Wat hier direct uit volgt
 
@@ -76,6 +77,23 @@ uitvoerende agent verifieert ze alsnog met bronnen (zie §4 van het plan).
   *kandidaat*-advertentie zit — de eigenaar heeft er al een. Zie §7 van het
   plan: de `extras`-score moet relatief zijn aan wat hij al bezit. Een
   powermeter telt wél volledig mee.
+- **Weinig kilometers, en het verhaal klopt.** Onder de 10.000 km in veertien
+  jaar is weinig, en cassette + ketting vervangen op ~8500 km past daar precies
+  bij. Dat is een consistent en controleerbaar onderhoudsverhaal, en dat is op
+  Marktplaats meer waard dan een losse claim "goed onderhouden". Wel eerlijk
+  blijven: een carbon frame veroudert ook zonder kilometers (UV, opslag,
+  ingedroogd naaf- en balhoofdvet), dus lage stand verkoopt goed maar maakt de
+  fiets niet nieuw.
+- **Het budget is de bindende beperking, niet de fiets.** Opbrengst + €250 is
+  bescheiden. Reken erop dat een moderne schijfremfiets met 12-speed hiermee
+  niet realistisch is, tenzij er een uitgesproken koopje langskomt. De
+  realistische upgrade zit in de velremwereld: een nieuwer 11-speed frame van
+  een hogere klasse (TCR, Tarmac, Emonda, Supersix) in plaats van
+  instap-endurance uit 2012.
+- **Dat maakt de velrem-route dubbel aantrekkelijk.** Bij een velremkandidaat
+  verhuist de CSC-wielset mee, wat de facto een paar honderd euro aan waarde
+  meeneemt naar de nieuwe fiets. Bij een schijfremkandidaat valt dat weg én
+  moet het budget die fiets alleen dragen. Zie §7 van het plan.
 - **Composite ≠ Advanced.** Binnen Giants carbon-aanbod is Composite de
   instapcarbon en Advanced de hogere laag. Vergelijk in de comps dus niet
   klakkeloos met Defy Advanced-advertenties; dat trekt de schatting te hoog.
@@ -86,12 +104,12 @@ uitvoerende agent verifieert ze alsnog met bronnen (zie §4 van het plan).
 
 ## Nog open
 
-1. **Kilometerstand** van de fiets als geheel (frame, wielen, naven) — de
-   aandrijving is vers, de rest niet per se.
-2. **Hoeveel** geld mag erbij boven op de verkoopopbrengst?
-3. **Verkoopregio** en of verzenden een optie is of alleen ophalen.
-4. Schade aan frame of velgen; ouderdom van de banden.
-5. Welke trim de 2012 Defy Composite precies was (Composite 1 vs 2) en wat die
+Geen van deze blokkeert de taxatie; ze verfijnen hem.
+
+1. **Verkoopregio** en of verzenden een optie is of alleen ophalen — bepaalt
+   de straal waarbinnen comps en kandidaten gezocht worden.
+2. Schade aan frame of velgen; ouderdom van de banden.
+3. Welke trim de 2012 Defy Composite precies was (Composite 1 vs 2) en wat die
    nieuw kostte — nodig voor de `model`-rij in fase 7, niet voor de taxatie
    zelf.
 
@@ -111,6 +129,8 @@ brake_type       = velrem
 wheel_type       = carbon clincher 50mm, CSC (Novatec-naven), velrem, 18mm binnen
 extras           = geen (de Roam gaat niet mee)
 drivetrain_wear  = cassette + ketting ca. 1500 km oud
+total_km         = < 10.000
+budget_extra     = max €250 boven op de opbrengst
 ```
 
 Alles wat daarboven scoort is een upgrade-kandidaat. Let op dat de

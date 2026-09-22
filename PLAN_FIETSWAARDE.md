@@ -75,10 +75,11 @@ bestand voordat je aan de taxatie begint. Samengevat: Giant Defy **Composite**
 — dus scenario B (fiets compleet met stockwielen, carbon wielset apart) kan
 doorgerekend worden.
 
-Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open): de
-kilometerstand, hoeveel eigen geld er bij het budget mag, de verkoopregio, en
-eventuele schade. De aandrijving is bekend en gunstig: cassette én ketting zijn
-ca. 1500 km oud. De Wahoo Elemnt Roam gaat **niet** mee bij verkoop.
+Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open) blokkeert de
+taxatie niet: verkoopregio, eventuele schade, en de exacte trim. Verder bekend
+en gunstig: **minder dan 10.000 km**, en cassette én ketting zijn ca. 1500 km
+oud. De Wahoo Elemnt Roam gaat **niet** mee bij verkoop. Het budget voor de
+volgende fiets is de **verkoopopbrengst + maximaal €250**.
 
 Twee eerder kritieke punten zijn inmiddels beantwoord en veranderen het werk:
 
@@ -290,6 +291,16 @@ Kandidaat = `past_qua_maat` ∧ `kwaliteitsscore > baseline + marge` ∧
 
   Dat is geen detail: het verschil bepaalt of een schijfremfiets binnen bereik
   ligt. Reken het per kandidaat uit in plaats van één budget vooraf te kiezen.
+- **Verwachting bij dit budget (opbrengst + max €250):** de velremroute wint
+  bijna altijd, omdat de CSC-wielset dan meeverhuist en effectief waarde
+  meeneemt. Bouw de finder daar echter **niet** op vast: schijfremkandidaten
+  moeten zichtbaar blijven, want juist een uitgesproken koopje daar is de reden
+  dat dit gereedschap bestaat. Sorteer op upgrade per euro en laat de
+  rangschikking het werk doen, in plaats van een remtype vooraf uit te sluiten.
+- **Het budget is krap, dus de bied-kant is hier niet optioneel.** Met deze
+  marge is de kans op een generatiesprong via een normale vaste-prijsadvertentie
+  klein; een onderbeboden biedadvertentie is de realistische route. Geef het
+  Bieden-paneel uit §8 daarom voorrang boven cosmetische verbeteringen elders.
 - `effectieve_prijs` = vraagprijs × onderhandelingsfactor voor vaste prijzen,
   of het huidige bod voor biedadvertenties. Toon altijd **beide**: vraagprijs
   én verwachte biedprijs. "Bieden" hoort in de rekensom te zitten, niet als
@@ -443,7 +454,7 @@ fase 7 raken alleen data en mogen parallel met alles lopen.
 
 ## 12. Voortgang
 
-- [x] Fase 0 — intake eigen fiets *(kern vastgesteld in `mijn_fiets.md`; zes detailpunten nog open, zie §4)*
+- [x] Fase 0 — intake eigen fiets *(`mijn_fiets.md` is compleet genoeg om op te taxeren; drie verfijningen open, zie §4)*
 - [ ] Fase 1 — SQLite-fundament
 - [ ] Fase 2 — spec-extractie en meervoudige matches
 - [ ] Fase 3 — waarderingsmotor
