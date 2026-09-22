@@ -49,7 +49,13 @@ def check_brand(brand: str) -> list[tuple[str, str, int, int, int]]:
     pattern = re.compile(
         r'<div id="l\d+" class="linklisting">\s*<h4 class="linktitle">\s*'
         + re.escape(brand)
-        + r'\s*<a href="([^"]+)">\s*([^<]+?)\s*</a>\s*</h4>\s*<div class="small">.*?'
+        + r'\s*<a href="([^"]+)">\s*([^<]+?)\s*</a>\s*</h4>\s*<div class="small">'
+        # Everything up to the counts, but not past the end of this listing's
+        # own <div class="small">. A plain ".*?" is only "as little as
+        # possible", not "not across a listing boundary": with re.DOTALL it
+        # happily ran on to the NEXT listing's counts when one listing had
+        # none, and hung those numbers on the wrong model.
+        r"(?:(?!</div>).)*?"
         r"\((\d[\d,]*) views : (\d+) votes? :\s*(\d+) reviews?\)",
         # The brand comes from the command line, so match it case-insensitively
         # against the page: a difference in capitalisation between what you

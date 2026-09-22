@@ -41,6 +41,19 @@ def find_overlaps(reference: list[dict]) -> list[tuple[str, str]]:
     return problems
 
 
+def find_dead_patterns(reference: list[dict]) -> list[str]:
+    """Labels whose own pattern doesn't match them.
+
+    A typo in a pattern has no symptom at all: the row just never matches
+    anything, and the model quietly stays out of every report. The label is
+    the closest thing to a real listing title this file has, so a pattern
+    that can't even match its own label is almost certainly wrong. Same
+    caveat as find_overlaps: it's a heuristic. A label that deliberately
+    reads differently from the pattern (a nickname, a range written out)
+    shows up here too."""
+    return [row["label"] for row in reference if not row["regex"].search(row["label"])]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", default="reference_prices.csv", help="Path to the reference CSV")
@@ -52,11 +65,23 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     problems = find_overlaps(reference)
+    dead = find_dead_patterns(reference)
     print(f"Checked {len(reference)} rows in {args.file}.")
 
+    if dead:
+        print(f"\n{len(dead)} pattern(s) that don't even match their own label:\n")
+        for label in dead:
+            print(f"  {label!r}")
+        print(
+            "\nA row like that never matches anything — usually a typo in the pattern. "
+            "Check it against a real listing title (or rename the label if it is "
+            "deliberately worded differently)."
+        )
+
     if not problems:
-        print("No overlaps found — every pattern only matches its own label.")
-        return 0
+        if not dead:
+            print("No overlaps found — every pattern only matches its own label.")
+        return 1 if dead else 0
 
     print(f"\n{len(problems)} potential overlap(s) found:\n")
     for owner_label, other_label in problems:
