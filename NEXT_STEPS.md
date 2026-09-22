@@ -28,6 +28,11 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
   (onderzocht per prijssegment €0-25 t/m €75-100 nog bezig). Let op: een
   eerdere versie van dit bestand claimde dat er ook 5 fietsmodellen in
   stonden — dat klopt niet, er staat geen enkele fiets in.
+- Fietsen staan sinds fase 7 in eigen bestanden: `reference_bikes.csv`
+  (Defy-familie + upgradedoelen) en `reference_bike_accessories.csv`
+  (fietscomputers, powermeters), elk met een `source_url` per rij. Gebruik
+  ze met `--reference-file`; zie README → "Bikes have their own reference
+  files".
 - Hulpscripts: `check_hifi_brand.py` (merken-index opzoeken),
   `check_reference_overlaps.py` (patroon-conflicten checken),
   `reference_overview.py` (doorbladerbaar overzicht van de database).

@@ -283,6 +283,31 @@ values in the example file are placeholders, not real prices). If you want
 help researching a specific model's original price, just ask — that's more
 reliable done one model at a time than guessed in bulk.
 
+**Bikes have their own reference files.** `reference_prices.csv` is the
+speakers; a bike pattern in there would be matched against speaker titles.
+For bike searches, point `--reference-file` at one of these instead:
+
+```bash
+python racefiets_jev.py --query "giant defy" --reference-file reference_bikes.csv
+python racefiets_jev.py --query "garmin edge" --reference-file reference_bike_accessories.csv
+```
+
+- `reference_bikes.csv` — the Giant Defy family (the owner's own bike is the
+  row marked "Baseline") plus common upgrade targets (Canyon Endurace,
+  Specialized Roubaix, Trek Domane).
+- `reference_bike_accessories.csv` — bike computers (Wahoo, Garmin) and
+  power meters. These are deliberately **not** in the bike file: the first
+  matching row supplies the original price the dealscore compares against,
+  so a "Garmin Edge 530" row there would make a €900 bike that mentions its
+  computer look like 300% of a €299.99 original price.
+
+Both files add three optional columns after the usual six: `kind` (`bike`,
+`computer`, `powermeter`, ...), `brand` and `source_url`. The script ignores
+them; the SQLite import (`--db`) stores them in the `model` table. Every row
+has a source, and `original_price_eur` is only filled in where a source
+gives a euro price — a model year or trim whose price couldn't be found is
+left blank rather than converted from dollars or guessed.
+
 ### Your own market price history — `--price-history-file`
 
 Every time a listing matching a reference model is seen for the first time,
@@ -464,6 +489,8 @@ unexpected match — no network access needed.
 
 ```bash
 python check_reference_overlaps.py
+python check_reference_overlaps.py --file reference_bikes.csv
+python check_reference_overlaps.py --file reference_bike_accessories.csv
 ```
 
 ### `reference_overview.py` — browse the reference database
@@ -482,7 +509,9 @@ a change to commit — except this repo's copy is force-added anyway, since it
 already has real researched entries in it (currently a handful of bookshelf
 speakers, compared against a Denon SC-N10 baseline — see git log for the
 sources). Keep adding to it freely; `git add -f reference_prices.csv` if you
-want your local edits committed too, otherwise they just stay local.
+want your local edits committed too, otherwise they just stay local. The
+same goes for `reference_bikes.csv` and `reference_bike_accessories.csv`
+(force-added, with a `source_url` per row).
 
 ### Off-topic results on deep pages
 
