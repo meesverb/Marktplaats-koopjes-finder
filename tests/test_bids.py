@@ -1,0 +1,130 @@
+"""Bidding listings: what the numbers mean and which ones are still open.
+
+The distinction these tests pin down is the one that's easy to get wrong: a
+MIN_BID listing's search-result price is the seller's asking price, while the
+minimum bid Marktplaats accepts lives on the listing page and is often lower.
+"""
+import contextlib
+import io
+import unittest
+
+from helpers import FakeSession, config_page, make_listing, mp
+
+
+class ResolveBidPriceTest(unittest.TestCase):
+    def test_highest_bid_wins_over_the_minimum(self):
+        info = {"currentMinimumBid": 5000, "bids": [{"value": 6000}, {"value": 8000}]}
+        self.assertEqual(mp.resolve_bid_price(info), 80.0)
+
+    def test_falls_back_to_the_minimum_bid(self):
+        self.assertEqual(mp.resolve_bid_price({"currentMinimumBid": 3500, "bids": []}), 35.0)
+
+    def test_nothing_to_go_on(self):
+        self.assertIsNone(mp.resolve_bid_price({"bids": []}))
+        self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": 0, "bids": []}))
+
+
+class EnrichBidListingsTest(unittest.TestCase):
+    def enrich(self, listing, bids_info, mode):
+        session = FakeSession({listing.url: config_page(bids_info)})
+        # The lookup reports its progress on stderr; silence it so the suite's
+        # own output stays readable.
+        with contextlib.redirect_stderr(io.StringIO()):
+            mp.enrich_bid_listings([listing], delay=0, mode=mode, session=session)
+        return session
+
+    def test_fast_bid_gets_a_price_it_did_not_have(self):
+        listing = make_listing(price_eur=None, price_type="FAST_BID", price_is_bid=True)
+        self.enrich(listing, {"currentMinimumBid": 4000, "bids": []}, "fast")
+        self.assertEqual(listing.price_eur, 40.0)
+        self.assertEqual(listing.bid_minimum, 40.0)
+        self.assertEqual(listing.bid_count, 0)
+
+    def test_min_bid_keeps_its_asking_price(self):
+        # Seen in the wild: asking EUR 47.50, minimum bid EUR 35. Replacing the
+        # asking price with the minimum would make bid listings look cheaper
+        # than fixed-price ones for no real reason.
+        listing = make_listing(price_eur=47.50, price_type="MIN_BID", price_is_bid=True)
+        self.enrich(listing, {"currentMinimumBid": 3500, "bids": []}, "all")
+        self.assertEqual(listing.price_eur, 47.50)
+        self.assertEqual(listing.bid_minimum, 35.0)
+
+    def test_a_bid_above_the_asking_price_does_replace_it(self):
+        # Below the standing bid the listing simply can't be had.
+        listing = make_listing(price_eur=100.0, price_type="MIN_BID", price_is_bid=True)
+        self.enrich(listing, {"currentMinimumBid": 8000, "bids": [{"value": 15000}]}, "all")
+        self.assertEqual(listing.price_eur, 150.0)
+        self.assertEqual(listing.bid_count, 1)
+
+    def test_mode_fast_leaves_min_bid_listings_alone(self):
+        listing = make_listing(price_eur=47.50, price_type="MIN_BID", price_is_bid=True)
+        session = self.enrich(listing, {"currentMinimumBid": 3500, "bids": []}, "fast")
+        self.assertEqual(session.requested, [])
+        self.assertIsNone(listing.bid_count)
+
+    def test_mode_none_fetches_nothing_at_all(self):
+        listing = make_listing(price_eur=None, price_type="FAST_BID", price_is_bid=True)
+        session = self.enrich(listing, {"currentMinimumBid": 4000, "bids": []}, "none")
+        self.assertEqual(session.requested, [])
+        self.assertIsNone(listing.price_eur)
+
+    def test_a_page_without_bid_data_is_survivable(self):
+        listing = make_listing(price_eur=None, price_type="FAST_BID", price_is_bid=True)
+        session = FakeSession({listing.url: "<html>geen config</html>"})
+        with contextlib.redirect_stderr(io.StringIO()):
+            mp.enrich_bid_listings([listing], delay=0, mode="fast", session=session)
+        self.assertIsNone(listing.price_eur)
+        self.assertIsNone(listing.bid_count)
+
+
+class OpenBidTest(unittest.TestCase):
+    def test_zero_bids_is_open_unknown_is_not(self):
+        looked_up = make_listing(price_is_bid=True, bid_count=0)
+        has_bids = make_listing(price_is_bid=True, bid_count=3)
+        never_looked_up = make_listing(price_is_bid=True, bid_count=None)
+        fixed_price = make_listing(price_is_bid=False, bid_count=0)
+
+        listings = [looked_up, has_bids, never_looked_up, fixed_price]
+        mp.apply_bid_flags(listings)
+
+        self.assertTrue(looked_up.bid_open)
+        self.assertFalse(has_bids.bid_open)
+        self.assertFalse(never_looked_up.bid_open, "unknown is not the same as zero")
+        self.assertFalse(fixed_price.bid_open)
+
+        self.assertEqual(len(mp.bid_listings(listings)), 3)
+        self.assertEqual(len(mp.open_bid_listings(listings)), 1)
+
+
+class FormatBidInfoTest(unittest.TestCase):
+    def test_nothing_for_a_fixed_price_listing(self):
+        self.assertEqual(mp.format_bid_info(make_listing(price_is_bid=False)), "")
+
+    def test_bid_counts_are_spelled_out(self):
+        cases = {None: "biedingen onbekend", 0: "nog geen bod", 1: "1 bod", 4: "4 biedingen"}
+        for count, expected in cases.items():
+            with self.subTest(count=count):
+                listing = make_listing(price_is_bid=True, bid_count=count)
+                self.assertIn(expected, mp.format_bid_info(listing))
+
+    def test_a_real_discount_is_shown_against_the_median(self):
+        listing = make_listing(
+            price_eur=200.0, price_is_bid=True, bid_count=0,
+            bid_minimum=120.0, bid_minimum_pct_of_median=35.0,
+        )
+        self.assertIn("min. €120 (35% v. mediaan)", mp.format_bid_info(listing))
+
+    def test_a_one_cent_difference_is_not_a_discount(self):
+        # Marktplaats sometimes sets the minimum a cent under the asking price;
+        # calling that a discount would be noise.
+        listing = make_listing(
+            price_eur=175.0, price_is_bid=True, bid_count=0,
+            bid_minimum=174.99, bid_minimum_pct_of_median=51.0,
+        )
+        info = mp.format_bid_info(listing)
+        self.assertIn("min. €175", info)
+        self.assertNotIn("v. mediaan", info)
+
+
+if __name__ == "__main__":
+    unittest.main()

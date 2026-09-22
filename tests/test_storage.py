@@ -1,0 +1,241 @@
+"""The four on-disk files the script reads and writes.
+
+These matter most: phase 1 of PLAN_FIETSWAARDE.md moves all of this into
+SQLite while these files must keep being written in the same format. If a
+migration changes behaviour here, these tests are what catches it.
+"""
+import contextlib
+import io
+import tempfile
+import unittest
+from pathlib import Path
+
+from helpers import make_listing, mp, read_csv_rows
+
+
+class TempDirTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def path(self, name: str) -> str:
+        return str(self.tmp / name)
+
+
+class HistoryTest(TempDirTest):
+    """seen_listings.json — what makes a listing "new" and spots price drops."""
+
+    def test_missing_or_broken_file_is_an_empty_history(self):
+        self.assertEqual(mp.load_history(self.path("nope.json")), {})
+        broken = self.path("broken.json")
+        Path(broken).write_text("{not json", encoding="utf-8")
+        self.assertEqual(mp.load_history(broken), {})
+
+    def test_first_sighting_is_new_second_is_not(self):
+        listing = make_listing(item_id="a", price_eur=100.0)
+        history = mp.apply_history([listing], {})
+        self.assertTrue(listing.is_new)
+
+        again = make_listing(item_id="a", price_eur=100.0)
+        mp.apply_history([again], history)
+        self.assertFalse(again.is_new)
+        self.assertFalse(again.price_dropped)
+
+    def test_price_drop_is_detected_and_measured(self):
+        history = mp.apply_history([make_listing(item_id="a", price_eur=200.0)], {})
+        cheaper = make_listing(item_id="a", price_eur=150.0)
+        mp.apply_history([cheaper], history)
+        self.assertTrue(cheaper.price_dropped)
+        self.assertEqual(cheaper.price_drop_from, 200.0)
+
+    def test_price_rise_is_not_a_drop(self):
+        history = mp.apply_history([make_listing(item_id="a", price_eur=100.0)], {})
+        pricier = make_listing(item_id="a", price_eur=120.0)
+        mp.apply_history([pricier], history)
+        self.assertFalse(pricier.price_dropped)
+
+    def test_history_survives_a_save_load_round_trip(self):
+        path = self.path("seen.json")
+        history = mp.apply_history([make_listing(item_id="a", price_eur=100.0)], {})
+        mp.save_history(path, history)
+
+        listing = make_listing(item_id="a", price_eur=80.0)
+        mp.apply_history([listing], mp.load_history(path))
+        self.assertFalse(listing.is_new)
+        self.assertTrue(listing.price_dropped)
+
+    def test_first_seen_is_preserved_across_runs(self):
+        first = make_listing(item_id="a")
+        history = mp.apply_history([first], {})
+        later = make_listing(item_id="a")
+        mp.apply_history([later], history)
+        self.assertEqual(later.first_seen, first.first_seen)
+
+
+class ReferenceFileTest(TempDirTest):
+    """reference_prices.csv — the hand-maintained model database."""
+
+    def write_reference(self, rows: str) -> str:
+        path = self.path("reference.csv")
+        Path(path).write_text(
+            "pattern,label,original_price_eur,specs,score,better_than_baseline\n" + rows,
+            encoding="utf-8",
+        )
+        return path
+
+    def test_missing_file_is_optional(self):
+        self.assertEqual(mp.load_reference_data(self.path("nope.csv")), [])
+
+    def test_row_is_parsed(self):
+        path = self.write_reference("Mission 731,Mission 731,300,\"89 dB\",7/10,1\n")
+        (row,) = mp.load_reference_data(path)
+        self.assertEqual(row["label"], "Mission 731")
+        self.assertEqual(row["original_price_eur"], 300.0)
+        self.assertEqual(row["specs"], "89 dB")
+        self.assertTrue(row["better"])
+
+    def test_blank_original_price_is_allowed(self):
+        path = self.write_reference("Mission 731,Mission 731,,,,\n")
+        (row,) = mp.load_reference_data(path)
+        self.assertIsNone(row["original_price_eur"])
+        self.assertFalse(row["better"])
+
+    def test_invalid_regex_is_skipped_not_fatal(self):
+        path = self.write_reference("Mission [731,Kapot,,,,\nWharfedale,Wharfedale,100,,,\n")
+        # The loader warns on stderr about the bad pattern; that's the point of
+        # the test, but it shouldn't clutter the suite's output.
+        with contextlib.redirect_stderr(io.StringIO()):
+            rows = mp.load_reference_data(path)
+        self.assertEqual([r["label"] for r in rows], ["Wharfedale"])
+
+    def test_rows_without_a_pattern_are_ignored(self):
+        path = self.write_reference(",Geen patroon,100,,,\n")
+        self.assertEqual(mp.load_reference_data(path), [])
+
+    def test_first_match_in_file_order_wins(self):
+        path = self.write_reference(
+            "Mission 731,Specifiek,300,,,\n"
+            "Mission,Algemeen,100,,,\n"
+        )
+        listing = make_listing(title="Mission 731 speakers", price_eur=60.0)
+        mp.apply_reference_data([listing], mp.load_reference_data(path))
+        self.assertEqual(listing.ref_label, "Specifiek")
+        self.assertEqual(listing.ref_pct_of_original, 20.0)
+
+    def test_pattern_matches_the_description_too(self):
+        path = self.write_reference("Mission 731,Mission 731,,,,\n")
+        listing = make_listing(title="Set speakers", description="Het gaat om Mission 731")
+        mp.apply_reference_data([listing], mp.load_reference_data(path))
+        self.assertEqual(listing.ref_label, "Mission 731")
+
+
+class PriceHistoryTest(TempDirTest):
+    """reference_price_history.csv — the self-growing secondhand price record."""
+
+    def test_only_new_listings_with_a_price_are_logged(self):
+        path = self.path("prices.csv")
+        listings = [
+            make_listing(item_id="a", is_new=True, ref_label="Model A", price_eur=50.0),
+            make_listing(item_id="b", is_new=False, ref_label="Model A", price_eur=60.0),
+            make_listing(item_id="c", is_new=True, ref_label="", price_eur=70.0),
+            make_listing(item_id="d", is_new=True, ref_label="Model A", price_eur=None),
+        ]
+        self.assertEqual(mp.append_reference_price_observations(path, listings), 1)
+
+        rows = read_csv_rows(path)
+        self.assertEqual([r["item_id"] for r in rows], ["a"])
+
+    def test_appending_keeps_earlier_rows_and_writes_one_header(self):
+        path = self.path("prices.csv")
+        mp.append_reference_price_observations(
+            path, [make_listing(item_id="a", is_new=True, ref_label="M", price_eur=50.0)]
+        )
+        mp.append_reference_price_observations(
+            path, [make_listing(item_id="b", is_new=True, ref_label="M", price_eur=70.0)]
+        )
+        lines = Path(path).read_text(encoding="utf-8").strip().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(lines[0].startswith("date,ref_label"))
+
+    def test_stats_are_built_per_model(self):
+        path = self.path("prices.csv")
+        for item_id, price in (("a", 40.0), ("b", 60.0), ("c", 200.0)):
+            label = "Model A" if item_id in ("a", "b") else "Model B"
+            mp.append_reference_price_observations(
+                path, [make_listing(item_id=item_id, is_new=True, ref_label=label, price_eur=price)]
+            )
+        stats = mp.load_reference_market_stats(path)
+        self.assertEqual(stats["Model A"]["count"], 2)
+        self.assertEqual(stats["Model A"]["mean"], 50.0)
+        self.assertEqual(stats["Model B"]["count"], 1)
+
+    def test_stats_are_attached_to_matching_listings_only(self):
+        listings = [make_listing(ref_label="Model A"), make_listing(ref_label="Onbekend")]
+        mp.apply_reference_market_stats(listings, {"Model A": {"count": 3, "mean": 55.0, "median": 50.0}})
+        self.assertEqual(listings[0].ref_market_avg, 55.0)
+        self.assertEqual(listings[0].ref_market_count, 3)
+        self.assertIsNone(listings[1].ref_market_avg)
+
+    def test_missing_file_gives_no_stats(self):
+        self.assertEqual(mp.load_reference_market_stats(self.path("nope.csv")), {})
+
+
+class BargainLogTest(TempDirTest):
+    """bargains_log.csv — the running record of every bargain ever spotted."""
+
+    def test_only_listings_that_are_both_new_and_a_bargain(self):
+        path = self.path("log.csv")
+        listings = [
+            make_listing(item_id="a", is_new=True, is_bargain=True),
+            make_listing(item_id="b", is_new=True, is_bargain=False),
+            make_listing(item_id="c", is_new=False, is_bargain=True),
+        ]
+        self.assertEqual(mp.append_bargain_log(path, listings), 1)
+        rows = read_csv_rows(path)
+        self.assertEqual([r["item_id"] for r in rows], ["a"])
+
+    def test_nothing_to_log_creates_no_file(self):
+        path = self.path("log.csv")
+        self.assertEqual(mp.append_bargain_log(path, [make_listing(is_new=False)]), 0)
+        self.assertFalse(Path(path).exists())
+
+    def test_log_carries_every_listing_field(self):
+        path = self.path("log.csv")
+        mp.append_bargain_log(path, [make_listing(is_new=True, is_bargain=True, deal_score=88.0)])
+        (row,) = read_csv_rows(path)
+        self.assertIn("logged_at", row)
+        self.assertEqual(row["deal_score"], "88.0")
+
+
+class CsvExportTest(TempDirTest):
+    def test_every_dataclass_field_is_exported(self):
+        path = self.path("out.csv")
+        mp.write_csv([make_listing()], path)
+        header = Path(path).read_text(encoding="utf-8").splitlines()[0]
+        for field in ("item_id", "price_eur", "deal_score", "bid_open", "ref_label"):
+            self.assertIn(field, header)
+
+    def test_empty_result_still_writes_a_file(self):
+        path = self.path("out.csv")
+        mp.write_csv([], path)
+        self.assertTrue(Path(path).exists())
+
+
+class QueryPathTest(unittest.TestCase):
+    def test_slug_is_filesystem_safe(self):
+        self.assertEqual(mp.safe_query_slug("Canon EOS 700D"), "canon-eos-700d")
+        self.assertEqual(mp.safe_query_slug("!!!"), "query")
+
+    def test_single_query_keeps_the_plain_path(self):
+        self.assertEqual(mp.per_query_path("report.html", "racefiets", multi=False), "report.html")
+
+    def test_multiple_queries_get_their_own_file(self):
+        self.assertEqual(
+            mp.per_query_path("report.html", "luidsprekers", multi=True),
+            "report_luidsprekers.html",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
