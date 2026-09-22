@@ -46,10 +46,12 @@ class TempDirTest(unittest.TestCase):
         """Returns (exit code, queries crawled, stdout, stderr)."""
         listings_by_query = listings_by_query or {}
         crawled = []
+        self.crawl_options = []
 
-        def fake_collect(query, pages, delay):
+        def fake_collect(query, pages, delay, **crawl_options):
             crawled.append(query)
-            return list(listings_by_query.get(query, []))
+            self.crawl_options.append(crawl_options)
+            return mp.CrawlResult(listings_by_query.get(query, []), complete=True)
 
         def fake_enrich(ls, delay, mode, session=None):
             pass
@@ -125,9 +127,10 @@ class FilterStorageTest(unittest.TestCase):
             {"max_price": 400.0, "reference_file": "reference_bike_accessories.csv"},
         )
 
-    def test_no_bid_lookup_is_stored_as_bid_lookup_none(self):
-        args = mp.parse_args(["--query", "x", "--no-bid-lookup"])
-        self.assertEqual(mp.watchlist_filters_from_args(args), {"bid_lookup": "none"})
+    def test_bid_lookup_is_not_stored(self):
+        # It decides how many requests a run makes, like --pages.
+        args = mp.parse_args(["--query", "x", "--bid-lookup", "all"])
+        self.assertEqual(mp.watchlist_filters_from_args(args), {})
 
     def test_watchlist_run_starts_from_defaults_not_from_the_command_line(self):
         args = mp.parse_args([
@@ -141,19 +144,50 @@ class FilterStorageTest(unittest.TestCase):
         self.assertIsNone(run_args.max_price)
         self.assertIsNone(run_args.max_frame_height)
         self.assertFalse(run_args.bids_only)
-        self.assertFalse(run_args.no_bid_lookup)
-        self.assertEqual(run_args.bid_lookup, "fast")
-        # Run settings do carry over.
+        # Run settings do carry over — including the bid lookup: found in a
+        # live run, where --bid-lookup none was quietly reset to fast and the
+        # watchlist fetched 24 listing pages it was told not to.
         self.assertEqual(run_args.pages, 3)
+        self.assertTrue(run_args.no_bid_lookup)
         # And the original is untouched, for the regular query.
         self.assertEqual(args.max_price, 150.0)
         self.assertEqual(args.max_frame_height, 58.0)
+
+    def test_a_stored_bid_lookup_from_before_is_ignored_with_a_warning(self):
+        args = mp.parse_args(["--bid-lookup", "none"])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            run_args = mp.args_for_watchlist(
+                args, {"name": "oud", "query": "x", "filters": {"bid_lookup": "all"}}
+            )
+        self.assertEqual(run_args.bid_lookup, "none")
+        self.assertIn("bid_lookup", err.getvalue())
 
     def test_unknown_filter_key_is_an_error(self):
         args = mp.parse_args([])
         entry = {"name": "x", "query": "x", "filters": {"pages": 0}}
         with self.assertRaises(ValueError):
             mp.args_for_watchlist(args, entry)
+
+
+class FilterValidationTest(unittest.TestCase):
+    def test_a_value_of_the_wrong_type_is_refused(self):
+        args = mp.parse_args([])
+        for filters in [{"max_price": "400"}, {"bids_only": 1},
+                        {"category": ["fietsonderdelen"]}, {"max_price": True}]:
+            with self.subTest(filters=filters):
+                with self.assertRaises(ValueError):
+                    mp.args_for_watchlist(args, {"name": "x", "query": "x", "filters": filters})
+
+    def test_valid_values_pass(self):
+        args = mp.parse_args([])
+        run_args = mp.args_for_watchlist(args, {"name": "x", "query": "x", "filters": {
+            "max_price": 400, "bids_only": True,
+            "category": "fietsonderdelen", "strict_frame_height": True,
+        }})
+        self.assertEqual(run_args.max_price, 400)
+        self.assertEqual(run_args.category, "fietsonderdelen")
+        self.assertTrue(run_args.strict_frame_height)
 
 
 class ManageTest(TempDirTest):
@@ -182,6 +216,32 @@ class ManageTest(TempDirTest):
             ["--db", self.db_path, "--watchlist-add", "all", "--query", "x"]
         )
         self.assertEqual(code, 1)
+
+    def test_category_and_strict_frame_height_are_stored(self):
+        self.run_main([
+            "--db", self.db_path, "--watchlist-add", "powermeter", "--query", "powermeter",
+            "--category", "fietsonderdelen", "--strict-frame-height",
+        ])
+        conn = db.connect(self.db_path)
+        self.assertEqual(
+            db.get_watchlist(conn, "powermeter")["filters"],
+            {"category": "fietsonderdelen", "strict_frame_height": True},
+        )
+        conn.close()
+
+    def test_a_missing_reference_file_is_warned_about(self):
+        _, _, _, err = self.run_main([
+            "--db", self.db_path, "--watchlist-add", "pm", "--query", "powermeter",
+            "--reference-file", self.path("bestaat-niet.csv"),
+        ])
+        self.assertIn("bestaat-niet.csv niet gevonden", err)
+
+    def test_running_and_managing_in_one_command_is_refused(self):
+        code, crawled, _, err = self.run_main(
+            ["--db", self.db_path, "--watchlist", "all", "--watchlist-list"]
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(crawled, [])
 
     def test_list_without_database_does_not_create_one(self):
         code, _, out, _ = self.run_main(["--db", self.db_path, "--watchlist-list"])
@@ -250,6 +310,35 @@ class IsolationTest(TempDirTest):
         }
         conn.close()
         self.assertEqual(kinds, {"powermeter"})
+
+    def test_the_watchlist_category_reaches_the_crawl_and_the_cli_one_does_not(self):
+        conn = db.connect(self.db_path)
+        db.save_watchlist(conn, "onderdelen", "powermeter", {"category": "fietsonderdelen"})
+        conn.close()
+        self.run_main(
+            self.base_argv() + ["--query", "racefiets", "--category", "fietsen-racefietsen",
+                                "--sort", "newest", "--watchlist", "onderdelen"],
+            self.listings,
+        )
+        by_query = dict(zip(["racefiets", "onderdelen"], self.crawl_options))
+        self.assertEqual(by_query["racefiets"]["categories"], ["fietsen-racefietsen"])
+        self.assertEqual(by_query["onderdelen"]["categories"], ["fietsonderdelen"])
+        # The sort order is how the run is done, so it carries over.
+        self.assertEqual(by_query["onderdelen"]["sort"], "newest")
+
+    def test_frame_size_filter_keeps_unknown_sizes_unless_strict(self):
+        listings = {"racefiets": [
+            make_listing(item_id="past", frame_height="53 tot 57 cm"),
+            make_listing(item_id="te-groot", frame_height="61 cm of meer"),
+            make_listing(item_id="onbekend", frame_height=""),
+        ]}
+        self.run_main(self.base_argv() + ["--min-frame-height", "54", "--max-frame-height", "58"], listings)
+        self.assertEqual(self.csv_ids("out.csv"), {"past", "onbekend"})
+        self.run_main(
+            self.base_argv() + ["--min-frame-height", "54", "--max-frame-height", "58", "--strict-frame-height"],
+            listings,
+        )
+        self.assertEqual(self.csv_ids("out.csv"), {"past"})
 
     def test_without_query_only_the_watchlist_runs(self):
         code, crawled, _, _ = self.run_main(

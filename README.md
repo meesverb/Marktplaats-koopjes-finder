@@ -68,7 +68,10 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--query` | Search query | `racefiets` |
 | `--pages` | Number of result pages to fetch (30 listings/page). `0` = fetch everything Marktplaats allows browsing to (see note below) | `1` |
 | `--min-price` / `--max-price` | Filter by price in EUR | none |
-| `--min-frame-height` / `--max-frame-height` | Filter by frame size in cm | none |
+| `--min-frame-height` / `--max-frame-height` | Filter by frame size in cm; bikes without a stated size are kept (see below) | none |
+| `--strict-frame-height` | With the frame size filter, also drop bikes that don't state a size | off |
+| `--sort` | `optimized` (Marktplaats' own "Standaard" order) or `newest` (newest first — use this for scheduled runs, see below) | `optimized` |
+| `--category` | Only search these Marktplaats categories (comma-separated key or number, e.g. `fietsonderdelen`), filtered by Marktplaats itself (see below) | none |
 | `--bargain-ratio` | Fraction of the median price at/below which a listing is flagged | `0.6` |
 | `--delay` | Seconds between page requests | `1.5` |
 | `--output` | Write results to a CSV file | none |
@@ -118,8 +121,40 @@ Marktplaats doesn't expose an exact frame size — sellers pick from fixed
 buckets ("53 tot 57 cm", "57 tot 61 cm", etc.). `--min-frame-height`/
 `--max-frame-height` include any bucket that overlaps your requested range,
 so a bike in a bucket that only partially overlaps (e.g. bucket "53 tot 57
-cm" for a `--min-frame-height 54` filter) may still show up, and a bike with
-no frame size listed at all is excluded once this filter is active.
+cm" for a `--min-frame-height 54` filter) may still show up.
+
+A bike with no frame size listed at all is **kept** — that's most of them: on
+a 40-page crawl of "racefiets" (September 2026), 76% of the bikes had no size
+filled in, often because the seller wrote "maat 56" in the text instead.
+Dropping those hid three out of four bikes. Add `--strict-frame-height` to
+drop them anyway (the behavior before this change).
+
+### Sort order — `--sort newest`
+
+Marktplaats' default order ("Standaard", `--sort optimized`) is not by date.
+On a 40-page crawl of "racefiets", today's listings were spread over all 40
+pages — 83 of 314 on the first three — and the 1200 result slots held only
+951 distinct listings: the default order serves some listings on several
+pages and skips others. `--sort newest` fetches newest first through
+Marktplaats' search API (the one the site's own "Sorteer op" menu uses), so
+a scheduled run of a few pages sees everything that's new since the last
+one. The default stays `optimized` so an existing setup keeps behaving as
+it did.
+
+### Categories — `--category`
+
+Marktplaats flags the category a query is really about (see "Off-topic
+results" below), and the script keeps only that one. Some queries have two:
+"powermeter" is dominant in both *fietsonderdelen* (loose powermeters) and
+*fietsen-racefietsen* (bikes with one fitted), and only the bikes were kept.
+The script now says so when it happens. `--category fietsonderdelen` picks
+the category (or categories) yourself, and Marktplaats filters server-side,
+so no pages are spent on the rest. Use the category's key from the URL on
+marktplaats.nl or its number; an unknown one lists the categories that do
+have results for the query. Several categories must share a main category
+(e.g. `fietsonderdelen,fietsen-racefietsen`, both under *fietsen-en-brommers*).
+Common ones for bikes: `fietsen-racefietsen`, `fietsonderdelen`,
+`fietsaccessoires-fietscomputers`.
 
 ### Dealscore
 
@@ -339,7 +374,14 @@ condition, frame size, bid status, ...) gets upserted per listing, a
 the same database so it stays in sync with them. Only a full crawl
 (`--pages 0`) marks previously-seen listings for that query as disappeared
 if they no longer turn up — a shallow `--pages 3` run only looked at part of
-the market, so it never draws that conclusion. `valuation.py` reads from this
+the market, so it never draws that conclusion. Neither does a `--pages 0`
+crawl that didn't see every result: Marktplaats stops paging after about
+5000 listings (167 pages; "racefiets" has 26000+ results), a page can fail
+to load, and the default sort order repeats listings across pages. The sweep
+only runs when the number of distinct listings seen matches the total
+Marktplaats reports, and says why it skipped otherwise — use a narrower query
+(e.g. "giant defy"), `--category`, and `--sort newest` for the full crawl
+whose disappearances you want to count. `valuation.py` reads from this
 database (see below); disable writing to it entirely with `--no-db`.
 
 ### Watchlists — `--watchlist`
@@ -357,8 +399,10 @@ python racefiets_jev.py --watchlist-list
 
 `--watchlist-add` stores `--query` plus whichever of these differ from their
 default: `--min-price`, `--max-price`, `--min-frame-height`,
-`--max-frame-height`, `--bargain-ratio`, `--reference-file`, `--bid-lookup`
-(`--no-bid-lookup` is stored as `none`), `--bids-only` and `--min-score`.
+`--max-frame-height`, `--strict-frame-height`, `--bargain-ratio`,
+`--reference-file`, `--category`, `--bids-only` and `--min-score`. A reference file that doesn't
+exist gets a warning, when saving and when running — a relative path is
+looked up from the directory the script is started in.
 Saving under an existing name replaces it; `all` and names with a comma are
 reserved. Then run it, alone or next to a regular query:
 
@@ -373,9 +417,10 @@ applies only its own — in the second example `--max-frame-height 58` applies
 to `racefiets` only (it would otherwise drop every powermeter, which has no
 frame size), and the watchlist's price range doesn't touch the bike query
 either. Everything that is about *how* the run is done rather than *what*
-it looks for — `--pages`, `--delay`, `--db`, the history/log/price-history
-files, `--open-browser` — comes from the command line, so a scheduled shallow
-run stays shallow. Each watchlist gets its own report, named after it
+it looks for — `--pages`, `--sort`, `--bid-lookup`, `--delay`, `--db`, the
+history/log/price-history files, `--open-browser` — comes from the command
+line, so a scheduled shallow run stays shallow and makes no more requests
+than you asked for. Each watchlist gets its own report, named after it
 (`racefiets_report_powermeter.html`, and `<output>_powermeter.csv` with
 `--output`); a watchlist whose query is comma-separated gets one per term.
 Without `--query`, only the watchlists run; an unknown name stops the run
@@ -394,7 +439,7 @@ collected, and writes the result to the `valuation` / `valuation_evidence`
 tables (PLAN_FIETSWAARDE.md fase 3).
 
 ```bash
-python racefiets_jev.py --query "giant defy" --pages 0   # collect comps first
+python racefiets_jev.py --query "giant defy" --pages 0 --sort newest --reference-file reference_bikes.csv   # collect comps first
 python valuation.py --db koopjes.db
 ```
 
@@ -617,7 +662,15 @@ category it considers the query to really be about) and drops listings
 outside it, which removes this. It prints how many it dropped. This doesn't
 catch the rare listing a seller mis-categorized themselves (e.g. cycling
 shoes listed under "Racefietsen") — use `--exclude` for those if it becomes
-annoying (not yet implemented — ask if you want it).
+annoying (not yet implemented — ask if you want it). When Marktplaats flags
+more than one category as dominant, the script keeps the biggest and names
+the others in its output; `--category` (above) chooses instead.
+
+"Wanted" ads — someone looking to buy, posted in the same category — are
+skipped too, and counted in the output. Nothing in the listing data marks
+them, so this goes by the title: "gezocht" at the start, at the end, or in
+brackets ("Gezocht: racefiets", "Garmin Edge 530 gezocht", "(Gezocht)"), but
+not "veel gezocht model".
 
 ## Notes
 
