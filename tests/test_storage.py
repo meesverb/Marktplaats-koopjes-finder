@@ -419,13 +419,17 @@ class CsvExportTest(TempDirTest):
         for field in ("item_id", "price_eur", "deal_score", "bid_open", "ref_label"):
             self.assertIn(field, header)
 
-    def test_empty_result_still_writes_a_file_but_says_so(self):
+    def test_empty_result_writes_the_headers_and_says_so(self):
+        # A blank file looks corrupt; a header-only file opens as an empty
+        # table, which is what an empty run actually produced.
         path = self.path("out.csv")
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             mp.write_csv([], path)
-        self.assertTrue(Path(path).exists())
-        self.assertIn("leeg", stderr.getvalue())
+        header = Path(path).read_text(encoding="utf-8").splitlines()[0]
+        self.assertTrue(header.startswith("item_id,title,"))
+        self.assertIn("kolomkoppen", stderr.getvalue())
+        self.assertEqual(read_csv_rows(path), [])
 
 
 class QueryPathTest(unittest.TestCase):

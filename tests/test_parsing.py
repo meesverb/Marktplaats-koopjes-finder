@@ -1,7 +1,9 @@
 """Parsing of Marktplaats' own data: prices, attributes, categories, free text."""
+import contextlib
+import io
 import unittest
 
-from helpers import mp, raw_listing
+from helpers import FakeSession, mp, raw_listing, search_page
 
 
 class ParseListingTest(unittest.TestCase):
@@ -48,6 +50,40 @@ class ParseListingTest(unittest.TestCase):
         )
         self.assertEqual(listing.condition, "Zo goed als nieuw")
         self.assertEqual(listing.frame_height, "53 tot 57 cm")
+
+
+class FetchPageTest(unittest.TestCase):
+    """The query ends up in the URL path, so it has to be encoded as one."""
+
+    def requested_url(self, query: str, page: int = 1) -> str:
+        session = FakeSession({})
+        with self.assertRaises(RuntimeError):  # the canned page has no data
+            mp.fetch_page(session, query, page)
+        return session.requested[0]
+
+    def test_a_question_mark_does_not_become_a_query_string(self):
+        # "/q/wat?/" is a path plus an empty query string: Marktplaats would
+        # search for "wat" instead.
+        self.assertTrue(self.requested_url("wat?").endswith("/q/wat%3F/"))
+
+    def test_a_slash_does_not_become_a_path_segment(self):
+        self.assertTrue(self.requested_url("ac/dc").endswith("/q/ac%2Fdc/"))
+
+    def test_a_plain_query_still_looks_the_way_it_did(self):
+        self.assertTrue(self.requested_url("racefiets", page=3).endswith("/q/racefiets/p/3/"))
+
+
+class CollectListingsTest(unittest.TestCase):
+    def test_listings_without_an_item_id_are_dropped(self):
+        # They are keyed by item id from here on, so two of them would
+        # overwrite each other — one ad silently standing in for another.
+        page = search_page([raw_listing(itemId="", title="Eerste"),
+                            raw_listing(itemId="", title="Tweede"),
+                            raw_listing(itemId="m9", title="Met id")])
+        session = FakeSession({mp.BASE_URL + "/q/test/": page})
+        with contextlib.redirect_stderr(io.StringIO()):
+            listings = mp.collect_listings("test", pages=1, delay=0, session=session)
+        self.assertEqual([l.title for l in listings], ["Met id"])
 
 
 class FrameHeightTest(unittest.TestCase):
