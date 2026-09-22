@@ -21,6 +21,15 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 - HTML-rapport heeft filtertabs: Alles / Nieuw / Koopjes / Beter dan
   referentie / Prijsverlaging.
 
+## Actief plan
+
+`PLAN_FIETSWAARDE.md` is het uitgewerkte werkplan voor de eerstvolgende
+uitbreiding: taxatie van de eigen fiets (Giant Defy 2012) + een upgrade-finder
+die laat zien welke betere fiets daarvoor te koop staat, biedadvertenties
+meegerekend. Dat plan neemt de twee punten hieronder in zich op (de deal-score
+wordt de kwaliteits- + dealscore uit §7, de bied-focus wordt het Bieden-paneel
+uit §8) en beschrijft de overstap van losse CSV's naar SQLite. Begin daar.
+
 ## Gevraagde vervolgstappen (nog niet gebouwd)
 
 1. **Score per deal.** Nu heb je losse signalen (% van mediaan, "beter dan
