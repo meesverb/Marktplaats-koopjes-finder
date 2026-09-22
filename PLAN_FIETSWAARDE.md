@@ -6,6 +6,23 @@ pak **één fase**, en vink hem af in de checklist onderaan.
 Dit plan is geschreven na een gesprek met de eigenaar; zijn keuzes staan in
 §3. Wijk daar niet van af zonder te vragen.
 
+> **Lees dit eerst — de code is veranderd sinds dit plan geschreven werd.**
+>
+> Ontwikkel op **`main`** (niet op `claude/clever-dijkstra-64tu8z`; die is in
+> `main` samengevoegd en wordt niet meer gebruikt).
+>
+> Deze dingen bestaan al en hoef je niet te bouwen:
+>
+> | Bestaat al | Waar |
+> | --- | --- |
+> | Samengestelde dealscore 0-100 per advertentie, met onderbouwing per signaal | `score_listing()`, README → "Dealscore" |
+> | Bied-overzicht: biedaantal, echt minimumbod, "vrij te bieden", eigen tabs | `enrich_bid_listings()`, `print_bid_overview()`, README → "Bidding listings" |
+> | Testsuite (87 tests) | `tests/`, draaien met `python -m unittest discover -s tests -t tests` |
+>
+> Fase 4, 5 en 7 bouwen dáárop voort in plaats van bij nul te beginnen; per
+> fase staat hieronder wat dat concreet betekent. **Houd de tests groen** —
+> ze zijn er speciaal voor fase 1 gezet.
+
 ---
 
 ## 1. Doel
@@ -48,10 +65,19 @@ Twee scores strikt gescheiden houden, ze worden anders door elkaar gehaald:
 | Score | Betekenis |
 | --- | --- |
 | **kwaliteitsscore** | hoe goed is de fiets (onafhankelijk van prijs) |
-| **dealscore** | `geschatte waarde / gevraagde prijs` — hoe goed is de prijs |
+| **waardescore** | `geschatte waarde / gevraagde prijs` — hoe goed is de prijs |
 
-Een dure topfiets heeft een hoge kwaliteitsscore en een matige dealscore. Dat
-is geen bug.
+Een dure topfiets heeft een hoge kwaliteitsscore en een matige waardescore.
+Dat is geen bug.
+
+> **Let op de naamgeving.** Dit plan noemde de tweede score oorspronkelijk
+> "dealscore", maar dat woord is inmiddels bezet: `Listing.deal_score` in
+> `racefiets_jev.py` is een 0-100 score uit % van de mediaan, % van het
+> 2e-hands gemiddelde en % van de nieuwprijs. Dat is iets anders dan
+> `geschatte waarde / gevraagde prijs`. Daarom heet die nieuwe verhouding
+> hier **waardescore** (`value_score`), en blijft `deal_score` wat het nu is.
+> Gebruik die twee namen consequent en vermeng ze niet in één kolom — het zijn
+> twee verschillende antwoorden op "is dit een goede prijs".
 
 ## 3. Al genomen beslissingen
 
@@ -270,7 +296,12 @@ filterwerk doen.
 
 **Uitlegbaarheid is een eis, geen extra.** Het rapport moet de uitsplitsing per
 dimensie tonen. Een niet-uitlegbaar totaalcijfer wordt niet vertrouwd en dus
-niet gebruikt. Dit dekt meteen punt 1 uit `NEXT_STEPS.md`.
+niet gebruikt.
+
+Volg hierin het patroon dat `deal_score` al gebruikt: naast het getal houdt
+elke advertentie een `deal_reasons`-regel bij met de signalen die erin zaten,
+zichtbaar in de console en als tooltip in het rapport. Doe voor de
+kwaliteitsscore hetzelfde per dimensie.
 
 ### Upgrade-finder
 
@@ -297,11 +328,33 @@ Kandidaat = `past_qua_maat` ∧ `kwaliteitsscore > baseline + marge` ∧
 
 ### Biedadvertenties
 
-Punt 2 uit `NEXT_STEPS.md`, en hier komt het samen. Eigen paneel met alle
-FAST_BID/MIN_BID-advertenties, gesorteerd op **speelruimte**
-(`geschatte waarde − huidig bod`). Dat is waar de koopjes zitten, omdat deze
-advertenties onzichtbaar zijn voor wie op prijs sorteert. `enrich_fast_bid_listings`
-haalt het echte bod al op.
+Hier komt het samen. Eigen paneel met alle FAST_BID/MIN_BID-advertenties,
+gesorteerd op **speelruimte** (`geschatte waarde − huidig bod`). Dat is waar
+de koopjes zitten, omdat deze advertenties onzichtbaar zijn voor wie op prijs
+sorteert.
+
+**Dit is uitbreiden, niet bouwen.** Wat er al staat:
+
+- `enrich_bid_listings(listings, delay, mode)` — let op de naam, hij heette
+  vroeger `enrich_fast_bid_listings`. Haalt per advertentie het biedaantal en
+  het minimumbod op. `mode="fast"` (standaard) doet alleen FAST_BID,
+  `mode="all"` ook MIN_BID, `mode="none"` niets.
+- `Listing.bid_count`, `.bid_minimum`, `.bid_minimum_pct_of_median`,
+  `.bid_open` — en `apply_bid_flags()` die `bid_open` zet.
+- `print_bid_overview()` in de console; de tabs "Bieden" en "Vrij te bieden"
+  in het rapport; de vlaggen `--bids-only` en `--min-score`.
+
+Wat deze fase toevoegt is de **speelruimte** zelf, want daar is de taxatie uit
+fase 3 voor nodig: `geschatte waarde − huidig bod`. Sorteer het paneel daarop
+in plaats van op dealscore.
+
+**Eén valkuil die al een keer is gemaakt:** bij een MIN_BID-advertentie is de
+prijs uit de zoekresultaten de **vraagprijs**, niet het minimumbod. Het
+minimumbod staat alleen op de advertentiepagina en ligt er vaak flink onder
+(gezien: vraagprijs €200 / minimumbod €120). Overschrijf de vraagprijs dus
+niet met het minimumbod — dan lijken bied-advertenties goedkoper dan
+vaste-prijs-advertenties puur omdat er geboden mag worden. Er staat een test
+op (`tests/test_bids.py`).
 
 ### Losse producten (watchlist)
 
@@ -319,10 +372,10 @@ tab-**panelen**:
 
 | Tab | Inhoud |
 | --- | --- |
-| Alles / Nieuw / Koopjes / Prijsverlaging | ongewijzigd, rijfilters binnen het advertentiepaneel |
+| Alles / Nieuw / Koopjes / Prijsverlaging / Beter dan referentie / Topdeals / Bieden / Vrij te bieden | bestaan al; ongewijzigd, rijfilters binnen het advertentiepaneel |
 | **Mijn fiets** | taxatie per scenario (A en B), band laag-midden-hoog, en de volledige bewijslijst met links naar de comps |
 | **Upgrade** | betere fietsen binnen budget, gesorteerd op upgrade per euro, met score-uitsplitsing |
-| **Bieden** | biedadvertenties gesorteerd op speelruimte |
+| **Bieden** | bestaat al als rijfilter; promoveren tot paneel en sorteren op speelruimte |
 
 **Technische waarschuwing:** `HTML_TEMPLATE` is een `.format()`-string met
 verdubbelde accolades `{{ }}`. Er JavaScript met object-literals in schrijven is
@@ -330,6 +383,9 @@ foutgevoelig. Haal de template daarom in fase 6 uit `racefiets_jev.py` naar een
 apart `report_template.html` dat runtime wordt ingelezen, of stap over op
 `string.Template` ($-placeholders). Doe dat als eerste stap van die fase, in een
 aparte commit, zodat de refactor los te reviewen is van de nieuwe inhoud.
+`tests/test_report.py` beschrijft wat er na die refactor nog moet kloppen
+(geen onvervangen placeholders, HTML-escaping, en elk tabblad-aantal gelijk
+aan het aantal rijen dat erbij hoort) — draai die tests vóór en ná.
 
 ## 9. Fasering
 
@@ -337,17 +393,31 @@ Eén fase per agent-sessie. Draai de acceptatiecriteria vóór je commit. Fase 0
 fase 7 raken alleen data en mogen parallel met alles lopen.
 
 ### Fase 1 — SQLite-fundament *(blokkeert alles)*
+
+Opgeknipt in twee sessies: 1a raakt `racefiets_jev.py` niet aan, 1b wel. Zo
+blijft de diff per sessie te overzien en kun je 1a afronden en committen
+zonder dat het script ook maar iets anders doet.
+
+`tests/` bestaat inmiddels (87 tests). Breid uit, begin niet opnieuw, en draai
+ze vóór én na elke stap: `python -m unittest discover -s tests -t tests`.
+
+**Fase 1a — `db.py` los, nog niet aangesloten**
 - Nieuw `db.py`: schema uit §5, `schema_version`-migraties, `connect()`,
   `import_legacy()` (de vier bestaande bestanden), `export_csv()`.
+- Tests voor `db.py` in `tests/test_db.py`, met een DB in een tijdelijke map.
+- **Acceptatie:** `import_legacy()` op een kopie van de echte bestanden vult
+  de tabellen; twee keer draaien geeft geen dubbele rijen (idempotent);
+  `export_csv()` levert een bestand dat `reference_overview.py` nog leest;
+  `racefiets_jev.py` is ongewijzigd en de hele suite is groen.
+
+**Fase 1b — aansluiten op het script**
 - `racefiets_jev.py` schrijft naar de DB **en** blijft de bestaande CSV's
   schrijven. Geen zichtbare gedragsverandering.
 - `crawl_run`-registratie + de verdwijn-sweep, alleen na `--pages 0`.
 - `--db` (pad, default `koopjes.db`) en `--no-db` toevoegen.
-- Zet `tests/` op met `unittest` (stdlib) en een paar rooktests voor bestaande
-  pure functies — er zijn nu nul tests en vanaf fase 3 is dat onhoudbaar.
 - **Acceptatie:** script twee keer draaien; DB gevuld; CSV's ongewijzigd van
-  formaat; `--no-db` werkt; `import_legacy()` is idempotent (twee keer
-  draaien geeft geen dubbele rijen); `python -m unittest` groen.
+  formaat (`tests/test_storage.py` blijft groen — die suite is er precies voor
+  deze stap); `--no-db` werkt; de hele suite groen.
 
 ### Fase 2 — Spec-extractie en meervoudige matches *(na 1)*
 - Detectie uitbreiden voorbij groepset: `frame_material`, `brake_type`,
@@ -373,6 +443,8 @@ fase 7 raken alleen data en mogen parallel met alles lopen.
 ### Fase 4 — Scoring *(na 2)*
 - Nieuw `scoring.py` + `scoring_config.json` met de gewichten uit §7.
 - Dezelfde functie voor advertenties en voor `owned_item`.
+- Dit is de **kwaliteitsscore** — laat `deal_score` in `racefiets_jev.py` met
+  rust, dat is een andere score (zie §2).
 - **Acceptatie:** eigen fiets krijgt een baseline; een moderne Ultegra Di2
   disc-fiets scoort hoger; een alu Sora-fiets lager; gewicht aanpassen in de
   JSON verandert de uitkomst voorspelbaar; uitsplitsing per dimensie is
@@ -396,9 +468,14 @@ fase 7 raken alleen data en mogen parallel met alles lopen.
   `model` met de Defy-familie, de gangbare upgradedoelen, en de accessoires
   (Wahoo/Garmin, powermeters).
 - Bronvermelding per rij in `source_url`.
-- **Let op:** `reference_prices.csv` bevat op dit moment **alleen
-  luidsprekers**. `NEXT_STEPS.md` beweert dat er 5 fietsmodellen in staan; dat
-  klopt niet met wat er in git zit. Corrigeer die regel bij deze fase.
+- `reference_prices.csv` bevat op dit moment **alleen luidsprekers** (43
+  rijen). De onjuiste regel in `NEXT_STEPS.md` hierover is al gecorrigeerd.
+- **Deze fase is opzoekwerk, geen programmeerwerk.** Modeljaren,
+  groepsetgeneraties en nieuwprijzen zijn precies waar een taalmodel
+  overtuigend naast zit. Zoek elk getal op, noteer de bron, en gok nooit —
+  liever een lege kolom dan een verzonnen nieuwprijs, want die vervuilt de
+  taxatie voorgoed. Geef deze fase bij voorkeur aan een sterker model of doe
+  hem met de hand.
 - **Acceptatie:** `check_reference_overlaps.py` meldt geen onbedoelde
   overlappen; elk model heeft een bron.
 
@@ -410,13 +487,21 @@ fase 7 raken alleen data en mogen parallel met alles lopen.
 
 ## 10. Werkafspraken voor agents
 
-- **Ontwikkel op branch `claude/clever-dijkstra-64tu8z`.** Commitbericht begint
-  met `Fase N:`.
+- **Ontwikkel op `main`.** Commitbericht begint met `Fase N:`. (Dit plan
+  noemde eerder `claude/clever-dijkstra-64tu8z`; die branch is samengevoegd en
+  wordt niet meer gebruikt.)
+- **Begin elke sessie met `git pull`.** Er werken soms meerdere sessies
+  tegelijk aan deze repo — één die data verzamelt (`mijn_fiets.md`) en één die
+  code schrijft. Pak niet twee fases tegelijk in twee chats.
 - **Breek geen bestaande CLI-vlaggen of bestandsformaten.** Alles in de README
   moet blijven werken; werk de README bij in dezelfde commit als de wijziging.
 - **Geen nieuwe dependencies** tenzij je motiveert waarom de standaardbibliotheek
   niet volstaat. `requirements.txt` bevat nu alleen `requests`; `sqlite3`,
   `json` en `unittest` zitten in de stdlib.
+- **Houd de tests groen.** `python -m unittest discover -s tests -t tests`
+  vóór je begint en vóór je commit. Faalt er iets wat je niet hebt aangeraakt,
+  zoek dat dan eerst uit in plaats van de test aan te passen. Een test
+  weghalen of uitzetten om groen te worden is nooit de oplossing.
 - **Blijf beleefd tegen Marktplaats:** de `--delay` respecteren, geen
   parallelle verzoeken, geen crawl-frequentie opvoeren voor deze functies.
 - **Commit geen persoonlijke datafiles**: `seen_listings.json`,
@@ -443,7 +528,9 @@ fase 7 raken alleen data en mogen parallel met alles lopen.
 ## 12. Voortgang
 
 - [x] Fase 0 — intake eigen fiets *(kern vastgesteld in `mijn_fiets.md`; zes detailpunten nog open, zie §4)*
-- [ ] Fase 1 — SQLite-fundament
+- [x] Testsuite *(87 tests in `tests/`; hoorde bij fase 1, is vooruit gedaan)*
+- [ ] Fase 1a — `db.py` los, nog niet aangesloten
+- [ ] Fase 1b — aansluiten op het script
 - [ ] Fase 2 — spec-extractie en meervoudige matches
 - [ ] Fase 3 — waarderingsmotor
 - [ ] Fase 4 — scoring
