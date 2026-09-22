@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from urllib.parse import quote
 
 import requests
 
@@ -31,7 +32,11 @@ def check_brand(brand: str) -> list[tuple[str, str, int, int, int]]:
     """Returns a list of (model_name, detail_url, views, votes, reviews) for
     the brand, sorted by votes descending. Raises RuntimeError if the site
     blocked us or the brand page wasn't found."""
-    index_url = f"https://www.hifidatabase.com/Manufacturer_Index_Detailed/{brand.replace(' ', '%20')}/"
+    # safe="" so a brand with a slash, "#" or "?" in it lands in the path
+    # instead of quietly turning into a fragment or query string.
+    index_url = (
+        f"https://www.hifidatabase.com/Manufacturer_Index_Detailed/{quote(brand, safe='')}/"
+    )
     resp = requests.get(index_url, headers={"User-Agent": USER_AGENT}, timeout=15)
     resp.raise_for_status()
 
@@ -46,7 +51,11 @@ def check_brand(brand: str) -> list[tuple[str, str, int, int, int]]:
         + re.escape(brand)
         + r'\s*<a href="([^"]+)">\s*([^<]+?)\s*</a>\s*</h4>\s*<div class="small">.*?'
         r"\((\d[\d,]*) views : (\d+) votes? :\s*(\d+) reviews?\)",
-        re.DOTALL,
+        # The brand comes from the command line, so match it case-insensitively
+        # against the page: a difference in capitalisation between what you
+        # typed and what the page prints would otherwise surface as the
+        # misleading "could not find any models".
+        re.DOTALL | re.IGNORECASE,
     )
     matches = pattern.findall(resp.text)
     if not matches:
