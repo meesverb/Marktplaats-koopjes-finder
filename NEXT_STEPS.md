@@ -24,8 +24,10 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
   geboden heeft krijgen een `VRIJ TE BIEDEN`-badge en eigen filtertab, en
   elke run print een `BIED-OVERZICHT`. `--bids-only` beperkt het rapport tot
   bied-advertenties, `--min-score` tot een minimale dealscore.
-- `reference_prices.csv` bevat 43 luidsprekermodellen (onderzocht per
-  prijssegment €0-25 t/m €75-100 nog bezig) en 5 fietsmodellen.
+- `reference_prices.csv` bevat 43 modellen, allemaal luidsprekers
+  (onderzocht per prijssegment €0-25 t/m €75-100 nog bezig). Let op: een
+  eerdere versie van dit bestand claimde dat er ook 5 fietsmodellen in
+  stonden — dat klopt niet, er staat geen enkele fiets in.
 - Hulpscripts: `check_hifi_brand.py` (merken-index opzoeken),
   `check_reference_overlaps.py` (patroon-conflicten checken),
   `reference_overview.py` (doorbladerbaar overzicht van de database).
@@ -61,8 +63,10 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 3. **Luidsprekers >€100.** Onderzoek is gedaan t/m €100 (segmenten €0-25,
    €25-55, €55-75 volledig; €75-100 crawl was klaar maar nog niet allemaal
    opgezocht). Verder omhoog nog niet gestart.
-4. **Fietsen-referenties.** `reference_prices.csv` heeft nog maar 5
-   fietsmodellen (alleen top-segment) — dezelfde prijssegment-aanpak als bij
-   luidsprekers zou daar ook waarde toevoegen.
+4. **Fietsen-referenties.** `reference_prices.csv` bevat nog geen enkel
+   fietsmodel — dezelfde prijssegment-aanpak als bij luidsprekers zou daar
+   ook waarde toevoegen. Zie ook `PLAN_FIETSWAARDE.md` op de branch
+   `claude/clever-dijkstra-64tu8z`, waar dit onderdeel van een groter plan
+   is.
 5. **Kleinigheid**: de HTML-titel is nog hardcoded "Racefiets koopjes", ook
    bij `--query luidsprekers`.
