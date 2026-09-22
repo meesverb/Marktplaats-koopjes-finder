@@ -627,8 +627,17 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
     that model. Only logs on first sighting (is_new) so the same active
     ad isn't counted again every run."""
     # EUR 0 is a giveaway, not an asking price; recording it would pull the
-    # model's observed secondhand average down for good.
-    observations = [l for l in listings if l.is_new and l.ref_label and l.price_eur]
+    # model's observed secondhand average down for good. A price that is a
+    # standing bid is out for the mirror-image reason: it's a number caught
+    # mid-auction that only goes up from there, so it says more about how long
+    # the auction still had to run than about what the model costs. A bid
+    # listing nobody has bid on yet keeps its seller's floor price, which is
+    # exactly what an asking price is, and stays in.
+    observations = [
+        l
+        for l in listings
+        if l.is_new and l.ref_label and l.price_eur and not (l.price_is_bid and l.bid_count)
+    ]
     if not observations:
         return 0
 
@@ -658,9 +667,21 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
 def load_history(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            history = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+    if not isinstance(history, dict):
+        # Valid JSON, wrong shape — a hand-edited file, or something else
+        # entirely under this name. Treating it as "no history" is what
+        # happens for an unreadable file too; saying so beats an
+        # AttributeError three functions later.
+        print(
+            f"warning: {path} bevat geen advertentie-geschiedenis "
+            f"({type(history).__name__}); genegeerd, alles telt als nieuw.",
+            file=sys.stderr,
+        )
+        return {}
+    return history
 
 
 def save_history(path: str, history: dict) -> None:
@@ -709,7 +730,12 @@ def apply_history(listings: list[Listing], history: dict) -> dict:
                 listing.price_dropped = True
                 listing.price_drop_from = old_price
             entry["last_seen"] = now
-            entry["last_price"] = listing.price_eur
+            # A price we couldn't see this run — a FAST_BID under
+            # --bid-lookup none — is unknown, not gone. Writing None over the
+            # last known price would throw away the baseline the next price
+            # drop is measured against.
+            if listing.price_eur is not None:
+                entry["last_price"] = listing.price_eur
     return history
 
 

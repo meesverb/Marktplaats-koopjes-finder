@@ -65,6 +65,38 @@ class HistoryTest(TempDirTest):
         self.assertFalse(listing.is_new)
         self.assertTrue(listing.price_dropped)
 
+    def test_json_that_is_not_a_history_is_ignored_with_a_warning(self):
+        # Valid JSON, wrong shape (hand-edited, or a different file under this
+        # name): used to reach apply_history() and die on .get().
+        path = self.path("history.json")
+        Path(path).write_text('["m1", "m2"]', encoding="utf-8")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            history = mp.load_history(path)
+        self.assertEqual(history, {})
+        self.assertIn("geen advertentie-geschiedenis", stderr.getvalue())
+
+        listing = make_listing()
+        mp.apply_history([listing], history)
+        self.assertTrue(listing.is_new)
+
+    def test_an_unknown_price_does_not_erase_the_known_one(self):
+        # One run with --bid-lookup none leaves a FAST_BID priceless. That is
+        # unknown, not gone: keep the last price so the next drop is still
+        # measurable against it.
+        listing = make_listing(item_id="a", price_eur=50.0)
+        history = mp.apply_history([listing], {})
+
+        priceless = make_listing(item_id="a", price_eur=None)
+        history = mp.apply_history([priceless], history)
+        self.assertEqual(history["a"]["last_price"], 50.0)
+
+        cheaper = make_listing(item_id="a", price_eur=40.0)
+        mp.apply_history([cheaper], history)
+        self.assertTrue(cheaper.price_dropped)
+        self.assertEqual(cheaper.price_drop_from, 50.0)
+
     def test_a_failed_save_keeps_the_previous_history(self):
         # A half-written file would be unparseable, and load_history() treats
         # unparseable as empty — so a crash mid-save would quietly wipe every
@@ -217,6 +249,29 @@ class PriceHistoryTest(TempDirTest):
             [make_listing(item_id="gratis", is_new=True, ref_label="M", price_eur=0.0)],
         )
         self.assertEqual(recorded, 0)
+
+    def test_a_standing_bid_is_not_an_asking_price(self):
+        # Mid-auction the price only goes up, so logging it would say more
+        # about how long the auction had left than about what the model costs.
+        # A bid listing nobody has bid on yet still shows the seller's floor
+        # price, and that one counts.
+        path = self.path("prices.csv")
+        listings = [
+            make_listing(
+                item_id="loopt", is_new=True, ref_label="M", price_eur=500.0,
+                price_type="FAST_BID", price_is_bid=True, bid_count=3,
+            ),
+            make_listing(
+                item_id="vrij", is_new=True, ref_label="M", price_eur=40.0,
+                price_type="FAST_BID", price_is_bid=True, bid_count=0,
+            ),
+            make_listing(
+                item_id="vraagprijs", is_new=True, ref_label="M", price_eur=47.5,
+                price_type="MIN_BID", price_is_bid=True, bid_count=None,
+            ),
+        ]
+        self.assertEqual(mp.append_reference_price_observations(path, listings), 2)
+        self.assertEqual([r["item_id"] for r in read_csv_rows(path)], ["vrij", "vraagprijs"])
 
     def test_a_file_without_the_expected_columns_is_reported(self):
         # A hand-edited or pre-historic file used to raise KeyError here and
