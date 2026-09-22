@@ -427,6 +427,15 @@ ze vóór én na elke stap: `python -m unittest discover -s tests -t tests`.
 **Fase 1b — aansluiten op het script**
 - `racefiets_jev.py` schrijft naar de DB **en** blijft de bestaande CSV's
   schrijven. Geen zichtbare gedragsverandering.
+- **Geef `import_legacy()` alle drie de paden expliciet mee**, uit
+  `args.history_file`, `args.reference_file` en `args.price_history_file`.
+  De functie heeft standaardwaarden die naar het werkpad wijzen, dus laat je
+  er een weg, dan importeert hij stilzwijgend het verkeerde bestand zodra de
+  gebruiker zo'n vlag overschrijft. Zet er een test op.
+- **Plan de crawl-schema's zo in** (dit is de gekozen opzet, bouw ernaar):
+  ondiepe runs (`--pages 3`) drie keer per dag voor nieuwe advertenties en
+  prijsdalingen, plus één volledige crawl (`--pages 0`) per nacht. De
+  verdwijn-sweep hoort uitsluitend bij die nachtelijke volledige crawl.
 - `crawl_run`-registratie + de verdwijn-sweep, alleen na `--pages 0`.
 - `--db` (pad, default `koopjes.db`) en `--no-db` toevoegen.
 - **Acceptatie:** script twee keer draaien; DB gevuld; CSV's ongewijzigd van
@@ -490,6 +499,11 @@ ze vóór én na elke stap: `python -m unittest discover -s tests -t tests`.
   liever een lege kolom dan een verzonnen nieuwprijs, want die vervuilt de
   taxatie voorgoed. Geef deze fase bij voorkeur aan een sterker model of doe
   hem met de hand.
+- **Let op de volgorde bij export.** `export_csv()` schrijft op `id`, dus op
+  invoegvolgorde. In `reference_prices.csv` geldt "eerste match wint", dus een
+  nieuw, specifiek patroon dat je achteraan toevoegt komt ná een bestaand
+  breder patroon te staan en wordt dan nooit geraakt. Draai
+  `check_reference_overlaps.py` na elke export — die vindt precies dit.
 - **Acceptatie:** `check_reference_overlaps.py` meldt geen onbedoelde
   overlappen; elk model heeft een bron.
 
@@ -501,12 +515,17 @@ ze vóór én na elke stap: `python -m unittest discover -s tests -t tests`.
 
 ## 10. Werkafspraken voor agents
 
-- **Ontwikkel op `main`.** Commitbericht begint met `Fase N:`. (Dit plan
-  noemde eerder `claude/clever-dijkstra-64tu8z`; die branch is samengevoegd en
-  wordt niet meer gebruikt.)
-- **Begin elke sessie met `git pull`.** Er werken soms meerdere sessies
-  tegelijk aan deze repo — één die data verzamelt (`mijn_fiets.md`) en één die
-  code schrijft. Pak niet twee fases tegelijk in twee chats.
+- **Begin bij een verse `main`, eindig op `main`.** Je sessie krijgt
+  waarschijnlijk een eigen branch toegewezen (`claude/...`); werk daar gerust
+  op, maar vertak van de actuele `main` en meld aan het eind naar welke branch
+  je gepusht hebt. Fase 1a stond na afloop op een losse branch; dat moet elke
+  keer nog gemerged worden, en vergeet je dat, dan bouwt de volgende fase op
+  oude code. Commitbericht begint met `Fase N:`.
+- **Fetch opnieuw vlak vóór je merget, niet alleen bij het starten.** Dit is
+  een keer misgegaan: een merge op een acht minuten oude `origin/`-ref liet
+  twee commits van een andere sessie vallen, met echte gegevens erin. Er
+  werken soms meerdere sessies tegelijk aan deze repo. Pak niet twee fases
+  tegelijk in twee chats.
 - **Breek geen bestaande CLI-vlaggen of bestandsformaten.** Alles in de README
   moet blijven werken; werk de README bij in dezelfde commit als de wijziging.
 - **Geen nieuwe dependencies** tenzij je motiveert waarom de standaardbibliotheek

@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 87 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 107 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -23,8 +23,13 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 
 ## Harde regels
 
-- **Ontwikkel op `main`.** Commitbericht begint met `Fase N:` als het bij een
-  fase uit het plan hoort.
+- **Begin bij een verse `main`, eindig op `main`.** Sessies krijgen vaak een
+  eigen branch toegewezen (`claude/...`) en moeten daarheen pushen; dat is
+  prima. Waar het om gaat: vertak van de actuele `main`, en zeg aan het eind
+  expliciet naar welke branch je gepusht hebt, zodat het in `main` gemerged
+  kan worden. Blijft werk op een losse branch staan, dan bouwt de volgende
+  fase op verouderde code.
+- Commitbericht begint met `Fase N:` als het bij een fase uit het plan hoort.
 - **Houd de tests groen.** Faalt er een test die jij niet hebt aangeraakt,
   zoek dat dan uit in plaats van de test aan te passen. Een test weghalen,
   overslaan of uitzetten om groen te worden is nooit de oplossing.
@@ -70,12 +75,17 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
   een test op.
 - **Marktplaats kan zijn paginastructuur wijzigen.** Breekt het parsen, geef
   dan een duidelijke foutmelding in plaats van stil door te gaan.
+- **`db.import_legacy()` heeft padargumenten met standaardwaarden** die naar
+  het werkpad wijzen. Geef ze alle drie expliciet mee; laat je er een weg, dan
+  leest hij stilzwijgend het echte bestand uit de repo in plaats van dat wat
+  je bedoelde. Dat is bij het schrijven van de tests al een keer gebeurd.
 
 ## Bestanden
 
 | Bestand | Wat |
 | --- | --- |
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
+| `db.py` | SQLite-schema, migraties, import van de oude bestanden, CSV-export (fase 1a; nog niet aangesloten op het script) |
 | `tests/` | stdlib-unittests; `helpers.py` heeft `make_listing()` en een `FakeSession` |
 | `PLAN_FIETSWAARDE.md` | actief werkplan, gefaseerd |
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |
