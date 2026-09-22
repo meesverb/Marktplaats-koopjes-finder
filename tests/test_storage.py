@@ -180,6 +180,22 @@ class PriceHistoryTest(TempDirTest):
     def test_missing_file_gives_no_stats(self):
         self.assertEqual(mp.load_reference_market_stats(self.path("nope.csv")), {})
 
+    def test_a_file_with_other_columns_is_left_alone(self):
+        # Appending under a header that isn't ours would misalign the file that
+        # feeds the observed secondhand average, and skew every valuation
+        # built on it afterwards. Better to record nothing and say so.
+        path = self.path("prices.csv")
+        Path(path).write_text("iets,heel,anders\n", encoding="utf-8")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            recorded = mp.append_reference_price_observations(
+                path, [make_listing(is_new=True, ref_label="M", price_eur=50.0)]
+            )
+        self.assertEqual(recorded, 0)
+        self.assertIn("andere kolommen", stderr.getvalue())
+        self.assertEqual(Path(path).read_text(encoding="utf-8"), "iets,heel,anders\n")
+
 
 class BargainLogTest(TempDirTest):
     """bargains_log.csv — the running record of every bargain ever spotted."""
@@ -206,6 +222,45 @@ class BargainLogTest(TempDirTest):
         (row,) = read_csv_rows(path)
         self.assertIn("logged_at", row)
         self.assertEqual(row["deal_score"], "88.0")
+
+    def test_a_new_listing_field_does_not_shift_the_existing_columns(self):
+        # The nightmare this guards against: Listing grows a field in the
+        # middle (the fields are grouped ref_*/bid_*/deal_*, so that is where
+        # one lands), the appended rows follow the new order, and every value
+        # in the file from that run on sits one column off.
+        path = self.path("log.csv")
+        header = ["logged_at", "item_id", "title", "price_eur"]
+        Path(path).write_text(",".join(header) + "\n", encoding="utf-8")
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            mp.append_bargain_log(
+                path, [make_listing(item_id="a", is_new=True, is_bargain=True, price_eur=42.0)]
+            )
+
+        lines = Path(path).read_text(encoding="utf-8").strip().splitlines()
+        self.assertEqual(lines[0], ",".join(header))
+        (row,) = read_csv_rows(path)
+        self.assertEqual(row["item_id"], "a")
+        self.assertEqual(row["price_eur"], "42.0")
+        self.assertEqual(len(row), len(header))
+
+    def test_columns_the_file_lacks_are_reported_not_dropped_in_silence(self):
+        path = self.path("log.csv")
+        Path(path).write_text("logged_at,item_id,title\n", encoding="utf-8")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            mp.append_bargain_log(path, [make_listing(is_new=True, is_bargain=True)])
+        self.assertIn("deal_score", stderr.getvalue())
+
+    def test_a_column_the_listing_no_longer_has_stays_empty(self):
+        path = self.path("log.csv")
+        Path(path).write_text("logged_at,item_id,verdwenen_veld\n", encoding="utf-8")
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            mp.append_bargain_log(path, [make_listing(item_id="a", is_new=True, is_bargain=True)])
+        (row,) = read_csv_rows(path)
+        self.assertEqual(row["verdwenen_veld"], "")
 
 
 class CsvExportTest(TempDirTest):

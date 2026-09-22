@@ -462,6 +462,16 @@ def price_stats(listings: list[Listing]) -> dict:
     }
 
 
+def existing_csv_header(path: str) -> Optional[list[str]]:
+    """The header row of a CSV we're about to append to, or None when there
+    isn't one yet (no file, or an empty one)."""
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            return next(csv.reader(f), None)
+    except FileNotFoundError:
+        return None
+
+
 def append_bargain_log(path: str, listings: list[Listing]) -> int:
     """Append newly-discovered bargains (is_new and is_bargain) to a running
     CSV log, so you keep a history of every bargain ever spotted instead of
@@ -470,15 +480,36 @@ def append_bargain_log(path: str, listings: list[Listing]) -> int:
     if not new_bargains:
         return 0
 
-    file_exists = Path(path).exists()
     logged_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    fieldnames = ["logged_at"] + list(asdict(new_bargains[0]).keys())
+    current_fields = ["logged_at"] + list(asdict(new_bargains[0]).keys())
+    # An existing log was written with the columns of whatever version of
+    # Listing wrote it. Writing today's columns under yesterday's header shifts
+    # every value one place over as soon as a field is added anywhere but at
+    # the very end of the dataclass — and the fields are grouped (ref_*, bid_*,
+    # deal_*), so a new one lands in the middle by default. From that run on
+    # the whole file reads as nonsense. The header on disk therefore wins, and
+    # a column that doesn't fit in it is reported instead of silently landing
+    # in the wrong one.
+    existing_fields = existing_csv_header(path)
+    fieldnames = existing_fields or current_fields
+    missing = [name for name in current_fields if name not in fieldnames]
+    if missing:
+        print(
+            f"warning: {path} heeft de kolommen van een oudere versie, dus "
+            f"{', '.join(missing)} wordt niet gelogd. Hernoem of verplaats het "
+            "bestand om met de huidige kolommen opnieuw te beginnen.",
+            file=sys.stderr,
+        )
+
     with open(path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not file_exists:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        if existing_fields is None:
             writer.writeheader()
         for listing in new_bargains:
-            writer.writerow({"logged_at": logged_at, **asdict(listing)})
+            row = {"logged_at": logged_at, **asdict(listing)}
+            # A column the file has but this version no longer fills stays
+            # empty rather than failing the run.
+            writer.writerow({name: row.get(name, "") for name in fieldnames})
     return len(new_bargains)
 
 
@@ -519,6 +550,9 @@ def apply_reference_market_stats(listings: list[Listing], stats: dict) -> None:
             listing.ref_market_count = s["count"]
 
 
+PRICE_HISTORY_FIELDS = ["date", "ref_label", "item_id", "price_eur", "title"]
+
+
 def append_reference_price_observations(path: str, listings: list[Listing]) -> int:
     """Log one row per newly-seen listing that matched a reference model,
     so future runs can compute the real observed secondhand price for
@@ -528,12 +562,24 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
     if not observations:
         return 0
 
-    file_exists = Path(path).exists()
     logged_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # This file feeds the observed secondhand average, so a misaligned append
+    # doesn't just look wrong, it skews every future valuation. If the header
+    # on disk isn't the one we write, say so and record nothing this run.
+    existing_fields = existing_csv_header(path)
+    if existing_fields is not None and existing_fields != PRICE_HISTORY_FIELDS:
+        print(
+            f"warning: {path} heeft andere kolommen dan verwacht "
+            f"({', '.join(existing_fields)}); er wordt niets bijgeschreven om "
+            "het bestand niet te vervuilen.",
+            file=sys.stderr,
+        )
+        return 0
+
     with open(path, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(["date", "ref_label", "item_id", "price_eur", "title"])
+        if existing_fields is None:
+            writer.writerow(PRICE_HISTORY_FIELDS)
         for listing in observations:
             writer.writerow([logged_at, listing.ref_label, listing.item_id, listing.price_eur, listing.title])
     return len(observations)
