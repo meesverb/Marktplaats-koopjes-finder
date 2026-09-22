@@ -1156,8 +1156,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   table {{ width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px;
           overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   th, td {{ text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }}
-  th {{ cursor: pointer; user-select: none; color: var(--muted); font-weight: 600; white-space: nowrap; }}
-  th:hover {{ color: var(--text); }}
+  th {{ user-select: none; color: var(--muted); font-weight: 600; white-space: nowrap; }}
+  /* Only the sortable columns look clickable — the badge column has nothing
+     to sort on, and a header that does nothing on click reads as broken. */
+  th[data-key] {{ cursor: pointer; }}
+  th[data-key]:hover {{ color: var(--text); }}
   tr:last-child td {{ border-bottom: none; }}
   tr.hidden {{ display: none; }}
   a {{ color: var(--accent); text-decoration: none; }}
@@ -1199,7 +1202,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <table id="listings">
 <thead>
 <tr>
-  <th data-key="flags"></th>
+  <th></th>
   <th data-key="score">Score</th>
   <th data-key="price">Prijs</th>
   <th data-key="bid">Bod</th>
