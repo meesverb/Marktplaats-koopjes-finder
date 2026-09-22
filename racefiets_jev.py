@@ -358,6 +358,163 @@ def detect_groupset(text: str) -> tuple[str, Optional[int]]:
     return best_label, best_tier
 
 
+# --- Spec extraction beyond groupset ----------------------------------------
+#
+# PLAN_FIETSWAARDE.md fase 2: more structured fields, detected the same
+# best-effort way as the groupset above. These are not Listing fields — they
+# don't feed the report or the CSV/JSON files (adding them there would shift
+# every existing column, see LISTING_FIELDS/append_bargain_log) — they go
+# straight to the `spec` table via db.sync_listing_specs(). Precision over
+# coverage throughout: a spec extract_specs() isn't confident about is left
+# out entirely rather than guessed, because a wrong spec silently pollutes
+# the comps fase 3 builds on top of it.
+
+FRAME_MATERIAL_PATTERNS = [
+    ("carbon", re.compile(r"\bcarbon\b", re.I)),
+    ("titanium", re.compile(r"\btita(?:a)?n(?:ium)?\b", re.I)),
+    ("aluminium", re.compile(r"\b(?:aluminium|alu)\b", re.I)),
+    ("staal", re.compile(r"\b(?:staal|stalen|steel|chromoly|cro-?mo)\b", re.I)),
+]
+# "Carbon" (or aluminium, ...) in an ad is as often about the wheels as the
+# frame — "aluminium frame, carbon wielset" is a common combination on
+# exactly this kind of bike (see mijn_fiets.md). A material word is only
+# trusted for frame_material within its own clause (split on . , ;): a
+# clause naming a wheel word without also naming "frame" is a wheel mention,
+# not a frame one, and is skipped in favor of another clause/material.
+WHEEL_CONTEXT_WORD_RE = re.compile(r"\b(?:velg\w*|wiel\w*|wheel\w*)\b", re.I)
+FRAME_WORD_RE = re.compile(r"\bframe\w*\b", re.I)
+CLAUSE_SPLIT_RE = re.compile(r"[.,;]")
+
+
+def detect_frame_material(text: str) -> Optional[str]:
+    clauses = CLAUSE_SPLIT_RE.split(text)
+    for label, pattern in FRAME_MATERIAL_PATTERNS:
+        for clause in clauses:
+            if not pattern.search(clause):
+                continue
+            if WHEEL_CONTEXT_WORD_RE.search(clause) and not FRAME_WORD_RE.search(clause):
+                continue
+            return label
+    return None
+
+# Order matters: the more specific hydraulic/mechanical phrasing has to be
+# tried before the bare "schijfrem" pattern, or it would win first and the
+# brake type would never come out more specific than "disc".
+BRAKE_TYPE_PATTERNS = [
+    (
+        "hydraulische schijfrem",
+        re.compile(r"hydraulisch\w*\s+schijfrem\w*|hydraulic\s+disc", re.I),
+    ),
+    (
+        "mechanische schijfrem",
+        re.compile(r"mechanisch\w*\s+schijfrem\w*|mechanical\s+disc", re.I),
+    ),
+    ("schijfrem", re.compile(r"\bschijfrem\w*\b|\bdisc[\s-]?brakes?\b", re.I)),
+    ("velrem", re.compile(r"\bvelg?rem\w*\b|\brim[\s-]?brakes?\b", re.I)),
+]
+
+# Restricted to the range that's actually used on a road bike (8-13 sprockets
+# at the cassette) — a bare "22 speed" or "24 speed" almost always turns out
+# to describe hub gears or a kids' bike miscounting front x rear, not a
+# racefiets groupset, so those are deliberately left unmatched.
+SPEEDS_RE = re.compile(r"\b(8|9|10|11|12|13)[\s-]*(?:speed|spd|versnellingen|v)\b", re.I)
+
+WHEEL_TYPE_PATTERNS = [
+    (
+        "carbon",
+        re.compile(
+            r"carbon\s*(?:velg\w*|wiel\w*|wheel\w*)|(?:velg\w*|wiel\w*|wheel\w*)"
+            r"[^.,;]{0,15}\bcarbon\b",
+            re.I,
+        ),
+    ),
+    (
+        "aluminium",
+        re.compile(
+            r"(?:aluminium|alu)\s*(?:velg\w*|wiel\w*)|(?:velg\w*|wiel\w*)"
+            r"[^.,;]{0,15}\b(?:aluminium|alu)\b",
+            re.I,
+        ),
+    ),
+]
+
+# Requires an explicit label ("bouwjaar", "model(jaar)", "uit") rather than
+# any bare 20xx number in the text — a price, a phone number in the
+# description or "sinds 2018 in bezit" would otherwise all misread as the
+# bike's model year.
+MODEL_YEAR_RE = re.compile(r"\b(?:bouwjaar|model(?:jaar)?|uit)\s*[:\s]*((?:19|20)\d{2})\b", re.I)
+
+WEIGHT_KG_RE = re.compile(r"\b(\d{1,2}[.,]\d{1,2})\s*kg\b", re.I)
+
+POWERMETER_RE = re.compile(
+    r"\bpowermeter\b|\bpower\s*meter\b|\bvermogensmeter\b|\bquarq\b|\bstages\b|"
+    r"\bfavero\b|\b4iiii\b|\bsrm\b",
+    re.I,
+)
+# has_computer is relative to what the owner already has (see PLAN_FIETSWAARDE.md
+# §7 — he keeps his own Wahoo Elemnt Roam), but that weighting is scoring.py's
+# job (fase 4); extraction here only records that a computer was mentioned.
+COMPUTER_RE = re.compile(
+    r"\bfietscomputer\b|\bbike\s*computer\b|\bgarmin\b|\bwahoo\b|\belemnt\b|\bedge\s*\d+\b",
+    re.I,
+)
+
+
+def _first_pattern_label(text: str, patterns: list[tuple[str, "re.Pattern[str]"]]) -> Optional[str]:
+    for label, pattern in patterns:
+        if pattern.search(text):
+            return label
+    return None
+
+
+def extract_specs(text: str) -> dict[str, str]:
+    """Best-effort structured specs from free text (title + description),
+    beyond the groupset already covered by detect_groupset(). Only keys that
+    were confidently recognized are present; nothing is guessed for the
+    rest."""
+    specs: dict[str, str] = {}
+
+    material = detect_frame_material(text)
+    if material:
+        specs["frame_material"] = material
+
+    brake = _first_pattern_label(text, BRAKE_TYPE_PATTERNS)
+    if brake:
+        specs["brake_type"] = brake
+
+    speeds_match = SPEEDS_RE.search(text)
+    if speeds_match:
+        specs["speeds"] = speeds_match.group(1)
+
+    wheel = _first_pattern_label(text, WHEEL_TYPE_PATTERNS)
+    if wheel:
+        specs["wheel_type"] = wheel
+
+    year_match = MODEL_YEAR_RE.search(text)
+    if year_match:
+        specs["model_year"] = year_match.group(1)
+
+    weight_match = WEIGHT_KG_RE.search(text)
+    if weight_match:
+        specs["weight_kg"] = weight_match.group(1).replace(",", ".")
+
+    if POWERMETER_RE.search(text):
+        specs["has_powermeter"] = "1"
+    if COMPUTER_RE.search(text):
+        specs["has_computer"] = "1"
+
+    return specs
+
+
+def extract_listing_specs(listings: list[Listing]) -> dict[str, dict[str, str]]:
+    """extract_specs() for every listing, keyed by item_id, ready to hand to
+    db.sync_listing_specs()."""
+    return {
+        listing.item_id: extract_specs(f"{listing.title} {listing.description}")
+        for listing in listings
+    }
+
+
 def parse_listing(raw: dict) -> Listing:
     price_info = raw.get("priceInfo", {})
     price_cents = price_info.get("priceCents")
@@ -820,6 +977,7 @@ def load_reference_data(path: str) -> list[dict]:
         reference.append(
             {
                 "regex": compiled,
+                "pattern": pattern,
                 "label": (row.get("label") or pattern).strip(),
                 "original_price_eur": original_price,
                 "score": (row.get("score") or "").strip(),
@@ -830,26 +988,40 @@ def load_reference_data(path: str) -> list[dict]:
     return reference
 
 
-def apply_reference_data(listings: list[Listing], reference: list[dict]) -> None:
+def apply_reference_data(listings: list[Listing], reference: list[dict]) -> dict[str, list[str]]:
     """Match each listing's title+description against the reference rows
     (first match in file order wins — put more specific patterns first) and
-    fill in ref_* fields when found."""
+    fill in ref_* fields when found.
+
+    PLAN_FIETSWAARDE.md fase 2 wants every matching model recorded for
+    `listing_model`, not just the one that wins the report's columns, so this
+    no longer stops at the first hit. What lands on Listing.ref_* is
+    unchanged from before though — still only the first match in file order —
+    so the report and the "Beter dan referentie" filter read exactly as they
+    did. The full match list (every pattern that matched, in file order) is
+    returned separately instead, keyed by item_id, for
+    db.sync_listing_models() to write."""
+    matches: dict[str, list[str]] = {}
     if not reference:
-        return
+        return matches
     for listing in listings:
         haystack = f"{listing.title} {listing.description}"
+        first = True
         for row in reference:
             if row["regex"].search(haystack):
-                listing.ref_label = row["label"]
-                listing.ref_original_price = row["original_price_eur"]
-                listing.ref_score = row["score"]
-                listing.ref_specs = row["specs"]
-                listing.ref_better = row["better"]
-                if listing.price_eur is not None and row["original_price_eur"]:
-                    listing.ref_pct_of_original = round(
-                        listing.price_eur / row["original_price_eur"] * 100, 1
-                    )
-                break
+                if first:
+                    listing.ref_label = row["label"]
+                    listing.ref_original_price = row["original_price_eur"]
+                    listing.ref_score = row["score"]
+                    listing.ref_specs = row["specs"]
+                    listing.ref_better = row["better"]
+                    if listing.price_eur is not None and row["original_price_eur"]:
+                        listing.ref_pct_of_original = round(
+                            listing.price_eur / row["original_price_eur"] * 100, 1
+                        )
+                    first = False
+                matches.setdefault(listing.item_id, []).append(row["pattern"])
+    return matches
 
 
 def apply_bid_flags(listings: list[Listing]) -> None:
@@ -1626,13 +1798,21 @@ def sync_database(
     crawled_item_ids: set[str],
     started_at: str,
     finished_at: str,
+    reference_matches: Optional[dict[str, list[str]]] = None,
 ) -> None:
     """Mirror this run into koopjes.db, alongside the CSV/JSON files that
     stay the ones actually read elsewhere (reference_overview.py etc.) —
     PLAN_FIETSWAARDE.md fase 1b. All three legacy paths are passed
     explicitly: db.import_legacy()'s own defaults point at the working
     directory, and leaving one out here would silently import whatever
-    happens to sit there instead of the file this run actually used."""
+    happens to sit there instead of the file this run actually used.
+
+    Fase 2 adds two more mirrors, both additive bookkeeping rather than
+    anything the report reads: extract_specs() per listing into `spec`, and
+    reference_matches (apply_reference_data()'s full match list, not just
+    the one that wins the report's ref_* columns) into `listing_model`. The
+    listing_model write needs the `model` rows import_legacy() just inserted
+    to already exist, so it has to run after that call."""
     conn = db.connect(args.db)
     try:
         db.import_legacy(
@@ -1642,6 +1822,9 @@ def sync_database(
             reference_price_history_path=args.price_history_file,
         )
         db.sync_listings(conn, query, listings, finished_at)
+        db.sync_listing_specs(conn, extract_listing_specs(listings))
+        if reference_matches:
+            db.sync_listing_models(conn, reference_matches)
         db.record_crawl_run(
             conn,
             query=query,
@@ -1702,7 +1885,7 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
     listings = filter_by_price(listings, args.min_price, args.max_price)
 
     reference = load_reference_data(args.reference_file)
-    apply_reference_data(listings, reference)
+    reference_matches = apply_reference_data(listings, reference)
 
     if not args.no_price_history:
         market_stats = load_reference_market_stats(args.price_history_file)
@@ -1738,6 +1921,7 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
             crawled_item_ids=crawled_item_ids,
             started_at=started_at,
             finished_at=finished_at,
+            reference_matches=reference_matches,
         )
 
     if args.bids_only:

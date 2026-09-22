@@ -172,5 +172,52 @@ class DisappearanceSweepTest(TempDirTest):
         )
 
 
+class SpecAndModelWiringTest(TempDirTest):
+    """fase 2: extract_specs() and every reference match land in the DB
+    alongside what fase 1b already wired up, without changing report
+    behaviour."""
+
+    def write_reference(self, rows: str) -> str:
+        path = self.path("reference.csv")
+        Path(path).write_text(
+            "pattern,label,original_price_eur,specs,score,better_than_baseline\n" + rows,
+            encoding="utf-8",
+        )
+        return path
+
+    def test_specs_are_written_for_a_synced_listing(self):
+        db_path = self.path("koopjes.db")
+        self.run_query(
+            [make_listing(item_id="a", title="Carbon frame", description="velgrem, 11-speed")],
+            ["--db", db_path],
+        )
+        conn = db.connect(db_path)
+        rows = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM spec")}
+        self.assertEqual(
+            rows, {"frame_material": "carbon", "brake_type": "velrem", "speeds": "11"}
+        )
+
+    def test_every_reference_match_lands_in_listing_model(self):
+        db_path = self.path("koopjes.db")
+        ref_path = self.write_reference(
+            "Mission 731,Specifiek,300,,,\nMission,Algemeen,100,,,\n"
+        )
+        listing = make_listing(item_id="a", title="Mission 731 speakers", price_eur=60.0)
+        self.run_query([listing], ["--db", db_path, "--reference-file", ref_path])
+
+        conn = db.connect(db_path)
+        matched = {
+            r["model"]
+            for r in conn.execute(
+                "SELECT m.model FROM listing_model lm JOIN model m ON m.id = lm.model_id "
+                "WHERE lm.listing_id = 'a'"
+            )
+        }
+        self.assertEqual(matched, {"Specifiek", "Algemeen"})
+        # The "Beter dan referentie" filter's own field is untouched by
+        # having more than one match: it's still only the first one.
+        self.assertEqual(listing.ref_label, "Specifiek")
+
+
 if __name__ == "__main__":
     unittest.main()
