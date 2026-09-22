@@ -34,6 +34,22 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 - HTML-rapport heeft filtertabs: Alles / Nieuw / Koopjes / Beter dan
   referentie / Prijsverlaging / Topdeals / Bieden / Vrij te bieden.
 
+## Taxatie: wat er nu al kan
+
+`valuation.py` taxeert de fiets uit `mijn_fiets.md` op de advertenties in
+`koopjes.db` (fase 3). Om er echt iets uit te krijgen moet die database eerst
+comps bevatten:
+
+```bash
+python racefiets_jev.py --query "giant defy" --pages 0
+python valuation.py --db koopjes.db
+```
+
+Zonder vergelijkbare advertenties komt er met opzet géén bedrag uit. Wat er
+nog ontbreekt om de taxatie compleet te maken staat bij fase 3 in §12 van het
+plan: verdwijn-historie voor de gemeten E2-factor, en componentprijzen voor E3
+en voor het verschil tussen scenario A en B.
+
 ## Actief plan
 
 `PLAN_FIETSWAARDE.md` is het uitgewerkte werkplan voor de eerstvolgende

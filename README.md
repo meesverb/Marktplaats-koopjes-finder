@@ -288,8 +288,50 @@ condition, frame size, bid status, ...) gets upserted per listing, a
 the same database so it stays in sync with them. Only a full crawl
 (`--pages 0`) marks previously-seen listings for that query as disappeared
 if they no longer turn up — a shallow `--pages 3` run only looked at part of
-the market, so it never draws that conclusion. Nothing yet reads from this
-database (see `PLAN_FIETSWAARDE.md`); disable it entirely with `--no-db`.
+the market, so it never draws that conclusion. `valuation.py` reads from this
+database (see below); disable writing to it entirely with `--no-db`.
+
+### `valuation.py` — what is my own bike worth?
+
+The first thing that reads `koopjes.db` rather than writing to it. It values
+the bike described in `mijn_fiets.md` against the listings the crawler has
+collected, and writes the result to the `valuation` / `valuation_evidence`
+tables (PLAN_FIETSWAARDE.md fase 3).
+
+```bash
+python racefiets_jev.py --query "giant defy" --pages 0   # collect comps first
+python valuation.py --db koopjes.db
+```
+
+Three estimators, mixed into one band:
+
+- **E1 — comparable listings.** A ladder with decreasing confidence: same
+  model + model year ±2 + same groupset tier (high), same model family +
+  year ±3 (medium), same segment — frame material, brake type, gearing,
+  year range (low). The highest rung with at least 5 comps wins; below that
+  the estimate is marked `indicatief` and says so in its own evidence line.
+- **E2 — asking price → selling price.** Marktplaats publishes asking
+  prices, not selling prices. Once at least 20 listings have disappeared
+  within two weeks and 20 others have been sitting online for 60+ days, the
+  ratio between those two medians becomes a measured correction factor per
+  category; until then a heuristic 10-15% is applied and labelled as such.
+  Disappeared is not the same as sold — that caveat is in the output.
+- **E3 — sum of the parts.** Component prices from `component_price` times a
+  bundle factor. With that table empty it contributes nothing, and every
+  component without observations gets an evidence line saying so.
+
+Every number shown is traceable to an evidence line, including a clickable
+link per comp. Options: `--scenario a|b` (complete with the carbon wheelset,
+or with the stock wheels and the wheelset sold separately — repeatable,
+default both), `--query` to restrict the comps to one crawl query,
+`--window-days` for how far back comps count (default 180), `--dry-run` to
+print without writing to the database.
+
+What it does **not** do: invent numbers. No comparable listings means no
+valuation, not a guess — crawl the model first. The 10-15% negotiation
+margin, the bundle factor and the share of an upgrade that a buyer of a
+complete bike pays for are heuristics, not measurements, and each is printed
+as its own line so it is clear what it contributed.
 
 ### `check_hifi_brand.py` — a research aid for filling in the reference file
 

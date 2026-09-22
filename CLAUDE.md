@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 205 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 249 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -86,6 +86,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | --- | --- |
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
 | `db.py` | SQLite-schema, migraties, import van de oude bestanden, CSV-export; sinds fase 1b aangesloten op het script (`--db`/`--no-db`) |
+| `valuation.py` | waarderingsmotor (fase 3): E1/E2/E3 op de comps in `koopjes.db`, schrijft naar `valuation` + `valuation_evidence`. Leest `mijn_fiets.md` |
 | `tests/` | stdlib-unittests; `helpers.py` heeft `make_listing()` en een `FakeSession` |
 | `PLAN_FIETSWAARDE.md` | actief werkplan, gefaseerd |
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |
