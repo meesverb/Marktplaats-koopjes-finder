@@ -75,9 +75,10 @@ bestand voordat je aan de taxatie begint. Samengevat: Giant Defy **Composite**
 — dus scenario B (fiets compleet met stockwielen, carbon wielset apart) kan
 doorgerekend worden.
 
-Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open): de staat
-(kilometerstand, slijtage, schade), wat er meegaat bij verkoop, de
-verkoopregio, en of er geld bij mag boven op de opbrengst.
+Wat daar nog open staat (details in `mijn_fiets.md`, §Nog open): de
+kilometerstand, hoeveel eigen geld er bij het budget mag, de verkoopregio, en
+eventuele schade. De aandrijving is bekend en gunstig: cassette én ketting zijn
+ca. 1500 km oud. De Wahoo Elemnt Roam gaat **niet** mee bij verkoop.
 
 Twee eerder kritieke punten zijn inmiddels beantwoord en veranderen het werk:
 
@@ -257,7 +258,7 @@ Per dimensie 0-100, gewichten in `scoring_config.json` (JSON, geen TOML —
 | `drivetrain` | groepsettier 1-6 (bestaat al: `GROUPSET_CATALOG`) + elektronisch + aantal versnellingen |
 | `brakes` | velrem 40 / mechanische schijf 60 / hydraulische schijf 100 |
 | `wheels` | alu 40 / naamloos carbon 60 / merk-carbon 85 |
-| `extras` | powermeter, fietscomputer, extra wielset, pedalen |
+| `extras` | powermeter, fietscomputer, extra wielset, pedalen — **relatief aan wat hij al heeft**: hij houdt zijn Wahoo Elemnt Roam, dus een fietscomputer bij een advertentie is alleen doorverkoopwaarde waard, een powermeter telt volledig mee |
 | `fit` | **geen score maar een harde poort** — verkeerde framemaat = uitgesloten |
 
 De eigen fiets wordt met dezelfde functie gescoord; dat getal is de baseline.

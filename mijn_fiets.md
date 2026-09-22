@@ -14,9 +14,11 @@ en de open punten staan eronder. Fase 1 importeert dit naar `owned_item`.
 | Wielset (gemonteerd) | **CSC** carbon clincher, 50 mm hoog, 25 mm buiten / 18 mm binnen, naven AS511SB (voor) / FS522SB (achter). Via AliExpress, nieuwprijs ca. €300 |
 | Originele wielen | **Nog in bezit** — scenario B is mogelijk |
 | Banden | Pirelli P Zero Race |
-| Fietscomputer | Wahoo Elemnt Roam (v1) |
+| Fietscomputer | Wahoo Elemnt Roam (v1) — **gaat niet mee bij verkoop** |
 | Framenummer | Niet te koppelen aan een modeljaar/uitvoering |
 | Herkomst groepset | **Zat er al op bij aankoop** — geen eigen investering |
+| Aandrijving | Cassette **en** ketting vervangen, ca. **1500 km** geleden |
+| Budget volgende fiets | Opbrengst **plus** eigen geld; bedrag nog te bepalen |
 
 ## Wat hier direct uit volgt
 
@@ -63,6 +65,17 @@ uitvoerende agent verifieert ze alsnog met bronnen (zie §4 van het plan).
 - **De wielset past niet op een schijfremfiets.** Relevant voor de volgende
   fiets: koopt hij iets met schijfremmen, dan kan de CSC-set niet mee en
   *moet* hij verkocht worden. Zie §7 van het plan.
+- **Verse aandrijving is hier meer waard dan gebruikelijk.** Cassette en
+  ketting zijn 1500 km oud, dus praktisch nieuw. Bij een 10-speed telt dat
+  zwaarder dan bij een moderne fiets: 10-speed cassettes en kettingen worden
+  schaars, en een koper die dat weet, betaalt liever iets meer dan zelf op
+  zoek te moeten. **Zet het expliciet in de advertentie**, inclusief dat het
+  om beide gaat — "nieuwe ketting" alleen is een bekend halfverhaal.
+- **De Roam gaat niet mee.** Twee gevolgen: hij telt niet mee in de taxatie
+  van de fiets, en hij verlaagt de waarde van een fietscomputer die bij een
+  *kandidaat*-advertentie zit — de eigenaar heeft er al een. Zie §7 van het
+  plan: de `extras`-score moet relatief zijn aan wat hij al bezit. Een
+  powermeter telt wél volledig mee.
 - **Composite ≠ Advanced.** Binnen Giants carbon-aanbod is Composite de
   instapcarbon en Advanced de hogere laag. Vergelijk in de comps dus niet
   klakkeloos met Defy Advanced-advertenties; dat trekt de schatting te hoog.
@@ -73,13 +86,11 @@ uitvoerende agent verifieert ze alsnog met bronnen (zie §4 van het plan).
 
 ## Nog open
 
-1. **Staat**: geschatte kilometerstand, schade aan frame of velgen, slijtage
-   van ketting en cassette, ouderdom van de banden.
-2. **Wat gaat er mee** bij verkoop: pedalen, computerhouder, de Roam zelf?
+1. **Kilometerstand** van de fiets als geheel (frame, wielen, naven) — de
+   aandrijving is vers, de rest niet per se.
+2. **Hoeveel** geld mag erbij boven op de verkoopopbrengst?
 3. **Verkoopregio** en of verzenden een optie is of alleen ophalen.
-4. **Budgetruimte**: alleen de verkoopopbrengst, of mag er geld bij? Zo ja,
-   hoeveel? *(Aanname tot de eigenaar iets anders zegt: budget =
-   midden-taxatie, en het rapport toont daarnaast een band van +€250.)*
+4. Schade aan frame of velgen; ouderdom van de banden.
 5. Welke trim de 2012 Defy Composite precies was (Composite 1 vs 2) en wat die
    nieuw kostte — nodig voor de `model`-rij in fase 7, niet voor de taxatie
    zelf.
@@ -98,7 +109,8 @@ speeds           = 10
 electronic       = nee
 brake_type       = velrem
 wheel_type       = carbon clincher 50mm, CSC (Novatec-naven), velrem, 18mm binnen
-extras           = fietscomputer (Wahoo Elemnt Roam v1)
+extras           = geen (de Roam gaat niet mee)
+drivetrain_wear  = cassette + ketting ca. 1500 km oud
 ```
 
 Alles wat daarboven scoort is een upgrade-kandidaat. Let op dat de
