@@ -420,5 +420,50 @@
       "brake_type": "velrem",
       "weight_kg": "10.20"
     }
+  },
+  {
+    "note": "frame en wiel in dezelfde clause, geen komma — het frame wint, niet het eerste materiaal in de patroonlijst",
+    "text": "Trek Domane, aluminium frame met carbon wielset, schijfrem, 11-speed.",
+    "expected": {
+      "frame_material": "aluminium",
+      "brake_type": "schijfrem",
+      "speeds": "11",
+      "wheel_type": "carbon"
+    }
+  },
+  {
+    "note": "omgekeerde woordvolgorde: het wiel staat vooraan, het frame achteraan in dezelfde clause",
+    "text": "Giant TCR met carbon wielset op aluminium frame, velgrem.",
+    "expected": {
+      "frame_material": "aluminium",
+      "brake_type": "velrem",
+      "wheel_type": "carbon"
+    }
+  },
+  {
+    "note": "frame achteraan, materiaal via 'van' — geen komma tussen frame en wiel",
+    "text": "Cube Attain, frame van aluminium met carbon velgen, 10-speed.",
+    "expected": {
+      "frame_material": "aluminium",
+      "speeds": "10",
+      "wheel_type": "carbon"
+    }
+  },
+  {
+    "note": "zelfde materiaal aan beide kanten in één clause; mag niet omslaan naar leeg",
+    "text": "Specialized Tarmac met carbon frame en carbon wielset, velgrem.",
+    "expected": {
+      "frame_material": "carbon",
+      "brake_type": "velrem",
+      "wheel_type": "carbon"
+    }
+  },
+  {
+    "note": "alleen wiel genoemd in een clause zonder framewoord — blijft terecht leeg",
+    "text": "Cannondale CAAD met nieuwe carbon wielset erop, schijfrem.",
+    "expected": {
+      "brake_type": "schijfrem",
+      "wheel_type": "carbon"
+    }
   }
 ]

@@ -430,20 +430,51 @@ FRAME_MATERIAL_PATTERNS = [
 # exactly this kind of bike (see mijn_fiets.md). A material word is only
 # trusted for frame_material within its own clause (split on . , ;): a
 # clause naming a wheel word without also naming "frame" is a wheel mention,
-# not a frame one, and is skipped in favor of another clause/material.
+# not a frame one, and is skipped in favor of another clause/material. When a
+# clause names both a frame word and a wheel word, the clause alone can't
+# say which one the material belongs to, so proximity is used as a vangnet:
+# whichever word — "frame" or the wheel word — sits closer to the material
+# mention wins. This only kicks in for that ambiguous case; it doesn't
+# replace the material-first outer loop above it.
 WHEEL_CONTEXT_WORD_RE = re.compile(r"\b(?:velg\w*|wiel\w*|wheel\w*)\b", re.I)
 FRAME_WORD_RE = re.compile(r"\bframe\w*\b", re.I)
 CLAUSE_SPLIT_RE = re.compile(r"[.,;]")
+
+
+def _nearest_word_distance(
+    clause: str, match: "re.Match[str]", word_re: "re.Pattern[str]"
+) -> Optional[int]:
+    """Character distance from `match` to the nearest word_re match in
+    `clause`, or None if word_re doesn't occur at all."""
+    best: Optional[int] = None
+    for word_match in word_re.finditer(clause):
+        if word_match.end() <= match.start():
+            distance = match.start() - word_match.end()
+        elif match.end() <= word_match.start():
+            distance = word_match.start() - match.end()
+        else:
+            distance = 0
+        if best is None or distance < best:
+            best = distance
+    return best
 
 
 def detect_frame_material(text: str) -> Optional[str]:
     clauses = CLAUSE_SPLIT_RE.split(text)
     for label, pattern in FRAME_MATERIAL_PATTERNS:
         for clause in clauses:
-            if not pattern.search(clause):
+            match = pattern.search(clause)
+            if not match:
                 continue
-            if WHEEL_CONTEXT_WORD_RE.search(clause) and not FRAME_WORD_RE.search(clause):
+            has_wheel_word = bool(WHEEL_CONTEXT_WORD_RE.search(clause))
+            has_frame_word = bool(FRAME_WORD_RE.search(clause))
+            if has_wheel_word and not has_frame_word:
                 continue
+            if has_wheel_word and has_frame_word:
+                frame_dist = _nearest_word_distance(clause, match, FRAME_WORD_RE)
+                wheel_dist = _nearest_word_distance(clause, match, WHEEL_CONTEXT_WORD_RE)
+                if frame_dist is None or (wheel_dist is not None and wheel_dist <= frame_dist):
+                    continue
             return label
     return None
 

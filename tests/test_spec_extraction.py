@@ -62,6 +62,22 @@ class ExtractSpecsUnitTest(unittest.TestCase):
         specs = mp.extract_specs("Frame: carbon. Wielen: aluminium.")
         self.assertEqual(specs.get("frame_material"), "carbon")
 
+    def test_frame_material_uses_proximity_with_reversed_word_order(self):
+        # Same ambiguity as test_frame_material_ignores_a_wheel_only_carbon_mention,
+        # but the wheel word now comes before the frame word within the clause.
+        specs = mp.extract_specs(
+            "Racefiets met carbon wielset gemonteerd op een aluminium frame."
+        )
+        self.assertEqual(specs.get("frame_material"), "aluminium")
+        self.assertEqual(specs.get("wheel_type"), "carbon")
+
+    def test_frame_material_stays_none_for_wheel_word_without_frame_word(self):
+        # A clause naming only a wheel word, even with a material next to
+        # it, is a wheel mention and must not be read as frame_material.
+        specs = mp.extract_specs("Nieuwe carbon wielset erop gemonteerd.")
+        self.assertIsNone(specs.get("frame_material"))
+        self.assertEqual(specs.get("wheel_type"), "carbon")
+
     def test_speeds_outside_racefiets_range_is_not_extracted(self):
         self.assertNotIn("speeds", mp.extract_specs("21 speed kinderfiets"))
         self.assertNotIn("speeds", mp.extract_specs("7 speed oldtimer"))
