@@ -85,7 +85,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | Bestand | Wat |
 | --- | --- |
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
-| `db.py` | SQLite-schema, migraties, import van de oude bestanden, CSV-export (fase 1a; nog niet aangesloten op het script) |
+| `db.py` | SQLite-schema, migraties, import van de oude bestanden, CSV-export; sinds fase 1b aangesloten op het script (`--db`/`--no-db`) |
 | `tests/` | stdlib-unittests; `helpers.py` heeft `make_listing()` en een `FakeSession` |
 | `PLAN_FIETSWAARDE.md` | actief werkplan, gefaseerd |
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |
