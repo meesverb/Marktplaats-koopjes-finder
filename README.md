@@ -407,6 +407,13 @@ budget. Everything that falls out comes back with a reason (`--show-rejected`).
 - **Effective price.** An asking price times the negotiation factor, or what
   it costs to get into a bid (see `RUIMTE` above). The asking price stays
   printed next to it, so a corrected number is never mistaken for one.
+- **Model year.** A year labelled in the text ("bouwjaar 2016") wins; without
+  one, a bare year in the title ("Giant Defy 2012") is used — the same rule
+  the valuation's comp ladder uses — and the candidate says so
+  (`bouwjaar 2012 uit de titel`). A year that only appears unlabelled in the
+  description is not taken ("sinds 2018 in bezit" is no model year). Without
+  any year the frame gets no age decay, so a bike whose year is unknown still
+  scores somewhat higher than the same bike with its year known.
 - **Ranked on upgrade per euro** — `(score − baseline) / effective price`,
   printed as points per €100. No brake type is excluded up front: a genuine
   bargain on a disc-brake bike is the reason this tool exists, so the ranking

@@ -407,6 +407,27 @@ def bid_panel(
 # --- De upgrade-finder -----------------------------------------------------
 
 
+def listing_specs(listing: mp.Listing) -> tuple[dict[str, str], Optional[str]]:
+    """extract_specs() voor de kwaliteitsscore, met één aanvulling: het
+    bouwjaar uit de titel als de tekst geen gelabeld bouwjaar heeft.
+
+    Zonder die aanvulling kreeg een advertentie zonder "bouwjaar 2012" geen
+    leeftijdsverval — alsof hij nieuw was — terwijl de eigen fiets, waarvan
+    het jaar vaststaat, dat verval wél krijgt. Daardoor kwam een Defy
+    Composite 2012 met "2012" in de titel als upgrade op de eigen Defy
+    Composite 2012 binnen. Dezelfde regel als de comp-ladder in valuation.py
+    (valuation.title_year()), zodat taxatie en score over het jaar van een
+    advertentie hetzelfde zeggen. Geeft ook een reden-regel terug, want een
+    jaar uit de titel is een aanname die in de uitsplitsing hoort te staan."""
+    specs = mp.extract_specs(f"{listing.title} {listing.description}")
+    if specs.get("model_year"):
+        return specs, None
+    year = val.title_year(listing.title)
+    if year is None:
+        return specs, None
+    return {**specs, "model_year": str(year)}, f"bouwjaar {year} uit de titel"
+
+
 @dataclass(frozen=True)
 class Candidate:
     listing: mp.Listing
@@ -474,8 +495,9 @@ def find_upgrades(
             continue
 
         text = f"{listing.title} {listing.description}"
+        specs, year_note = listing_specs(listing)
         build = sc.build_from_listing(
-            specs=mp.extract_specs(text),
+            specs=specs,
             groupset_label=listing.groupset,
             groupset_tier=listing.groupset_tier,
             text=text,
@@ -483,6 +505,8 @@ def find_upgrades(
         )
         route = brake_route(build.brake_type)
         reasons: list[str] = [f"route: {route}"]
+        if year_note:
+            reasons.append(year_note)
         if route == ROUTE_RIM:
             build, moved = with_owner_wheels(build, owner_wheels, config)
             if moved:

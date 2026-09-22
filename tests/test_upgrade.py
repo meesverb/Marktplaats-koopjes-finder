@@ -469,6 +469,57 @@ class FindUpgradesTest(unittest.TestCase):
         self.assertEqual(len(find([listing], margin=0.0).candidates), 1)
 
 
+class TitleYearTest(unittest.TestCase):
+    """Een advertentie zonder gelabeld bouwjaar kreeg geen leeftijdsverval —
+    alsof hij nieuw was — terwijl de eigen fiets dat verval wél krijgt.
+    Daardoor kwam het eigen model als upgrade op zichzelf binnen."""
+
+    def same_model_as_the_owner(self, **overrides):
+        fields = dict(
+            item_id="defy",
+            title="Giant Defy Composite 2012 Ultegra 10 speed",
+            description="carbon, velremmen",
+            frame_height="56 cm",
+            groupset="Shimano Ultegra",
+            groupset_tier=5,
+            price_eur=600.0,
+        )
+        fields.update(overrides)
+        return make_listing(**fields)
+
+    def test_the_owners_own_model_is_not_an_upgrade(self):
+        result = find([self.same_model_as_the_owner()])
+        self.assertEqual(result.candidates, ())
+        self.assertIn("niet beter", result.rejected[0].reason)
+
+    def test_year_is_read_from_the_title(self):
+        specs, note = up.listing_specs(self.same_model_as_the_owner())
+        self.assertEqual(specs["model_year"], "2012")
+        self.assertEqual(note, "bouwjaar 2012 uit de titel")
+
+    def test_a_labelled_year_in_the_text_wins_over_the_title(self):
+        listing = self.same_model_as_the_owner(
+            title="Giant Defy 2012 Ultegra", description="Bouwjaar 2013, carbon"
+        )
+        specs, note = up.listing_specs(listing)
+        self.assertEqual(specs["model_year"], "2013")
+        self.assertIsNone(note)
+
+    def test_a_year_in_the_description_alone_is_not_taken(self):
+        # Zelfde precisie-afspraak als extract_specs(): "sinds 2018 in bezit"
+        # in een omschrijving is geen bouwjaar.
+        listing = self.same_model_as_the_owner(
+            title="Giant Defy Ultegra", description="sinds 2018 in bezit, carbon"
+        )
+        specs, _ = up.listing_specs(listing)
+        self.assertNotIn("model_year", specs)
+
+    def test_the_title_year_shows_up_in_the_candidates_reasons(self):
+        candidate = find([upgrade_listing(description="carbon, Ultegra Di2 11 speed, "
+                                          "hydraulische schijfremmen, Zipp wielen")]).candidates[0]
+        self.assertIn("bouwjaar 2019 uit de titel", candidate.reasons)
+
+
 class CandidateExplainabilityTest(unittest.TestCase):
     def test_every_candidate_carries_its_dimension_breakdown(self):
         # §7: "Uitlegbaarheid is een eis, geen extra."
