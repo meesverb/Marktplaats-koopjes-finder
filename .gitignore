@@ -6,3 +6,4 @@ venv/
 !reference_prices.example.csv
 seen_listings.json
 racefiets_report.html
+koopjes.db

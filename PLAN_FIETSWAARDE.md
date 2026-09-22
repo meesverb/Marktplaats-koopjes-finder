@@ -544,7 +544,7 @@ ze vóór én na elke stap: `python -m unittest discover -s tests -t tests`.
 - [x] Fase 0 — intake eigen fiets *(`mijn_fiets.md` is compleet genoeg om op te taxeren; drie verfijningen open, zie §4)*
 - [x] Testsuite *(87 tests in `tests/`; hoorde bij fase 1, is vooruit gedaan)*
 - [x] Eerste handmatige taxatie *(`taxatie_2026-09-22.md` — trede 2/3, n klein; fase 3 automatiseert dit)*
-- [ ] Fase 1a — `db.py` los, nog niet aangesloten
+- [x] Fase 1a — `db.py` los, nog niet aangesloten *(schema uit §5, `import_legacy()` voor de drie databestanden, `export_csv()`; `racefiets_jev.py` ongewijzigd, 107 tests groen. Voor 1b: `listing_model` blijft leeg — many-to-many matching is fase 2 — en `bargains_log.csv` is bewust niet meegenomen, zie §5.)*
 - [ ] Fase 1b — aansluiten op het script
 - [ ] Fase 2 — spec-extractie en meervoudige matches
 - [ ] Fase 3 — waarderingsmotor
