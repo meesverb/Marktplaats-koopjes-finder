@@ -86,6 +86,7 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--min-score` | Only report listings with at least this dealscore (0-100) | none |
 | `--db` | Path to the SQLite database that mirrors the CSV/JSON files (see below) | `koopjes.db` |
 | `--no-db` | Skip writing to the SQLite database | off |
+| `--mijn-fiets` | Intake of your own bike, for the report's `Mijn fiets` and `Upgrade` tabs (see below) | `mijn_fiets.md` |
 
 Example — bikes up to €150 with a frame size between 54 and 60 cm:
 
@@ -420,6 +421,41 @@ With `component_price` still empty there are no observations of what a loose
 wheelset sells for, so the two budgets come out equal and the output says so
 rather than guessing a number. It also bids on nothing and contacts no seller:
 that is out of scope, by design.
+
+### Report tabs — Biedpaneel, Upgrade, Mijn fiets
+
+Next to the listings table (which keeps its row filters and sortable columns
+as before) the HTML report has three more tabs (PLAN_FIETSWAARDE.md fase 6).
+The chosen tab is kept in the URL (`#upgrade`), so reloading the report after
+a new run lands on the same one.
+
+- **Biedpaneel** — every bidding listing, sorted on headroom (estimated value
+  minus what it costs to get in, the same numbers as the `RUIMTE` column in
+  the console). Unknown headroom sorts last and reads `onbekend`, never €0.
+- **Upgrade** — the candidates `upgrade.py` would print, for this run's
+  listings: ranked on upgrade per euro, with asking price, effective price,
+  budget, the size verdict and the per-dimension breakdown (hover a dimension
+  for its reasons). What fell out is listed under `Afgevallen`, with the reason.
+- **Mijn fiets** — the valuation of your own bike per scenario (A and B) as a
+  low–mid–high band with n, the budget it gives the upgrade-finder, the full
+  evidence list with links to the comps, and the baseline quality score.
+
+The last two read `mijn_fiets.md` (`--mijn-fiets`) and value the bike on the
+comps in `koopjes.db` — read-only, nothing is saved; `valuation.py` stays the
+one that writes valuations. With `--no-db`, a missing intake file, or no
+comparable listings in the database yet, those tabs say why instead of
+showing a number.
+
+**Waardescore.** The Upgrade and Biedpaneel tabs have a `Waardescore` column:
+estimated value divided by effective price, where 1,00× means the price is
+what it is worth and higher is cheaper. It is deliberately a separate column
+from the dealscore, and a different measure — the dealscore scores the price
+against the median, the average second-hand price and the original price on
+0-100. The value is the model's observed second-hand average (if there are at
+least two observations) or else the query median, both corrected from asking
+price to selling price; the divisor is the effective price, not the bare
+asking price, so a fixed-price listing at the median scores 1,00× and a bid is
+measured against what it costs to get in. Hover the number for the sum.
 
 ### `check_hifi_brand.py` — a research aid for filling in the reference file
 

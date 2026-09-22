@@ -317,6 +317,47 @@ def estimate_value(
 
 
 @dataclass(frozen=True)
+class ValueScore:
+    """De waardescore uit §2: hoe goed is de prijs. `ratio` 1,0 betekent dat
+    hij kost wat hij waard is, hoger is goedkoper. None is onbekend, niet 0.
+
+    Niet te verwarren met `Listing.deal_score` (0-100 uit % van de mediaan,
+    het 2e-hands gemiddelde en de nieuwprijs): dat is een ander antwoord op
+    dezelfde vraag en het staat in een andere kolom."""
+
+    ratio: Optional[float]
+    basis: str
+
+
+def value_score(
+    listing: mp.Listing,
+    median_eur: Optional[float] = None,
+    negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
+) -> ValueScore:
+    """`geschatte waarde / prijs`, per advertentie.
+
+    §2 schrijft "gevraagde prijs", maar de noemer is hier de effectieve prijs,
+    en dat is met opzet. De geschatte waarde is al een verkoopprijs (de
+    benchmark maal de E2-correctie); die delen door een kale vraagprijs zou
+    elke vaste-prijsadvertentie op 0,875 zetten terwijl hij precies op de
+    markt zit, en een biedadvertentie vergelijken met een vraagprijs is
+    dezelfde scheefheid die estimate_value() juist wegneemt. Bij een vaste
+    prijs valt de factor boven en onder weg — benchmark / vraagprijs — en bij
+    een bod is het waarde / instapprijs."""
+    estimate = estimate_value(listing, median_eur, negotiation_factor)
+    price = effective_price(listing, negotiation_factor)
+    if estimate.amount is None:
+        return ValueScore(None, f"geen schatting ({estimate.basis})")
+    if price.amount is None or price.amount <= 0:
+        return ValueScore(None, f"geen prijs om door te delen ({price.basis})")
+    return ValueScore(
+        estimate.amount / price.amount,
+        f"waarde €{estimate.amount:.0f} ({estimate.basis}) / "
+        f"prijs €{price.amount:.0f} ({price.basis})",
+    )
+
+
+@dataclass(frozen=True)
 class BidRow:
     """Eén regel van het biedpaneel. `headroom_eur` is de speelruimte uit §7:
     geschatte waarde − instapprijs. None betekent onbekend, niet nul."""

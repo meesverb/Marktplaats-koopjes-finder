@@ -1562,7 +1562,14 @@ def score_css_class(score: Optional[float]) -> str:
     return "low"
 
 
-def render_html(listings: list[Listing], query: str, stats: Optional[dict] = None) -> str:
+def render_html(
+    listings: list[Listing], query: str, stats: Optional[dict] = None, panels=None
+) -> str:
+    """`panels` is a report.Panels (the Biedpaneel / Upgrade / Mijn fiets
+    tabs). Left out, only the bid panel is filled — it needs nothing but the
+    listings — and the other two say there is no bike to compare against.
+    The import is local for the same reason as in bid_headroom_by_id():
+    report.py reads this module."""
     rows_sorted = sort_by_score(listings)
 
     row_html = []
@@ -1690,6 +1697,13 @@ def render_html(listings: list[Listing], query: str, stats: Optional[dict] = Non
         if stats["count"] >= 2
         else ""
     )
+    if panels is None:
+        import report
+
+        panels = report.build_panels(
+            listings, stats.get("median"),
+            owner_problem="Geen eigen fiets meegegeven aan dit rapport.",
+        )
 
     # substitute(), not safe_substitute(): a placeholder in the template that
     # nobody fills in should fail here, not end up as literal text in the page.
@@ -1708,13 +1722,36 @@ def render_html(listings: list[Listing], query: str, stats: Optional[dict] = Non
         open_bid_count=len(open_bid_listings(listings)),
         price_stats_str=price_stats_str,
         rows="\n".join(row_html),
+        bidpanel_count=panels.bid_row_count,
+        upgrade_count=panels.upgrade_count,
+        bid_panel=panels.bids_html,
+        upgrade_panel=panels.upgrade_html,
+        bike_panel=panels.bike_html,
     )
 
 
 def write_html(
-    listings: list[Listing], path: str, query: str, stats: Optional[dict] = None
+    listings: list[Listing], path: str, query: str, stats: Optional[dict] = None, panels=None
 ) -> None:
-    Path(path).write_text(render_html(listings, query, stats=stats), encoding="utf-8")
+    Path(path).write_text(
+        render_html(listings, query, stats=stats, panels=panels), encoding="utf-8"
+    )
+
+
+def build_report_panels(args: argparse.Namespace, listings: list[Listing], median: Optional[float]):
+    """The report's extra tabs for this run. The own-bike valuation reads
+    koopjes.db — which sync_database() has just written, so it already holds
+    this crawl — but never writes to it. With --no-db there is nothing to
+    value against, and the tabs say that rather than guess a budget."""
+    import report
+
+    owner, problem = report.load_owner_context(
+        args.mijn_fiets, None if args.no_db else args.db
+    )
+    reason = problem or (owner.valuation_problem if owner else None)
+    if reason:
+        print(f"Rapport, tabs 'Mijn fiets'/'Upgrade': {reason}", file=sys.stderr)
+    return report.build_panels(listings, median, owner=owner, owner_problem=problem)
 
 
 def write_csv(listings: list[Listing], path: str) -> None:
@@ -1854,6 +1891,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--no-db", action="store_true", help="Skip writing to the SQLite database"
+    )
+    parser.add_argument(
+        "--mijn-fiets",
+        default="mijn_fiets.md",
+        help="Intake of your own bike, for the report's 'Mijn fiets' and 'Upgrade' tabs "
+        "(PLAN_FIETSWAARDE.md fase 6). Missing file = those tabs say so (default: mijn_fiets.md)",
     )
     return parser.parse_args(argv)
 
@@ -2029,7 +2072,8 @@ def run_for_query(args: argparse.Namespace, query: str, multi: bool) -> None:
 
     if not args.no_html:
         html_path = per_query_path(args.html, query, multi)
-        write_html(listings, html_path, query, stats=all_stats)
+        panels = build_report_panels(args, listings, all_stats.get("median"))
+        write_html(listings, html_path, query, stats=all_stats, panels=panels)
         print(f"Wrote HTML overview to {html_path}")
 
         new_count = sum(1 for l in listings if l.is_new)

@@ -48,11 +48,43 @@
   td.score { cursor: help; }
   .price { font-weight: 600; white-space: nowrap; }
   .bid-tag { font-weight: 400; font-size: 0.72rem; color: var(--muted); }
+  /* Panels (fase 6): the tabs switch whole views; the .filters buttons inside
+     the listings panel stay what they were, row filters on one table. */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid var(--border);
+          margin-bottom: 16px; }
+  .tabs button { border: none; background: none; padding: 8px 16px; cursor: pointer;
+                 font-size: 0.95rem; color: var(--muted); border-bottom: 3px solid transparent;
+                 margin-bottom: -2px; }
+  .tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .panel[hidden] { display: none; }
+  .panel h2 { font-size: 1.2rem; margin: 0 0 4px; }
+  .panel h3 { font-size: 1rem; margin: 20px 0 8px; }
+  .panel h4 { font-size: 0.9rem; margin: 0 0 6px; }
+  .muted { color: var(--muted); font-size: 0.85rem; }
+  .notice { background: var(--card); border-left: 4px solid var(--dropped); padding: 10px 14px;
+            border-radius: 4px; }
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; }
+  .card { background: var(--card); border-radius: 8px; padding: 12px 16px; flex: 1 1 280px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card ul { margin: 0; padding-left: 18px; font-size: 0.85rem; }
+  .band { font-size: 1.3rem; white-space: nowrap; }
+  td.num { white-space: nowrap; }
+  .dim { display: inline-block; font-size: 0.75rem; background: var(--bg); border: 1px solid var(--border);
+         border-radius: 4px; padding: 1px 6px; margin: 1px; cursor: help; white-space: nowrap; }
+  details { margin-top: 16px; }
+  details ul { font-size: 0.85rem; }
 </style>
 </head>
 <body>
 <h1>Koopjes — "${query}"</h1>
 <div class="meta">Bijgewerkt ${generated} · ${total} advertenties · ${new_count} nieuw sinds vorige run · ${bargain_count} koopjes · ${bid_count} bieden (${open_bid_count} zonder bod)${price_stats_str}</div>
+<nav class="tabs">
+  <button data-panel="listings" class="active">Advertenties (${total})</button>
+  <button data-panel="bidpanel">Biedpaneel (${bidpanel_count})</button>
+  <button data-panel="upgrade">Upgrade (${upgrade_count})</button>
+  <button data-panel="mybike">Mijn fiets</button>
+</nav>
+<section class="panel" id="panel-listings">
 <div class="meta">Gesorteerd op dealscore (0-100, hoger = goedkoper dan zijn ijkpunten). Beweeg over een score voor de onderbouwing.</div>
 <div class="filters">
   <button data-filter="all" class="active">Alles (${total})</button>
@@ -88,7 +120,34 @@ ${rows}
 </tbody>
 </table>
 </div>
+</section>
+<section class="panel" id="panel-bidpanel" hidden>
+${bid_panel}
+</section>
+<section class="panel" id="panel-upgrade" hidden>
+${upgrade_panel}
+</section>
+<section class="panel" id="panel-mybike" hidden>
+${bike_panel}
+</section>
 <script>
+  // Panel tabs. The chosen panel goes in the URL hash, so a reload (the
+  // report is rewritten every run) lands back on the same tab.
+  const tabButtons = document.querySelectorAll('.tabs button');
+  function showPanel(name) {
+    const target = document.getElementById('panel-' + name);
+    if (!target) return;
+    document.querySelectorAll('.panel').forEach(p => { p.hidden = p !== target; });
+    tabButtons.forEach(b => b.classList.toggle('active', b.dataset.panel === name));
+  }
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      showPanel(btn.dataset.panel);
+      history.replaceState(null, '', '#' + btn.dataset.panel);
+    });
+  });
+  if (location.hash) showPanel(location.hash.slice(1));
+
   const table = document.getElementById('listings');
   const tbody = table.querySelector('tbody');
   document.querySelectorAll('.filters button').forEach(btn => {
