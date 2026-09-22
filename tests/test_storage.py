@@ -65,6 +65,19 @@ class HistoryTest(TempDirTest):
         self.assertFalse(listing.is_new)
         self.assertTrue(listing.price_dropped)
 
+    def test_a_failed_save_keeps_the_previous_history(self):
+        # A half-written file would be unparseable, and load_history() treats
+        # unparseable as empty — so a crash mid-save would quietly wipe every
+        # first_seen date and mark the whole market new again.
+        path = self.path("history.json")
+        mp.save_history(path, {"a": {"first_seen": "2026-01-01T00:00:00+00:00"}})
+
+        with self.assertRaises(TypeError):
+            mp.save_history(path, {"b": {"first_seen": object()}})
+
+        self.assertEqual(mp.load_history(path), {"a": {"first_seen": "2026-01-01T00:00:00+00:00"}})
+        self.assertEqual(list(self.tmp.glob("*.tmp")), [])
+
     def test_first_seen_is_preserved_across_runs(self):
         first = make_listing(item_id="a")
         history = mp.apply_history([first], {})

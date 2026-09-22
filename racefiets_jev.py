@@ -15,6 +15,7 @@ import argparse
 import csv
 import html as html_lib
 import json
+import os
 import re
 import statistics
 import sys
@@ -594,8 +595,22 @@ def load_history(path: str) -> dict:
 
 
 def save_history(path: str, history: dict) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(history, f, indent=2, ensure_ascii=False)
+    """Write the history, all of it or none of it. Opening the real file in
+    "w" mode truncates it first, so a run that dies halfway (Ctrl-C, a full
+    disk) leaves half a JSON document behind — and load_history() reads an
+    unparseable file as "no history at all", which silently makes every
+    listing new again and throws away every first_seen date you had."""
+    target = Path(path)
+    tmp = target.with_name(target.name + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, target)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def apply_history(listings: list[Listing], history: dict) -> dict:
