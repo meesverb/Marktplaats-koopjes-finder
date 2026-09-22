@@ -21,6 +21,20 @@ class ParseListingTest(unittest.TestCase):
         free = mp.parse_listing(raw_listing(priceInfo={"priceCents": 0, "priceType": "FREE"}))
         self.assertEqual(free.price_eur, 0.0)
 
+    def test_a_price_that_is_not_a_number_is_no_price(self):
+        # bool is a subclass of int in Python, so a stray "priceCents": true
+        # would otherwise be read as a listing of one cent — a listing that
+        # then leads every price sort and every bargain list.
+        for cents in (True, "12550", None, {}):
+            with self.subTest(cents=cents):
+                listing = mp.parse_listing(
+                    raw_listing(priceInfo={"priceCents": cents, "priceType": "FIXED"})
+                )
+                self.assertIsNone(listing.price_eur)
+
+    def test_a_null_price_block_is_no_price(self):
+        self.assertIsNone(mp.parse_listing(raw_listing(priceInfo=None)).price_eur)
+
     def test_bid_types_are_marked_as_bids(self):
         for price_type in ("FAST_BID", "MIN_BID"):
             with self.subTest(price_type=price_type):
@@ -84,6 +98,25 @@ class CollectListingsTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             listings = mp.collect_listings("test", pages=1, delay=0, session=session)
         self.assertEqual([l.title for l in listings], ["Met id"])
+
+
+    def test_a_null_page_limit_does_not_end_the_run(self):
+        # maxAllowedPageNumber present but null: .get()'s default doesn't
+        # apply, and the page bookkeeping used to raise a TypeError on it.
+        page = search_page([raw_listing(itemId="m1")], max_page=None)
+        session = FakeSession({mp.BASE_URL + "/q/test/": page})
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            listings = mp.collect_listings("test", pages=3, delay=0, session=session)
+        self.assertEqual([l.item_id for l in listings], ["m1"])
+        # Without a known limit, the page we just fetched is the last one.
+        self.assertIn("pagina 1/1", err.getvalue())
+
+    def test_a_page_limit_stays_a_whole_number(self):
+        page = search_page([raw_listing(itemId="m1")], max_page=4)
+        session = FakeSession({mp.BASE_URL + "/q/test/": page})
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            mp.collect_listings("test", pages=1, delay=0, session=session)
+        self.assertIn("pagina 1/1 opgehaald", err.getvalue())
 
 
 class FrameHeightTest(unittest.TestCase):
@@ -163,6 +196,22 @@ class DominantCategoryTest(unittest.TestCase):
                         {"id": 1, "dominant": True, "histogramCount": 10},
                         {"id": 2, "dominant": True, "histogramCount": 400},
                         {"id": 3, "histogramCount": 9000},
+                    ],
+                }
+            ]
+        }
+        self.assertEqual(mp.extract_dominant_category(response), 2)
+
+    def test_a_null_histogram_count_does_not_end_the_run(self):
+        # A null count comes back out of .get(key, 0) as None, and max() then
+        # compares it to an int.
+        response = {
+            "facets": [
+                {
+                    "key": "RelevantCategories",
+                    "categories": [
+                        {"id": 1, "dominant": True, "histogramCount": None},
+                        {"id": 2, "dominant": True, "histogramCount": 12},
                     ],
                 }
             ]

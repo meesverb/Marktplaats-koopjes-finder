@@ -26,6 +26,16 @@ class ResolveBidPriceTest(unittest.TestCase):
         self.assertIsNone(mp.resolve_bid_price({"bids": []}))
         self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": 0, "bids": []}))
 
+    def test_values_that_are_not_numbers_are_not_bids(self):
+        # bool passes an isinstance(x, (int, float)) check, so a "value": true
+        # would count as a bid of one cent and win over a real minimum.
+        info = {"currentMinimumBid": 5000, "bids": [{"value": True}, {"value": "6000"}]}
+        self.assertEqual(mp.resolve_bid_price(info), 50.0)
+
+    def test_a_minimum_that_is_not_a_number_is_no_minimum(self):
+        self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": "3500", "bids": []}))
+        self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": True, "bids": []}))
+
 
 class EnrichBidListingsTest(unittest.TestCase):
     def enrich(self, listing, bids_info, mode):
@@ -42,6 +52,14 @@ class EnrichBidListingsTest(unittest.TestCase):
         self.assertEqual(listing.price_eur, 40.0)
         self.assertEqual(listing.bid_minimum, 40.0)
         self.assertEqual(listing.bid_count, 0)
+
+    def test_a_minimum_bid_that_is_not_a_number_is_left_empty(self):
+        # A string here used to end the run on the division; the listing keeps
+        # the price it already had and simply has no known minimum.
+        listing = make_listing(price_eur=47.50, price_type="MIN_BID", price_is_bid=True)
+        self.enrich(listing, {"currentMinimumBid": "3500", "bids": []}, "all")
+        self.assertEqual(listing.price_eur, 47.50)
+        self.assertIsNone(listing.bid_minimum)
 
     def test_min_bid_keeps_its_asking_price(self):
         # Seen in the wild: asking EUR 47.50, minimum bid EUR 35. Replacing the

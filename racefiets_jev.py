@@ -82,6 +82,18 @@ class Listing:
 LISTING_FIELDS = [f.name for f in dataclass_fields(Listing)]
 
 
+def as_number(value) -> Optional[float]:
+    """A number out of Marktplaats' JSON, or None when the field holds
+    something else. Two shapes get through a plain isinstance check: a bool
+    (True is an int in Python, so a stray "priceCents": true would read as one
+    cent) and a number sent as a string, which then blows up on the division
+    that follows. Neither shows up in the console, so both are cheap to
+    exclude here."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 def fetch_page(session: requests.Session, query: str, page: int) -> dict:
     """Fetch one Marktplaats search results page and return its embedded JSON data."""
     # The query goes into the URL *path*, so it has to be encoded as one.
@@ -191,11 +203,11 @@ def resolve_bid_price(bids_info: dict) -> Optional[float]:
     bids = bids_info.get("bids") or []
     # A bid entry without a usable value is not worth taking the run down for;
     # fall back to the minimum bid as if there were no bids at all.
-    values = [b.get("value") for b in bids if isinstance(b, dict)]
-    values = [v for v in values if isinstance(v, (int, float))]
+    values = [as_number(b.get("value")) for b in bids if isinstance(b, dict)]
+    values = [v for v in values if v is not None]
     if values:
         return max(values) / 100
-    minimum = bids_info.get("currentMinimumBid")
+    minimum = as_number(bids_info.get("currentMinimumBid"))
     if minimum:
         return minimum / 100
     return None
@@ -238,7 +250,7 @@ def enrich_bid_listings(
         if bids_info:
             bids = bids_info.get("bids") or []
             listing.bid_count = len(bids)
-            minimum = bids_info.get("currentMinimumBid")
+            minimum = as_number(bids_info.get("currentMinimumBid"))
             listing.bid_minimum = minimum / 100 if minimum else None
             price = resolve_bid_price(bids_info)
             # A MIN_BID listing already has a price from the search results
@@ -275,7 +287,10 @@ def extract_dominant_category(search_response: dict) -> Optional[int]:
             # For an ambiguous query Marktplaats can flag more than one
             # category as dominant (e.g. "boxen" flags both baby playpens
             # and speakers) — the one with the most matches is the real one.
-            return max(dominant, key=lambda c: c.get("histogramCount", 0)).get("id")
+            # `or 0`: a null count would come back out of .get() as None and
+            # take max() down comparing it to an int, same as a count that
+            # arrives as a string.
+            return max(dominant, key=lambda c: as_number(c.get("histogramCount")) or 0).get("id")
     return None
 
 
@@ -359,15 +374,13 @@ def detect_groupset(text: str) -> tuple[str, Optional[int]]:
 
 
 def parse_listing(raw: dict) -> Listing:
-    price_info = raw.get("priceInfo", {})
-    price_cents = price_info.get("priceCents")
+    price_info = raw.get("priceInfo") or {}
+    price_cents = as_number(price_info.get("priceCents"))
     price_type = price_info.get("priceType", "")
     # priceCents is 0 for listings with no real price shown (e.g. an
     # unstarted bid or "see description") except when priceType is FREE,
     # where 0 genuinely means the item is free.
-    has_real_price = isinstance(price_cents, (int, float)) and (
-        price_cents > 0 or price_type == "FREE"
-    )
+    has_real_price = price_cents is not None and (price_cents > 0 or price_type == "FREE")
     price_eur = price_cents / 100 if has_real_price else None
 
     vip_url = raw.get("vipUrl", "")
@@ -442,7 +455,12 @@ def collect_listings(
                 continue
             listings[listing.item_id] = listing
 
-        max_page = data.get("maxAllowedPageNumber", page)
+        # The key can be there with a null value (and .get()'s default only
+        # covers a missing key), which would take both the min() below and the
+        # page >= max_page test down with a TypeError. int(), because the page
+        # number ends up in the progress line and "pagina 1/3.0" reads as a bug.
+        site_max_page = as_number(data.get("maxAllowedPageNumber"))
+        max_page = int(site_max_page) if site_max_page else page
         target = min(pages, max_page) if pages > 0 else max_page
         print(f"  pagina {page}/{target} opgehaald — {len(listings)} advertenties tot nu toe", file=sys.stderr)
 
