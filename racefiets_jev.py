@@ -1366,6 +1366,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       rows.sort((a, b) => {{
         let av = a.dataset[key], bv = b.dataset[key];
         if (['price', 'groupset', 'ref', 'pctmedian', 'score', 'bid'].includes(key)) {{ av = parseFloat(av); bv = parseFloat(bv); }}
+        // NaN compares false both ways, so a column that ever holds something
+        // unparseable would return 0 for every pair and the sort would look
+        // random. Park those rows at the bottom, whichever way we are sorting.
+        if (Number.isNaN(av)) av = asc ? Infinity : -Infinity;
+        if (Number.isNaN(bv)) bv = asc ? Infinity : -Infinity;
         if (av < bv) return asc ? -1 : 1;
         if (av > bv) return asc ? 1 : -1;
         return 0;
