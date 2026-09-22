@@ -125,22 +125,48 @@ def extract_balanced_json(text: str, start: int) -> Optional[dict]:
     return None
 
 
+# Once the page structure changes, every single listing hits the same wall, so
+# warn once per run instead of printing the same line a hundred times.
+_bid_structure_warned = False
+
+
+def warn_bid_structure_changed(detail: str) -> None:
+    global _bid_structure_warned
+    if _bid_structure_warned:
+        return
+    _bid_structure_warned = True
+    print(
+        f"warning: biedinformatie niet te lezen ({detail}) — Marktplaats heeft "
+        "waarschijnlijk zijn paginastructuur gewijzigd. Biedprijzen en minimumbod "
+        "blijven leeg; de rest van de run gaat gewoon door.",
+        file=sys.stderr,
+    )
+
+
 def fetch_bid_info(session: requests.Session, vip_url: str) -> Optional[dict]:
     """Fetch a listing's own page and return its bidsInfo (current bids /
     minimum bid) — this isn't included in the search results for FAST_BID
     listings, only on the listing page itself (loaded client-side there via
-    window.__CONFIG__)."""
+    window.__CONFIG__).
+
+    Returns None both when the page simply has no bid data (normal: not every
+    listing is biddable) and when the page couldn't be read at all. Only the
+    second case is worth a warning — without one, a changed page structure
+    just looks like a run where nobody happened to be bidding."""
     resp = session.get(vip_url, timeout=15)
     resp.raise_for_status()
 
     marker_pos = resp.text.find(CONFIG_MARKER)
     if marker_pos == -1:
+        warn_bid_structure_changed(f"{CONFIG_MARKER.strip()} niet gevonden")
         return None
     brace_pos = resp.text.find("{", marker_pos)
     if brace_pos == -1:
+        warn_bid_structure_changed("geen JSON-object achter de marker")
         return None
     config = extract_balanced_json(resp.text, brace_pos)
     if config is None:
+        warn_bid_structure_changed("JSON achter de marker niet te lezen")
         return None
     return config.get("listing", {}).get("bidsInfo")
 
@@ -183,7 +209,7 @@ def enrich_bid_listings(
     session = session or requests.Session()
     session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
 
-    print(f"Biedprijzen ophalen voor {len(targets)} FAST_BID advertenties...", file=sys.stderr)
+    print(f"Biedprijzen ophalen voor {len(targets)} bied-advertenties...", file=sys.stderr)
     for i, listing in enumerate(targets, start=1):
         try:
             bids_info = fetch_bid_info(session, listing.url)

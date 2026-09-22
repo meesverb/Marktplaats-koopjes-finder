@@ -77,6 +77,48 @@ class EnrichBidListingsTest(unittest.TestCase):
         self.assertIsNone(listing.bid_count)
 
 
+class BidStructureWarningTest(unittest.TestCase):
+    """A changed page structure has to be loud: silently returning "no bid
+    info" looks exactly like a run where nobody happened to be bidding, so
+    the bid columns would just quietly go empty for weeks."""
+
+    def setUp(self):
+        mp._bid_structure_warned = False
+        self.addCleanup(setattr, mp, "_bid_structure_warned", False)
+
+    def fetch(self, page: str):
+        url = "https://www.marktplaats.nl/v/x/m1-test"
+        session = FakeSession({url: page})
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            info = mp.fetch_bid_info(session, url)
+        return info, stderr.getvalue()
+
+    def test_a_missing_marker_is_reported(self):
+        info, stderr = self.fetch("<html>geen config</html>")
+        self.assertIsNone(info)
+        self.assertIn("paginastructuur", stderr)
+
+    def test_unreadable_json_behind_the_marker_is_reported(self):
+        info, stderr = self.fetch("<html>window.__CONFIG__ = {kapot</html>")
+        self.assertIsNone(info)
+        self.assertIn("paginastructuur", stderr)
+
+    def test_a_listing_that_simply_has_no_bid_data_is_not_a_change(self):
+        info, stderr = self.fetch(config_page(None))
+        self.assertIsNone(info)
+        self.assertEqual(stderr, "")
+
+    def test_the_warning_is_printed_once_not_per_listing(self):
+        url = "https://www.marktplaats.nl/v/x/m1-test"
+        session = FakeSession({url: "<html>geen config</html>"})
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            for _ in range(3):
+                mp.fetch_bid_info(session, url)
+        self.assertEqual(stderr.getvalue().count("paginastructuur"), 1)
+
+
 class OpenBidTest(unittest.TestCase):
     def test_zero_bids_is_open_unknown_is_not(self):
         looked_up = make_listing(price_is_bid=True, bid_count=0)
