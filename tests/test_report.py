@@ -21,6 +21,27 @@ class TemplateTest(unittest.TestCase):
         html = render([make_listing(price_eur=100.0, pct_of_median=50.0, deal_score=80.0)])
         leftovers = re.findall(r"\{[a-z_]+\}", html)
         self.assertEqual(leftovers, [], f"unsubstituted placeholders: {leftovers}")
+        # The template is a string.Template now; its placeholders look like
+        # this, and a leftover one would mean substitute() was bypassed.
+        leftovers = re.findall(r"\$\{?[a-z_]+", html)
+        self.assertEqual(leftovers, [], f"unsubstituted placeholders: {leftovers}")
+
+    def test_template_lives_in_its_own_file(self):
+        # §8 of the plan: the template is read at runtime from a file next to
+        # the script, so the CSS/JS in it can use braces without doubling.
+        self.assertTrue(mp.REPORT_TEMPLATE_PATH.is_file())
+        self.assertFalse(hasattr(mp, "HTML_TEMPLATE"))
+
+    def test_missing_template_gives_a_clear_error(self):
+        with self.assertRaises(SystemExit) as caught:
+            mp.load_report_template(mp.REPORT_TEMPLATE_PATH.with_name("bestaat_niet.html"))
+        self.assertIn("--no-html", str(caught.exception))
+
+    def test_javascript_braces_are_single(self):
+        # The whole point of the refactor: no more {{ }} in the page.
+        html = render([make_listing()])
+        self.assertNotIn("{{", html)
+        self.assertNotIn("}}", html)
 
     def test_renders_with_no_listings_at_all(self):
         html = render([])

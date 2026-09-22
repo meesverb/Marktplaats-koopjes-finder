@@ -47,7 +47,8 @@ dealscore the report is sorted by.
 Every run also writes `racefiets_report.html` — open it in a browser for a
 sortable, filterable overview (Nieuw / Koopjes / Topdeals / Bieden / ...) with
 clickable links to each listing, and the average/median price of what was
-found. It compares against
+found. The page is built from `report_template.html`, which has to sit next to
+the script (run with `--no-html` if you don't want a report). It compares against
 `seen_listings.json` (created automatically) so listings you've already seen
 in a previous run are marked accordingly instead of showing up as "new" every
 time — handy if you run this script on a schedule (e.g. every 15 minutes via
