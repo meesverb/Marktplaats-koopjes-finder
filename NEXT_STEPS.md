@@ -34,6 +34,19 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 - HTML-rapport heeft filtertabs: Alles / Nieuw / Koopjes / Beter dan
   referentie / Prijsverlaging / Topdeals / Bieden / Vrij te bieden.
 
+## Actief plan
+
+`PLAN_FIETSWAARDE.md` is het uitgewerkte werkplan voor de eerstvolgende
+uitbreiding: taxatie van de eigen fiets (Giant Defy 2012) + een upgrade-finder
+die laat zien welke betere fiets daarvoor te koop staat, biedadvertenties
+meegerekend, plus de overstap van losse CSV's naar SQLite. Begin daar, en pak
+één fase per sessie.
+
+Let op bij het lezen van dat plan: het is geschreven toen de dealscore en het
+bied-overzicht nog niet bestonden. Die zijn er inmiddels (zie hierboven), dus
+fase 4, 5 en 7 bouwen daarop voort in plaats van ze te maken. Het plan zelf is
+daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
+
 ## Wat we onderweg leerden over Marktplaats
 
 - Bij een `MIN_BID`-advertentie is de prijs uit de zoekresultaten de
