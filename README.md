@@ -185,13 +185,28 @@ against fixed-price listings — the minimum bid is shown separately, in its own
 
 **Still free to bid on.** Bidding listings nobody has bid on yet get a
 `VRIJ TE BIEDEN` badge and their own filter tab in the HTML report. Every run
-also prints a `BIED-OVERZICHT` section: all bidding listings, the ones nobody
-has bid on first and each group sorted by dealscore, showing the minimum bid,
-what percentage of the median that minimum is, and the reference model if one
-matched. That percentage is only shown while nobody has bid yet: once there is
-a bid, the minimum no longer buys the listing, so it stays visible as a plain
-number without being presented as a cheap way in. Those are the ones where you can still get in at the seller's own
-floor price instead of bidding against someone.
+also prints a `BIED-OVERZICHT` section: all bidding listings, sorted by
+headroom (`RUIMTE` — see below), showing the minimum bid, what percentage of
+the median that minimum is, and the reference model if one matched. That
+percentage is only shown while nobody has bid yet: once there is a bid, the
+minimum no longer buys the listing, so it stays visible as a plain number
+without being presented as a cheap way in.
+
+**`RUIMTE` — how much room is in a bid.** Estimated value minus what it costs
+to get in: the minimum bid while nobody has bid, the standing bid once someone
+has, and the asking price when the bid was never looked up. That last case is
+deliberately *not* treated as €0 or as the minimum bid — an unfetched bid is
+unknown, not free, and the column prints a dash rather than a number when
+there is nothing to go on. The estimated value comes from the best benchmark
+available for that listing: the secondhand average observed for its reference
+model if there are at least two sightings, otherwise the median of this
+search, in both cases corrected from an asking price to a realistic selling
+price with the same factor `valuation.py` uses. Without reference models
+matched, every listing in a search shares the same benchmark, so the column
+then effectively ranks by entry price — it gets sharper the more of
+`reference_prices.csv` applies to what you are searching for. Listings whose
+headroom is unknown keep the old ordering (the ones nobody has bid on first,
+each group by dealscore) and sit below the ones that have a number.
 
 A listing only counts as "still free to bid on" when its bid count was
 actually looked up and came back zero — a `MIN_BID` listing without
@@ -337,6 +352,73 @@ valuation, not a guess — crawl the model first. The 10-15% negotiation
 margin, the bundle factor and the share of an upgrade that a buyer of a
 complete bike pays for are heuristics, not measurements, and each is printed
 as its own line so it is clear what it contributed.
+
+### `scoring.py` — how good is a bike, regardless of price?
+
+The **quality score** from PLAN_FIETSWAARDE.md fase 4, and not to be confused
+with the dealscore above: that one says whether a price is good, this one says
+whether a *bike* is good. Five dimensions — frame, drivetrain, brakes, wheels,
+extras — each 0-100 with the signals that went into it spelled out, weighted
+into one total. The weights and score tables live in `scoring_config.json`, so
+changing what you care about is an edit to that file rather than to the code.
+
+```bash
+python scoring.py                 # the baseline: your own bike from mijn_fiets.md
+```
+
+The same function scores a listing and your own bike, which is what makes
+"better than mine" a comparison rather than an opinion. Missing information
+scores neutrally and says so, instead of being guessed at.
+
+### `upgrade.py` — which better bike can I buy for that?
+
+The other half of the question `valuation.py` answers: it takes the valuation
+as the budget, the quality score from `scoring.py` as the baseline, and ranks
+the listings in `koopjes.db` on how much bike each one adds per euro
+(PLAN_FIETSWAARDE.md fase 5).
+
+```bash
+python racefiets_jev.py --query "racefiets" --pages 0   # collect candidates first
+python upgrade.py --db koopjes.db
+```
+
+A listing is a candidate when all three hold: it fits the frame size, it
+scores more than the baseline plus a margin, and its effective price is within
+budget. Everything that falls out comes back with a reason (`--show-rejected`).
+
+- **Frame size is a gate, not a score.** A bike outside the target size never
+  appears, whatever it scores. A bike whose size Marktplaats does not report
+  is a separate case — it stays in the list flagged `maat onbekend`, because
+  on Marktplaats the size is often only in the description and dropping all of
+  those costs more candidates than it saves. `--strict-size` drops them too;
+  `--size` and `--size-tolerance` override the target (default: the `size_cm`
+  line in `mijn_fiets.md`, ±2 cm).
+- **The budget depends on the candidate.** The carbon wheelset is a rim-brake
+  set. For a rim-brake candidate it moves over to the new bike, so it is not
+  money to spend but points to score — the candidate is scored with those
+  wheels if they beat its own. For a disc-brake candidate it cannot move and
+  has to be sold, so its proceeds are budget instead. A candidate whose brake
+  type could not be read gets the rim-brake (lower) budget and no wheel bonus:
+  until it is established that the wheelset can be sold, its proceeds are not
+  spendable. `--budget-extra` sets the money on top of the sale (default: the
+  `budget_extra` line in `mijn_fiets.md`).
+- **Effective price.** An asking price times the negotiation factor, or what
+  it costs to get into a bid (see `RUIMTE` above). The asking price stays
+  printed next to it, so a corrected number is never mistaken for one.
+- **Ranked on upgrade per euro** — `(score − baseline) / effective price`,
+  printed as points per €100. No brake type is excluded up front: a genuine
+  bargain on a disc-brake bike is the reason this tool exists, so the ranking
+  does the work instead of a filter.
+
+Every candidate prints its full per-dimension breakdown, and the budget prints
+its own sum. Options: `--margin` (points above baseline before something
+counts as an upgrade, default 5), `--query`, `--window-days`, `--limit`,
+`--config` for the scoring weights, `--show-rejected`.
+
+With `component_price` still empty there are no observations of what a loose
+wheelset sells for, so the two budgets come out equal and the output says so
+rather than guessing a number. It also bids on nothing and contacts no seller:
+that is out of scope, by design.
 
 ### `check_hifi_brand.py` — a research aid for filling in the reference file
 

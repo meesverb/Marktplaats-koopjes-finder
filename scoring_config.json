@@ -1,0 +1,63 @@
+{
+    "weights": {
+        "frame": 0.30,
+        "drivetrain": 0.25,
+        "brakes": 0.15,
+        "wheels": 0.15,
+        "extras": 0.15
+    },
+    "frame": {
+        "material_score": {
+            "staal": 30,
+            "aluminium": 40,
+            "titanium": 70,
+            "carbon": 60,
+            "carbon_high_mod": 90
+        },
+        "material_score_unknown": 45,
+        "tier_multiplier": {
+            "endurance": 0.85,
+            "performance": 1.0,
+            "race": 1.15
+        },
+        "tier_multiplier_unknown": 1.0,
+        "age_decay_per_year": 0.015,
+        "age_decay_max": 0.30
+    },
+    "drivetrain": {
+        "tier_score": {
+            "1": 20,
+            "2": 35,
+            "3": 50,
+            "4": 65,
+            "5": 80,
+            "6": 100
+        },
+        "tier_score_unknown": 30,
+        "electronic_bonus": 15,
+        "speeds_bonus_per_speed_above_10": 3
+    },
+    "brakes": {
+        "score": {
+            "velrem": 40,
+            "schijfrem": 60,
+            "mechanische schijfrem": 60,
+            "hydraulische schijfrem": 100
+        },
+        "score_unknown": 40
+    },
+    "wheels": {
+        "aluminium": 40,
+        "carbon_naamloos": 60,
+        "carbon_merk": 85,
+        "score_unknown": 45
+    },
+    "extras": {
+        "powermeter": 35,
+        "computer": 20,
+        "computer_owned_discount": 0.3,
+        "extra_wheelset": 20,
+        "pedals": 10,
+        "max": 100
+    }
+}
