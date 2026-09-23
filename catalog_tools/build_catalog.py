@@ -114,7 +114,12 @@ def weight(specs, extra=None):
     m = re.search(r"(\d{1,2}[.,]\d{1,2})\s*kg", t or "", re.I)
     if not m and extra:
         m = re.search(r"(\d{1,2}[.,]\d{1,2})", extra)
-    return m.group(1).replace(",", ".") if m else ""
+    if not m:
+        return ""
+    kg = float(m.group(1).replace(",", "."))
+    # bikezona sometimes lists 0.7 kg or 1.02 kg for a complete bike — a frame
+    # weight or a typo. Not a bike's weight, so not copied.
+    return m.group(1).replace(",", ".") if 4 <= kg <= 20 else ""
 
 
 def row(brand, model, year, specs, price, currency, market, basis, src, spec_src="", seen="", category="",
@@ -124,7 +129,7 @@ def row(brand, model, year, specs, price, currency, market, basis, src, spec_src
         "frame_material": material(specs), "groupset": groupset(specs), "electronic": electronic(specs),
         "speeds": speeds(specs),
         # "Disc" in the model name is the manufacturer saying so; it beats a spec list that doesn't mention it
-        "brake_type": "schijfrem" if re.search(r"(?i)\bdisc\b", model) else brake(specs), "weight_kg": weight(specs, weight_text),
+        "brake_type": "schijfrem" if re.search(r"(?i)\bdis[ck]\b", model) else brake(specs), "weight_kg": weight(specs, weight_text),
         "new_price": (f"{price:.2f}" if price else ""), "currency": currency if price else "",
         "market": market if price else "", "price_basis": basis if price else "",
         "specs": spec_text(specs), "source_url": src, "spec_source_url": spec_src if spec_src != src else "",
@@ -340,7 +345,7 @@ def current_rows():
 
 
 # ------------------------------------------------------------------ bikezona
-BZ_SKIP = re.compile(r"(?i)\bFF\b|\bframe|cuadro|kit\b|e-?bike|\bebike|\+|electri|turbo|junior|\bkids?\b")
+BZ_SKIP = re.compile(r"(?i)^transeo|^zaskar|\bFF\b|\bframe|cuadro|kit\b|e-?bike|\bebike|\+|electri|turbo|junior|\bkids?\b")
 
 
 def bikezona_rows(have):
@@ -355,6 +360,10 @@ def bikezona_rows(have):
         brand = v["brand"]
         name = re.sub(r"(?i)^" + re.escape(brand) + r"\s+", "", v["name"]).strip()
         name = re.sub(r"(?i)^cervelo\s+", "", name)
+        # "velo route" / "rennrad" is just "road bike" in the catalogue's source language
+        name = re.sub(r"(?i)^(velo route|velo|rennrad)\s+", "", name)
+        # Merida's catalogue names start with the model year's last two digits ("18 REACTO 400")
+        name = re.sub(r"^%02d\s+" % (v["year"] % 100), "", name)
         if BZ_SKIP.search(name):
             continue
         if (brand.lower(), norm(name), v["year"]) in have:

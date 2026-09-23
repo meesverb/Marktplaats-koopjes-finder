@@ -128,7 +128,7 @@ class CatalogDerivedColumnsTest(unittest.TestCase):
 
     def test_disc_in_the_model_name_means_disc_brakes(self):
         for r in self.rows:
-            if re.search(r"(?i)\bdisc\b", r["model"]):
+            if re.search(r"(?i)\bdis[ck]\b", r["model"]):
                 with self.subTest(model=r["model"], year=r["model_year"]):
                     self.assertEqual(r["brake_type"], "schijfrem")
 
