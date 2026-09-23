@@ -31,6 +31,7 @@ from urllib.parse import quote_plus, urlencode
 import requests
 
 import db
+import sleepers
 
 BASE_URL = "https://www.marktplaats.nl"
 DEFAULT_QUERY = "racefiets"
@@ -83,6 +84,15 @@ class Listing:
     deal_score: Optional[float] = None
     deal_label: str = ""
     deal_reasons: str = ""
+    # Added after the fields above, at the very end, so the CSV output and
+    # bargain log only gain columns (see append_bargain_log). The sleeper
+    # signal (sleepers.py) is its own thing, not part of deal_score.
+    thin_content: bool = False
+    reserved: bool = False
+    # Up to SEARCH_IMAGES photo URLs from the search results, space-separated.
+    image_urls: str = ""
+    sleeper_score: Optional[float] = None
+    sleeper_reasons: str = ""
 
 
 LISTING_FIELDS = [f.name for f in dataclass_fields(Listing)]
@@ -734,6 +744,26 @@ def extract_listing_specs(listings: list[Listing]) -> dict[str, dict[str, str]]:
     }
 
 
+# How many photos a listing keeps from the search results. Marktplaats sends
+# at most three there (the rest are only on the listing page), and for the
+# sleeper cards (sleepers.py) three is enough to see what the bike is.
+SEARCH_IMAGES = 3
+
+
+def search_image_urls(raw: dict) -> str:
+    """The listing's photos as the search results give them, space-separated.
+    largeUrl, because a brand name on a down tube has to be readable; the
+    other sizes are fallbacks should Marktplaats drop that one."""
+    urls = []
+    for picture in raw.get("pictures") or []:
+        if not isinstance(picture, dict):
+            continue
+        url = picture.get("largeUrl") or picture.get("mediumUrl") or picture.get("url")
+        if isinstance(url, str) and url.startswith("https://") and " " not in url:
+            urls.append(url)
+    return " ".join(urls[:SEARCH_IMAGES])
+
+
 def parse_listing(raw: dict) -> Listing:
     price_info = raw.get("priceInfo") or {}
     price_cents = as_number(price_info.get("priceCents"))
@@ -770,6 +800,9 @@ def parse_listing(raw: dict) -> Listing:
         # so bid_minimum/bid_count stay empty until --bid-lookup all fills
         # them in.
         price_is_bid=price_type in ("MIN_BID", "FAST_BID"),
+        thin_content=raw.get("thinContent") is True,
+        reserved=raw.get("reserved") is True,
+        image_urls=search_image_urls(raw),
     )
 
 
@@ -1818,6 +1851,25 @@ def print_bid_overview(
         print(f"  ... en nog {len(ordered) - limit} (zie het HTML-rapport, tab 'Bieden')")
 
 
+def print_sleepers(listings: list[Listing], limit: int = 10) -> None:
+    """The sleepers (sleepers.py), after the bid overview: short, because
+    the point is to go and look at the photos, which the console can't show."""
+    found = sleepers.sleepers(listings)
+    if not found:
+        return
+    print(f"\nSLAPERS — {len(found)} advertentie(s) zonder merk of model; bekijk de foto's")
+    for l in found[:limit]:
+        new = "N" if l.is_new else " "
+        print(
+            f"  {new} {l.sleeper_score:>3.0f} {sleepers.price_text(l)[:22]:<22} "
+            f"{l.city[:16]:<16} {l.title[:40]}"
+        )
+        print(f"        {l.sleeper_reasons}")
+        print(f"        {l.url}")
+    if len(found) > limit:
+        print(f"  ... en nog {len(found) - limit} (zie het HTML-rapport, tab 'Slapers')")
+
+
 def bid_headroom_by_id(
     listings: list[Listing], median: Optional[float]
 ) -> dict[str, Optional[float]]:
@@ -2006,6 +2058,8 @@ def render_html(
             owner_problem="Geen eigen fiets meegegeven aan dit rapport.",
         )
 
+    sleeper_count, sleeper_panel = sleepers.render_panel(listings)
+
     # substitute(), not safe_substitute(): a placeholder in the template that
     # nobody fills in should fail here, not end up as literal text in the page.
     return load_report_template().substitute(
@@ -2028,6 +2082,8 @@ def render_html(
         bid_panel=panels.bids_html,
         upgrade_panel=panels.upgrade_html,
         bike_panel=panels.bike_html,
+        sleeper_count=sleeper_count,
+        sleeper_panel=sleeper_panel,
     )
 
 
@@ -2631,6 +2687,7 @@ def run_for_query(
             print(f"Recorded {recorded} price observation(s) to {args.price_history_file}")
 
     score_listings(listings)
+    sleepers.apply_sleeper_signals(listings)
 
     if not args.no_notify_better:
         notify_better_matches(listings)
@@ -2669,6 +2726,7 @@ def run_for_query(
 
     print_table(listings, stats=all_stats)
     print_bid_overview(listings, headroom=bid_headroom_by_id(listings, all_stats.get("median")))
+    print_sleepers(listings)
 
     if args.output:
         output_path = report_path(args.output, query, multi, report_name)
@@ -2759,6 +2817,20 @@ def run_summary(
         "bidding": sum(1 for l in listings if l.price_is_bid),
         "crawl_complete": crawl_complete,
         "crawl_note": crawl_note,
+        # Only this run's new ones: the overview is read after every round,
+        # and a sleeper is worth something for a few hours at most.
+        "sleepers": [
+            {
+                "title": l.title,
+                "price": sleepers.price_text(l),
+                "score": l.sleeper_score,
+                "reasons": l.sleeper_reasons,
+                "city": l.city,
+                "image": l.image_urls.split()[0] if l.image_urls else "",
+                "url": l.url,
+            }
+            for l in sleepers.sleepers(new)[:SUMMARY_HIGHLIGHTS]
+        ],
         "highlights": [
             {
                 "title": l.title,
