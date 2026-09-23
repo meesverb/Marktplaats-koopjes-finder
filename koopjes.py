@@ -410,6 +410,8 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
 
     overview = write_overview(config)
     log.line(f"Overzicht bijgewerkt: {overview}")
+    unmatched, deals = write_lists(config)
+    log.line(f"Lijsten bijgewerkt: {unmatched} en {deals}")
 
     new_this_round = sum(
         s.get("new", 0)
@@ -619,6 +621,12 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
     else:
         parts.append("<p class='muted'>Niets nieuws bij de laatste runs.</p>")
 
+    parts.append(
+        f"<h2>Lijsten om door te geven</h2><ul><li><a href='{LISTS_DIR}/beste_koopjes.txt'>"
+        "Beste koopjes</a> — met URL en onderbouwing, om te laten controleren</li>"
+        f"<li><a href='{LISTS_DIR}/zonder_referentie.txt'>Racefietsen zonder referentie</a> — "
+        "welke modellen nog uitgezocht moeten worden</li></ul>"
+    )
     parts.append("<h2>Planning</h2><div class='table-wrap'><table><thead><tr>")
     parts.append("<th>Ronde</th><th>Tijden</th><th>Zoekopdrachten</th><th>Diepte</th></tr></thead><tbody>")
     for slot in config.slots.values():
@@ -639,6 +647,185 @@ def write_overview(config: Config) -> Path:
     path = config.base_dir / config.overview
     path.write_text(render_overview(config, summaries, valuations), encoding="utf-8")
     return path
+
+
+# --- Lists to hand on --------------------------------------------------------
+
+LISTS_DIR = "lijsten"
+UNMATCHED_DAYS = 14
+UNMATCHED_EXAMPLES = 5
+
+# Brands to group unmatched listings by, on top of those in
+# reference_bike_catalog.csv: the ones that turn up on Marktplaats a lot and
+# aren't in the catalogue. Only used to group, never as a fact about a bike.
+EXTRA_BRANDS = (
+    "Koga", "Gazelle", "Batavus", "Isaac", "Van Rysel", "Look", "Eddy Merckx",
+    "Argon 18", "Factor", "3T", "Cube", "Giant", "Trek", "Sensa", "Liv",
+    "Cannondale", "Specialized", "Canyon", "Scott", "Ribble", "Vitus", "Boardman",
+    "Principia", "Cervelo", "Cervélo", "Lapierre", "Merckx", "Jan Janssen", "Rih",
+)
+# Words after the brand that say nothing about the model.
+GENERIC_WORDS = {
+    "racefiets", "racefietsen", "fiets", "road", "roadbike", "carbon", "aluminium",
+    "alu", "heren", "dames", "maat", "frame", "koersfiets", "wielrenfiets",
+    "gravel", "gravelbike", "te", "koop", "in", "met", "de", "het", "een", "en",
+}
+
+
+def known_brands(config: Config) -> list[str]:
+    brands = set(EXTRA_BRANDS)
+    catalog = config.base_dir / "reference_bike_catalog.csv"
+    try:
+        import csv
+
+        with open(catalog, encoding="utf-8-sig") as f:
+            brands |= {row["brand"].strip() for row in csv.DictReader(f) if row.get("brand")}
+    except (FileNotFoundError, KeyError):
+        pass
+    # Longest first, so "Eddy Merckx" wins over "Merckx".
+    return sorted(brands, key=len, reverse=True)
+
+
+def model_family(title: str, brands: list[str]) -> str:
+    """"<Brand> <first model word>" from a title, or "(merk onbekend)".
+    A grouping aid for the list, not a match: the reference file is what
+    says which model a listing is."""
+    lower = title.lower()
+    for brand in brands:
+        index = lower.find(brand.lower())
+        if index == -1:
+            continue
+        before = lower[index - 1] if index else " "
+        if before.isalnum():
+            continue
+        rest = title[index + len(brand):].split()
+        for word in rest:
+            clean = word.strip(".,:;!|/()-").lower()
+            if clean and clean not in GENERIC_WORDS and not clean.isdigit():
+                return f"{brand} {word.strip('.,:;!|/()-').capitalize()}"
+        return brand
+    return "(merk onbekend)"
+
+
+def unmatched_listings(config: Config) -> list[dict]:
+    """Complete road bikes seen in the last two weeks that no row in the
+    bike reference file matched — the gaps in reference_bikes.csv."""
+    path = config.base_dir / config.db
+    if not path.exists():
+        return []
+    conn = db.connect(str(path))
+    try:
+        since = datetime.now(timezone.utc).timestamp() - UNMATCHED_DAYS * 86400
+        since_iso = datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="seconds")
+        rows = conn.execute(
+            """
+            SELECT item_id, title, price_eur, price_type, url, last_seen FROM listing
+            WHERE disappeared_at IS NULL AND (last_seen IS NULL OR last_seen >= ?)
+              AND item_id NOT IN (
+                SELECT lm.listing_id FROM listing_model lm
+                JOIN model m ON m.id = lm.model_id WHERE m.kind = 'bike')
+            ORDER BY last_seen DESC
+            """,
+            (since_iso,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        dict(row) for row in rows if mp.category_from_url(row["url"] or "") == mp.ROAD_BIKE_CATEGORY
+    ]
+
+
+def price_text(price, price_type) -> str:
+    if price:
+        return euro(price) + (" (bieden)" if price_type in ("MIN_BID", "FAST_BID") else "")
+    return {"FAST_BID": "bieden", "SEE_DESCRIPTION": "zie omschrijving", "FREE": "gratis"}.get(
+        price_type or "", "?"
+    )
+
+
+def render_unmatched(listings: list[dict], brands: list[str]) -> str:
+    groups: dict[str, list[dict]] = {}
+    for listing in listings:
+        groups.setdefault(model_family(listing["title"] or "", brands), []).append(listing)
+    ordered = sorted(groups.items(), key=lambda pair: (-len(pair[1]), pair[0]))
+    lines = [
+        f"Racefietsen zonder referentie — {now_local()}",
+        "",
+        f"{len(listings)} complete racefietsen uit de laatste {UNMATCHED_DAYS} dagen die door geen enkele "
+        "rij in reference_bikes.csv herkend worden, gegroepeerd op merk + eerste modelwoord",
+        "(dat groeperen is een hulpmiddel, geen herkenning). Meest voorkomend eerst.",
+        "Geef dit bestand aan Claude met de vraag welke modellen onderzocht en toegevoegd moeten worden.",
+        "",
+        "Samenvatting:",
+    ]
+    lines += [f"  {len(items):3d}×  {name}" for name, items in ordered]
+    for name, items in ordered:
+        lines += ["", f"== {name} ({len(items)}) =="]
+        for listing in items[:UNMATCHED_EXAMPLES]:
+            lines.append(f"  {price_text(listing['price_eur'], listing['price_type']):>18}  "
+                         f"{listing['title']}")
+            lines.append(f"  {'':>18}  {listing['url']}")
+        if len(items) > UNMATCHED_EXAMPLES:
+            lines.append(f"  ... en nog {len(items) - UNMATCHED_EXAMPLES}")
+    return "\n".join(lines) + "\n"
+
+
+def render_best_deals(config: Config, summaries: dict[str, dict]) -> str:
+    lines = [
+        f"Beste koopjes — {now_local()}",
+        "",
+        "Per zoekopdracht uit de laatste run. Geef dit bestand (of een paar regels eruit) aan Claude",
+        "met de vraag of het echt koopjes zijn. 'score' is de dealscore (0-100, t.o.v. de mediaan van de",
+        "zoekopdracht, het 2e-hands gemiddelde en de nieuwprijs); 'waarom' is de onderbouwing ervan.",
+        "Lopende biedingen staan hier niet in: hun prijs is het bod tot nu toe (zie het Biedpaneel).",
+    ]
+    for name, search in config.searches.items():
+        for summary in summaries_for_search(name, search["query"], summaries):
+            upgrades = summary.get("upgrades") or []
+            deals = summary.get("deals") or []
+            if not upgrades and not deals:
+                continue
+            lines += ["", f"== {summary['name']} ({summary.get('query', '')}, "
+                          f"{local_time(summary.get('finished_at', ''))}) =="]
+            if upgrades:
+                lines.append("Upgrades voor jouw fiets (binnen budget en maat, op upgrade per euro):")
+                for u in upgrades:
+                    lines.append(f"  {euro(u.get('price_eur')):>10}  kwaliteit {u.get('quality')} "
+                                 f"(+{u.get('gain')})  {u.get('title')}")
+                    lines.append(f"  {'':>10}  {u.get('url')}")
+            if deals:
+                lines.append("Hoogste dealscores:")
+                for d in deals:
+                    extra = " · ".join(x for x in (
+                        f"ref: {d['ref_label']}" if d.get("ref_label") else "",
+                        f"maat {d['frame_height']}" if d.get("frame_height") else "",
+                        d.get("city") or "",
+                    ) if x)
+                    lines.append(f"  {price_text(d.get('price_eur'), d.get('price_type')):>18}  "
+                                 f"score {d.get('deal_score') or 0:.0f}  {d.get('title')}")
+                    if extra:
+                        lines.append(f"  {'':>18}  {extra}")
+                    if d.get("reasons"):
+                        lines.append(f"  {'':>18}  waarom: {d['reasons']}")
+                    lines.append(f"  {'':>18}  {d.get('url')}")
+    if len(lines) == 6:
+        lines += ["", "Nog niets: draai eerst een ronde (python koopjes.py run overdag)."]
+    return "\n".join(lines) + "\n"
+
+
+def write_lists(config: Config) -> tuple[Path, Path]:
+    directory = config.base_dir / LISTS_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    unmatched = directory / "zonder_referentie.txt"
+    unmatched.write_text(
+        render_unmatched(unmatched_listings(config), known_brands(config)), encoding="utf-8"
+    )
+    deals = directory / "beste_koopjes.txt"
+    deals.write_text(
+        render_best_deals(config, load_summaries(config.base_dir / config.summary_file)),
+        encoding="utf-8",
+    )
+    return unmatched, deals
 
 
 # --- Scheduling -------------------------------------------------------------
@@ -724,6 +911,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="show the schedule and when each search last ran")
     sub.add_parser("schedule", help="print Task Scheduler (Windows) and cron commands")
     sub.add_parser("overview", help="rebuild the overview page")
+    sub.add_parser(
+        "lists",
+        help="write lijsten/zonder_referentie.txt and lijsten/beste_koopjes.txt "
+        "(also done after every round)",
+    )
     return parser
 
 
@@ -755,6 +947,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 0
         if args.command == "schedule":
             print_schedule(config)
+            return 0
+        if args.command == "lists":
+            unmatched, deals = write_lists(config)
+            print(f"Geschreven: {unmatched}")
+            print(f"Geschreven: {deals}")
             return 0
         print(f"Overzicht bijgewerkt: {write_overview(config)}")
         return 0

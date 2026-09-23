@@ -27,6 +27,7 @@ time slots they run in; `koopjes.py` runs one slot:
 python koopjes.py status            # check schedule.json, see when each search last ran
 python koopjes.py run overdag       # one round, exactly as the scheduler will start it
 python koopjes.py schedule          # Task Scheduler (Windows) / cron lines, paths filled in
+python koopjes.py lists             # lijsten/beste_koopjes.txt and lijsten/zonder_referentie.txt
 ```
 
 Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
@@ -44,6 +45,14 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
    are new / better than your reference / top deals / cheaper than before, the
    new listings most worth a look, a link to each full report, the latest
    valuation of your own bike, and the schedule.
+
+After every round two plain-text lists are rewritten in `lijsten/`, written
+to be pasted into a conversation: `beste_koopjes.txt` (per search the upgrade
+candidates and the highest deal scores, each with its URL and the reasons
+behind the score; running bids left out, since their price is only the bid so
+far) and `zonder_referentie.txt` (complete road bikes from the last 14 days
+that no row in `reference_bikes.csv` recognises, grouped by brand and first
+model word, most frequent first — the gaps in the reference file).
 
 Everything a round prints goes to `logs/koopjes.log`. Relative paths in
 `schedule.json` are relative to that file, so it doesn't matter which

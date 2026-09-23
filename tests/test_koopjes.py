@@ -325,5 +325,57 @@ class MainTest(TempDirTest):
         self.assertEqual(Path.cwd(), before)
 
 
+class ListsTest(TempDirTest):
+    def test_model_family_groups_on_brand_and_first_model_word(self):
+        brands = koopjes.known_brands(koopjes.load_config(write_config(self.dir)))
+        self.assertEqual(koopjes.model_family("Giant TCR Advanced maat M", brands), "Giant Tcr")
+        self.assertEqual(koopjes.model_family("Mooie racefiets Canyon Ultimate CF", brands),
+                         "Canyon Ultimate")
+        self.assertEqual(koopjes.model_family("Giant racefiets", brands), "Giant")
+        self.assertEqual(koopjes.model_family("Eddy Merckx EMX-3", brands), "Eddy Merckx Emx-3")
+        self.assertEqual(koopjes.model_family("Vintage koersfiets", brands), "(merk onbekend)")
+
+    def test_unmatched_are_road_bikes_without_a_bike_model(self):
+        from datetime import datetime, timezone
+        config = koopjes.load_config(write_config(self.dir))
+        conn = db.connect(str(self.dir / "koopjes.db"))
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        bike = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/"
+        db.sync_listings(conn, "racefiets", [
+            make_listing(item_id="los", title="Canyon Ultimate", url=bike + "m1-canyon"),
+            make_listing(item_id="bekend", title="Giant Defy Composite", url=bike + "m2-defy"),
+            make_listing(item_id="onderdeel", title="Canyon zadelpen",
+                         url="https://www.marktplaats.nl/v/fietsen-en-brommers/fietsonderdelen/m3-x"),
+        ], now)
+        conn.execute("INSERT INTO model (kind, model, pattern) VALUES ('bike', 'Defy', 'Defy')")
+        db.sync_listing_models(conn, {"bekend": ["Defy"]})
+        conn.close()
+        with koopjes.working_directory(self.dir):
+            unmatched, deals = koopjes.write_lists(config)
+        text = unmatched.read_text(encoding="utf-8")
+        self.assertIn("Canyon Ultimate", text)
+        self.assertNotIn("Giant Defy Composite", text)
+        self.assertNotIn("zadelpen", text)
+        self.assertIn("Nog niets", deals.read_text(encoding="utf-8"))
+
+    def test_best_deals_list_urls_and_reasons_but_no_running_bids(self):
+        listings = [
+            make_listing(item_id="vast", title="Canyon Endurace", price_eur=400.0,
+                         url="https://www.marktplaats.nl/v/x/vast"),
+            make_listing(item_id="bod", title="Lopend bod", price_type="FAST_BID",
+                         price_is_bid=True, price_eur=20.0, url="https://www.marktplaats.nl/v/x/bod"),
+        ]
+        for l in listings:
+            l.deal_score, l.deal_reasons = 95.0, "40% van mediaan"
+        summary = mp.run_summary(listings, name="racefietsen", query="racefiets", finished_at="t",
+                                 report_path=None, crawl_complete=True, crawl_note="")
+        self.assertEqual([d["url"] for d in summary["deals"]], ["https://www.marktplaats.nl/v/x/vast"])
+        config = koopjes.load_config(write_config(self.dir))
+        text = koopjes.render_best_deals(config, {"racefietsen": summary})
+        self.assertIn("https://www.marktplaats.nl/v/x/vast", text)
+        self.assertIn("waarom: 40% van mediaan", text)
+        self.assertNotIn("Lopend bod", text)
+
+
 if __name__ == "__main__":
     unittest.main()
