@@ -2207,6 +2207,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "(PLAN_FIETSWAARDE.md fase 6). Missing file = those tabs say so (default: mijn_fiets.md)",
     )
     parser.add_argument(
+        "--summary-file",
+        default=None,
+        help="Append one JSON line per report (counts, report path, the most interesting new "
+        "listings) to this file. koopjes.py uses it for its overview page",
+    )
+    parser.add_argument(
         "--watchlist",
         default=None,
         help="Run saved searches from the database by name (comma-separated, or 'all' for every "
@@ -2650,12 +2656,29 @@ def run_for_query(
         write_csv(listings, output_path)
         print(f"\nWrote {len(listings)} listings to {output_path}")
 
-    if not args.no_html:
-        html_path = report_path(args.html, query, multi, report_name)
+    html_path = None if args.no_html else report_path(args.html, query, multi, report_name)
+    panels = None
+    if html_path is not None:
         panels = build_report_panels(args, listings, all_stats.get("median"))
         write_html(listings, html_path, query, stats=all_stats, panels=panels)
         print(f"Wrote HTML overview to {html_path}")
 
+    if args.summary_file:
+        append_summary(
+            args.summary_file,
+            run_summary(
+                listings,
+                name=report_name or query,
+                query=query,
+                finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                report_path=html_path,
+                crawl_complete=crawl_complete,
+                crawl_note=crawl_note,
+                upgrades=getattr(panels, "upgrades", ()),
+            ),
+        )
+
+    if html_path is not None:
         new_count = sum(1 for l in listings if l.is_new)
         should_open = args.open_browser == "always" or (
             args.open_browser == "auto" and new_count > 0
@@ -2665,6 +2688,87 @@ def run_for_query(
                 webbrowser.open(Path(html_path).resolve().as_uri())
             except webbrowser.Error as exc:
                 print(f"warning: could not open browser: {exc}", file=sys.stderr)
+
+
+# How many new listings a summary line carries for the overview page: enough
+# to show what's worth a look, not a second copy of the report.
+SUMMARY_HIGHLIGHTS = 5
+
+
+def run_summary(
+    listings: list[Listing],
+    *,
+    name: str,
+    query: str,
+    finished_at: str,
+    report_path: Optional[str],
+    crawl_complete: bool,
+    crawl_note: str,
+    upgrades: tuple = (),
+) -> dict:
+    """What koopjes.py's overview page shows for one report: the same counts
+    as the console's summary line, the report's top upgrade candidates, and
+    the new listings most worth a look — better than the reference first,
+    then by deal score.
+
+    A FAST_BID listing's price is the bid so far, so its deal score says how
+    far the bidding has got, not what the thing costs: in a real run those
+    were most of the "score 100" highlights. They only make the list when
+    they beat the reference; the report's Biedpaneel is where they belong."""
+    def is_top(l: Listing) -> bool:
+        return l.deal_score is not None and l.deal_score >= TOP_DEAL_SCORE
+
+    new = [l for l in listings if l.is_new]
+    highlights = sorted(
+        (l for l in new if l.ref_better or l.price_type != "FAST_BID"),
+        key=lambda l: (not l.ref_better, -(l.deal_score if l.deal_score is not None else -1)),
+    )[:SUMMARY_HIGHLIGHTS]
+    return {
+        "name": name,
+        "query": query,
+        "finished_at": finished_at,
+        "report": report_path,
+        "listings": len(listings),
+        "new": len(new),
+        "bargains": sum(1 for l in listings if l.is_bargain),
+        "top_deals": sum(1 for l in listings if is_top(l)),
+        "better": sum(1 for l in listings if l.ref_better),
+        "price_drops": sum(1 for l in listings if l.price_dropped),
+        "bidding": sum(1 for l in listings if l.price_is_bid),
+        "crawl_complete": crawl_complete,
+        "crawl_note": crawl_note,
+        "highlights": [
+            {
+                "title": l.title,
+                "price_eur": l.price_eur,
+                "price_type": l.price_type,
+                "deal_score": l.deal_score,
+                "better": l.ref_better,
+                "ref_label": l.ref_label,
+                "url": l.url,
+            }
+            for l in highlights
+        ],
+        "upgrades": [
+            {
+                "title": c.listing.title,
+                "price_eur": c.effective.amount,
+                "price_basis": c.effective.basis,
+                "quality": round(c.quality.total),
+                "gain": round(c.gain),
+                "per_100_eur": round(c.points_per_100_eur, 1),
+                "new": c.listing.is_new,
+                "url": c.listing.url,
+            }
+            for c in upgrades[:SUMMARY_HIGHLIGHTS]
+        ],
+    }
+
+
+def append_summary(path: str, summary: dict) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(summary, ensure_ascii=False) + "\n")
 
 
 def notify_better_matches(listings: list[Listing]) -> None:

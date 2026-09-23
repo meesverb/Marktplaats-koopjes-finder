@@ -5,5 +5,8 @@ venv/
 *.csv
 !reference_prices.example.csv
 seen_listings.json
-racefiets_report.html
+racefiets_report*.html
+overzicht.html
+logs/
+.koopjes.lock
 koopjes.db

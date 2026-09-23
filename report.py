@@ -418,6 +418,9 @@ class Panels:
     upgrade_count: int
     bids_html: str
     bid_row_count: int
+    # De kandidaten zelf, voor de samenvatting die koopjes.py op zijn
+    # overzichtspagina zet.
+    upgrades: tuple = ()
 
 
 def build_panels(
@@ -451,4 +454,5 @@ def build_panels(
         upgrade_count=len(result.candidates) if result else 0,
         bids_html=render_bid_panel(bid_rows, median_eur),
         bid_row_count=len(bid_rows),
+        upgrades=result.candidates if result else (),
     )

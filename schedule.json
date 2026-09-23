@@ -1,0 +1,75 @@
+{
+  "_uitleg": [
+    "Dit bestand beschrijft alle automatische zoekrondes. Pas het hier aan; koopjes.py zet het bij elke ronde door naar de watchlists in koopjes.db.",
+    "searches: per zoekopdracht een 'query' plus filters. Toegestaan: min_price, max_price, min_frame_height, max_frame_height, strict_frame_height, bargain_ratio, reference_file, category, bids_only, min_score. Een 'note' mag ook, als geheugensteun.",
+    "slots: per ronde welke zoekopdrachten, hoe diep (pages, 0 = alles tot ~5000), sortering (newest of optimized), bid_lookup (fast, all, none), tijden ('HH:MM' of 'zo HH:MM'), of er getaxeerd wordt (valuation) en of het overzicht opent (open_browser: auto, always, never).",
+    "Na een wijziging: 'python koopjes.py status' controleert het bestand, 'python koopjes.py schedule' geeft de inplan-commando's opnieuw."
+  ],
+  "searches": {
+    "racefietsen": {
+      "query": "racefiets",
+      "category": "fietsen-racefietsen",
+      "reference_file": "reference_bikes.csv",
+      "min_frame_height": 54,
+      "max_frame_height": 58,
+      "note": "Alle racefietsen rond maat 56. Fietsen zonder ingevulde maat blijven staan (strict_frame_height: true om ze weg te laten). Zet max_price op je budget + 15-20%."
+    },
+    "giant-defy": {
+      "query": "giant defy",
+      "reference_file": "reference_bikes.csv",
+      "note": "Vergelijkingsmateriaal voor de taxatie van de eigen fiets (trede 1-2). Klein genoeg voor een complete crawl, dus verkochte fietsen worden gemeten."
+    },
+    "ultegra-6700": {
+      "query": "ultegra 6700",
+      "category": "fietsen-racefietsen",
+      "reference_file": "reference_bikes.csv",
+      "note": "Zelfde groepset als de eigen fiets: vergelijkingsmateriaal voor trede 3 van de taxatie."
+    },
+    "powermeter": {
+      "query": "powermeter",
+      "category": "fietsonderdelen",
+      "reference_file": "reference_bike_accessories.csv",
+      "min_price": 100,
+      "max_price": 600
+    },
+    "fietscomputer": {
+      "query": "wahoo elemnt,garmin edge,hammerhead karoo",
+      "category": "fietsaccessoires-fietscomputers",
+      "reference_file": "reference_bike_accessories.csv",
+      "max_price": 350,
+      "note": "Op merk gezocht: 'fietscomputer' levert vooral e-bike-displays en houders op."
+    }
+  },
+  "slots": {
+    "overdag": {
+      "searches": ["racefietsen"],
+      "pages": 8,
+      "sort": "newest",
+      "bid_lookup": "fast",
+      "times": ["08:30", "13:30", "19:30"],
+      "open_browser": "auto"
+    },
+    "nacht": {
+      "searches": ["giant-defy", "ultegra-6700", "powermeter", "fietscomputer"],
+      "pages": 0,
+      "sort": "newest",
+      "bid_lookup": "fast",
+      "times": ["03:00"],
+      "valuation": true
+    },
+    "week": {
+      "searches": ["racefietsen"],
+      "pages": 0,
+      "sort": "newest",
+      "bid_lookup": "none",
+      "times": ["zo 05:00"]
+    }
+  },
+  "files": {
+    "db": "koopjes.db",
+    "report": "racefiets_report.html",
+    "overview": "overzicht.html",
+    "summary": "logs/runs.jsonl",
+    "log": "logs/koopjes.log"
+  }
+}
