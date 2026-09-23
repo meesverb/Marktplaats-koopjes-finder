@@ -341,7 +341,9 @@ description. This is keyword matching on free text, not a structured
 Marktplaats field, so it can miss a groupset that's phrased unusually or
 only visible in a photo, and SRAM/Campagnolo tier names (e.g. "Force",
 "Record") only count when the brand name also appears somewhere in the text,
-to avoid matching on the plain Dutch/English word.
+to avoid matching on the plain Dutch/English word — or, for SRAM, when eTap
+or AXS sits in the same phrase ("Force AXS", "Red eTap"), which is how most
+sellers write it.
 
 The "(elektronisch)" tag needs the marker to belong to the groupset itself:
 Di2 only counts for a Shimano groupset and eTap/AXS only for a SRAM one, and
@@ -618,6 +620,14 @@ python scoring.py                 # the baseline: your own bike from mijn_fiets.
 The same function scores a listing and your own bike, which is what makes
 "better than mine" a comparison rather than an opinion. Missing information
 scores neutrally and says so, instead of being guessed at.
+
+A listing only offers its title and the first ~200 characters of the
+description, so a few shorthand forms are read as well: "Disc" in a model
+name ("Emonda SL5 Disc") counts as a disc brake (but "disc wiel" is a closed
+wheel, not a brake), and a wheel brand named without a material ("Roval
+Rapide CLX", "Newmen wielen") scores `wheels.merk_materiaal_onbekend` — above
+unknown, below branded carbon, since the same brand also makes aluminium
+wheels. A brand name followed by cockpit/stuur/zadel/vork doesn't count.
 
 ### `upgrade.py` — which better bike can I buy for that?
 

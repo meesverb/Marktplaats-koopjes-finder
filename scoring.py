@@ -84,6 +84,35 @@ def detect_wheel_branded(text: str) -> bool:
     return bool(WHEEL_BRAND_RE.search(text))
 
 
+# Merken waarvan een losse vermelding in een advertentie vrijwel altijd de
+# wielen betreft ("Roval Rapide CLX", "Newmen wielen"), ook als er geen
+# "wiel" of "carbon" bij staat. Bewust een deelverzameling van WHEEL_BRAND_RE:
+# Campagnolo en Bontrager staan in advertenties vaker voor de groepset of
+# een stuur, Novatec en CSC zijn naafmerken, "vision" en "lightweight" zijn
+# ook gewone woorden. Die tellen alleen mee als het wieltype al carbon is.
+WHEEL_FIRST_BRAND_RE = re.compile(
+    r"\bzipp\b|\benve\b|\broval\b|\bmavic\b|\bfulcrum\b|\bdt[\s-]?swiss\b|"
+    r"\breynolds\b|\bffwd\b|\bparcours\b|\bnewmen\b|\bhed\b|\bcorima\b|"
+    r"\belitewheels\b|\bsuperteam\b|\byoeleo\b|\bwinspace\b|\blight\s*bicycle\b",
+    re.I,
+)
+# Dezelfde merken maken ook sturen, zadelpennen en vorken: "Roval cockpit" of
+# "Enve stuur" zegt niets over de wielen.
+NON_WHEEL_PART_RE = re.compile(
+    r"[\s-]*(?:\w+[\s-]+)?(?:cockpit|stuur\w*|handlebar\w*|stem|zadel\w*|seatpost|vork|fork)\b",
+    re.I,
+)
+
+
+def detect_wheel_brand_only(text: str) -> bool:
+    """Of `text` een wielmerk noemt dat ook zonder materiaal naar de wielen
+    wijst — voor een advertentie waar extract_specs() geen wieltype vond."""
+    return any(
+        not NON_WHEEL_PART_RE.match(text, found.end())
+        for found in WHEEL_FIRST_BRAND_RE.finditer(text)
+    )
+
+
 # --- Build vanuit een advertentie -------------------------------------------
 
 
@@ -113,7 +142,11 @@ def build_from_listing(
         speeds=int(speeds_raw) if speeds_raw.isdigit() else None,
         brake_type=specs.get("brake_type") or None,
         wheel_material=wheel_material,
-        wheel_branded=detect_wheel_branded(text) if wheel_material == "carbon" else False,
+        wheel_branded=(
+            detect_wheel_branded(text)
+            if wheel_material == "carbon"
+            else wheel_material is None and detect_wheel_brand_only(text)
+        ),
         has_powermeter=specs.get("has_powermeter") == "1",
         has_computer=specs.get("has_computer") == "1",
     )
@@ -284,6 +317,14 @@ def score_wheels(build: Build, config: dict) -> DimensionScore:
         else:
             score = float(cfg["carbon_naamloos"])
             reason = f"naamloos carbon wielen ({score:.0f})"
+    elif build.wheel_branded:
+        # Een merkwielset waarvan de advertentie het materiaal niet noemt:
+        # hoger dan helemaal onbekend, lager dan merk-carbon, want het kan
+        # ook een aluminium set van hetzelfde merk zijn.
+        # .get(): een eigen scoring_config.json van vóór deze sleutel moet
+        # blijven werken.
+        score = float(cfg.get("merk_materiaal_onbekend", cfg["carbon_naamloos"]))
+        reason = f"merkwielen, materiaal niet genoemd ({score:.0f})"
     else:
         score = float(cfg["score_unknown"])
         reason = f"wieltype onbekend, neutrale aanname ({score:.0f})"

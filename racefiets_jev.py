@@ -512,9 +512,19 @@ def detect_groupset(text: str) -> tuple[str, Optional[int]]:
     best_brand = ""
     best_match: Optional[re.Match] = None
     for brand, name, pattern, tier, needs_brand in GROUPSET_CATALOG:
-        if needs_brand and brand.lower() not in text_lower:
-            continue
         match = pattern.search(text)
+        # "Force AXS" and "Red eTap" are how sellers write a SRAM groupset
+        # without ever typing "SRAM"; the electronic marker in the same phrase
+        # pins the brand just as well as the brand name would. A loose "axs"
+        # elsewhere in the text doesn't count, or "force" in a sales pitch
+        # would become a groupset.
+        if (
+            match
+            and needs_brand
+            and brand.lower() not in text_lower
+            and not mentions_electronic(text, brand, match)
+        ):
+            continue
         if match and (best_tier is None or tier > best_tier):
             best_tier = tier
             best_label = f"{brand} {name}"
@@ -609,7 +619,16 @@ BRAKE_TYPE_PATTERNS = [
         "mechanische schijfrem",
         re.compile(r"mechanisch\w*\s+schijfrem\w*|mechanical\s+disc", re.I),
     ),
-    ("schijfrem", re.compile(r"\bschijfrem\w*\b|\bdisc[\s-]?brakes?\b", re.I)),
+    # A bare "Disc" is how the model name says it on a lot of bikes ("Emonda
+    # SL5 Disc", "Defy Advanced Pro 1 Disc"), usually the only brake mention
+    # in the title and the 200-character snippet. Except when it's a disc
+    # wheel — the closed rear wheel of a time-trial bike, not a brake.
+    (
+        "schijfrem",
+        re.compile(
+            r"\bschijfrem\w*\b|\bdisc\b(?![\s-]*(?:wheel\b|wiel\b|achterwiel\b))", re.I
+        ),
+    ),
     ("velrem", re.compile(r"\bvelg?rem\w*\b|\brim[\s-]?brakes?\b", re.I)),
 ]
 

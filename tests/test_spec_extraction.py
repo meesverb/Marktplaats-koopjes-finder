@@ -43,6 +43,23 @@ class ExtractSpecsFixtureTest(unittest.TestCase):
 class ExtractSpecsUnitTest(unittest.TestCase):
     """A few targeted cases the fixture set doesn't spell out on its own."""
 
+    def test_disc_in_the_model_name_is_a_disc_brake(self):
+        # "Emonda SL5 Disc" is often the only brake mention in the title and
+        # the search snippet.
+        for text in ("Trek Emonda SL5 Disc 2022 - Maat 54", "Giant Defy Advanced Pro 1 Disc racefiets",
+                     "Canyon Ultimate CF SL Disc 8.0"):
+            with self.subTest(text=text):
+                self.assertEqual(mp.extract_specs(text).get("brake_type"), "schijfrem")
+
+    def test_a_disc_wheel_is_not_a_brake(self):
+        for text in ("Tijdritfiets met disc wiel", "Cervelo P3 met disc achterwiel", "Zipp disc wheel"):
+            with self.subTest(text=text):
+                self.assertNotIn("brake_type", mp.extract_specs(text))
+
+    def test_hydraulic_wording_still_wins_over_a_bare_disc(self):
+        specs = mp.extract_specs("Cube Attain SL Disc, hydraulische schijfremmen")
+        self.assertEqual(specs.get("brake_type"), "hydraulische schijfrem")
+
     def test_no_specs_returns_empty_dict(self):
         self.assertEqual(mp.extract_specs("Racefiets te koop, nette staat."), {})
 

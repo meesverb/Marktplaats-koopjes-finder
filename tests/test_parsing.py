@@ -204,6 +204,21 @@ class GroupsetDetectionTest(unittest.TestCase):
         label, _ = mp.detect_groupset("SRAM Force eTap AXS 12 speed")
         self.assertEqual(label, "SRAM Force (elektronisch)")
 
+    def test_sram_tier_without_the_brand_name_counts_next_to_axs(self):
+        # Sellers write "Force AXS" / "Red eTap" and never type "SRAM"; that
+        # listing got the unknown-groupset score and lost to a 2012 Ultegra.
+        for text, label in (("Scott Addict 10 2026 Force AXS PM Carbon 54", "SRAM Force (elektronisch)"),
+                            ("Cube met Red eTap", "SRAM Red (elektronisch)"),
+                            ("Rival AXS 2x12", "SRAM Rival (elektronisch)")):
+            with self.subTest(text=text):
+                self.assertEqual(mp.detect_groupset(text)[0], label)
+
+    def test_a_loose_axs_does_not_make_force_a_groupset(self):
+        self.assertEqual(
+            mp.detect_groupset("Veel force in de sprint, stuurtje met AXS-knopjes kan erbij, zie foto's"),
+            ("", None),
+        )
+
     def test_nothing_recognized(self):
         self.assertEqual(mp.detect_groupset("Gewone stadsfiets"), ("", None))
 
