@@ -160,6 +160,31 @@ class RunSlotTest(TempDirTest):
         code, calls, _ = self.run_slot("overdag")
         self.assertEqual(calls, ["racefiets_jev.py"])
 
+    def test_an_unexpected_error_ends_up_in_the_log(self):
+        def broken(*args, **kwargs):
+            raise RuntimeError("database is locked")
+
+        with mock.patch.object(koopjes, "sync_searches", broken):
+            code, calls, _ = self.run_slot("overdag")
+        self.assertEqual(code, 1)
+        self.assertEqual(calls, [])
+        log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
+        self.assertIn("database is locked", log)
+        # And the lock is released for the next round.
+        _, calls, _ = self.run_slot("overdag")
+        self.assertEqual(calls, ["racefiets_jev.py"])
+
+    def test_a_console_that_cannot_show_a_title_does_not_stop_the_round(self):
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+        log = koopjes.Log(self.dir / "logs" / "x.log")
+        with contextlib.redirect_stdout(console):
+            log.line("Gazelle racefiets ✅ ≥ €100")
+        console.flush()
+        log.close()
+        self.assertIn("✅", (self.dir / "logs" / "x.log").read_text(encoding="utf-8"))
+        self.assertIn(b"Gazelle racefiets", raw.getvalue())
+
     def test_unknown_slot(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):

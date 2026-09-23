@@ -401,6 +401,12 @@ has a source, and `original_price_eur` is only filled in where a source
 gives a euro price — a model year or trim whose price couldn't be found is
 left blank rather than converted from dollars or guessed.
 
+`reference_bikes.csv` has one more column, `frame_material` (`carbon`,
+`aluminium`, `staal`, `titanium` or empty), filled in only where the row's own
+sourced specs name the material. The valuation uses it: a listing matched to
+the aluminium "Giant Defy 0-5" row is no comp for a carbon Defy Composite,
+even when its text never says "alu".
+
 ### Your own market price history — `--price-history-file`
 
 Every time a listing matching a reference model is seen for the first time,
@@ -431,7 +437,9 @@ to load, and the default sort order repeats listings across pages. The sweep
 only runs when the number of distinct listings seen matches the total
 Marktplaats reports, and says why it skipped otherwise — use a narrower query
 (e.g. "giant defy"), `--category`, and `--sort newest` for the full crawl
-whose disappearances you want to count. `valuation.py` reads from this
+whose disappearances you want to count. The database remembers every query that
+found a listing (table `listing_query`), so a Defy last seen by the daytime
+"racefiets" run still counts for the nightly "giant defy" sweep. `valuation.py` reads from this
 database (see below); disable writing to it entirely with `--no-db`.
 
 ### Watchlists — `--watchlist`
@@ -500,6 +508,10 @@ Three estimators, mixed into one band:
   year ±3 (medium), same segment — frame material, brake type, gearing,
   year range (low). The highest rung with at least 5 comps wins; below that
   the estimate is marked `indicatief` and says so in its own evidence line.
+  On every rung a comp must be a complete road bike (a listing in the
+  racefietsen category — a frame or crankset from a parts watchlist is not)
+  and must not have a different frame material (from the text, or from the
+  reference model it matched).
 - **E2 — asking price → selling price.** Marktplaats publishes asking
   prices, not selling prices. Once at least 20 listings have disappeared
   within two weeks and 20 others have been sitting online for 60+ days —
@@ -554,9 +566,16 @@ python racefiets_jev.py --query "racefiets" --pages 0   # collect candidates fir
 python upgrade.py --db koopjes.db
 ```
 
-A listing is a candidate when all three hold: it fits the frame size, it
-scores more than the baseline plus a margin, and its effective price is within
-budget. Everything that falls out comes back with a reason (`--show-rejected`).
+A listing is a candidate when all four hold: it is a complete road bike
+(listed in the racefietsen category — parts from a powermeter watchlist are
+not candidates), it fits the frame size, it scores more than the baseline
+plus a margin, and its effective price is within budget.
+
+Without enough comps there is no valuation and so no budget. For that case,
+`mijn_fiets.md` has a `verkoopprijs_handmatig` line in its scoring block: put
+your own expected sale price there and the upgrade finder (and the report's
+Upgrade tab) use it instead, saying so in the budget's origin. Left empty,
+it's not used. Everything that falls out comes back with a reason (`--show-rejected`).
 
 - **Frame size is a gate, not a score.** A bike outside the target size never
   appears, whatever it scores. A bike whose size Marktplaats does not report

@@ -306,10 +306,20 @@ class Log:
         self.echo = echo
 
     def line(self, text: str) -> None:
-        self.handle.write(text.rstrip("\n") + "\n")
+        text = text.rstrip("\n")
+        self.handle.write(text + "\n")
         self.handle.flush()
-        if self.echo:
-            print(text.rstrip("\n"))
+        if not self.echo or sys.stdout is None:
+            return
+        try:
+            print(text)
+        except UnicodeEncodeError:
+            # A Windows console or a scheduler's redirected output is often
+            # cp1252, and listing titles carry emoji ("Nieuw ✅"). The log
+            # file has the real text; the console gets a readable stand-in
+            # rather than a crashed round.
+            encoding = sys.stdout.encoding or "ascii"
+            print(text.encode(encoding, errors="replace").decode(encoding))
 
     def close(self) -> None:
         self.handle.close()
@@ -370,6 +380,12 @@ def run_slot(
         except LockBusy:
             log.line("Overgeslagen: er draait al een ronde. Marktplaats krijgt nooit twee tegelijk.")
             return 0
+        except Exception as exc:  # noqa: BLE001 — a scheduled round has no one watching its console
+            # E.g. koopjes.db locked by a manual run for longer than sqlite
+            # waits. Without this the traceback goes to a console nobody
+            # sees, and the log just stops.
+            log.line(f"FOUT: de ronde stopte onverwacht: {type(exc).__name__}: {exc}")
+            return 1
     finally:
         log.close()
 
