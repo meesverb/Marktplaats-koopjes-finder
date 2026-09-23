@@ -351,6 +351,61 @@ has a source, and `original_price_eur` is only filled in where a source
 gives a euro price — a model year or trim whose price couldn't be found is
 left blank rather than converted from dollars or guessed.
 
+### Bike catalogue — `reference_bike_catalog.csv`
+
+A third bike file, and a different kind: not regex patterns to match titles
+against, but one row per brand / model / model year with the specs and the
+original price. The pattern files can't hold this — every "Defy Advanced 2"
+from 2016 to 2025 would share one pattern, and with first-match-wins only
+the first of those rows would ever be used. Nothing reads the catalogue
+automatically yet; it's reference data for the valuation (what did this
+bike cost new, in which year) and for looking things up by hand.
+
+Columns: `brand`, `model`, `model_year`, `seen_date`, `category`,
+`frame_material`, `groupset`, `electronic`, `speeds`, `brake_type`,
+`weight_kg`, `new_price`, `currency`, `market`, `price_basis`, `specs` (the
+full spec list as the source gives it), `source_url`, `spec_source_url`.
+
+Where it comes from, per brand:
+
+| Brand | Specs and model year | Price |
+| --- | --- | --- |
+| Giant | giant-bicycles.com/nl — archived model pages (Wayback Machine) and Giant's own "Oudere modellen" archive | the NL price on the archived page, the earliest capture of that model year |
+| Trek | trekbikes.com/nl — Trek's bike archive (2011-2026) | NL price from archived overview/product pages; today's price for bikes still on sale |
+| Sensa | sensabikes.com — archived model pages | the price on the page. **No model year**: the pages don't state one, so `model_year` stays empty and `seen_date` holds the capture date |
+| Cube and other brands | bikezona.com catalogue | bikezona's price, `market` = `ES` |
+
+Things to keep in mind when using it:
+
+- **`market` matters.** `NL` is the brand's own Dutch price; `ES` is the
+  Spanish catalogue price from bikezona.com — a real euro list price, but not
+  the Dutch one. An ES row only appears where the brand's own Dutch page gave
+  no price for that model year.
+- **A price is what the source showed, on the date in `price_basis`.** For an
+  archived page that is usually the launch price; a capture late in the
+  season can already show a reduction. For bikes on sale today, Giant's
+  webshop discount is not counted (the "Reguliere prijs" is used), Trek's
+  `wasPrice` likewise.
+- **Derived columns are read from the row's own spec text** and left empty
+  when that text doesn't say — `brake_type` in particular is often empty for
+  older bikes whose spec list names the brake model without saying
+  "rim" or "disc". "Disc" in the model name counts.
+- Framesets, e-bikes, flat-bar fitness bikes and kids' bikes are left out.
+
+Rebuilding it is slow (hours: every request is spaced out, and the Wayback
+Machine is often slow or briefly offline). The tools are in `catalog_tools/`;
+run them from an empty scratch directory, because they write a page cache and
+intermediate JSON to the working directory:
+
+```bash
+mkdir /tmp/catalog && cd /tmp/catalog
+sh /path/to/repo/catalog_tools/run_all.sh
+```
+
+`tests/test_bike_catalog.py` checks every row has a source, every price a
+market and a basis, and that no model year appears that the source didn't
+state.
+
 ### Your own market price history — `--price-history-file`
 
 Every time a listing matching a reference model is seen for the first time,
