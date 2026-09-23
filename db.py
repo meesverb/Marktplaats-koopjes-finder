@@ -175,6 +175,24 @@ MIGRATIONS: list[str] = [
         active INTEGER NOT NULL DEFAULT 1
     );
     """,
+    # 2: which queries found a listing, not just the last one. listing.query
+    # is overwritten by every run that sees the listing, so with a day run on
+    # "racefiets" and a nightly full crawl of "giant defy", a Defy last seen
+    # by the day run was never considered by the nightly sweep — and a sold
+    # Defy was never counted as sold. The sweep and the --query filters of
+    # valuation.py/upgrade.py read this table instead. listing.query stays
+    # (last query that saw it), so nothing that reads it breaks.
+    """
+    CREATE TABLE listing_query (
+        listing_id TEXT NOT NULL REFERENCES listing(item_id),
+        query TEXT NOT NULL,
+        first_seen TEXT,
+        last_seen TEXT,
+        PRIMARY KEY (listing_id, query)
+    );
+    INSERT INTO listing_query (listing_id, query, first_seen, last_seen)
+        SELECT item_id, query, first_seen, last_seen FROM listing WHERE query IS NOT NULL;
+    """,
 ]
 
 
@@ -187,6 +205,11 @@ CSV_READ_ENCODING = "utf-8-sig"
 # which one a row is (fase 7's bike files do); anything else is a typo, and a
 # typo'd kind would quietly start its own UNIQUE(kind, pattern) namespace.
 MODEL_KINDS = ("bike", "frameset", "groupset", "wheelset", "computer", "powermeter", "other")
+
+# Same values racefiets_jev.extract_specs() writes for frame_material, so a
+# reference model's material and one read from a listing's text compare
+# directly.
+FRAME_MATERIALS = ("carbon", "aluminium", "staal", "titanium")
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -320,7 +343,7 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
     {"specs": ..., "better_than_baseline": ...}. export_csv() reverses this.
 
     Three optional columns go straight into `model`: `kind`, `brand` and
-    `source_url`. reference_prices.csv has none of them and imports exactly
+    `source_url`. A fourth, `frame_material`, goes into specs_json. reference_prices.csv has none of them and imports exactly
     as before (kind 'other'); fase 7's reference_bikes.csv and
     reference_bike_accessories.csv carry them, because the plan wants a
     source per researched row and a real kind per model.
@@ -366,9 +389,21 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
         better = (row.get("better_than_baseline") or "").strip().lower() in (
             "1", "true", "yes", "ja",
         )
-        specs_json = json.dumps(
-            {"specs": (row.get("specs") or "").strip(), "better_than_baseline": better}
-        )
+        extra = {"specs": (row.get("specs") or "").strip(), "better_than_baseline": better}
+        # Optional, only in reference_bikes.csv, and only filled where the
+        # row's own sourced specs name the material. The valuation uses it to
+        # keep an aluminium "Giant Defy 1" out of the comps for a carbon Defy
+        # Composite — the listing text rarely says "alu" itself.
+        material = (row.get("frame_material") or "").strip().lower()
+        if material and material not in FRAME_MATERIALS:
+            print(
+                f"warning: {path}: onbekend frame_material {material!r} bij patroon "
+                f"{pattern!r} — genegeerd (geldig: {', '.join(FRAME_MATERIALS)})",
+                file=sys.stderr,
+            )
+        elif material:
+            extra["frame_material"] = material
+        specs_json = json.dumps(extra)
         kind = (row.get("kind") or "").strip().lower() or "other"
         if kind not in MODEL_KINDS:
             print(
@@ -544,6 +579,14 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "last_seen": observed_at,
             },
         )
+        conn.execute(
+            """
+            INSERT INTO listing_query (listing_id, query, first_seen, last_seen)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(listing_id, query) DO UPDATE SET last_seen = excluded.last_seen
+            """,
+            (listing.item_id, query, observed_at, observed_at),
+        )
         if listing.price_eur is not None:
             conn.execute(
                 "INSERT OR IGNORE INTO listing_price (item_id, observed_at, price_eur) "
@@ -623,13 +666,16 @@ def sync_listing_models(
 def sweep_disappeared(
     conn: sqlite3.Connection, query: str, seen_item_ids, observed_at: str
 ) -> int:
-    """Mark every listing for `query` that isn't in `seen_item_ids` and isn't
+    """Mark every listing `query` ever found (listing_query, not the
+    overwritten listing.query) that isn't in `seen_item_ids` and isn't
     already marked as disappeared. Call this only after a full crawl
     (`--pages 0`) of that exact query — a shallow crawl only sees the first
     few pages, and would otherwise mark everything past that depth as gone.
     Returns how many rows were newly marked."""
     rows = conn.execute(
-        "SELECT item_id, first_seen FROM listing WHERE query = ? AND disappeared_at IS NULL",
+        "SELECT l.item_id, l.first_seen FROM listing l "
+        "JOIN listing_query lq ON lq.listing_id = l.item_id "
+        "WHERE lq.query = ? AND l.disappeared_at IS NULL",
         (query,),
     ).fetchall()
 

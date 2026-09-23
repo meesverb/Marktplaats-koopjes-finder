@@ -259,5 +259,44 @@ class CliFlagTest(unittest.TestCase):
         self.assertEqual(mp.parse_args([]).mijn_fiets, "mijn_fiets.md")
 
 
+
+class ManualBudgetTest(unittest.TestCase):
+    """Zonder comps en met verkoopprijs_handmatig: geen taxatie, wel een
+    budget, en de Upgrade-tab werkt."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.db_path = str(Path(self._tmp.name) / "koopjes.db")
+        db.connect(self.db_path).close()
+
+    def intake(self, value):
+        text = Path(repo_file("mijn_fiets.md")).read_text(encoding="utf-8")
+        text = text.replace("verkoopprijs_handmatig =", f"verkoopprijs_handmatig = {value}")
+        path = Path(self._tmp.name) / "mijn_fiets.md"
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def test_without_a_manual_price_the_hint_is_given(self):
+        context, _ = report.load_owner_context(self.intake(""), self.db_path)
+        self.assertIsNone(context.budgets)
+        self.assertIn("verkoopprijs_handmatig", context.valuation_problem)
+
+    def test_with_a_manual_price_the_upgrade_finder_runs(self):
+        context, _ = report.load_owner_context(self.intake("€ 450"), self.db_path)
+        self.assertEqual(context.valuations, {})
+        self.assertEqual(context.budgets.rim.amount, 450 + up.extra_budget_from(context.bike.specs))
+        section = report.render_bike_panel(context, None)
+        self.assertIn("geen vergelijkbare advertenties", section)
+        self.assertIn("zelf opgegeven", section)
+        listing = make_listing(
+            item_id="goed", title="Carbon racefiets Ultegra Di2 11 speed schijfrem",
+            price_eur=300.0, frame_height="56 cm",
+        )
+        listing.groupset, listing.groupset_tier = mp.detect_groupset(listing.title)
+        panels = report.build_panels([listing], 1000.0, owner=context)
+        self.assertEqual(panels.upgrade_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

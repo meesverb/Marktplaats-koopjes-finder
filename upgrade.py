@@ -144,6 +144,7 @@ def budgets_from_valuation(
     *,
     wheelset_value_eur: Optional[float] = None,
     extra_budget_eur: float = DEFAULT_EXTRA_BUDGET_EUR,
+    source: Optional[str] = None,
 ) -> Budgets:
     """De twee budgetten uit §7, uit de taxatie van scenario B.
 
@@ -162,7 +163,7 @@ def budgets_from_valuation(
     in plaats van dat er een bedrag gegokt wordt (dezelfde afspraak als in
     fase 3: liever een lege post dan een verzonnen getal)."""
     common = (
-        f"taxatie scenario B (fiets met originele wielen), midden €{bike_mid_eur:.0f}",
+        source or f"taxatie scenario B (fiets met originele wielen), midden €{bike_mid_eur:.0f}",
         f"eigen geld erbij: €{extra_budget_eur:.0f}",
     )
     rim = Budget(
@@ -486,6 +487,14 @@ def find_upgrades(
     rejected: list[Rejected] = []
 
     for listing in listings:
+        category = mp.category_from_url(listing.url)
+        if category is not None and category != mp.ROAD_BIKE_CATEGORY:
+            # Gevonden in een echte run: met een powermeter-watchlist in
+            # dezelfde database waren de drie beste "upgrades" een crankstel,
+            # een powermeter en een kettingblad. Een URL zonder herkenbare
+            # categorie mag door — onbekend is niet hetzelfde als "geen fiets".
+            rejected.append(Rejected(listing, f"geen complete racefiets (categorie {category})"))
+            continue
         size = size_verdict(listing.frame_height, target_size_cm, size_tolerance_cm)
         if size == SIZE_WRONG:
             rejected.append(Rejected(listing, f"{SIZE_WRONG} ({listing.frame_height})"))
@@ -598,7 +607,9 @@ def fetch_candidate_listings(
         sql.append("AND (last_seen IS NULL OR last_seen >= ?)")
         params.append(since.isoformat(timespec="seconds"))
     if query:
-        sql.append("AND query = ?")
+        # Via listing_query: listing.query is alleen de laatste zoekopdracht
+        # die de advertentie zag.
+        sql.append("AND item_id IN (SELECT listing_id FROM listing_query WHERE query = ?)")
         params.append(query)
 
     listings = []
@@ -693,6 +704,31 @@ def target_size_from(specs: dict[str, str]) -> Optional[float]:
     maken zou precies de verkeerde fietsen doorlaten."""
     match = SIZE_CM_RE.match(specs.get("size_cm", ""))
     return float(match.group(1).replace(",", ".")) if match else None
+
+
+MANUAL_SALE_PRICE_KEY = "verkoopprijs_handmatig"
+
+
+def manual_sale_price_from(specs: dict[str, str]) -> Optional[float]:
+    """De verkoopprijs die de eigenaar zelf in het scoringsblok van
+    mijn_fiets.md zet, als terugval voor het budget. Een Defy Composite uit
+    2012 heeft op een willekeurige dag nul of één vergelijkbare advertentie
+    online; zonder terugval staat de upgrade-finder dan stil. Het is een
+    getal van de eigenaar, geen taxatie — het wordt nooit opgeslagen of als
+    taxatie getoond, alleen als herkomst van het budget."""
+    raw = specs.get(MANUAL_SALE_PRICE_KEY, "")
+    found = val.EURO_RE.search(raw) or re.match(r"\s*(\d+(?:[.,]\d+)?)", raw)
+    if not found:
+        return None
+    amount = float(found.group(1).replace(",", "."))
+    return amount if amount > 0 else None
+
+
+def manual_budget_source(amount: float) -> str:
+    return (
+        f"verkoopprijs €{amount:.0f}, zelf opgegeven in mijn_fiets.md ({MANUAL_SALE_PRICE_KEY}) "
+        "— te weinig vergelijkbare advertenties voor een taxatie"
+    )
 
 
 def extra_budget_from(specs: dict[str, str]) -> float:
@@ -813,19 +849,22 @@ def main(argv: Optional[list[str]] = None) -> int:
             scenario=val.SCENARIOS["b"],
             negotiation=val.empirical_negotiation_factor(comps),
         )
-        if scenario_b is None:
+        manual = manual_sale_price_from(bike.specs)
+        if scenario_b is None and manual is None:
             print(
                 f"fout: geen vergelijkbare advertenties in {args.db}, dus geen taxatie en dus "
-                "geen budget. Crawl eerst met --query op dit model.",
+                "geen budget. Crawl eerst met --query op dit model, of zet "
+                f"{MANUAL_SALE_PRICE_KEY} in het scoringsblok van {args.mijn_fiets}.",
                 file=sys.stderr,
             )
             return 2
 
         wheelset = val.Component(label=bike.wheelset_label or "carbon wielset")
         budgets = budgets_from_valuation(
-            scenario_b.mid_eur,
+            scenario_b.mid_eur if scenario_b is not None else manual,
             wheelset_value_eur=wheelset.market_value,
             extra_budget_eur=extra_budget,
+            source=None if scenario_b is not None else manual_budget_source(manual),
         )
 
         listings = fetch_candidate_listings(

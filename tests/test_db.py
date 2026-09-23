@@ -60,11 +60,14 @@ class SchemaTest(TempDirTest):
         self.assertTrue(expected.issubset(tables))
 
     def test_reconnecting_does_not_duplicate_schema_version_rows(self):
+        # One row per migration, however many there are — and reconnecting
+        # adds none. (This used to say == 1, which was the number of
+        # migrations at the time, not the property under test.)
         path = self.path("koopjes.db")
         db.connect(path).close()
         conn = db.connect(path)
         rows = conn.execute("SELECT COUNT(*) AS n FROM schema_version").fetchone()
-        self.assertEqual(rows["n"], 1)
+        self.assertEqual(rows["n"], len(db.MIGRATIONS))
 
     def test_a_database_from_a_newer_version_is_refused(self):
         # The migration slice is empty in that case, so the old code would
@@ -609,6 +612,73 @@ class SyncListingModelsTest(TempDirTest):
         db.sync_listing_models(self.conn, {"a": ["Mission 731"]})
         n = self.conn.execute("SELECT COUNT(*) AS n FROM listing_model").fetchone()["n"]
         self.assertEqual(n, 1)
+
+
+
+class FrameMaterialImportTest(unittest.TestCase):
+    def test_frame_material_goes_into_specs_json_and_bad_values_are_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ref = Path(tmp) / "ref.csv"
+            ref.write_text(
+                "pattern,label,original_price_eur,specs,score,better_than_baseline,kind,brand,source_url,frame_material\n"
+                "Alu,Alu,,,,0,bike,X,https://x,aluminium\n"
+                "Hout,Hout,,,,0,bike,X,https://x,bamboe\n"
+                "Leeg,Leeg,,,,0,bike,X,https://x,\n",
+                encoding="utf-8",
+            )
+            conn = db.connect(str(Path(tmp) / "k.db"))
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                db.import_legacy(conn, seen_listings_path=str(Path(tmp) / "g.json"),
+                                 reference_prices_path=str(ref),
+                                 reference_price_history_path=str(Path(tmp) / "g.csv"))
+            got = {r["pattern"]: json.loads(r["specs_json"]).get("frame_material")
+                   for r in conn.execute("SELECT pattern, specs_json FROM model")}
+            conn.close()
+        self.assertEqual(got, {"Alu": "aluminium", "Hout": None, "Leeg": None})
+        self.assertIn("bamboe", err.getvalue())
+
+    def test_the_real_bike_file_only_names_materials_its_specs_name(self):
+        import csv
+        with open(repo_file("reference_bikes.csv"), encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                material = row["frame_material"]
+                if material:
+                    self.assertIn(material[:4].lower(), row["specs"].lower() + row["label"].lower(),
+                                  row["label"])
+
+
+
+class ListingQueryTest(TempDirTest):
+    """Migration 2: which queries found a listing, not only the last one."""
+
+    def test_an_existing_database_is_backfilled_from_listing_query(self):
+        path = self.path("koopjes.db")
+        with unittest.mock.patch.object(db, "MIGRATIONS", db.MIGRATIONS[:1]):
+            conn = db.connect(path)
+            conn.execute(
+                "INSERT INTO listing (item_id, title, query, first_seen, last_seen) "
+                "VALUES ('a', 'Giant Defy', 'giant defy', '2026-09-01', '2026-09-20')"
+            )
+            conn.commit()
+            conn.close()
+        conn = db.connect(path)
+        rows = [tuple(r) for r in conn.execute("SELECT * FROM listing_query")]
+        conn.close()
+        self.assertEqual(rows, [("a", "giant defy", "2026-09-01", "2026-09-20")])
+
+    def test_every_query_that_saw_a_listing_is_kept(self):
+        from helpers import make_listing
+        conn = db.connect(self.path("koopjes.db"))
+        db.sync_listings(conn, "giant defy", [make_listing(item_id="a")], "2026-09-21T03:00:00+00:00")
+        db.sync_listings(conn, "racefiets", [make_listing(item_id="a")], "2026-09-21T13:30:00+00:00")
+        rows = {r["query"]: r["last_seen"] for r in conn.execute(
+            "SELECT query, last_seen FROM listing_query WHERE listing_id = 'a'")}
+        self.assertEqual(rows, {"giant defy": "2026-09-21T03:00:00+00:00",
+                                "racefiets": "2026-09-21T13:30:00+00:00"})
+        # listing.query still says who saw it last, as before.
+        self.assertEqual(conn.execute("SELECT query FROM listing").fetchone()["query"], "racefiets")
+        conn.close()
 
 
 if __name__ == "__main__":

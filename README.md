@@ -17,6 +17,55 @@ category to begin with. E.g. `luidsprekers` (speakers) works well; `boxen`
 doesn't — on Marktplaats that word matches baby playpens far more often
 than speakers.
 
+## Automatic rounds — `koopjes.py` and `schedule.json`
+
+The easiest way to run all of this is not to type commands at all.
+`schedule.json` describes every search (a query plus its filters) and the
+time slots they run in; `koopjes.py` runs one slot:
+
+```bash
+python koopjes.py status            # check schedule.json, see when each search last ran
+python koopjes.py run overdag       # one round, exactly as the scheduler will start it
+python koopjes.py schedule          # Task Scheduler (Windows) / cron lines, paths filled in
+```
+
+Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
+(macOS/Linux) once, and the rounds run by themselves. What a round does:
+
+1. takes a lock — a round that starts while another is still running is
+   skipped, so Marktplaats never gets two crawls at once;
+2. writes the searches into the watchlist table (see "Watchlists" below), so
+   `schedule.json` stays the one place to change them;
+3. runs `racefiets_jev.py` once for all the slot's searches, with the slot's
+   `pages`, `sort` and `bid_lookup`;
+4. with `"valuation": true`, runs `valuation.py`, so the valuation history
+   builds up by itself;
+5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
+   are new / better than your reference / top deals / cheaper than before, the
+   new listings most worth a look, a link to each full report, the latest
+   valuation of your own bike, and the schedule.
+
+Everything a round prints goes to `logs/koopjes.log`. Relative paths in
+`schedule.json` are relative to that file, so it doesn't matter which
+directory the scheduler starts the round in.
+
+The shipped `schedule.json` follows a measurement of Marktplaats itself
+(September 2026, category racefietsen): 400-500 new listings a day, spread
+fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
+
+| Slot | When | What |
+| --- | --- | --- |
+| `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room |
+| `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, then `valuation.py` |
+| `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
+
+Change the searches' filters (a `max_price` for your budget, say) and the
+times in `schedule.json`; `python koopjes.py status` tells you straight away
+if something in it is wrong. Searches accept the same filters as a watchlist;
+slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
+`times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation` and
+`open_browser`.
+
 ## Usage
 
 ```bash
@@ -91,6 +140,7 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--min-score` | Only report listings with at least this dealscore (0-100) | none |
 | `--db` | Path to the SQLite database that mirrors the CSV/JSON files (see below) | `koopjes.db` |
 | `--no-db` | Skip writing to the SQLite database | off |
+| `--summary-file` | Append one JSON line per report (counts, report path, most interesting new listings) — what `koopjes.py`'s overview page reads | none |
 | `--mijn-fiets` | Intake of your own bike, for the report's `Mijn fiets` and `Upgrade` tabs (see below) | `mijn_fiets.md` |
 | `--watchlist` | Run saved searches by name (comma-separated, or `all` for every active one), each with its own filters and report (see below) | none |
 | `--watchlist-add NAME` | Save `--query` plus the filter flags on this command line as watchlist `NAME` (replaces an existing one); doesn't crawl | none |
@@ -351,6 +401,12 @@ has a source, and `original_price_eur` is only filled in where a source
 gives a euro price — a model year or trim whose price couldn't be found is
 left blank rather than converted from dollars or guessed.
 
+`reference_bikes.csv` has one more column, `frame_material` (`carbon`,
+`aluminium`, `staal`, `titanium` or empty), filled in only where the row's own
+sourced specs name the material. The valuation uses it: a listing matched to
+the aluminium "Giant Defy 0-5" row is no comp for a carbon Defy Composite,
+even when its text never says "alu".
+
 ### Bike catalogue — `reference_bike_catalog.csv`
 
 A third bike file, and a different kind: not regex patterns to match titles
@@ -437,7 +493,9 @@ to load, and the default sort order repeats listings across pages. The sweep
 only runs when the number of distinct listings seen matches the total
 Marktplaats reports, and says why it skipped otherwise — use a narrower query
 (e.g. "giant defy"), `--category`, and `--sort newest` for the full crawl
-whose disappearances you want to count. `valuation.py` reads from this
+whose disappearances you want to count. The database remembers every query that
+found a listing (table `listing_query`), so a Defy last seen by the daytime
+"racefiets" run still counts for the nightly "giant defy" sweep. `valuation.py` reads from this
 database (see below); disable writing to it entirely with `--no-db`.
 
 ### Watchlists — `--watchlist`
@@ -506,6 +564,10 @@ Three estimators, mixed into one band:
   year ±3 (medium), same segment — frame material, brake type, gearing,
   year range (low). The highest rung with at least 5 comps wins; below that
   the estimate is marked `indicatief` and says so in its own evidence line.
+  On every rung a comp must be a complete road bike (a listing in the
+  racefietsen category — a frame or crankset from a parts watchlist is not)
+  and must not have a different frame material (from the text, or from the
+  reference model it matched).
 - **E2 — asking price → selling price.** Marktplaats publishes asking
   prices, not selling prices. Once at least 20 listings have disappeared
   within two weeks and 20 others have been sitting online for 60+ days —
@@ -560,9 +622,16 @@ python racefiets_jev.py --query "racefiets" --pages 0   # collect candidates fir
 python upgrade.py --db koopjes.db
 ```
 
-A listing is a candidate when all three hold: it fits the frame size, it
-scores more than the baseline plus a margin, and its effective price is within
-budget. Everything that falls out comes back with a reason (`--show-rejected`).
+A listing is a candidate when all four hold: it is a complete road bike
+(listed in the racefietsen category — parts from a powermeter watchlist are
+not candidates), it fits the frame size, it scores more than the baseline
+plus a margin, and its effective price is within budget.
+
+Without enough comps there is no valuation and so no budget. For that case,
+`mijn_fiets.md` has a `verkoopprijs_handmatig` line in its scoring block: put
+your own expected sale price there and the upgrade finder (and the report's
+Upgrade tab) use it instead, saying so in the budget's origin. Left empty,
+it's not used. Everything that falls out comes back with a reason (`--show-rejected`).
 
 - **Frame size is a gate, not a score.** A bike outside the target size never
   appears, whatever it scores. A bike whose size Marktplaats does not report
