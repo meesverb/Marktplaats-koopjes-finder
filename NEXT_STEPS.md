@@ -33,6 +33,10 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
   (fietscomputers, powermeters), elk met een `source_url` per rij. Gebruik
   ze met `--reference-file`; zie README → "Bikes have their own reference
   files".
+- `reference_bike_catalog.csv` is iets anders: een catalogus met één rij per
+  merk/model/modeljaar (Giant, Trek, Cube, Sensa en via bikezona.com ook
+  andere merken), met specs, nieuwprijs en bron. Nog nergens aangesloten —
+  zie README → "Bike catalogue". Opgebouwd met `catalog_tools/`.
 - Hulpscripts: `check_hifi_brand.py` (merken-index opzoeken),
   `check_reference_overlaps.py` (patroon-conflicten checken),
   `reference_overview.py` (doorbladerbaar overzicht van de database).
