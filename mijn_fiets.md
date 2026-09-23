@@ -131,7 +131,7 @@ extras           = geen (de Roam gaat niet mee)
 drivetrain_wear  = cassette + ketting ca. 1500 km oud
 total_km         = < 10.000
 budget_extra     = max €250 boven op de opbrengst
-verkoopprijs_handmatig =
+verkoopprijs_handmatig = €450
 ```
 
 `verkoopprijs_handmatig` is een terugval, geen taxatie. Staat er een bedrag,

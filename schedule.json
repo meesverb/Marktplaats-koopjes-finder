@@ -12,6 +12,7 @@
       "reference_file": "reference_bikes.csv",
       "min_frame_height": 54,
       "max_frame_height": 58,
+      "max_price": 900,
       "note": "Alle racefietsen rond maat 56. Fietsen zonder ingevulde maat blijven staan (strict_frame_height: true om ze weg te laten). Zet max_price op je budget + 15-20%."
     },
     "giant-defy": {
