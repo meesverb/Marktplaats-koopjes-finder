@@ -43,7 +43,8 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
    builds up by itself;
 5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
    are new / better than your reference / top deals / cheaper than before, the
-   new listings most worth a look, a link to each full report, the latest
+   new listings most worth a look, this run's new **slapers** with their first
+   photo (see "Slapers" below), a link to each full report, the latest
    valuation of your own bike, and the schedule.
 
 After every round two plain-text lists are rewritten in `lijsten/`, written
@@ -64,7 +65,7 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 
 | Slot | When | What |
 | --- | --- | --- |
-| `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room |
+| `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
 | `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, then `valuation.py` |
 | `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
 
@@ -253,6 +254,50 @@ not a verdict. Anything at or above 1.7x the median scores 0, so it doesn't
 rank "expensive" against "absurd". And a bidding listing's price is wherever
 the bidding stands now, not what it will sell for, so its score is an upper
 bound — the score breakdown says so on those listings.
+
+### Slapers — listings whose text says nothing about the bike
+
+The dealscore needs a price and, to be any good, a recognised model. Some of
+the best buys have neither. The case this was built on: a Cannondale CAAD10
+(23-09-2026) titled "Heren racefiets", described as "Moet weg wegens
+verhuizing!", brand field "Overige merken", bieden zonder minimum — gone for a
+€45 bid two hours after it went up. Nothing in the text said Cannondale; the
+photos did. Nobody searching on a brand finds such a listing, and a seller who
+writes five words isn't holding out for the best price.
+
+`sleepers.py` looks for exactly that, using only what the search results
+already contain (no extra requests to Marktplaats):
+
+| Signal | Points |
+| --- | --- |
+| title made up of generic words only — type, sex, size, material, colour, condition ("Heren racefiets", "Racefiets 56cm") | 35, **required** |
+| description of 15 words or fewer, or Marktplaats' own `thinContent` flag | 20 |
+| a phrase that says it has to go: "moet weg", verhuizing, opruimen, zsm, weg=weg, plaatsgebrek, nalatenschap, … | 20 |
+| a bid listing nobody has bid on yet, or an asking price at or below 60% of the search's median | 15 |
+| first seen this run | 10 |
+
+At 70 points a listing is a **slaper**. Ruled out altogether: a title with any
+word outside the generic list (a brand, a groupset, a model name), a
+description that names a brand (the brands in `reference_bike_catalog.csv`
+plus a short list in `sleepers.py`), and a listing Marktplaats marks as
+reserved. A running FAST_BID counts for no price points: its price is the
+bidding so far. On a crawl of 240 racefietsen (8 pages, newest first,
+23-09-2026) 13 titles passed the generic-words test, 8 of those named a
+brand in the description, and one listing ended up a slaper.
+
+The report has a **Slapers** tab with a card per listing — its photos (up to
+three, as big as the search results give them), price, place, the reasons
+and the description — the console prints a `SLAPERS` block after the bid
+overview, and `overzicht.html` lists this run's new ones. This is not a
+valuation and not a dealscore: it only says "look at the photos". Speed is
+what counts with these, and bidding stays something you do yourself.
+
+The report CSV (`--output`) gains five columns at the end: `thin_content`,
+`reserved`, `image_urls`, `sleeper_score`, `sleeper_reasons`. Existing
+columns keep their place.
+
+The generic-words list is written for road bikes; on other queries (hifi, for
+instance) hardly any title passes it, so there will simply be no slapers.
 
 ### Bidding listings (FAST_BID / MIN_BID)
 
@@ -683,10 +728,11 @@ wheelset sells for, so the two budgets come out equal and the output says so
 rather than guessing a number. It also bids on nothing and contacts no seller:
 that is out of scope, by design.
 
-### Report tabs — Biedpaneel, Upgrade, Mijn fiets
+### Report tabs — Slapers, Biedpaneel, Upgrade, Mijn fiets
 
 Next to the listings table (which keeps its row filters and sortable columns
-as before) the HTML report has three more tabs (PLAN_FIETSWAARDE.md fase 6).
+as before) the HTML report has four more tabs: **Slapers** (see "Slapers"
+above) and the three below (PLAN_FIETSWAARDE.md fase 6).
 The chosen tab is kept in the URL (`#upgrade`), so reloading the report after
 a new run lands on the same one.
 

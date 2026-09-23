@@ -71,6 +71,9 @@
   td.num { white-space: nowrap; }
   .dim { display: inline-block; font-size: 0.75rem; background: var(--bg); border: 1px solid var(--border);
          border-radius: 4px; padding: 1px 6px; margin: 1px; cursor: help; white-space: nowrap; }
+  .card.sleeper { flex: 0 1 360px; }
+  .sleeper-photos { display: flex; gap: 4px; overflow-x: auto; margin-bottom: 8px; }
+  .sleeper-photo { height: 150px; border-radius: 4px; display: block; }
   details { margin-top: 16px; }
   details ul { font-size: 0.85rem; }
 </style>
@@ -80,6 +83,7 @@
 <div class="meta">Bijgewerkt ${generated} · ${total} advertenties · ${new_count} nieuw sinds vorige run · ${bargain_count} koopjes · ${bid_count} bieden (${open_bid_count} zonder bod)${price_stats_str}</div>
 <nav class="tabs">
   <button data-panel="listings" class="active">Advertenties (${total})</button>
+  <button data-panel="sleepers">Slapers (${sleeper_count})</button>
   <button data-panel="bidpanel">Biedpaneel (${bidpanel_count})</button>
   <button data-panel="upgrade">Upgrade (${upgrade_count})</button>
   <button data-panel="mybike">Mijn fiets</button>
@@ -120,6 +124,9 @@ ${rows}
 </tbody>
 </table>
 </div>
+</section>
+<section class="panel" id="panel-sleepers" hidden>
+${sleeper_panel}
 </section>
 <section class="panel" id="panel-bidpanel" hidden>
 ${bid_panel}
