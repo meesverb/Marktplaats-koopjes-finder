@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 520 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 549 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -87,6 +87,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | --- | --- |
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
 | `koopjes.py` + `schedule.json` | automatische rondes: `schedule.json` beschrijft zoekopdrachten en tijdsloten, `koopjes.py run <slot>` draait er één (lock, log, `overzicht.html`), `koopjes.py schedule` geeft de inplan-commando's |
+| `sleepers.py` | slapers: advertenties waarvan titel en tekst niets over de fiets zeggen (geen merk, weinig tekst, haast, bieden zonder bod). Alleen uit de zoekresultaten; eigen tab in het rapport, los van dealscore en waardescore |
 | `report.py` | rapportpanelen (fase 6): Biedpaneel, Upgrade, Mijn fiets, plus de waardescore-kolom; alleen lezen uit `koopjes.db` |
 | `report_template.html` | HTML-sjabloon van het rapport (`string.Template`), wordt runtime ingelezen |
 | `db.py` | SQLite-schema, migraties, import van de oude bestanden, CSV-export; sinds fase 1b aangesloten op het script (`--db`/`--no-db`) |

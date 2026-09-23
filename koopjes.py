@@ -590,6 +590,37 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
             "vul dan verkoopprijs_handmatig in mijn_fiets.md in.</p>"
         )
 
+    sleeper_items = [
+        (s["name"], item)
+        for name, search in config.searches.items()
+        for s in summaries_for_search(name, search["query"], summaries)
+        for item in s.get("sleepers") or []
+    ]
+    parts.append("<h2>Slapers — kijk naar de foto's</h2>")
+    if sleeper_items:
+        parts.append(
+            "<p class='muted'>Nieuwe advertenties waar de titel geen merk of model noemt, met "
+            "weinig tekst, haast of een bod zonder minimum. Zo'n verkoper weet vaak niet wat "
+            "hij heeft, en wie op merk zoekt vindt hem niet. De tekst zegt niets over de "
+            "fiets; de foto wel. Snel zijn telt: zulke advertenties zijn vaak binnen een paar "
+            "uur weg.</p><ul class='hl'>"
+        )
+        for name, item in sleeper_items:
+            image = (
+                f"<img src='{esc(item['image'])}' alt='' loading='lazy' "
+                "style='height:90px;vertical-align:middle;margin-right:8px;border-radius:4px'>"
+                if item.get("image") else ""
+            )
+            parts.append(
+                f"<li><a href='{esc(item.get('url') or '#')}'>{image}{esc(item.get('title') or '')}</a>"
+                f" — {esc(item.get('price') or '?')} · {esc(item.get('city') or '?')}"
+                f"<span class='badge good'>slaper {item.get('score') or 0:.0f}</span>"
+                f" <span class='muted'>{esc(item.get('reasons') or '')} · {esc(name)}</span></li>"
+            )
+        parts.append("</ul>")
+    else:
+        parts.append("<p class='muted'>Geen nieuwe slapers bij de laatste runs.</p>")
+
     parts.append("<h2>Nieuw en het bekijken waard</h2>")
     if highlights:
         parts.append(
