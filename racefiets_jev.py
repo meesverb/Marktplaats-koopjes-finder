@@ -2693,6 +2693,9 @@ def run_for_query(
 # How many new listings a summary line carries for the overview page: enough
 # to show what's worth a look, not a second copy of the report.
 SUMMARY_HIGHLIGHTS = 5
+# The deal list koopjes.py writes to lijsten/beste_koopjes.txt: long enough
+# to paste into a conversation and have each one checked, not the whole run.
+SUMMARY_DEALS = 20
 
 
 def run_summary(
@@ -2748,6 +2751,26 @@ def run_summary(
                 "url": l.url,
             }
             for l in highlights
+        ],
+        "deals": [
+            {
+                "title": l.title,
+                "price_eur": l.price_eur,
+                "price_type": l.price_type,
+                "deal_score": l.deal_score,
+                "reasons": l.deal_reasons,
+                "ref_label": l.ref_label,
+                "frame_height": l.frame_height,
+                "city": l.city,
+                "url": l.url,
+            }
+            # Same rule as the highlights: a running FAST_BID's "price" is the
+            # bid so far, so its score says nothing about the deal yet.
+            for l in sorted(
+                (l for l in listings
+                 if is_top(l) and (l.ref_better or l.price_type != "FAST_BID")),
+                key=lambda l: -l.deal_score,
+            )[:SUMMARY_DEALS]
         ],
         "upgrades": [
             {
