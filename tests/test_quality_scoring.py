@@ -22,6 +22,39 @@ class WheelBrandDetectionTest(unittest.TestCase):
     def test_unbranded_text_is_not_flagged(self):
         self.assertFalse(sc.detect_wheel_branded("naamloze carbon wielset van AliExpress"))
 
+    def test_wheel_first_brand_without_material(self):
+        self.assertTrue(sc.detect_wheel_brand_only("S-Works Tarmac SL7 | Ultegra Di2 | Roval Rapide CLX"))
+        self.assertTrue(sc.detect_wheel_brand_only("Cube met Newmen wielen"))
+
+    def test_brand_on_another_part_is_not_a_wheel(self):
+        # Roval en Enve maken ook sturen; Campagnolo staat meestal voor de groepset.
+        for text in ("aangepast naar roval cockpit 100x42", "Enve stuur en Enve vork",
+                     "Campagnolo Record 11 speed", "Bontrager zadel"):
+            with self.subTest(text=text):
+                self.assertFalse(sc.detect_wheel_brand_only(text))
+
+    def test_branded_wheels_without_material_score_between_unknown_and_branded_carbon(self):
+        config = load_config()
+        build = sc.build_from_listing(specs={}, text="Tarmac SL7 met Roval Rapide CLX")
+        self.assertTrue(build.wheel_branded)
+        branded = sc.score_wheels(build, config).score
+        unknown = sc.score_wheels(sc.Build(), config).score
+        branded_carbon = sc.score_wheels(
+            sc.Build(wheel_material="carbon", wheel_branded=True), config
+        ).score
+        self.assertLess(unknown, branded)
+        self.assertLess(branded, branded_carbon)
+
+    def test_aluminium_wheels_stay_aluminium_whatever_the_brand(self):
+        build = sc.build_from_listing(specs={"wheel_type": "aluminium"}, text="Mavic Aksium aluminium wielen")
+        self.assertFalse(build.wheel_branded)
+
+    def test_older_config_without_the_new_key_still_scores(self):
+        config = load_config()
+        del config["wheels"]["merk_materiaal_onbekend"]
+        score = sc.score_wheels(sc.Build(wheel_branded=True), config).score
+        self.assertEqual(score, config["wheels"]["carbon_naamloos"])
+
 
 class BuildFromListingTest(unittest.TestCase):
     def test_reads_specs_and_groupset(self):

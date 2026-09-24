@@ -50,6 +50,7 @@
         "aluminium": 40,
         "carbon_naamloos": 60,
         "carbon_merk": 85,
+        "merk_materiaal_onbekend": 60,
         "score_unknown": 45
     },
     "extras": {
