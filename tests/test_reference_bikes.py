@@ -75,6 +75,62 @@ class BikeTitleMatchingTest(unittest.TestCase):
             with self.subTest(title=title):
                 self.assertEqual(first_label(reference, title), expected)
 
+    # Titles from lijsten/zonder_referentie.txt (September 2026): the families
+    # that most often went unrecognised. Mostly about the split rows, where a
+    # material rides along and the order decides which one wins.
+    FAMILY_CASES = [
+        ("Racefiets Giant TCR Advanced SL maat M/L carbon", "Giant TCR Advanced"),
+        ("Giant TCR racefiets – opknapper / projectfiets", "Giant TCR (overig)"),
+        ("Trek Emonda ALR5", "Trek Émonda ALR"),
+        ("Trek emonda Sl-6 maat 58.", "Trek Émonda (overig)"),
+        ("Trek Madone 2.1 racefiets", "Trek Madone 2.1-2.5"),
+        ("Te koop Trek Madone 5.2 SL racefiets", "Trek Madone (overig)"),
+        ("Trek 1.2 Alpha racefiets - Maat 56 - Shimano Tiagra/Sora", "Trek 1-/2-serie (Alpha)"),
+        ("Racefiets, Trek 2,1 alpha", "Trek 1-/2-serie (Alpha)"),
+        ("Trek Domane 2.3 compact", "Trek Domane"),
+        ("Cube Attain GTC SL 105", "Cube Attain GTC"),
+        ("Cube Attain SL | 105 | Maat 58", "Cube Attain (overig)"),
+        ("Cannondale Synapse Women's Carbon Shimano 105 (ZGAN)", "Cannondale Synapse Carbon"),
+        ("Nette cannondale synapse", "Cannondale Synapse (overig)"),
+        ("Cannondale CAAD 10 Ultegra - 54cm", "Cannondale CAAD / Optimo"),
+        ("Specialized S-Works Tarmac SL8 2025 | 54cm", "Specialized Tarmac"),
+        ("Sensa Terentino SL perfecte staat maat 58", "Sensa Trentino"),
+        ("Merida Sculptura 300 Racefiets Shimano Tiagra", "Merida Scultura"),
+        ("Koga Miyata Racefiets PA46140 HardLite FM2 uit 1987", "Koga-Miyata (merknaam tot 2010)"),
+        ("Vintage Koga myata Prologue", "Koga-Miyata (merknaam tot 2010)"),
+        ("Koga Kimera | Ultegra | Maat 56", "Koga Kimera"),
+        ("Gazelle Champion Mondial (55) MOET WEG !!", "Gazelle Champion Mondial"),
+        ("Fuji Roubaix One.1 racefiets", "Fuji Roubaix"),
+    ]
+
+    def test_common_families_land_on_their_row(self):
+        reference = mp.load_reference_data(BIKES)
+        for title, expected in self.FAMILY_CASES:
+            with self.subTest(title=title):
+                self.assertEqual(first_label(reference, title), expected)
+
+    def test_look_alikes_from_other_brands_stay_unmatched(self):
+        # Same model word, different bike: these must not borrow a row (and
+        # with it a frame material) from another brand.
+        reference = mp.load_reference_data(BIKES)
+        for title in (
+            "Batavus Champion racefiets - Vintage",
+            "Giant Peloton 8400 racefiets - 59 cm frame",
+            "Eddy Merckx San Remo 76 Carbon – Ultegra",
+            "Racefiets met nieuwe banden, rijdt soepel over tarmac",
+        ):
+            with self.subTest(title=title):
+                self.assertIsNone(first_label(reference, title))
+
+    def test_family_rows_carry_no_original_price(self):
+        # A family spans trims and years with very different prices; one
+        # number would feed the dealscore a made-up nieuwprijs.
+        with open(BIKES, encoding="utf-8-sig") as f:
+            rows = list(csv.DictReader(f))
+        for row in rows[10:]:
+            with self.subTest(label=row["label"]):
+                self.assertEqual(row["original_price_eur"], "")
+
     def test_a_defy_advanced_is_never_read_as_a_composite(self):
         # §4 of the plan: Advanced is a higher carbon grade and pulls the
         # valuation of a Composite too high if it ends up among its comps.

@@ -443,7 +443,13 @@ python racefiets_jev.py --query "garmin edge" --reference-file reference_bike_ac
 
 - `reference_bikes.csv` — the Giant Defy family (the owner's own bike is the
   row marked "Baseline") plus common upgrade targets (Canyon Endurace,
-  Specialized Roubaix, Trek Domane).
+  Specialized Roubaix, Trek Domane), followed by one row per model family
+  that often came up unrecognised in `lijsten/zonder_referentie.txt` (Giant
+  TCR, Trek Madone, Cube Attain, Koga-Miyata, ...). Those family rows name
+  no original price — a family spans trims and years — and fill in
+  `frame_material` only where the name itself settles it (Advanced, ALR,
+  CAAD, GTC, C:62, "Carbon"); their source is a representative row of
+  `reference_bike_catalog.csv`, whose counts per material are in `specs`.
 - `reference_bike_accessories.csv` — bike computers (Wahoo, Garmin) and
   power meters. These are deliberately **not** in the bike file: the first
   matching row supplies the original price the dealscore compares against,
