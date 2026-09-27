@@ -241,9 +241,16 @@ def connect(path: str) -> sqlite3.Connection:
     """Open (creating if needed) the koopjes.db at `path` and bring it up to
     the latest schema version."""
     conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    _migrate(conn)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        _migrate(conn)
+    except BaseException:
+        # A refused or failed migration would otherwise leave the file open,
+        # and on Windows an open file can't be moved or deleted until the
+        # process exits.
+        conn.close()
+        raise
     return conn
 
 

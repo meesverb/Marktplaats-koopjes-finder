@@ -13,7 +13,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from helpers import mp, repo_file  # noqa: F401  (adds the repo root to sys.path)
+from helpers import close_databases_before_cleanup, mp, repo_file  # noqa: F401  (adds the repo root to sys.path)
 
 import db
 
@@ -23,6 +23,7 @@ class TempDirTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
+        close_databases_before_cleanup(self)
 
     def path(self, name: str) -> str:
         return str(self.tmp / name)

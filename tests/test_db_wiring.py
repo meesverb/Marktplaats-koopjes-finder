@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from helpers import make_listing, mp
+from helpers import close_databases_before_cleanup, make_listing, mp
 
 import db
 
@@ -21,6 +21,7 @@ class TempDirTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
+        close_databases_before_cleanup(self)
 
     def path(self, name: str) -> str:
         return str(self.tmp / name)
