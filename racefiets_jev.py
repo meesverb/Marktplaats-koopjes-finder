@@ -22,7 +22,7 @@ import string
 import sys
 import time
 import webbrowser
-from dataclasses import dataclass, asdict, fields as dataclass_fields
+from dataclasses import dataclass, asdict, field, fields as dataclass_fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -93,9 +93,28 @@ class Listing:
     image_urls: str = ""
     sleeper_score: Optional[float] = None
     sleeper_reasons: str = ""
+    # Specs from Marktplaats' own structured attributes (see site_specs()),
+    # in extract_specs()' vocabulary. Not a CSV column (metadata): it's a
+    # dict, and a new column would warn on every existing bargains log.
+    site_specs: dict = field(default_factory=dict, metadata={"csv": False})
+    # The full description from the listing's own page, for the few listings
+    # --detail-lookup fetched (see lookup_listing_details()). Empty otherwise;
+    # `description` stays the search snippet either way.
+    detail_text: str = field(default="", metadata={"csv": False})
+
+    @property
+    def price_is_asking(self) -> bool:
+        """Whether price_eur is what the seller asks, not a bid caught
+        mid-auction. A MIN_BID price from the search results is the asking
+        price, and a bid listing nobody has bid on yet keeps its seller's
+        floor; only once bids are in can the price be the highest bid (that's
+        when enrich_bid_listings() replaces it), so from then on it isn't
+        trusted as an asking price. A property, not a field: a field would
+        add a column to every existing bargains log."""
+        return self.price_eur is not None and not (self.price_is_bid and self.bid_count)
 
 
-LISTING_FIELDS = [f.name for f in dataclass_fields(Listing)]
+LISTING_FIELDS = [f.name for f in dataclass_fields(Listing) if f.metadata.get("csv", True)]
 
 
 def as_number(value) -> Optional[float]:
@@ -134,10 +153,29 @@ class CrawlResult(list):
     (167 pages, ~5000 listings, for "racefiets" with 26000+ results), and a
     page that fails to load ends the crawl early."""
 
-    def __init__(self, listings=(), complete: bool = False, note: str = ""):
+    def __init__(
+        self, listings=(), complete: bool = False, note: str = "", near_complete: bool = False
+    ):
         super().__init__(listings)
         self.complete = complete
         self.note = note
+        # Every page loaded and paging ran to the end, but a handful of the
+        # total went unseen — see NEAR_COMPLETE_MAX_MISSING.
+        self.near_complete = near_complete
+
+
+# A full crawl takes a few seconds per page, and a listing that is sold or
+# withdrawn in the meantime shifts every later one up a place: the one at the
+# top of the next page lands on a page already fetched, and goes unseen. On
+# 27-09-2026 "giant defy" saw 164 of 165 that way; the crawl right after it
+# saw 164 of 164. Calling such a crawl incomplete skipped the disappearance
+# sweep on exactly the event it exists to measure. A few missing of an
+# otherwise whole crawl is therefore "near complete": the sweep only notes
+# what it missed, and a listing counts as gone once a second full crawl
+# misses it too (db.sweep_disappeared). The page cap and the default sort's
+# repeats lose far more than this (thousands, or ~20%).
+def near_complete_max_missing(total: float) -> int:
+    return max(3, int(total * 0.02))
 
 
 def check_page_offset(data: dict, page: int) -> None:
@@ -408,9 +446,9 @@ def extract_dominant_category(search_response: dict) -> Optional[int]:
     listings from unrelated categories (e.g. "racefiets" eventually pulling
     in PS2 games because their titles contain "racer"); this lets us filter
     those back out."""
-    for facet in search_response.get("facets", []):
+    for facet in search_response.get("facets") or []:
         if facet.get("key") == "RelevantCategories":
-            dominant = [c for c in facet.get("categories", []) if c.get("dominant")]
+            dominant = [c for c in facet.get("categories") or [] if c.get("dominant")]
             if not dominant:
                 return None
             # For an ambiguous query Marktplaats can flag more than one
@@ -423,13 +461,21 @@ def extract_dominant_category(search_response: dict) -> Optional[int]:
     return None
 
 
+def text_value(value) -> str:
+    """A text field from the search JSON as a str. Marktplaats sends some
+    keys with a null value rather than leaving them out, and .get()'s
+    default only covers a missing key; a None that gets through takes the
+    report down at the first html.escape() or slice."""
+    return value if isinstance(value, str) else ""
+
+
 def extract_attribute(raw_listing: dict, key: str) -> str:
     for group in ("attributes", "extendedAttributes"):
         # `or []`: Marktplaats can send the key with a null value, and the
         # default of .get() only covers a missing key.
         for attr in raw_listing.get(group) or []:
             if attr.get("key") == key:
-                return attr.get("value", "")
+                return text_value(attr.get("value"))
     return ""
 
 
@@ -513,9 +559,28 @@ def mentions_electronic(text: str, brand: str, groupset_match: re.Match) -> bool
     return False
 
 
+# "Groepset: Ultegra 11 speed" — a line where the seller says what the
+# groupset is. A full description then goes on to list parts ("Cassette: Dura
+# Ace 12/30", "Crank: 105"), and highest-tier-wins would call a bike with an
+# Ultegra groupset and a Dura-Ace cassette a Dura-Ace bike. Seen on the first
+# listing page fetched (27-09-2026).
+GROUPSET_LINE_RE = re.compile(
+    r"(?:^|[\n;|•])\s*(?:groepset|groupset|groep)\s*[:=-]\s*([^\n;|•]+)", re.I
+)
+
+
 def detect_groupset(text: str) -> tuple[str, Optional[int]]:
     """Best-effort groupset detection from free text. Returns (label, tier)
-    for the highest-tier match found, or ("", None) if nothing recognized."""
+    for the highest-tier match found, or ("", None) if nothing recognized.
+    A labelled groupset line wins over the rest of the text."""
+    for line in GROUPSET_LINE_RE.findall(text):
+        label, tier = _detect_groupset_in(line)
+        if tier is not None:
+            return label, tier
+    return _detect_groupset_in(text)
+
+
+def _detect_groupset_in(text: str) -> tuple[str, Optional[int]]:
     text_lower = text.lower()
     best_label = ""
     best_tier: Optional[int] = None
@@ -683,8 +748,14 @@ POWERMETER_RE = re.compile(
 # has_computer is relative to what the owner already has (see PLAN_FIETSWAARDE.md
 # §7 — he keeps his own Wahoo Elemnt Roam), but that weighting is scoring.py's
 # job (fase 4); extraction here only records that a computer was mentioned.
+# A bare brand name only counts when what follows isn't one of that brand's
+# other products or a mount for one: "Garmin houder" is a bar mount (seen in a
+# full description, 27-09-2026), Varia a radar light, Vector/Rally pedal power
+# meters, Kickr/Tickr a trainer and a heart-rate strap.
 COMPUTER_RE = re.compile(
-    r"\bfietscomputer\b|\bbike\s*computer\b|\bgarmin\b|\bwahoo\b|\belemnt\b|\bedge\s*\d+\b",
+    r"\bfietscomputer\b|\bbike\s*computer\b|\belemnt\b|\bedge\s*\d+\b|"
+    r"\bgarmin\b(?![\s-]*(?:houder|mount|steun|beugel|adapter|varia|vector|rally|hrm|hartslag))|"
+    r"\bwahoo\b(?![\s-]*(?:houder|mount|steun|beugel|adapter|kickr|tickr|rpm|speedplay|headwind|climb))",
     re.I,
 )
 
@@ -738,10 +809,114 @@ def extract_specs(text: str) -> dict[str, str]:
 def extract_listing_specs(listings: list[Listing]) -> dict[str, dict[str, str]]:
     """extract_specs() for every listing, keyed by item_id, ready to hand to
     db.sync_listing_specs()."""
-    return {
-        listing.item_id: extract_specs(f"{listing.title} {listing.description}")
-        for listing in listings
+    return {listing.item_id: extract_specs(spec_text(listing)) for listing in listings}
+
+
+def spec_text(listing: Listing) -> str:
+    """The text specs are read from: the full description where the listing
+    page was fetched, the search snippet otherwise."""
+    return f"{listing.title} {listing.detail_text or listing.description}"
+
+
+# Marktplaats' structured attributes, as the search results carry them in
+# extendedAttributes (checked 27-09-2026: `material` on 17 of 30 racefietsen,
+# `brakeType` on the odd one), mapped onto extract_specs()' vocabulary. Only
+# values that say one thing: "Overige", a combined value or a new wording is
+# left out rather than guessed. numberOfGears is not used — it counts the
+# gears ("Meer dan 20 versnellingen"), not the sprockets `speeds` means.
+SITE_MATERIALS = {"carbon": "carbon", "aluminium": "aluminium", "staal": "staal", "titanium": "titanium"}
+SITE_BRAKES = {
+    "velgrem": "velrem",
+    "velrem": "velrem",
+    "schijfrem": "schijfrem",
+    "hydraulische schijfrem": "hydraulische schijfrem",
+    "mechanische schijfrem": "mechanische schijfrem",
+}
+
+
+def site_specs(raw: dict) -> dict[str, str]:
+    specs = {}
+    material = SITE_MATERIALS.get(extract_attribute(raw, "material").strip().lower())
+    if material:
+        specs["frame_material"] = material
+    brake = SITE_BRAKES.get(extract_attribute(raw, "brakeType").strip().lower())
+    if brake:
+        specs["brake_type"] = brake
+    return specs
+
+
+def listing_spec_dict(listing: Listing) -> dict[str, str]:
+    """Everything known about a listing's build: the text first, because
+    it's the more specific ("hydraulische schijfrem" where the attribute
+    only says "Schijfrem"), and the seller's structured attributes for what
+    the text doesn't say — which, with a 200-character snippet, is often the
+    frame material."""
+    return {**listing.site_specs, **extract_specs(spec_text(listing))}
+
+
+# --- The listing page: full description and "Kenmerken" ---------------------
+#
+# The search results cut the description at 200 characters, and that's where
+# the groupset, brakes and wheels usually are ("Groepset: Ultegra 11 speed"
+# after two sentences about why the bike is for sale). The listing page has
+# the whole text, server-rendered, plus the seller's attributes as a list.
+# Checked on the real site 27-09-2026.
+DESCRIPTION_START = 'data-collapsable="description">'
+PAGE_ATTRIBUTE_RE = re.compile(
+    r'Attributes-module-label">([^<]+)</div>\s*<div class="Attributes-module-value">'
+    r"(?:<a[^>]*>)?([^<]+)"
+)
+PAGE_FRAME_HEIGHT_LABEL = "framehoogte"
+_detail_structure_warned = False
+
+
+def warn_detail_structure_changed(detail: str) -> None:
+    global _detail_structure_warned
+    if _detail_structure_warned:
+        return
+    _detail_structure_warned = True
+    print(
+        f"warning: advertentiepagina niet te lezen ({detail}) — Marktplaats heeft "
+        "waarschijnlijk zijn paginastructuur gewijzigd. De volledige omschrijving blijft "
+        "leeg; de rest van de run gaat gewoon door.",
+        file=sys.stderr,
+    )
+
+
+def html_to_text(fragment: str) -> str:
+    text = re.sub(r"<br\s*/?>", "\n", fragment, flags=re.I)
+    text = re.sub(r"<[^>]+>", "", text)
+    return html_lib.unescape(text).strip()
+
+
+def parse_listing_page(page: str) -> Optional[tuple[str, dict[str, str]]]:
+    """(full description, Kenmerken as {label: value}) from a listing page,
+    or None when the description block isn't where it used to be."""
+    start = page.find(DESCRIPTION_START)
+    if start == -1:
+        return None
+    start += len(DESCRIPTION_START)
+    end = page.find("</div>", start)
+    if end == -1:
+        return None
+    attributes = {
+        html_lib.unescape(label).strip().lower(): html_lib.unescape(value).strip()
+        for label, value in PAGE_ATTRIBUTE_RE.findall(page)
     }
+    return html_to_text(page[start:end]), attributes
+
+
+def page_specs(attributes: dict[str, str]) -> dict[str, str]:
+    """The listing page's Kenmerken in site_specs()' terms, plus the frame
+    height, which the search results often leave out."""
+    specs = {}
+    material = SITE_MATERIALS.get(attributes.get("materiaal", "").lower())
+    if material:
+        specs["frame_material"] = material
+    brake = SITE_BRAKES.get(attributes.get("rem", "").lower())
+    if brake:
+        specs["brake_type"] = brake
+    return specs
 
 
 # How many photos a listing keeps from the search results. Marktplaats sends
@@ -767,18 +942,18 @@ def search_image_urls(raw: dict) -> str:
 def parse_listing(raw: dict) -> Listing:
     price_info = raw.get("priceInfo") or {}
     price_cents = as_number(price_info.get("priceCents"))
-    price_type = price_info.get("priceType", "")
+    price_type = text_value(price_info.get("priceType"))
     # priceCents is 0 for listings with no real price shown (e.g. an
     # unstarted bid or "see description") except when priceType is FREE,
     # where 0 genuinely means the item is free.
     has_real_price = price_cents is not None and (price_cents > 0 or price_type == "FREE")
     price_eur = price_cents / 100 if has_real_price else None
 
-    vip_url = raw.get("vipUrl", "")
+    vip_url = text_value(raw.get("vipUrl"))
     url = BASE_URL + vip_url if vip_url.startswith("/") else vip_url
 
-    title = raw.get("title", "")
-    description = raw.get("description", "")
+    title = text_value(raw.get("title"))
+    description = text_value(raw.get("description"))
     groupset, groupset_tier = detect_groupset(f"{title} {description}")
 
     return Listing(
@@ -787,8 +962,8 @@ def parse_listing(raw: dict) -> Listing:
         description=description,
         price_eur=price_eur,
         price_type=price_type,
-        city=raw.get("location", {}).get("cityName", ""),
-        date=raw.get("date", ""),
+        city=text_value((raw.get("location") or {}).get("cityName")),
+        date=text_value(raw.get("date")),
         condition=extract_attribute(raw, "condition"),
         frame_height=extract_attribute(raw, "frameHeight"),
         groupset=groupset,
@@ -803,6 +978,7 @@ def parse_listing(raw: dict) -> Listing:
         thin_content=raw.get("thinContent") is True,
         reserved=raw.get("reserved") is True,
         image_urls=search_image_urls(raw),
+        site_specs=site_specs(raw),
     )
 
 
@@ -826,7 +1002,7 @@ def category_from_url(url: str) -> Optional[str]:
 
 
 def relevant_categories(search_response: dict) -> list[dict]:
-    for facet in search_response.get("facets", []):
+    for facet in search_response.get("facets") or []:
         if facet.get("key") == "RelevantCategories":
             return facet.get("categories") or []
     return []
@@ -1048,7 +1224,14 @@ def collect_listings(
         )
     else:
         complete, note = True, ""
-    return CrawlResult(listings.values(), complete=complete, note=note)
+    near_complete = (
+        not complete
+        and not fetch_error
+        and reached_end
+        and total_results is not None
+        and total_results - len(raw_ids) <= near_complete_max_missing(total_results)
+    )
+    return CrawlResult(listings.values(), complete=complete, note=note, near_complete=near_complete)
 
 
 def filter_by_price(
@@ -1284,7 +1467,7 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
     observations = [
         l
         for l in listings
-        if l.is_new and l.ref_label and l.price_eur and not (l.price_is_bid and l.bid_count)
+        if l.is_new and l.ref_label and l.price_eur and l.price_is_asking
     ]
     if not observations:
         return 0
@@ -1399,8 +1582,20 @@ def load_reference_data(path: str) -> list[dict]:
     file doesn't exist — this feature is entirely optional."""
     try:
         with open(path, encoding=CSV_READ_ENCODING) as f:
-            rows = list(csv.DictReader(f))
+            reader = csv.DictReader(f)
+            rows = list(reader)
     except FileNotFoundError:
+        return []
+
+    # reference_bike_catalog.csv sits next to the pattern files and looks
+    # like one, but has no pattern column: every row would be skipped below
+    # and the run would quietly match nothing.
+    if rows and "pattern" not in (reader.fieldnames or []):
+        print(
+            f"warning: {path} heeft geen 'pattern'-kolom en is dus geen referentiebestand "
+            "(reference_bike_catalog.csv is een catalogus, zie README); er wordt niets herkend",
+            file=sys.stderr,
+        )
         return []
 
     reference = []
@@ -1881,7 +2076,15 @@ def bid_headroom_by_id(
     euros means nothing else here has to know about upgrade.py's types."""
     import upgrade
 
-    return {row.listing.item_id: row.headroom_eur for row in upgrade.bid_panel(listings, median)}
+    # A rough estimate (only the query's median behind it) gets no figure
+    # here: it would rank a €20 seat post in the racefietsen category above
+    # every real bike. Those listings fall back to the deal-score order below
+    # the ones with a real estimate — and the deal score already is that
+    # same comparison with the median.
+    return {
+        row.listing.item_id: None if row.estimate.rough else row.headroom_eur
+        for row in upgrade.bid_panel(listings, median)
+    }
 
 
 # The report's HTML lives in its own file (PLAN_FIETSWAARDE.md §8). It used to
@@ -2095,6 +2298,93 @@ def write_html(
     )
 
 
+def lookup_listing_details(args: argparse.Namespace, listings: list[Listing]) -> dict:
+    """--detail-lookup: first put back what earlier runs fetched (no
+    request), then fetch the listing page for the few new listings that could
+    be an upgrade (upgrade.detail_lookup_targets()). Returns {item_id: full
+    description} for the pages fetched now, for sync_database() to store.
+
+    Needs the database — without it every run would fetch the same pages
+    again — and a budget from mijn_fiets.md, since "could be an upgrade"
+    means "within budget". Without either it does nothing, quietly for
+    --no-db and with a line otherwise."""
+    if args.no_db or getattr(args, "detail_lookup", "none") == "none" or not listings:
+        return {}
+    import report
+    import upgrade
+
+    if Path(args.db).exists():
+        conn = db.connect(args.db)
+        try:
+            stored = db.load_listing_details(conn, [l.item_id for l in listings])
+            stored_site = db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE) if stored else {}
+        finally:
+            conn.close()
+        for listing in listings:
+            if listing.item_id in stored:
+                text, frame_height = stored[listing.item_id]
+                apply_listing_details(listing, text, stored_site.get(listing.item_id, {}), frame_height)
+
+    owner, problem = report.load_owner_context(args.mijn_fiets, args.db)
+    reason = problem or (None if owner is None or owner.budgets is not None else owner.valuation_problem)
+    if owner is None or owner.budgets is None or owner.target_size_cm is None:
+        if reason:
+            print(f"--detail-lookup overgeslagen: {reason}", file=sys.stderr)
+        return {}
+    targets = upgrade.detail_lookup_targets(
+        listings,
+        budgets=owner.budgets,
+        target_size_cm=owner.target_size_cm,
+        config=owner.config,
+    )
+    if not targets:
+        return {}
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
+    print(f"Advertentiepagina's ophalen voor {len(targets)} kanshebber(s) binnen budget...", file=sys.stderr)
+    fetched = {}
+    for i, listing in enumerate(targets, start=1):
+        try:
+            page = fetch_listing_page(session, listing.url)
+        except requests.RequestException as exc:
+            print(f"  warning: kon {listing.item_id} niet ophalen: {exc}", file=sys.stderr)
+        else:
+            parsed = parse_listing_page(page)
+            if parsed is None:
+                warn_detail_structure_changed("omschrijving niet gevonden")
+            else:
+                text, attributes = parsed
+                apply_listing_details(
+                    listing, text, page_specs(attributes), attributes.get(PAGE_FRAME_HEIGHT_LABEL, "")
+                )
+                fetched[listing.item_id] = text
+        if i < len(targets):
+            time.sleep(args.delay)
+    return fetched
+
+
+def fetch_listing_page(session: requests.Session, url: str) -> str:
+    resp = session.get(url, timeout=15)
+    resp.raise_for_status()
+    return resp.text
+
+
+def apply_listing_details(
+    listing: Listing, text: str, specs: dict[str, str], frame_height: str
+) -> None:
+    """The listing page's content onto a listing. The groupset is read again
+    from the full text; the search's own attributes stay where the page has
+    nothing, and a frame height only fills an empty one."""
+    listing.detail_text = text
+    listing.site_specs = {**specs, **listing.site_specs}
+    if frame_height and not listing.frame_height:
+        listing.frame_height = frame_height
+    groupset, tier = detect_groupset(f"{listing.title} {text}")
+    if tier is not None:
+        listing.groupset, listing.groupset_tier = groupset, tier
+
+
 def build_report_panels(args: argparse.Namespace, listings: list[Listing], median: Optional[float]):
     """The report's extra tabs for this run. The own-bike valuation reads
     koopjes.db — which sync_database() has just written, so it already holds
@@ -2125,7 +2415,8 @@ def write_csv(listings: list[Listing], path: str) -> None:
         writer = csv.DictWriter(f, fieldnames=LISTING_FIELDS)
         writer.writeheader()
         for listing in listings:
-            writer.writerow(asdict(listing))
+            row = asdict(listing)
+            writer.writerow({name: row[name] for name in LISTING_FIELDS})
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -2219,6 +2510,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--no-bid-lookup",
         action="store_true",
         help="Alias for --bid-lookup none",
+    )
+    parser.add_argument(
+        "--detail-lookup",
+        choices=["budget", "none"],
+        default="budget",
+        help="Fetch the listing page (full description and 'Kenmerken') for complete road "
+        "bikes that fit the frame size and the budget from mijn_fiets.md — at most 10 per "
+        "run, each listing only once, and only with the database (it remembers what was "
+        "fetched). 'none' skips it",
     )
     parser.add_argument(
         "--bids-only",
@@ -2552,6 +2852,8 @@ def sync_database(
     reference_matches: Optional[dict[str, list[str]]] = None,
     crawl_complete: bool = False,
     crawl_note: str = "",
+    crawl_near_complete: bool = False,
+    fetched_details: Optional[dict] = None,
 ) -> None:
     """Mirror this run into koopjes.db, alongside the CSV/JSON files that
     stay the ones actually read elsewhere (reference_overview.py etc.) —
@@ -2575,7 +2877,12 @@ def sync_database(
             reference_price_history_path=args.price_history_file,
         )
         db.sync_listings(conn, query, listings, finished_at)
+        if fetched_details:
+            db.save_listing_details(conn, fetched_details, finished_at)
         db.sync_listing_specs(conn, extract_listing_specs(listings))
+        db.sync_listing_specs(
+            conn, {l.item_id: l.site_specs for l in listings}, source=db.SITE_SPEC_SOURCE
+        )
         if reference_matches:
             db.sync_listing_models(conn, reference_matches)
         db.record_crawl_run(
@@ -2591,7 +2898,19 @@ def sync_database(
         # collect_listings' own convention) has actually looked at every
         # listing for this query — a shallow --pages 3 run would otherwise
         # mark everything past page 3 as disappeared.
-        if args.pages <= 0 and not crawl_complete:
+        if args.pages <= 0 and not crawl_complete and crawl_near_complete:
+            missed, swept = db.sweep_disappeared(
+                conn, query, crawled_item_ids, finished_at, confirmed=False, report_missed=True
+            )
+            print(
+                f"verdwijn-sweep voorlopig: de crawl van '{query}' was compleet op een paar na "
+                f"({crawl_note}) — waarschijnlijk verdween er een advertentie tijdens het "
+                f"bladeren. {missed} gemiste advertentie(s) genoteerd; ze tellen pas als verdwenen "
+                "als de volgende volledige crawl ze ook mist"
+                + (f". {swept} die de vorige keer ook al ontbraken, nu gemarkeerd als verdwenen." if swept else "."),
+                file=sys.stderr,
+            )
+        elif args.pages <= 0 and not crawl_complete:
             # --pages 0 is a request, not a guarantee: Marktplaats stops
             # paging at ~5000 results, and a failed page ends the crawl
             # early. Sweeping then marks everything the crawl didn't reach as
@@ -2686,6 +3005,8 @@ def run_for_query(
         if recorded:
             print(f"Recorded {recorded} price observation(s) to {args.price_history_file}")
 
+    fetched_details = lookup_listing_details(args, listings)
+
     score_listings(listings)
     sleepers.apply_sleeper_signals(listings)
 
@@ -2709,6 +3030,8 @@ def run_for_query(
             reference_matches=reference_matches,
             crawl_complete=crawl_complete,
             crawl_note=crawl_note,
+            crawl_near_complete=getattr(listings, "near_complete", False),
+            fetched_details=fetched_details,
         )
 
     # Captured before --bids-only/--min-score filter the list for the

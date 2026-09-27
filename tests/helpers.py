@@ -10,6 +10,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 import racefiets_jev as mp  # noqa: E402
+import requests  # noqa: E402
+
+
+def _no_listing_pages(session, url):
+    # A test that runs a whole query (run_for_query/main) with a database and
+    # the real mijn_fiets.md gets a budget, and --detail-lookup would then
+    # fetch real listing pages. Tests never touch the network; the ones about
+    # the lookup patch this with a canned page.
+    raise requests.ConnectionError(f"geen netwerk in tests ({url})")
+
+
+mp.fetch_listing_page = _no_listing_pages
 
 
 def repo_file(name: str) -> str:

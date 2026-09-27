@@ -401,16 +401,28 @@ class BidOverviewOrderTest(unittest.TestCase):
 
 class BidHeadroomWiringTest(unittest.TestCase):
     def test_headroom_reaches_the_overview(self):
+        # A carbon Ultegra bid among five carbon Ultegra asking prices: the
+        # value comes from those comparable bikes.
+        ultegra = dict(title="Carbon racefiets Shimano Ultegra", groupset="Shimano Ultegra",
+                       groupset_tier=5)
         listings = [
             make_listing(item_id="bid", price_is_bid=True, price_type="FAST_BID",
-                         price_eur=100.0, bid_count=1),
-            make_listing(item_id="fixed", price_eur=500.0),
-        ]
+                         price_eur=100.0, bid_count=1, **ultegra),
+        ] + [make_listing(item_id=f"fixed{i}", price_eur=500.0, **ultegra) for i in range(5)]
         headroom = mp.bid_headroom_by_id(listings, median=1000.0)
         # Only bidding listings get a row, and the number is the value estimate
         # minus what it costs to get in — not the raw median.
         self.assertEqual(set(headroom), {"bid"})
-        self.assertGreater(headroom["bid"], 0)
+        self.assertAlmostEqual(headroom["bid"], 500.0 * 0.875 - 100.0)
+
+    def test_a_rough_estimate_gets_no_figure_in_the_overview(self):
+        # Nothing known about the listing — only the query's median stands
+        # behind its value, and that put a €20 seat post at the top.
+        listings = [
+            make_listing(item_id="bid", title="Zadelpen carbon", price_is_bid=True,
+                         price_type="FAST_BID", price_eur=20.0, bid_count=1),
+        ]
+        self.assertIsNone(mp.bid_headroom_by_id(listings, median=1000.0)["bid"])
 
     def test_a_bid_that_was_never_looked_up_has_no_headroom(self):
         listings = [

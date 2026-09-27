@@ -438,15 +438,18 @@ def fetch_comp_candidates(
     hun specs erbij. Filteren op vergelijkbaarheid gebeurt níet hier maar in
     select_comps(): dat is rekenwerk en moet zonder database testbaar blijven.
 
-    Bied-advertenties blijven buiten de comps. De prijs in `listing` is bij een
-    bod de stand van het bieden, en of er al geboden is weet deze tabel niet —
-    dat is precies de onzekerheid die append_reference_price_observations() ook
-    al buiten de waarderingsdata houdt."""
+    Alleen vraagprijzen tellen mee (`price_is_asking`, zie
+    racefiets_jev.Listing): ook een MIN_BID-advertentie, want haar prijs uit de
+    zoekresultaten ís de vraagprijs — dat is ruim de helft van het aanbod.
+    Een advertentie waarop al geboden is valt af: dan kan de prijs het hoogste
+    bod zijn, een tussenstand. Rijen van vóór die kolom (NULL) houden de oude
+    regel: geen enkele bied-advertentie."""
     sql = [
         "SELECT item_id, title, description, price_eur, url, is_bid, days_online,",
-        "       disappeared_at, last_seen, first_seen",
+        "       disappeared_at, last_seen, first_seen, full_description",
         "FROM listing",
-        "WHERE price_eur IS NOT NULL AND price_eur > 0 AND is_bid = 0",
+        "WHERE price_eur IS NOT NULL AND price_eur > 0",
+        "AND (price_is_asking = 1 OR (price_is_asking IS NULL AND is_bid = 0))",
     ]
     params: list = []
     if window_days > 0:
@@ -459,9 +462,7 @@ def fetch_comp_candidates(
         params.append(query)
     rows = conn.execute("\n".join(sql), params).fetchall()
 
-    specs_by_listing: dict[str, dict[str, str]] = {}
-    for spec_row in conn.execute("SELECT listing_id, key, value FROM spec").fetchall():
-        specs_by_listing.setdefault(spec_row["listing_id"], {})[spec_row["key"]] = spec_row["value"]
+    specs_by_listing: dict[str, dict[str, str]] = db.read_listing_specs(conn)
 
     as_of = as_of or datetime.now(timezone.utc)
     materials = reference_materials(conn)
@@ -513,6 +514,15 @@ def _derive_days_online(first_seen: Optional[str], as_of: datetime) -> Optional[
     return delta.days
 
 
+def _row_value(row, key: str):
+    """row[key], or None for a row that doesn't have the column — tests and
+    older callers build rows by hand."""
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return None
+
+
 def candidate_from_row(
     row,
     specs: dict[str, str],
@@ -533,7 +543,8 @@ def candidate_from_row(
     alsnog berekend: dat zou een ander getal kunnen geven dan wat op het
     moment van verdwijnen vastgesteld is."""
     title = row["title"] or ""
-    description = row["description"] or ""
+    # The listing page's full text where --detail-lookup fetched it.
+    description = _row_value(row, "full_description") or row["description"] or ""
     _, tier = mp.detect_groupset(f"{title} {description}")
     disappeared = row["disappeared_at"] is not None
     days_online = row["days_online"]

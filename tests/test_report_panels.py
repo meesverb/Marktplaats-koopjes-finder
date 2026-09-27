@@ -272,7 +272,12 @@ class ManualBudgetTest(unittest.TestCase):
 
     def intake(self, value):
         text = Path(repo_file("mijn_fiets.md")).read_text(encoding="utf-8")
-        text = text.replace("verkoopprijs_handmatig =", f"verkoopprijs_handmatig = {value}")
+        # The whole line, whatever the real intake holds today: the owner
+        # filling in an amount must not flip what these tests are about.
+        text, count = re.subn(
+            r"^verkoopprijs_handmatig =.*$", f"verkoopprijs_handmatig = {value}", text, flags=re.M
+        )
+        self.assertEqual(count, 1)
         path = Path(self._tmp.name) / "mijn_fiets.md"
         path.write_text(text, encoding="utf-8")
         return str(path)
@@ -281,6 +286,15 @@ class ManualBudgetTest(unittest.TestCase):
         context, _ = report.load_owner_context(self.intake(""), self.db_path)
         self.assertIsNone(context.budgets)
         self.assertIn("verkoopprijs_handmatig", context.valuation_problem)
+
+    def test_the_very_first_run_already_uses_the_manual_price(self):
+        # No database file yet: no comps, but the owner's own figure is a
+        # budget all the same — and the file still isn't created.
+        missing = str(Path(self._tmp.name) / "nog_niet.db")
+        context, _ = report.load_owner_context(self.intake("390"), missing)
+        self.assertEqual(context.budgets.rim.amount, 390 + up.extra_budget_from(context.bike.specs))
+        self.assertIn("bestaat nog niet", context.valuation_problem)
+        self.assertFalse(Path(missing).exists())
 
     def test_with_a_manual_price_the_upgrade_finder_runs(self):
         context, _ = report.load_owner_context(self.intake("€ 450"), self.db_path)

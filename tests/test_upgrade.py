@@ -629,11 +629,86 @@ class FetchCandidateListingsTest(unittest.TestCase):
         self.addCleanup(conn.close)
         self.assertEqual(up.fetch_candidate_listings(conn)[0].groupset_tier, 5)
 
+    def test_marktplaats_attributes_come_back_from_the_database(self):
+        # The frame material Marktplaats gives in the search results is often
+        # the only one there is; upgrade.py scores from the database, so it has
+        # to see it too, not just the live report.
+        conn = self.sync([make_listing(item_id="a", price_eur=500.0)])
+        self.addCleanup(conn.close)
+        db.sync_listing_specs(conn, {"a": {"frame_material": "carbon"}}, source=db.SITE_SPEC_SOURCE)
+        listing = up.fetch_candidate_listings(conn)[0]
+        self.assertEqual(listing.site_specs, {"frame_material": "carbon"})
+        specs, _ = up.listing_specs(listing)
+        self.assertEqual(specs["frame_material"], "carbon")
+
     def test_query_filter(self):
         conn = self.sync([make_listing(item_id="a", price_eur=500.0)], query="racefiets")
         self.addCleanup(conn.close)
         self.assertEqual(len(up.fetch_candidate_listings(conn, query="racefiets")), 1)
         self.assertEqual(up.fetch_candidate_listings(conn, query="luidsprekers"), [])
+
+
+ROAD = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/m{}-x"
+
+
+def ultegra(item_id, price, **kw):
+    fields = dict(title="Carbon racefiets Shimano Ultegra", groupset="Shimano Ultegra",
+                  groupset_tier=5, url=ROAD.format(item_id))
+    fields.update(kw)
+    return make_listing(item_id=item_id, price_eur=price, **fields)
+
+
+class SegmentValueTest(unittest.TestCase):
+    """Resell: a bid listing is worth what comparable bikes (same frame
+    material, same groupset tier) are listed for — not what the whole
+    query's median says."""
+
+    def test_comparable_bikes_set_the_value(self):
+        listings = [ultegra("bod", 300.0, price_type="MIN_BID", price_is_bid=True)] + [
+            ultegra(f"c{i}", price) for i, price in enumerate([800, 900, 1000, 1100, 1200])
+        ]
+        estimate = up.estimate_value(listings[0], 400.0, segments=up.segment_benchmarks(listings))
+        self.assertAlmostEqual(estimate.amount, 1000 * 0.875)
+        self.assertFalse(estimate.rough)
+        self.assertIn("5 vergelijkbare fietsen (carbon, groepsettier 5)", estimate.basis)
+
+    def test_the_listing_itself_and_running_bids_do_not_count(self):
+        listings = [ultegra("zelf", 5000.0)] + [ultegra(f"c{i}", 1000.0) for i in range(4)] + [
+            ultegra("geboden", 50.0, price_type="FAST_BID", price_is_bid=True, bid_count=3),
+            ultegra("onderdeel", 50.0, url="https://www.marktplaats.nl/v/f/fietsonderdelen/m9-x"),
+        ]
+        segments = up.segment_benchmarks(listings)
+        # Four comparable asking prices once "zelf" is left out: below the floor.
+        self.assertIsNone(segments.median_for(listings[0]))
+
+    def test_a_known_brake_type_narrows_the_segment(self):
+        rim = [ultegra(f"r{i}", 600.0, title="Carbon racefiets Ultegra velrem") for i in range(5)]
+        disc = [ultegra(f"d{i}", 2500.0, title="Carbon racefiets Ultegra schijfrem") for i in range(5)]
+        subject = ultegra("bod", 300.0, title="Carbon racefiets Ultegra velremmen",
+                          price_type="MIN_BID", price_is_bid=True)
+        segments = up.segment_benchmarks([subject] + rim + disc)
+        median, n, key = segments.median_for(subject)
+        self.assertEqual((median, n, key), (600.0, 5, ("carbon", 5, "velrem")))
+        # Brake unknown: the broader segment, rim and disc together.
+        unknown = ultegra("x", 300.0)
+        self.assertEqual(segments.median_for(unknown)[1], 11)
+
+    def test_nothing_known_falls_back_to_a_rough_median(self):
+        seatpost = make_listing(item_id="zp", title="Zadelpen", price_eur=20.0,
+                                price_type="FAST_BID", price_is_bid=True, bid_count=1)
+        estimate = up.estimate_value(seatpost, 750.0, segments=up.segment_benchmarks([seatpost]))
+        self.assertTrue(estimate.rough)
+        self.assertIn("grof", estimate.basis)
+
+    def test_rough_rows_rank_below_real_estimates(self):
+        seatpost = make_listing(item_id="zp", title="Zadelpen", price_eur=20.0,
+                                price_type="FAST_BID", price_is_bid=True, bid_count=1)
+        bike = ultegra("bod", 700.0, price_type="FAST_BID", price_is_bid=True, bid_count=1)
+        comps = [ultegra(f"c{i}", 1000.0) for i in range(5)]
+        rows = up.bid_panel([seatpost, bike] + comps, 750.0)
+        self.assertEqual([r.listing.item_id for r in rows], ["bod", "zp"])
+        # ...even though the seat post's (rough) headroom is the larger number.
+        self.assertGreater(rows[1].headroom_eur, rows[0].headroom_eur)
 
 
 class SharedConstantsTest(unittest.TestCase):
@@ -685,6 +760,32 @@ class ReviewFixesTest(unittest.TestCase):
         self.assertEqual(budgets.rim.amount, 700)
         self.assertIn("zelf opgegeven", budgets.rim.reasons[0])
         self.assertNotIn("taxatie scenario B", " ".join(budgets.rim.reasons))
+
+    def valuation(self, mid, confidence):
+        return val.Valuation(
+            subject_type="owned_item", subject_id="1", scenario="b",
+            low_eur=mid, mid_eur=mid, high_eur=mid, confidence=confidence, evidence=(),
+        )
+
+    def test_a_hard_valuation_beats_the_manual_price(self):
+        self.assertEqual(up.budget_basis(self.valuation(500, "midden"), 390), (500, None))
+
+    def test_an_indicative_valuation_does_not_override_the_manual_price(self):
+        # One stray comp (n < 5) used to replace the owner's own figure.
+        amount, source = up.budget_basis(self.valuation(284, "indicatief"), 390)
+        self.assertEqual(amount, 390)
+        self.assertIn("zelf opgegeven", source)
+        self.assertIn("€284", source)
+        self.assertIn("indicatief", source)
+
+    def test_without_a_manual_price_even_an_indicative_valuation_is_used(self):
+        self.assertEqual(up.budget_basis(self.valuation(284, "indicatief"), None), (284, None))
+
+    def test_nothing_to_go_on(self):
+        self.assertIsNone(up.budget_basis(None, None))
+        amount, source = up.budget_basis(None, 390)
+        self.assertEqual(amount, 390)
+        self.assertIn("te weinig vergelijkbare advertenties", source)
 
 
 if __name__ == "__main__":

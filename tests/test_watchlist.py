@@ -34,7 +34,7 @@ class TempDirTest(unittest.TestCase):
     def base_argv(self):
         return [
             "--no-html", "--no-log", "--no-price-history", "--no-notify-better",
-            "--open-browser", "never",
+            "--open-browser", "never", "--delay", "0",
             "--db", self.db_path,
             "--history-file", self.path("history.json"),
             "--reference-file", self.path("geen-referentie.csv"),

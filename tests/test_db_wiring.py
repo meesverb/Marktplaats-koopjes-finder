@@ -25,18 +25,21 @@ class TempDirTest(unittest.TestCase):
     def path(self, name: str) -> str:
         return str(self.tmp / name)
 
-    def run_query(self, listings, extra_argv, complete=True):
+    def run_query(self, listings, extra_argv, complete=True, near_complete=False):
         # complete: a real crawl reports whether it saw every result; most
         # sweep tests below are about a crawl that did.
         def fake_collect(query, pages, delay, **crawl_options):
-            return mp.CrawlResult(listings, complete=complete, note="1 van de 26354 resultaten gezien")
+            note = "164 van de 165 resultaten gezien" if near_complete else "1 van de 26354 resultaten gezien"
+            return mp.CrawlResult(
+                listings, complete=complete, note=note, near_complete=near_complete
+            )
 
         def fake_enrich(ls, delay, mode, session=None):
             pass
 
         argv = [
             "--query", "test", "--no-html", "--no-log", "--no-price-history",
-            "--no-notify-better", "--open-browser", "never",
+            "--no-notify-better", "--open-browser", "never", "--delay", "0",
             "--history-file", self.path("history.json"),
             "--reference-file", self.path("geen-referentie.csv"),
             "--price-history-file", self.path("geen-price-history.csv"),
@@ -173,7 +176,7 @@ class DisappearanceSweepTest(TempDirTest):
         db_path = self.path("koopjes.db")
         self.run_query([make_listing(item_id="a")], ["--db", db_path, "--pages", "0"])
         with mock.patch.object(mp, "collect_listings", lambda q, p, d, **kw: []):
-            args = mp.parse_args(["--db", db_path, "--pages", "0", "--no-html", "--no-log",
+            args = mp.parse_args(["--db", db_path, "--pages", "0", "--no-html", "--no-log", "--delay", "0",
                                   "--no-price-history", "--no-notify-better",
                                   "--history-file", self.path("history.json"),
                                   "--reference-file", self.path("geen-referentie.csv"),
@@ -250,6 +253,84 @@ class SpecAndModelWiringTest(TempDirTest):
         # having more than one match: it's still only the first one.
         self.assertEqual(listing.ref_label, "Specifiek")
 
+
+
+class NearCompleteSweepTest(TempDirTest):
+    """A full crawl that missed a few because a listing vanished mid-crawl:
+    one miss is noted, a second full crawl that misses it too makes it gone,
+    dated from the first miss."""
+
+    def setUp(self):
+        super().setUp()
+        self.conn = db.connect(self.path("koopjes.db"))
+        self.addCleanup(self.conn.close)
+        db.sync_listings(self.conn, "giant defy", [mp_listing("a"), mp_listing("b")],
+                         "2026-09-01T03:00:00+00:00")
+
+    def row(self, item_id):
+        return self.conn.execute(
+            "SELECT disappeared_at, days_online, missed_at FROM listing WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+
+    def test_one_miss_is_only_noted(self):
+        missed, swept = db.sweep_disappeared(self.conn, "giant defy", {"b"},
+                                             "2026-09-10T03:00:00+00:00",
+                                             confirmed=False, report_missed=True)
+        self.assertEqual((missed, swept), (1, 0))
+        self.assertIsNone(self.row("a")["disappeared_at"])
+        self.assertEqual(self.row("a")["missed_at"], "2026-09-10T03:00:00+00:00")
+
+    def test_a_second_miss_makes_it_gone_as_of_the_first(self):
+        db.sweep_disappeared(self.conn, "giant defy", {"b"}, "2026-09-10T03:00:00+00:00",
+                             confirmed=False)
+        missed, swept = db.sweep_disappeared(self.conn, "giant defy", {"b"},
+                                             "2026-09-11T03:00:00+00:00",
+                                             confirmed=False, report_missed=True)
+        self.assertEqual((missed, swept), (0, 1))
+        row = self.row("a")
+        self.assertEqual(row["disappeared_at"], "2026-09-10T03:00:00+00:00")
+        self.assertEqual(row["days_online"], 9)
+        self.assertIsNone(row["missed_at"])
+
+    def test_a_complete_crawl_after_a_miss_also_dates_from_the_miss(self):
+        db.sweep_disappeared(self.conn, "giant defy", {"b"}, "2026-09-10T03:00:00+00:00",
+                             confirmed=False)
+        self.assertEqual(
+            db.sweep_disappeared(self.conn, "giant defy", {"b"}, "2026-09-12T03:00:00+00:00"), 1
+        )
+        self.assertEqual(self.row("a")["days_online"], 9)
+
+    def test_a_missed_listing_that_turns_up_again_starts_over(self):
+        db.sweep_disappeared(self.conn, "giant defy", {"b"}, "2026-09-10T03:00:00+00:00",
+                             confirmed=False)
+        db.sync_listings(self.conn, "racefiets", [mp_listing("a")], "2026-09-10T13:30:00+00:00")
+        self.assertIsNone(self.row("a")["missed_at"])
+        db.sweep_disappeared(self.conn, "giant defy", {"b"}, "2026-09-11T03:00:00+00:00",
+                             confirmed=False)
+        self.assertIsNone(self.row("a")["disappeared_at"])
+
+    def test_a_listing_back_after_disappearing_loses_its_days_online(self):
+        # Otherwise E2 would count a listing that is online again as a quick sale.
+        db.sweep_disappeared(self.conn, "giant defy", {"b"}, "2026-09-03T03:00:00+00:00")
+        self.assertEqual(self.row("a")["days_online"], 2)
+        db.sync_listings(self.conn, "giant defy", [mp_listing("a")], "2026-09-04T03:00:00+00:00")
+        self.assertIsNone(self.row("a")["days_online"])
+        self.assertIsNone(self.row("a")["disappeared_at"])
+
+    def test_the_run_notes_the_miss_and_says_so(self):
+        db_path = self.path("run.db")
+        self.run_query([make_listing(item_id="a"), make_listing(item_id="b")],
+                       ["--db", db_path, "--pages", "0"])
+        self.run_query([make_listing(item_id="b")], ["--db", db_path, "--pages", "0"],
+                       complete=False, near_complete=True)
+        conn = db.connect(db_path)
+        row = conn.execute("SELECT disappeared_at, missed_at FROM listing WHERE item_id='a'").fetchone()
+        conn.close()
+        self.assertIsNone(row["disappeared_at"])
+        self.assertIsNotNone(row["missed_at"])
+        self.assertIn("verdwijn-sweep voorlopig", self.stderr.getvalue())
+        self.assertIn("1 gemiste advertentie", self.stderr.getvalue())
 
 
 class SweepAcrossQueriesTest(TempDirTest):

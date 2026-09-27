@@ -1,7 +1,8 @@
 # Mijn fiets — intake (fase 0)
 
 Brondocument voor de taxatie. Ingevuld door de eigenaar; de afgeleide gevolgen
-en de open punten staan eronder. Fase 1 importeert dit naar `owned_item`.
+en de open punten staan eronder. `valuation.py` (fase 3) leest het scoringsblok
+onderaan en zet de fiets in `owned_item`.
 
 ## Vastgesteld door de eigenaar
 
@@ -131,7 +132,7 @@ extras           = geen (de Roam gaat niet mee)
 drivetrain_wear  = cassette + ketting ca. 1500 km oud
 total_km         = < 10.000
 budget_extra     = max €250 boven op de opbrengst
-verkoopprijs_handmatig = €450
+verkoopprijs_handmatig = 390
 ```
 
 `verkoopprijs_handmatig` is een terugval, geen taxatie. Staat er een bedrag,
@@ -140,6 +141,14 @@ vergelijkbare advertenties vindt (een Defy Composite uit 2012 staat er vaak
 nul of één keer tegelijk op). De bron is dan jijzelf, bijvoorbeeld
 `taxatie_2026-09-22.md`, en het rapport zegt dat erbij. Leeg laten = geen
 terugval.
+
+**Ingevuld: 390** (27-09-2026). Het bedrag is het fietsdeel van scenario B —
+de fiets met de originele wielen, zónder de CSC-set — want zo rekent de
+upgrade-finder ermee: bij een velremkandidaat verhuist de wielset mee, bij een
+schijfremkandidaat komt de opbrengst van de wielset er apart bij. Bron:
+`taxatie_2026-09-22.md`, scenario B1, realistische opbrengst €350-425; 390 is
+het midden. Niet het B-totaal (€525-650) invullen: dan telt de wielset dubbel
+en komt het velrembudget ~€160 te hoog uit.
 
 Alles wat daarboven scoort is een upgrade-kandidaat. Let op dat de
 maat-poort (56) hard is: een fiets die niet past valt af, hoe goed hij ook

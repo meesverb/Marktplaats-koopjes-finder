@@ -29,12 +29,17 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 DEFAULT_CONFIG_PATH = "scoring_config.json"
+# Naast dit bestand, niet in de werkmap: upgrade.py en scoring.py worden ook
+# met de hand gestart vanuit een andere map, en dan vond een kale bestandsnaam
+# de config niet en eindigde de run in een traceback.
+BUNDLED_CONFIG_PATH = str(Path(__file__).resolve().parent / DEFAULT_CONFIG_PATH)
 
 
-def load_config(path: str = DEFAULT_CONFIG_PATH) -> dict:
+def load_config(path: str = BUNDLED_CONFIG_PATH) -> dict:
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
@@ -436,7 +441,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         description="Kwaliteitsscore van de eigen fiets uit mijn_fiets.md (fase 4).",
     )
     parser.add_argument("--mijn-fiets", default="mijn_fiets.md")
-    parser.add_argument("--config", default=DEFAULT_CONFIG_PATH)
+    parser.add_argument("--config", default=BUNDLED_CONFIG_PATH)
     args = parser.parse_args(argv)
 
     import valuation as val

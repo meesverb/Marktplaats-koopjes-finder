@@ -555,6 +555,23 @@ class SyncListingSpecsTest(TempDirTest):
         rows = self.conn.execute("SELECT value FROM spec WHERE listing_id='a'").fetchall()
         self.assertEqual([r["value"] for r in rows], ["carbon"])
 
+    def test_the_text_wins_over_marktplaats_attributes_when_read_back(self):
+        # Same order as racefiets_jev.listing_spec_dict(): the attribute says
+        # "Schijfrem", the text "hydraulische schijfrem" — the text is sharper.
+        db.sync_listing_specs(self.conn, {"a": {"brake_type": "hydraulische schijfrem"}})
+        db.sync_listing_specs(
+            self.conn, {"a": {"brake_type": "schijfrem", "frame_material": "carbon"}},
+            source=db.SITE_SPEC_SOURCE,
+        )
+        self.assertEqual(
+            db.read_listing_specs(self.conn),
+            {"a": {"brake_type": "hydraulische schijfrem", "frame_material": "carbon"}},
+        )
+        self.assertEqual(
+            db.read_listing_specs(self.conn, source=db.SITE_SPEC_SOURCE),
+            {"a": {"brake_type": "schijfrem", "frame_material": "carbon"}},
+        )
+
     def test_a_different_source_is_left_alone(self):
         self.conn.execute(
             "INSERT INTO spec (listing_id, key, value, source, confidence) "

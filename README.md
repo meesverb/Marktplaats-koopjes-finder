@@ -146,6 +146,7 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--no-notify-better` | Skip the sound/notification when a listing beats the reference baseline | off |
 | `--bid-lookup` | Which bidding listings to fetch bid details for: `fast` (FAST_BID only), `all` (also MIN_BID), `none` | `fast` |
 | `--no-bid-lookup` | Alias for `--bid-lookup none` | off |
+| `--detail-lookup` | `budget`: fetch the listing page (full description, "Kenmerken") for complete road bikes within your size and budget — at most 10 per run, each listing once, only with `--db`. `none` skips it | `budget` |
 | `--bids-only` | Only report bidding listings | off |
 | `--min-score` | Only report listings with at least this dealscore (0-100) | none |
 | `--db` | Path to the SQLite database that mirrors the CSV/JSON files (see below) | `koopjes.db` |
@@ -345,15 +346,27 @@ has, and the asking price when the bid was never looked up. That last case is
 deliberately *not* treated as €0 or as the minimum bid — an unfetched bid is
 unknown, not free, and the column prints a dash rather than a number when
 there is nothing to go on. The estimated value comes from the best benchmark
-available for that listing: the secondhand average observed for its reference
-model if there are at least two sightings, otherwise the median of this
-search, in both cases corrected from an asking price to a realistic selling
-price with the same factor `valuation.py` uses. Without reference models
-matched, every listing in a search shares the same benchmark, so the column
-then effectively ranks by entry price — it gets sharper the more of
-`reference_prices.csv` applies to what you are searching for. Listings whose
-headroom is unknown keep the old ordering (the ones nobody has bid on first,
-each group by dealscore) and sit below the ones that have a number.
+available for that listing, in this order:
+
+1. the secondhand average observed for its reference model, if there are at
+   least two sightings;
+2. the median asking price of **comparable bikes** in the same set of
+   listings — same frame material and same groupset tier, narrowed to the
+   same brake type (rim or disc, the nearest thing to an age a listing
+   usually gives) when that is known and has enough bikes. At least 5, the
+   listing itself not counted, bids that are already running left out;
+3. the median of the whole search — marked **rough** (`grof`). Nothing about
+   the bike itself stands behind it: it's what a saddle or a pair of shoes
+   listed in the racefietsen category gets. The console prints no `RUIMTE`
+   figure for these, and in the report they sit below every real estimate.
+
+All three are asking prices, corrected to a realistic selling price with the
+same factor `valuation.py` uses. Even the comparable-bikes median still
+mixes model years (a 2009 and a 2024 Ultegra bike can share a segment when
+neither says its brake type), so read a large headroom on an old bike as a
+reason to look, not as a profit. Listings whose headroom is unknown (or
+rough) keep the old ordering (the ones nobody has bid on first, each group
+by dealscore) and sit below the ones that have a number.
 
 A listing only counts as "still free to bid on" when its bid count was
 actually looked up and came back zero — a `MIN_BID` listing without
@@ -469,9 +482,12 @@ A third bike file, and a different kind: not regex patterns to match titles
 against, but one row per brand / model / model year with the specs and the
 original price. The pattern files can't hold this — every "Defy Advanced 2"
 from 2016 to 2025 would share one pattern, and with first-match-wins only
-the first of those rows would ever be used. Nothing reads the catalogue
-automatically yet; it's reference data for the valuation (what did this
-bike cost new, in which year) and for looking things up by hand.
+the first of those rows would ever be used — which is also why it can't be
+passed to `--reference-file` (the run warns and matches nothing). Only its
+`brand` column is read automatically: `sleepers.py` uses it to rule out
+listings that name a brand, and `koopjes.py`'s list of unmatched listings
+groups by it. The rest — specs and new prices per model year — is reference
+data for looking things up by hand; the valuation doesn't read it (yet).
 
 Columns: `brand`, `model`, `model_year`, `seen_date`, `category`,
 `frame_material`, `groupset`, `electronic`, `speeds`, `brake_type`,
@@ -549,7 +565,16 @@ to load, and the default sort order repeats listings across pages. The sweep
 only runs when the number of distinct listings seen matches the total
 Marktplaats reports, and says why it skipped otherwise — use a narrower query
 (e.g. "giant defy"), `--category`, and `--sort newest` for the full crawl
-whose disappearances you want to count. The database remembers every query that
+whose disappearances you want to count.
+
+One exception: a crawl that loaded every page but missed just a few (at
+most 3, or 2% of the total). That is what happens when a listing is sold
+*while* the crawl pages through the results — everything after it shifts up
+a place and one listing lands on a page already fetched. Such a crawl notes
+the listings it missed (`missed_at`) without calling them gone; a listing
+missed by the next full crawl as well is marked disappeared as of its first
+miss, and one that turns up again in any crawl is cleared. The console says
+`verdwijn-sweep voorlopig` when this happens. The database remembers every query that
 found a listing (table `listing_query`), so a Defy last seen by the daytime
 "racefiets" run still counts for the nightly "giant defy" sweep. `valuation.py` reads from this
 database (see below); disable writing to it entirely with `--no-db`.
@@ -623,7 +648,12 @@ Three estimators, mixed into one band:
   On every rung a comp must be a complete road bike (a listing in the
   racefietsen category — a frame or crankset from a parts watchlist is not)
   and must not have a different frame material (from the text, or from the
-  reference model it matched).
+  reference model it matched). Only asking prices count: a fixed price, and
+  also a "bieden vanaf" (MIN_BID) price, since that's what the seller asks —
+  over half the Defy listings are MIN_BID. A bid listing that already has
+  bids is left out, because its price may then be the highest bid. Rows
+  stored before this rule existed are re-judged the next time a crawl sees
+  them.
 - **E2 — asking price → selling price.** Marktplaats publishes asking
   prices, not selling prices. Once at least 20 listings have disappeared
   within two weeks and 20 others have been sitting online for 60+ days —
@@ -666,6 +696,31 @@ The same function scores a listing and your own bike, which is what makes
 "better than mine" a comparison rather than an opinion. Missing information
 scores neutrally and says so, instead of being guessed at.
 
+Besides the text, the search results carry some of the seller's own
+structured choices ("Kenmerken" on the listing page): the frame material on
+roughly half the racefietsen, now and then the brake type. Those are read as
+well and stored in `spec` under source `marktplaats`; where the text says
+something about the same thing, the text wins (it's more specific —
+"hydraulische schijfrem" where the attribute says "Schijfrem"). On 240
+racefietsen this gave the frame material for 114 listings whose text didn't
+name it.
+
+The groupset is the bigger gap, and it's rarely in the first 200
+characters. So for the few listings that could be an upgrade — a complete
+road bike, not the wrong frame size, an effective price within the larger of
+your two budgets — the run fetches the listing page itself
+(`--detail-lookup budget`, the default): the full description and the
+"Kenmerken" list (material, brake, frame height). At most 10 per run, most
+promising first, and never the same listing twice: the text is stored in
+`koopjes.db` (`listing.full_description`) and put back on later runs. The
+quality score, the upgrade finder and the valuation read the full text;
+reference matching and the slapers stay on the search snippet, since a
+slaper is about what the *search* shows. Needs the database and a budget
+(`mijn_fiets.md`); without either it does nothing. Two rules got stricter
+with the longer text: a labelled groupset line ("Groepset: Ultegra") wins
+over a higher-tier part further down ("Cassette: Dura Ace"), and "Garmin
+houder" or "Wahoo Kickr" isn't a bike computer.
+
 A listing only offers its title and the first ~200 characters of the
 description, so a few shorthand forms are read as well: "Disc" in a model
 name ("Emonda SL5 Disc") counts as a disc brake (but "disc wiel" is a closed
@@ -693,9 +748,12 @@ plus a margin, and its effective price is within budget.
 
 Without enough comps there is no valuation and so no budget. For that case,
 `mijn_fiets.md` has a `verkoopprijs_handmatig` line in its scoring block: put
-your own expected sale price there and the upgrade finder (and the report's
-Upgrade tab) use it instead, saying so in the budget's origin. Left empty,
-it's not used. Everything that falls out comes back with a reason (`--show-rejected`).
+your own expected sale price there — the bike with its stock wheels, since
+the carbon wheelset is budgeted separately per route — and the upgrade
+finder (and the report's Upgrade tab) use it instead, saying so in the
+budget's origin. It also wins over an `indicatief` valuation (fewer than 5
+comps): one stray comp shouldn't quietly move your budget. A valuation on 5+
+comps wins over it. Left empty, it's not used. Everything that falls out comes back with a reason (`--show-rejected`).
 
 - **Frame size is a gate, not a score.** A bike outside the target size never
   appears, whatever it scores. A bike whose size Marktplaats does not report
@@ -748,7 +806,9 @@ a new run lands on the same one.
 
 - **Biedpaneel** — every bidding listing, sorted on headroom (estimated value
   minus what it costs to get in, the same numbers as the `RUIMTE` column in
-  the console). Unknown headroom sorts last and reads `onbekend`, never €0.
+  the console): first the ones valued on a reference model or comparable
+  bikes, then the rough ones (marked `grof`), then the unknown ones, which
+  read `onbekend`, never €0.
 - **Upgrade** — the candidates `upgrade.py` would print, for this run's
   listings: ranked on upgrade per euro, with asking price, effective price,
   budget, the size verdict and the per-dimension breakdown (hover a dimension
@@ -835,7 +895,7 @@ python reference_overview.py
 `reference_prices.csv` itself is gitignored by default (like the other
 local/personal files), so it's yours to edit freely without it showing up as
 a change to commit — except this repo's copy is force-added anyway, since it
-already has real researched entries in it (currently a handful of bookshelf
+already has real researched entries in it (currently 43 bookshelf
 speakers, compared against a Denon SC-N10 baseline — see git log for the
 sources). Keep adding to it freely; `git add -f reference_prices.csv` if you
 want your local edits committed too, otherwise they just stay local. The

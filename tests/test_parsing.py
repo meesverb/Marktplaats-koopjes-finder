@@ -65,6 +65,24 @@ class ParseListingTest(unittest.TestCase):
         self.assertEqual(listing.condition, "Zo goed als nieuw")
         self.assertEqual(listing.frame_height, "53 tot 57 cm")
 
+    def test_null_text_fields_become_empty_strings(self):
+        # Marktplaats can send a key with a null value; .get()'s default only
+        # covers a missing key, and a None reaches html.escape() in the report.
+        listing = mp.parse_listing(
+            raw_listing(
+                title=None,
+                description=None,
+                vipUrl=None,
+                date=None,
+                location=None,
+                priceInfo={"priceCents": 10000, "priceType": None},
+                attributes=[{"key": "condition", "value": None}],
+            )
+        )
+        for field in ("title", "description", "url", "date", "city", "price_type", "condition"):
+            self.assertEqual(getattr(listing, field), "", field)
+        self.assertEqual(listing.price_eur, 100.0)
+
 
 class FetchPageTest(unittest.TestCase):
     """The query ends up in the URL path, so it has to be encoded as one."""
@@ -261,6 +279,12 @@ class DominantCategoryTest(unittest.TestCase):
         response = {"facets": [{"key": "RelevantCategories", "categories": [{"id": 1}]}]}
         self.assertIsNone(mp.extract_dominant_category(response))
         self.assertIsNone(mp.extract_dominant_category({"facets": []}))
+
+    def test_null_facets_are_no_categories(self):
+        for response in ({"facets": None}, {"facets": [{"key": "RelevantCategories", "categories": None}]}):
+            with self.subTest(response=response):
+                self.assertIsNone(mp.extract_dominant_category(response))
+                self.assertEqual(mp.relevant_categories(response), [])
 
 
 class BalancedJsonTest(unittest.TestCase):

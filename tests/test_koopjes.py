@@ -211,7 +211,7 @@ class SummaryTest(TempDirTest):
             return mp.CrawlResult(listings[query], complete=True)
 
         argv = [
-            "--watchlist", "fietscomputer", "--no-html", "--no-log", "--no-price-history",
+            "--watchlist", "fietscomputer", "--no-html", "--no-log", "--no-price-history", "--delay", "0",
             "--no-notify-better", "--open-browser", "never",
             "--db", str(self.dir / "koopjes.db"),
             "--history-file", str(self.dir / "history.json"),

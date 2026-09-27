@@ -196,6 +196,36 @@ class CompletenessTest(unittest.TestCase):
         result, _ = collect(session)
         self.assertFalse(result.complete)
 
+    def test_one_missing_of_a_whole_crawl_is_near_complete(self):
+        # Seen on the real site (27-09-2026): a listing sold while paging
+        # shifts the rest up a place, and one goes unseen — 164 of 165.
+        session = self.html_session({
+            1: response([raw_listing(itemId="a")], total=3, max_page=2),
+            2: response([raw_listing(itemId="b")], total=3, max_page=2),
+        })
+        result, _ = collect(session)
+        self.assertFalse(result.complete)
+        self.assertTrue(result.near_complete)
+
+    def test_the_page_cap_and_a_failed_page_are_not_near_complete(self):
+        capped, _ = collect(self.html_session(
+            {1: response([raw_listing(itemId="a")], total=26354, max_page=1)}
+        ))
+        self.assertFalse(capped.near_complete)
+        failed, _ = collect(self.html_session(
+            {1: response([raw_listing(itemId="a")], total=2, max_page=2)}
+        ))
+        self.assertFalse(failed.near_complete)
+
+    def test_a_complete_crawl_is_not_also_near_complete(self):
+        result, _ = collect(self.html_session({1: response([raw_listing(itemId="a")], total=1)}))
+        self.assertTrue(result.complete)
+        self.assertFalse(result.near_complete)
+
+    def test_the_tolerance_grows_with_the_query(self):
+        self.assertEqual(mp.near_complete_max_missing(165), 3)
+        self.assertEqual(mp.near_complete_max_missing(1000), 20)
+
     def test_a_shallow_crawl_is_not_complete(self):
         session = self.html_session({1: response([raw_listing(itemId="a")], total=2, max_page=2)})
         result, _ = collect(session, pages=1)

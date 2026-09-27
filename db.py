@@ -193,6 +193,31 @@ MIGRATIONS: list[str] = [
     INSERT INTO listing_query (listing_id, query, first_seen, last_seen)
         SELECT item_id, query, first_seen, last_seen FROM listing WHERE query IS NOT NULL;
     """,
+    # 3: whether price_eur is an asking price. is_bid alone can't say: a
+    # MIN_BID listing is a bid listing whose search-result price is still the
+    # seller's asking price, and that's over half of the Defy market. The
+    # valuation used to drop every is_bid row for that reason. NULL = written
+    # before this column existed; the next crawl that sees the listing fills
+    # it in, and until then it's treated as before (is_bid decides).
+    """
+    ALTER TABLE listing ADD COLUMN price_is_asking INTEGER;
+    """,
+    # 4: a listing a nearly complete full crawl didn't see. One miss isn't
+    # proof it's gone (see racefiets_jev.near_complete_max_missing); a
+    # second full crawl that misses it too is, and then it's marked
+    # disappeared as of this first miss. Any crawl that sees it clears it.
+    """
+    ALTER TABLE listing ADD COLUMN missed_at TEXT;
+    """,
+    # 5: the full description from the listing's own page, for the few
+    # listings --detail-lookup fetched, and when. The search results stop at
+    # 200 characters; `description` keeps holding that snippet (sleepers and
+    # the report are about what the search shows), this column holds the
+    # rest, and a listing that has it is never fetched again.
+    """
+    ALTER TABLE listing ADD COLUMN full_description TEXT;
+    ALTER TABLE listing ADD COLUMN details_fetched_at TEXT;
+    """,
 ]
 
 
@@ -542,25 +567,30 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
         conn.execute(
             """
             INSERT INTO listing (item_id, title, description, price_eur, price_type, is_bid,
-                                  city, posted_date, condition, frame_height, url, query,
-                                  first_seen, last_seen)
+                                  price_is_asking, city, posted_date, condition,
+                                  frame_height, url, query, first_seen, last_seen)
             VALUES (:item_id, :title, :description, :price_eur, :price_type, :is_bid,
-                    :city, :posted_date, :condition, :frame_height, :url, :query,
-                    :first_seen, :last_seen)
+                    :price_is_asking, :city, :posted_date, :condition,
+                    :frame_height, :url, :query, :first_seen, :last_seen)
             ON CONFLICT(item_id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
                 price_eur = excluded.price_eur,
                 price_type = excluded.price_type,
                 is_bid = excluded.is_bid,
+                price_is_asking = excluded.price_is_asking,
                 city = excluded.city,
                 posted_date = excluded.posted_date,
                 condition = excluded.condition,
-                frame_height = excluded.frame_height,
+                -- A frame height read from the listing page (--detail-lookup)
+                -- isn't in the search results, so a later run would blank it.
+                frame_height = COALESCE(NULLIF(excluded.frame_height, ''), listing.frame_height),
                 url = excluded.url,
                 query = excluded.query,
                 last_seen = excluded.last_seen,
-                disappeared_at = NULL
+                disappeared_at = NULL,
+                days_online = NULL,
+                missed_at = NULL
             """,
             {
                 "item_id": listing.item_id,
@@ -569,6 +599,7 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "price_eur": listing.price_eur,
                 "price_type": listing.price_type,
                 "is_bid": 1 if listing.price_is_bid else 0,
+                "price_is_asking": 1 if listing.price_is_asking else 0,
                 "city": listing.city,
                 "posted_date": listing.date,
                 "condition": listing.condition,
@@ -594,6 +625,32 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 (listing.item_id, observed_at, listing.price_eur),
             )
     conn.commit()
+
+
+# The `spec` source for Marktplaats' own structured attributes
+# (racefiets_jev.site_specs()), next to "regex" for what the text says. Where
+# both have a key the text wins: see read_listing_specs().
+SITE_SPEC_SOURCE = "marktplaats"
+
+
+def read_listing_specs(conn: sqlite3.Connection, source: str | None = None) -> dict:
+    """{listing_id: {key: value}} from `spec`, every source merged with the
+    text ("regex") winning — the same order as racefiets_jev.listing_spec_dict(),
+    so a listing read back from the database scores as it did live. With
+    `source`, only that source."""
+    if source is not None:
+        rows = conn.execute(
+            "SELECT listing_id, key, value FROM spec WHERE source = ?", (source,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT listing_id, key, value FROM spec "
+            "ORDER BY CASE source WHEN 'regex' THEN 1 ELSE 0 END"
+        ).fetchall()
+    specs: dict = {}
+    for row in rows:
+        specs.setdefault(row["listing_id"], {})[row["key"]] = row["value"]
+    return specs
 
 
 def sync_listing_specs(
@@ -663,41 +720,90 @@ def sync_listing_models(
     return count
 
 
+def save_listing_details(conn: sqlite3.Connection, details: dict, fetched_at: str) -> None:
+    """{item_id: full description} from the listing pages fetched this run.
+    Call after sync_listings(), which creates the rows."""
+    for item_id, text in details.items():
+        conn.execute(
+            "UPDATE listing SET full_description = ?, details_fetched_at = ? WHERE item_id = ?",
+            (text, fetched_at, item_id),
+        )
+    conn.commit()
+
+
+def load_listing_details(conn: sqlite3.Connection, item_ids) -> dict:
+    """{item_id: (full description, frame height)} for the listings among
+    `item_ids` whose page was fetched on an earlier run."""
+    found = {}
+    for item_id in item_ids:
+        row = conn.execute(
+            "SELECT full_description, frame_height FROM listing "
+            "WHERE item_id = ? AND details_fetched_at IS NOT NULL",
+            (item_id,),
+        ).fetchone()
+        if row is not None:
+            found[item_id] = (row["full_description"] or "", row["frame_height"] or "")
+    return found
+
+
 def sweep_disappeared(
-    conn: sqlite3.Connection, query: str, seen_item_ids, observed_at: str
-) -> int:
+    conn: sqlite3.Connection,
+    query: str,
+    seen_item_ids,
+    observed_at: str,
+    *,
+    confirmed: bool = True,
+    report_missed: bool = False,
+):
     """Mark every listing `query` ever found (listing_query, not the
     overwritten listing.query) that isn't in `seen_item_ids` and isn't
     already marked as disappeared. Call this only after a full crawl
     (`--pages 0`) of that exact query — a shallow crawl only sees the first
     few pages, and would otherwise mark everything past that depth as gone.
-    Returns how many rows were newly marked."""
+
+    `confirmed=False` is for a crawl that was complete but for a few (see
+    racefiets_jev.near_complete_max_missing): an unseen listing only gets a
+    `missed_at`, unless an earlier full crawl already missed it — then it's
+    gone. A listing marked disappeared is dated from its first miss, the
+    earliest the crawls knew it was gone.
+
+    Returns how many rows were newly marked disappeared; with
+    `report_missed`, (newly missed, newly disappeared)."""
     rows = conn.execute(
-        "SELECT l.item_id, l.first_seen FROM listing l "
+        "SELECT l.item_id, l.first_seen, l.missed_at FROM listing l "
         "JOIN listing_query lq ON lq.listing_id = l.item_id "
         "WHERE lq.query = ? AND l.disappeared_at IS NULL",
         (query,),
     ).fetchall()
 
     count = 0
+    missed = 0
     for row in rows:
         if row["item_id"] in seen_item_ids:
             continue
+        if not confirmed and not row["missed_at"]:
+            conn.execute(
+                "UPDATE listing SET missed_at = ? WHERE item_id = ?", (observed_at, row["item_id"])
+            )
+            missed += 1
+            continue
+        gone_at = row["missed_at"] or observed_at
         days_online = None
         first_seen = row["first_seen"]
         if first_seen:
             try:
-                delta = _parse_iso(observed_at) - _parse_iso(first_seen)
+                delta = _parse_iso(gone_at) - _parse_iso(first_seen)
                 days_online = delta.days
             except ValueError:
                 days_online = None
         conn.execute(
-            "UPDATE listing SET disappeared_at = ?, days_online = ? WHERE item_id = ?",
-            (observed_at, days_online, row["item_id"]),
+            "UPDATE listing SET disappeared_at = ?, days_online = ?, missed_at = NULL "
+            "WHERE item_id = ?",
+            (gone_at, days_online, row["item_id"]),
         )
         count += 1
     conn.commit()
-    return count
+    return (missed, count) if report_missed else count
 
 
 def save_watchlist(

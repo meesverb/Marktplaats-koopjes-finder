@@ -112,14 +112,17 @@ def load_owner_context(
 
     if db_path is None:
         return _without_valuation(context, "geen database (--no-db), dus geen comps om op te taxeren"), None
-    if not Path(db_path).exists():
-        return _without_valuation(context, f"{db_path} bestaat nog niet, dus geen comps om op te taxeren"), None
-
-    conn = db.connect(db_path)
-    try:
-        comps = val.fetch_comp_candidates(conn)
-    finally:
-        conn.close()
+    # A database that doesn't exist yet (the very first run) has no comps, but
+    # verkoopprijs_handmatig still gives a budget — so carry on with none
+    # instead of stopping here. Not connected: db.connect() would create it.
+    missing = not Path(db_path).exists()
+    comps = []
+    if not missing:
+        conn = db.connect(db_path)
+        try:
+            comps = val.fetch_comp_candidates(conn)
+        finally:
+            conn.close()
 
     subject = val.subject_from_owner_bike(bike)
     comp_set = val.select_comps(subject, comps)
@@ -140,8 +143,10 @@ def load_owner_context(
     if "b" not in valuations:
         manual = up.manual_sale_price_from(bike.specs)
         problem = (
-            f"geen vergelijkbare advertenties in {db_path} ({len(comps)} advertenties met een "
-            "vraagprijs in het meetvenster). Crawl eerst met --query op dit model."
+            f"{db_path} bestaat nog niet, dus geen comps om op te taxeren."
+            if missing
+            else f"geen vergelijkbare advertenties in {db_path} ({len(comps)} advertenties met "
+            "een vraagprijs in het meetvenster). Crawl eerst met --query op dit model."
         )
         if manual is None:
             return _without_valuation(
@@ -161,10 +166,12 @@ def load_owner_context(
             ),
         ), None
 
+    amount, source = up.budget_basis(valuations["b"], up.manual_sale_price_from(bike.specs))
     budgets = up.budgets_from_valuation(
-        valuations["b"].mid_eur,
+        amount,
         wheelset_value_eur=context.wheelset.market_value,
         extra_budget_eur=context.extra_budget_eur,
+        source=source,
     )
     context = replace(
         context,
@@ -303,6 +310,7 @@ def render_upgrade_panel(
     problem: Optional[str],
     result: Optional[up.UpgradeResult],
     median_eur: Optional[float],
+    segments: Optional[up.SegmentBenchmarks] = None,
 ) -> str:
     if context is None:
         return f"<p class='notice'>{esc(problem or 'Geen eigen fiets bekend.')}</p>"
@@ -333,7 +341,7 @@ def render_upgrade_panel(
         rows = []
         for position, c in enumerate(result.candidates, start=1):
             l = c.listing
-            score_cell, score_sort = _value_score_cell(up.value_score(l, median_eur))
+            score_cell, score_sort = _value_score_cell(up.value_score(l, median_eur, segments=segments))
             reasons = " · ".join(c.reasons)
             rows.append(
                 f"<tr data-upgraderow='1' data-valuescore='{score_sort}'>"
@@ -375,14 +383,20 @@ def render_upgrade_panel(
 # --- Paneel: Biedpaneel -----------------------------------------------------
 
 
-def render_bid_panel(rows: Sequence[up.BidRow], median_eur: Optional[float]) -> str:
+def render_bid_panel(
+    rows: Sequence[up.BidRow],
+    median_eur: Optional[float],
+    segments: Optional[up.SegmentBenchmarks] = None,
+) -> str:
     if not rows:
         return "<p class='notice'>Geen biedadvertenties in deze zoekopdracht.</p>"
     body = []
     for row in rows:
         l = row.listing
-        score_cell, score_sort = _value_score_cell(up.value_score(l, median_eur))
+        score_cell, score_sort = _value_score_cell(up.value_score(l, median_eur, segments=segments))
         headroom = euro(row.headroom_eur) if row.headroom_eur is not None else "onbekend"
+        if row.headroom_eur is not None and row.estimate.rough:
+            headroom += " <span class='muted'>(grof)</span>"
         deal = f"{l.deal_score:.0f}" if l.deal_score is not None else "—"
         body.append(
             f"<tr data-bidrow='1' data-valuescore='{score_sort}'>"
@@ -398,8 +412,10 @@ def render_bid_panel(rows: Sequence[up.BidRow], median_eur: Optional[float]) -> 
         )
     return (
         "<p class='muted'>Gesorteerd op speelruimte: geschatte waarde − wat het kost om "
-        "binnen te komen. Onbekende speelruimte staat onderaan; dat is niet slecht maar "
-        "onbekend. Waardescore en dealscore zijn twee verschillende maten en staan daarom "
+        "binnen te komen. De waarde komt van het referentiemodel of van vergelijkbare fietsen "
+        "(zelfde framemateriaal en groepset); waar niets over de fiets bekend is, alleen de "
+        "mediaan van de hele zoekopdracht — die regels staan als <em>grof</em> onder de rest. "
+        "Onbekende speelruimte staat onderaan; dat is niet slecht maar onbekend. Waardescore en dealscore zijn twee verschillende maten en staan daarom "
         "in aparte kolommen.</p>"
         "<div class='table-wrap'><table class='bids'><thead><tr>"
         "<th>Speelruimte</th><th>Instap</th><th>Geschatte waarde</th><th>Waardescore</th>"
@@ -434,7 +450,8 @@ def build_panels(
     alleen de advertenties en de mediaan nodig. Mijn fiets en Upgrade hebben
     de eigen fiets nodig en, voor een budget, een taxatie; ontbreekt die, dan
     zegt het paneel waarom in plaats van leeg te blijven."""
-    bid_rows = up.bid_panel(listings, median_eur)
+    segments = up.segment_benchmarks(listings)
+    bid_rows = up.bid_panel(listings, median_eur, segments=segments)
 
     result: Optional[up.UpgradeResult] = None
     if owner is not None and owner.budgets is not None and owner.target_size_cm is not None:
@@ -450,9 +467,9 @@ def build_panels(
 
     return Panels(
         bike_html=render_bike_panel(owner, owner_problem),
-        upgrade_html=render_upgrade_panel(owner, owner_problem, result, median_eur),
+        upgrade_html=render_upgrade_panel(owner, owner_problem, result, median_eur, segments),
         upgrade_count=len(result.candidates) if result else 0,
-        bids_html=render_bid_panel(bid_rows, median_eur),
+        bids_html=render_bid_panel(bid_rows, median_eur, segments),
         bid_row_count=len(bid_rows),
         upgrades=result.candidates if result else (),
     )

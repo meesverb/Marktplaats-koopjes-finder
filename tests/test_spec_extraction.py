@@ -120,5 +120,40 @@ class ExtractListingSpecsTest(unittest.TestCase):
         self.assertEqual(result["b"], {})
 
 
+
+class SiteSpecsTest(unittest.TestCase):
+    """Marktplaats' own structured attributes in the search results
+    (extendedAttributes), 27-09-2026: `material` on 17 of 30 racefietsen."""
+
+    def parse(self, *attrs, title="Racefiets", description=""):
+        from helpers import raw_listing
+        return mp.parse_listing(raw_listing(
+            title=title, description=description,
+            extendedAttributes=[{"key": k, "value": v} for k, v in attrs],
+        ))
+
+    def test_material_and_brake_are_read(self):
+        listing = self.parse(("material", "Carbon"), ("brakeType", "Velgrem"))
+        self.assertEqual(listing.site_specs, {"frame_material": "carbon", "brake_type": "velrem"})
+
+    def test_values_that_do_not_say_one_thing_are_left_out(self):
+        listing = self.parse(("material", "Overige"), ("brakeType", "Terugtraprem"),
+                             ("numberOfGears", "Meer dan 20 versnellingen"))
+        self.assertEqual(listing.site_specs, {})
+
+    def test_the_text_fills_in_first_and_the_attributes_fill_the_gaps(self):
+        listing = self.parse(("material", "Carbon"), ("brakeType", "Schijfrem"),
+                             title="Racefiets hydraulische schijfrem")
+        self.assertEqual(
+            mp.listing_spec_dict(listing),
+            {"frame_material": "carbon", "brake_type": "hydraulische schijfrem"},
+        )
+
+    def test_site_specs_is_not_a_csv_column(self):
+        # A new column would make every existing bargains log warn each run.
+        self.assertNotIn("site_specs", mp.LISTING_FIELDS)
+        self.assertEqual(mp.LISTING_FIELDS[-1], "sleeper_reasons")
+
+
 if __name__ == "__main__":
     unittest.main()
