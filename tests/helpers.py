@@ -24,6 +24,32 @@ def _no_listing_pages(session, url):
 mp.fetch_listing_page = _no_listing_pages
 
 
+def close_databases_before_cleanup(testcase) -> None:
+    """Close every koopjes.db connection a test opens, before its temporary
+    directory is removed. Call it in setUp *after* registering that
+    directory's cleanup (cleanups run last-in, first-out).
+
+    Windows refuses to delete a file that is still open ("WinError 32: het
+    bestand wordt door een ander proces gebruikt"), so a test that leaves a
+    connection open fails in its cleanup there — while Linux and macOS
+    delete the file regardless, which is how 52 of these went unnoticed."""
+    import db
+    from unittest import mock
+
+    opened = []
+    real_connect = db.connect
+
+    def tracking_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    patcher = mock.patch.object(db, "connect", tracking_connect)
+    patcher.start()
+    testcase.addCleanup(lambda: [conn.close() for conn in opened])
+    testcase.addCleanup(patcher.stop)
+
+
 def repo_file(name: str) -> str:
     """A data file next to the code (scoring_config.json, mijn_fiets.md, ...).
     Tests that read one go through here rather than through a bare relative
