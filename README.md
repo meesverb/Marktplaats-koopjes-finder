@@ -346,15 +346,27 @@ has, and the asking price when the bid was never looked up. That last case is
 deliberately *not* treated as €0 or as the minimum bid — an unfetched bid is
 unknown, not free, and the column prints a dash rather than a number when
 there is nothing to go on. The estimated value comes from the best benchmark
-available for that listing: the secondhand average observed for its reference
-model if there are at least two sightings, otherwise the median of this
-search, in both cases corrected from an asking price to a realistic selling
-price with the same factor `valuation.py` uses. Without reference models
-matched, every listing in a search shares the same benchmark, so the column
-then effectively ranks by entry price — it gets sharper the more of
-`reference_prices.csv` applies to what you are searching for. Listings whose
-headroom is unknown keep the old ordering (the ones nobody has bid on first,
-each group by dealscore) and sit below the ones that have a number.
+available for that listing, in this order:
+
+1. the secondhand average observed for its reference model, if there are at
+   least two sightings;
+2. the median asking price of **comparable bikes** in the same set of
+   listings — same frame material and same groupset tier, narrowed to the
+   same brake type (rim or disc, the nearest thing to an age a listing
+   usually gives) when that is known and has enough bikes. At least 5, the
+   listing itself not counted, bids that are already running left out;
+3. the median of the whole search — marked **rough** (`grof`). Nothing about
+   the bike itself stands behind it: it's what a saddle or a pair of shoes
+   listed in the racefietsen category gets. The console prints no `RUIMTE`
+   figure for these, and in the report they sit below every real estimate.
+
+All three are asking prices, corrected to a realistic selling price with the
+same factor `valuation.py` uses. Even the comparable-bikes median still
+mixes model years (a 2009 and a 2024 Ultegra bike can share a segment when
+neither says its brake type), so read a large headroom on an old bike as a
+reason to look, not as a profit. Listings whose headroom is unknown (or
+rough) keep the old ordering (the ones nobody has bid on first, each group
+by dealscore) and sit below the ones that have a number.
 
 A listing only counts as "still free to bid on" when its bid count was
 actually looked up and came back zero — a `MIN_BID` listing without
@@ -794,7 +806,9 @@ a new run lands on the same one.
 
 - **Biedpaneel** — every bidding listing, sorted on headroom (estimated value
   minus what it costs to get in, the same numbers as the `RUIMTE` column in
-  the console). Unknown headroom sorts last and reads `onbekend`, never €0.
+  the console): first the ones valued on a reference model or comparable
+  bikes, then the rough ones (marked `grof`), then the unknown ones, which
+  read `onbekend`, never €0.
 - **Upgrade** — the candidates `upgrade.py` would print, for this run's
   listings: ranked on upgrade per euro, with asking price, effective price,
   budget, the size verdict and the per-dimension breakdown (hover a dimension

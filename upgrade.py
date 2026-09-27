@@ -284,18 +284,90 @@ def effective_price(
 class ValueEstimate:
     amount: Optional[float]
     basis: str
+    # Only the median of the whole query stood behind it: a number for a
+    # listing nothing is known about — a bike without a recognised groupset,
+    # or a saddle in the racefietsen category. It stays visible, but ranks
+    # below an estimate from comparable bikes (see bid_panel()).
+    rough: bool = False
+
+
+# How many comparable bikes a segment needs before its median is a benchmark
+# — the same floor as a hard number in the valuation (fase 3).
+SEGMENT_MIN_N = val.MIN_COMPS_FOR_A_HARD_NUMBER
+
+
+def segment_keys(listing: mp.Listing) -> list[tuple]:
+    """The segments a listing belongs to, narrowest first.
+
+    Frame material and groupset tier are the base: the two things that set a
+    road bike's price band most, and the two the search gives most often (the
+    material as a Marktplaats attribute on over half the listings). Both or
+    nothing — half a key would lump a carbon Ultegra in with alu ones.
+
+    Where the brake type is known it narrows the segment further. "Carbon,
+    Ultegra" on its own spans a 2009 rim-brake bike and a 2024 disc one; the
+    first run with segments valued a Campagnolo Record 10-speed bike at the
+    median of both. Rim or disc is the nearest thing to an age the listing
+    usually gives."""
+    material = mp.listing_spec_dict(listing).get("frame_material")
+    if not material or listing.groupset_tier is None:
+        return []
+    base = (material, listing.groupset_tier)
+    route = brake_route(mp.listing_spec_dict(listing).get("brake_type"))
+    if route == ROUTE_UNKNOWN:
+        return [base]
+    return [base + (route,), base]
+
+
+def describe_segment(key: tuple) -> str:
+    return ", ".join([key[0], f"groepsettier {key[1]}", *key[2:]])
+
+
+@dataclass(frozen=True)
+class SegmentBenchmarks:
+    """Asking prices per segment_key(), from one set of listings (a run's, or
+    what upgrade.py read from the database). Measured, not looked up: this
+    says what bikes like this one are listed for right now."""
+
+    prices: dict
+
+    def median_for(self, listing: mp.Listing) -> Optional[tuple[float, int, tuple]]:
+        """(median, n, key) of the narrowest segment with enough bikes in
+        it, without the listing itself — its own price would pull the
+        benchmark toward itself."""
+        for key in segment_keys(listing):
+            others = [p for item_id, p in self.prices.get(key, ()) if item_id != listing.item_id]
+            if len(others) >= SEGMENT_MIN_N:
+                return statistics.median(others), len(others), key
+        return None
+
+
+def segment_benchmarks(listings: Sequence[mp.Listing]) -> SegmentBenchmarks:
+    prices: dict = {}
+    for listing in listings:
+        category = mp.category_from_url(listing.url)
+        if category is not None and category != mp.ROAD_BIKE_CATEGORY:
+            continue
+        if not listing.price_is_asking or not listing.price_eur or listing.price_eur <= 0:
+            continue
+        for key in segment_keys(listing):
+            prices.setdefault(key, []).append((listing.item_id, listing.price_eur))
+    return SegmentBenchmarks(prices)
 
 
 def estimate_value(
     listing: mp.Listing,
     median_eur: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
+    segments: Optional[SegmentBenchmarks] = None,
 ) -> ValueEstimate:
     """Wat deze advertentie waard is, uit de beste benchmark die er ligt.
 
     Een ladder met afnemend vertrouwen, net als E1 in fase 3, maar dan per
     advertentie in plaats van per model: het waargenomen 2e-hands gemiddelde
-    van dit exacte referentiemodel gaat vóór de mediaan van de zoekopdracht.
+    van dit exacte referentiemodel, dan de mediaan van vergelijkbare fietsen
+    (zelfde framemateriaal en groepsettier, `segments`), en pas dan de
+    mediaan van de hele zoekopdracht — die laatste als `rough`.
 
     Allebei zijn het vráágprijzen, dus de E2-correctie uit §6 gaat er
     overheen — anders vergelijkt de speelruimte hieronder een vraagprijs met
@@ -309,10 +381,20 @@ def estimate_value(
             f"2e-hands gemiddelde {label} (n={listing.ref_market_count}) "
             f"× {val.dutch(negotiation_factor)}",
         )
+    segment = segments.median_for(listing) if segments is not None else None
+    if segment is not None:
+        median, n, key = segment
+        return ValueEstimate(
+            median * negotiation_factor,
+            f"mediaan van {n} vergelijkbare fietsen ({describe_segment(key)}) "
+            f"€{median:.0f} × {val.dutch(negotiation_factor)}",
+        )
     if median_eur:
         return ValueEstimate(
             median_eur * negotiation_factor,
-            f"mediaan van deze zoekopdracht €{median_eur:.0f} × {val.dutch(negotiation_factor)}",
+            f"grof: mediaan van deze hele zoekopdracht €{median_eur:.0f} × "
+            f"{val.dutch(negotiation_factor)} — niets over deze fiets bekend om hem mee te vergelijken",
+            rough=True,
         )
     return ValueEstimate(None, "geen benchmark")
 
@@ -334,6 +416,7 @@ def value_score(
     listing: mp.Listing,
     median_eur: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
+    segments: Optional[SegmentBenchmarks] = None,
 ) -> ValueScore:
     """`geschatte waarde / prijs`, per advertentie.
 
@@ -345,7 +428,7 @@ def value_score(
     dezelfde scheefheid die estimate_value() juist wegneemt. Bij een vaste
     prijs valt de factor boven en onder weg — benchmark / vraagprijs — en bij
     een bod is het waarde / instapprijs."""
-    estimate = estimate_value(listing, median_eur, negotiation_factor)
+    estimate = estimate_value(listing, median_eur, negotiation_factor, segments)
     price = effective_price(listing, negotiation_factor)
     if estimate.amount is None:
         return ValueScore(None, f"geen schatting ({estimate.basis})")
@@ -374,6 +457,7 @@ def bid_headroom(
     listing: mp.Listing,
     median_eur: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
+    segments: Optional[SegmentBenchmarks] = None,
 ) -> BidRow:
     """Speelruimte voor één biedadvertentie.
 
@@ -384,7 +468,7 @@ def bid_headroom(
     gerekend met de instapprijs: dát is wat je kwijt bent, en zodra het
     huidige bod bekend is, ís de instapprijs dat bod. Waar dat niet zo is,
     zegt `entry.basis` het."""
-    estimate = estimate_value(listing, median_eur, negotiation_factor)
+    estimate = estimate_value(listing, median_eur, negotiation_factor, segments)
     entry = entry_price(listing)
     if estimate.amount is None or entry.amount is None:
         note = "geen schatting" if estimate.amount is None else "geen instapprijs bekend"
@@ -396,12 +480,27 @@ def bid_panel(
     listings: Sequence[mp.Listing],
     median_eur: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
+    segments: Optional[SegmentBenchmarks] = None,
 ) -> list[BidRow]:
     """Alle biedadvertenties, gesorteerd op speelruimte (§7) in plaats van op
-    dealscore. Regels zonder speelruimte zakken naar onderen: ze zijn niet
-    slecht, ze zijn onbekend, en bovenaan zetten zou dat verwarren."""
-    rows = [bid_headroom(l, median_eur, negotiation_factor) for l in listings if l.price_is_bid]
-    rows.sort(key=lambda r: (r.headroom_eur is not None, r.headroom_eur or 0.0), reverse=True)
+    dealscore. Eerst de regels met een echte schatting (referentiemodel of
+    vergelijkbare fietsen), dan de grove (mediaan van de hele zoekopdracht),
+    dan de onbekende. Zonder die volgorde stond een zadelpen van €20 bovenaan
+    met "€636 speelruimte": goedkoop is niet hetzelfde als ondergewaardeerd.
+    `segments` None: uit `listings` zelf opgebouwd."""
+    if segments is None:
+        segments = segment_benchmarks(listings)
+    rows = [
+        bid_headroom(l, median_eur, negotiation_factor, segments) for l in listings if l.price_is_bid
+    ]
+    rows.sort(
+        key=lambda r: (
+            r.headroom_eur is not None,
+            r.headroom_eur is not None and not r.estimate.rough,
+            r.headroom_eur or 0.0,
+        ),
+        reverse=True,
+    )
     return rows
 
 
@@ -728,10 +827,12 @@ def format_candidate(candidate: Candidate, position: int) -> str:
 
 def format_bid_row(row: BidRow) -> str:
     headroom = f"€{row.headroom_eur:.0f}" if row.headroom_eur is not None else "onbekend"
+    if row.headroom_eur is not None and row.estimate.rough:
+        headroom += " (grof)"
     entry = f"€{row.entry.amount:.0f}" if row.entry.amount is not None else "—"
     value = f"€{row.estimate.amount:.0f}" if row.estimate.amount is not None else "—"
     lines = [
-        f"  speelruimte {headroom:>9}   instap {entry:>7} ({row.entry.basis})",
+        f"  speelruimte {headroom:>16}   instap {entry:>7} ({row.entry.basis})",
         f"      waarde {value} — {row.estimate.basis}",
         f"      {row.listing.title[:66]}",
         f"      {row.listing.url}",

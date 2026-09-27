@@ -2076,7 +2076,15 @@ def bid_headroom_by_id(
     euros means nothing else here has to know about upgrade.py's types."""
     import upgrade
 
-    return {row.listing.item_id: row.headroom_eur for row in upgrade.bid_panel(listings, median)}
+    # A rough estimate (only the query's median behind it) gets no figure
+    # here: it would rank a €20 seat post in the racefietsen category above
+    # every real bike. Those listings fall back to the deal-score order below
+    # the ones with a real estimate — and the deal score already is that
+    # same comparison with the median.
+    return {
+        row.listing.item_id: None if row.estimate.rough else row.headroom_eur
+        for row in upgrade.bid_panel(listings, median)
+    }
 
 
 # The report's HTML lives in its own file (PLAN_FIETSWAARDE.md §8). It used to
