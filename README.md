@@ -683,6 +683,15 @@ The same function scores a listing and your own bike, which is what makes
 "better than mine" a comparison rather than an opinion. Missing information
 scores neutrally and says so, instead of being guessed at.
 
+Besides the text, the search results carry some of the seller's own
+structured choices ("Kenmerken" on the listing page): the frame material on
+roughly half the racefietsen, now and then the brake type. Those are read as
+well and stored in `spec` under source `marktplaats`; where the text says
+something about the same thing, the text wins (it's more specific —
+"hydraulische schijfrem" where the attribute says "Schijfrem"). On 240
+racefietsen this gave the frame material for 114 listings whose text didn't
+name it.
+
 A listing only offers its title and the first ~200 characters of the
 description, so a few shorthand forms are read as well: "Disc" in a model
 name ("Emonda SL5 Disc") counts as a disc brake (but "disc wiel" is a closed

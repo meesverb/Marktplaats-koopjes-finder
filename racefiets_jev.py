@@ -22,7 +22,7 @@ import string
 import sys
 import time
 import webbrowser
-from dataclasses import dataclass, asdict, fields as dataclass_fields
+from dataclasses import dataclass, asdict, field, fields as dataclass_fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -93,6 +93,10 @@ class Listing:
     image_urls: str = ""
     sleeper_score: Optional[float] = None
     sleeper_reasons: str = ""
+    # Specs from Marktplaats' own structured attributes (see site_specs()),
+    # in extract_specs()' vocabulary. Not a CSV column (metadata): it's a
+    # dict, and a new column would warn on every existing bargains log.
+    site_specs: dict = field(default_factory=dict, metadata={"csv": False})
 
     @property
     def price_is_asking(self) -> bool:
@@ -106,7 +110,7 @@ class Listing:
         return self.price_eur is not None and not (self.price_is_bid and self.bid_count)
 
 
-LISTING_FIELDS = [f.name for f in dataclass_fields(Listing)]
+LISTING_FIELDS = [f.name for f in dataclass_fields(Listing) if f.metadata.get("csv", True)]
 
 
 def as_number(value) -> Optional[float]:
@@ -782,6 +786,42 @@ def extract_listing_specs(listings: list[Listing]) -> dict[str, dict[str, str]]:
     }
 
 
+# Marktplaats' structured attributes, as the search results carry them in
+# extendedAttributes (checked 27-09-2026: `material` on 17 of 30 racefietsen,
+# `brakeType` on the odd one), mapped onto extract_specs()' vocabulary. Only
+# values that say one thing: "Overige", a combined value or a new wording is
+# left out rather than guessed. numberOfGears is not used — it counts the
+# gears ("Meer dan 20 versnellingen"), not the sprockets `speeds` means.
+SITE_MATERIALS = {"carbon": "carbon", "aluminium": "aluminium", "staal": "staal", "titanium": "titanium"}
+SITE_BRAKES = {
+    "velgrem": "velrem",
+    "velrem": "velrem",
+    "schijfrem": "schijfrem",
+    "hydraulische schijfrem": "hydraulische schijfrem",
+    "mechanische schijfrem": "mechanische schijfrem",
+}
+
+
+def site_specs(raw: dict) -> dict[str, str]:
+    specs = {}
+    material = SITE_MATERIALS.get(extract_attribute(raw, "material").strip().lower())
+    if material:
+        specs["frame_material"] = material
+    brake = SITE_BRAKES.get(extract_attribute(raw, "brakeType").strip().lower())
+    if brake:
+        specs["brake_type"] = brake
+    return specs
+
+
+def listing_spec_dict(listing: Listing) -> dict[str, str]:
+    """Everything known about a listing's build: the text first, because
+    it's the more specific ("hydraulische schijfrem" where the attribute
+    only says "Schijfrem"), and the seller's structured attributes for what
+    the text doesn't say — which, with a 200-character snippet, is often the
+    frame material."""
+    return {**listing.site_specs, **extract_specs(f"{listing.title} {listing.description}")}
+
+
 # How many photos a listing keeps from the search results. Marktplaats sends
 # at most three there (the rest are only on the listing page), and for the
 # sleeper cards (sleepers.py) three is enough to see what the bike is.
@@ -841,6 +881,7 @@ def parse_listing(raw: dict) -> Listing:
         thin_content=raw.get("thinContent") is True,
         reserved=raw.get("reserved") is True,
         image_urls=search_image_urls(raw),
+        site_specs=site_specs(raw),
     )
 
 
@@ -2182,7 +2223,8 @@ def write_csv(listings: list[Listing], path: str) -> None:
         writer = csv.DictWriter(f, fieldnames=LISTING_FIELDS)
         writer.writeheader()
         for listing in listings:
-            writer.writerow(asdict(listing))
+            row = asdict(listing)
+            writer.writerow({name: row[name] for name in LISTING_FIELDS})
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -2634,6 +2676,9 @@ def sync_database(
         )
         db.sync_listings(conn, query, listings, finished_at)
         db.sync_listing_specs(conn, extract_listing_specs(listings))
+        db.sync_listing_specs(
+            conn, {l.item_id: l.site_specs for l in listings}, source=db.SITE_SPEC_SOURCE
+        )
         if reference_matches:
             db.sync_listing_models(conn, reference_matches)
         db.record_crawl_run(

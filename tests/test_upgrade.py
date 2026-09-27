@@ -629,6 +629,18 @@ class FetchCandidateListingsTest(unittest.TestCase):
         self.addCleanup(conn.close)
         self.assertEqual(up.fetch_candidate_listings(conn)[0].groupset_tier, 5)
 
+    def test_marktplaats_attributes_come_back_from_the_database(self):
+        # The frame material Marktplaats gives in the search results is often
+        # the only one there is; upgrade.py scores from the database, so it has
+        # to see it too, not just the live report.
+        conn = self.sync([make_listing(item_id="a", price_eur=500.0)])
+        self.addCleanup(conn.close)
+        db.sync_listing_specs(conn, {"a": {"frame_material": "carbon"}}, source=db.SITE_SPEC_SOURCE)
+        listing = up.fetch_candidate_listings(conn)[0]
+        self.assertEqual(listing.site_specs, {"frame_material": "carbon"})
+        specs, _ = up.listing_specs(listing)
+        self.assertEqual(specs["frame_material"], "carbon")
+
     def test_query_filter(self):
         conn = self.sync([make_listing(item_id="a", price_eur=500.0)], query="racefiets")
         self.addCleanup(conn.close)

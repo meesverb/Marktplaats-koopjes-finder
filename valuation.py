@@ -462,9 +462,7 @@ def fetch_comp_candidates(
         params.append(query)
     rows = conn.execute("\n".join(sql), params).fetchall()
 
-    specs_by_listing: dict[str, dict[str, str]] = {}
-    for spec_row in conn.execute("SELECT listing_id, key, value FROM spec").fetchall():
-        specs_by_listing.setdefault(spec_row["listing_id"], {})[spec_row["key"]] = spec_row["value"]
+    specs_by_listing: dict[str, dict[str, str]] = db.read_listing_specs(conn)
 
     as_of = as_of or datetime.now(timezone.utc)
     materials = reference_materials(conn)

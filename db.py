@@ -616,6 +616,32 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
     conn.commit()
 
 
+# The `spec` source for Marktplaats' own structured attributes
+# (racefiets_jev.site_specs()), next to "regex" for what the text says. Where
+# both have a key the text wins: see read_listing_specs().
+SITE_SPEC_SOURCE = "marktplaats"
+
+
+def read_listing_specs(conn: sqlite3.Connection, source: str | None = None) -> dict:
+    """{listing_id: {key: value}} from `spec`, every source merged with the
+    text ("regex") winning — the same order as racefiets_jev.listing_spec_dict(),
+    so a listing read back from the database scores as it did live. With
+    `source`, only that source."""
+    if source is not None:
+        rows = conn.execute(
+            "SELECT listing_id, key, value FROM spec WHERE source = ?", (source,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT listing_id, key, value FROM spec "
+            "ORDER BY CASE source WHEN 'regex' THEN 1 ELSE 0 END"
+        ).fetchall()
+    specs: dict = {}
+    for row in rows:
+        specs.setdefault(row["listing_id"], {})[row["key"]] = row["value"]
+    return specs
+
+
 def sync_listing_specs(
     conn: sqlite3.Connection, specs_by_listing: dict, source: str = "regex"
 ) -> int:

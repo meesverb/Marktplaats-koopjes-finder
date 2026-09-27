@@ -420,7 +420,7 @@ def listing_specs(listing: mp.Listing) -> tuple[dict[str, str], Optional[str]]:
     (valuation.title_year()), zodat taxatie en score over het jaar van een
     advertentie hetzelfde zeggen. Geeft ook een reden-regel terug, want een
     jaar uit de titel is een aanname die in de uitsplitsing hoort te staan."""
-    specs = mp.extract_specs(f"{listing.title} {listing.description}")
+    specs = mp.listing_spec_dict(listing)
     if specs.get("model_year"):
         return specs, None
     year = val.title_year(listing.title)
@@ -612,6 +612,7 @@ def fetch_candidate_listings(
         sql.append("AND item_id IN (SELECT listing_id FROM listing_query WHERE query = ?)")
         params.append(query)
 
+    site_specs = db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE)
     listings = []
     for row in conn.execute("\n".join(sql), params).fetchall():
         title = row["title"] or ""
@@ -633,6 +634,7 @@ def fetch_candidate_listings(
                 url=row["url"] or "",
                 price_is_bid=bool(row["is_bid"]),
                 first_seen=row["first_seen"] or "",
+                site_specs=site_specs.get(row["item_id"], {}),
             )
         )
     return listings
