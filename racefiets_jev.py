@@ -145,10 +145,29 @@ class CrawlResult(list):
     (167 pages, ~5000 listings, for "racefiets" with 26000+ results), and a
     page that fails to load ends the crawl early."""
 
-    def __init__(self, listings=(), complete: bool = False, note: str = ""):
+    def __init__(
+        self, listings=(), complete: bool = False, note: str = "", near_complete: bool = False
+    ):
         super().__init__(listings)
         self.complete = complete
         self.note = note
+        # Every page loaded and paging ran to the end, but a handful of the
+        # total went unseen — see NEAR_COMPLETE_MAX_MISSING.
+        self.near_complete = near_complete
+
+
+# A full crawl takes a few seconds per page, and a listing that is sold or
+# withdrawn in the meantime shifts every later one up a place: the one at the
+# top of the next page lands on a page already fetched, and goes unseen. On
+# 27-09-2026 "giant defy" saw 164 of 165 that way; the crawl right after it
+# saw 164 of 164. Calling such a crawl incomplete skipped the disappearance
+# sweep on exactly the event it exists to measure. A few missing of an
+# otherwise whole crawl is therefore "near complete": the sweep only notes
+# what it missed, and a listing counts as gone once a second full crawl
+# misses it too (db.sweep_disappeared). The page cap and the default sort's
+# repeats lose far more than this (thousands, or ~20%).
+def near_complete_max_missing(total: float) -> int:
+    return max(3, int(total * 0.02))
 
 
 def check_page_offset(data: dict, page: int) -> None:
@@ -1067,7 +1086,14 @@ def collect_listings(
         )
     else:
         complete, note = True, ""
-    return CrawlResult(listings.values(), complete=complete, note=note)
+    near_complete = (
+        not complete
+        and not fetch_error
+        and reached_end
+        and total_results is not None
+        and total_results - len(raw_ids) <= near_complete_max_missing(total_results)
+    )
+    return CrawlResult(listings.values(), complete=complete, note=note, near_complete=near_complete)
 
 
 def filter_by_price(
@@ -2583,6 +2609,7 @@ def sync_database(
     reference_matches: Optional[dict[str, list[str]]] = None,
     crawl_complete: bool = False,
     crawl_note: str = "",
+    crawl_near_complete: bool = False,
 ) -> None:
     """Mirror this run into koopjes.db, alongside the CSV/JSON files that
     stay the ones actually read elsewhere (reference_overview.py etc.) —
@@ -2622,7 +2649,19 @@ def sync_database(
         # collect_listings' own convention) has actually looked at every
         # listing for this query — a shallow --pages 3 run would otherwise
         # mark everything past page 3 as disappeared.
-        if args.pages <= 0 and not crawl_complete:
+        if args.pages <= 0 and not crawl_complete and crawl_near_complete:
+            missed, swept = db.sweep_disappeared(
+                conn, query, crawled_item_ids, finished_at, confirmed=False, report_missed=True
+            )
+            print(
+                f"verdwijn-sweep voorlopig: de crawl van '{query}' was compleet op een paar na "
+                f"({crawl_note}) — waarschijnlijk verdween er een advertentie tijdens het "
+                f"bladeren. {missed} gemiste advertentie(s) genoteerd; ze tellen pas als verdwenen "
+                "als de volgende volledige crawl ze ook mist"
+                + (f". {swept} die de vorige keer ook al ontbraken, nu gemarkeerd als verdwenen." if swept else "."),
+                file=sys.stderr,
+            )
+        elif args.pages <= 0 and not crawl_complete:
             # --pages 0 is a request, not a guarantee: Marktplaats stops
             # paging at ~5000 results, and a failed page ends the crawl
             # early. Sweeping then marks everything the crawl didn't reach as
@@ -2740,6 +2779,7 @@ def run_for_query(
             reference_matches=reference_matches,
             crawl_complete=crawl_complete,
             crawl_note=crawl_note,
+            crawl_near_complete=getattr(listings, "near_complete", False),
         )
 
     # Captured before --bids-only/--min-score filter the list for the

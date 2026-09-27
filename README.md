@@ -552,7 +552,16 @@ to load, and the default sort order repeats listings across pages. The sweep
 only runs when the number of distinct listings seen matches the total
 Marktplaats reports, and says why it skipped otherwise — use a narrower query
 (e.g. "giant defy"), `--category`, and `--sort newest` for the full crawl
-whose disappearances you want to count. The database remembers every query that
+whose disappearances you want to count.
+
+One exception: a crawl that loaded every page but missed just a few (at
+most 3, or 2% of the total). That is what happens when a listing is sold
+*while* the crawl pages through the results — everything after it shifts up
+a place and one listing lands on a page already fetched. Such a crawl notes
+the listings it missed (`missed_at`) without calling them gone; a listing
+missed by the next full crawl as well is marked disappeared as of its first
+miss, and one that turns up again in any crawl is cleared. The console says
+`verdwijn-sweep voorlopig` when this happens. The database remembers every query that
 found a listing (table `listing_query`), so a Defy last seen by the daytime
 "racefiets" run still counts for the nightly "giant defy" sweep. `valuation.py` reads from this
 database (see below); disable writing to it entirely with `--no-db`.

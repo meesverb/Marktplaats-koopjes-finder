@@ -202,6 +202,13 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE listing ADD COLUMN price_is_asking INTEGER;
     """,
+    # 4: a listing a nearly complete full crawl didn't see. One miss isn't
+    # proof it's gone (see racefiets_jev.near_complete_max_missing); a
+    # second full crawl that misses it too is, and then it's marked
+    # disappeared as of this first miss. Any crawl that sees it clears it.
+    """
+    ALTER TABLE listing ADD COLUMN missed_at TEXT;
+    """,
 ]
 
 
@@ -570,7 +577,9 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 url = excluded.url,
                 query = excluded.query,
                 last_seen = excluded.last_seen,
-                disappeared_at = NULL
+                disappeared_at = NULL,
+                days_online = NULL,
+                missed_at = NULL
             """,
             {
                 "item_id": listing.item_id,
@@ -675,40 +684,63 @@ def sync_listing_models(
 
 
 def sweep_disappeared(
-    conn: sqlite3.Connection, query: str, seen_item_ids, observed_at: str
-) -> int:
+    conn: sqlite3.Connection,
+    query: str,
+    seen_item_ids,
+    observed_at: str,
+    *,
+    confirmed: bool = True,
+    report_missed: bool = False,
+):
     """Mark every listing `query` ever found (listing_query, not the
     overwritten listing.query) that isn't in `seen_item_ids` and isn't
     already marked as disappeared. Call this only after a full crawl
     (`--pages 0`) of that exact query — a shallow crawl only sees the first
     few pages, and would otherwise mark everything past that depth as gone.
-    Returns how many rows were newly marked."""
+
+    `confirmed=False` is for a crawl that was complete but for a few (see
+    racefiets_jev.near_complete_max_missing): an unseen listing only gets a
+    `missed_at`, unless an earlier full crawl already missed it — then it's
+    gone. A listing marked disappeared is dated from its first miss, the
+    earliest the crawls knew it was gone.
+
+    Returns how many rows were newly marked disappeared; with
+    `report_missed`, (newly missed, newly disappeared)."""
     rows = conn.execute(
-        "SELECT l.item_id, l.first_seen FROM listing l "
+        "SELECT l.item_id, l.first_seen, l.missed_at FROM listing l "
         "JOIN listing_query lq ON lq.listing_id = l.item_id "
         "WHERE lq.query = ? AND l.disappeared_at IS NULL",
         (query,),
     ).fetchall()
 
     count = 0
+    missed = 0
     for row in rows:
         if row["item_id"] in seen_item_ids:
             continue
+        if not confirmed and not row["missed_at"]:
+            conn.execute(
+                "UPDATE listing SET missed_at = ? WHERE item_id = ?", (observed_at, row["item_id"])
+            )
+            missed += 1
+            continue
+        gone_at = row["missed_at"] or observed_at
         days_online = None
         first_seen = row["first_seen"]
         if first_seen:
             try:
-                delta = _parse_iso(observed_at) - _parse_iso(first_seen)
+                delta = _parse_iso(gone_at) - _parse_iso(first_seen)
                 days_online = delta.days
             except ValueError:
                 days_online = None
         conn.execute(
-            "UPDATE listing SET disappeared_at = ?, days_online = ? WHERE item_id = ?",
-            (observed_at, days_online, row["item_id"]),
+            "UPDATE listing SET disappeared_at = ?, days_online = ?, missed_at = NULL "
+            "WHERE item_id = ?",
+            (gone_at, days_online, row["item_id"]),
         )
         count += 1
     conn.commit()
-    return count
+    return (missed, count) if report_missed else count
 
 
 def save_watchlist(
