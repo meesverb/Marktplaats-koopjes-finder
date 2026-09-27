@@ -724,11 +724,37 @@ def manual_sale_price_from(specs: dict[str, str]) -> Optional[float]:
     return amount if amount > 0 else None
 
 
-def manual_budget_source(amount: float) -> str:
+def manual_budget_source(amount: float, indicative: Optional[val.Valuation] = None) -> str:
+    why = (
+        f"de automatische taxatie (midden €{indicative.mid_eur:.0f}) is nog indicatief"
+        if indicative is not None
+        else "te weinig vergelijkbare advertenties voor een taxatie"
+    )
     return (
         f"verkoopprijs €{amount:.0f}, zelf opgegeven in mijn_fiets.md ({MANUAL_SALE_PRICE_KEY}) "
-        "— te weinig vergelijkbare advertenties voor een taxatie"
+        f"— {why}"
     )
+
+
+def budget_basis(
+    scenario_b: Optional[val.Valuation], manual: Optional[float]
+) -> Optional[tuple[float, Optional[str]]]:
+    """Waar het budget op rust: (bedrag, herkomst), of None als er niets is.
+    herkomst None betekent "de taxatie", zoals budgets_from_valuation() dat
+    zelf uitschrijft.
+
+    De taxatie wint zodra hij een hard getal is. Een indicatieve taxatie
+    (minder dan MIN_COMPS_FOR_A_HARD_NUMBER comps) wint níet van een bedrag dat
+    de eigenaar zelf heeft ingevuld: dat bedrag belooft mijn_fiets.md te
+    gebruiken "zolang de automatische taxatie te weinig vergelijkbare
+    advertenties vindt", en één toevallige comp — bij de Defy vaak een
+    aluminium exemplaar — zou het budget anders stil een paar honderd euro
+    verschuiven."""
+    if scenario_b is not None and (manual is None or scenario_b.confidence != "indicatief"):
+        return scenario_b.mid_eur, None
+    if manual is not None:
+        return manual, manual_budget_source(manual, scenario_b)
+    return None
 
 
 def extra_budget_from(specs: dict[str, str]) -> float:
@@ -849,8 +875,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             scenario=val.SCENARIOS["b"],
             negotiation=val.empirical_negotiation_factor(comps),
         )
-        manual = manual_sale_price_from(bike.specs)
-        if scenario_b is None and manual is None:
+        basis = budget_basis(scenario_b, manual_sale_price_from(bike.specs))
+        if basis is None:
             print(
                 f"fout: geen vergelijkbare advertenties in {args.db}, dus geen taxatie en dus "
                 "geen budget. Crawl eerst met --query op dit model, of zet "
@@ -861,10 +887,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         wheelset = val.Component(label=bike.wheelset_label or "carbon wielset")
         budgets = budgets_from_valuation(
-            scenario_b.mid_eur if scenario_b is not None else manual,
+            basis[0],
             wheelset_value_eur=wheelset.market_value,
             extra_budget_eur=extra_budget,
-            source=None if scenario_b is not None else manual_budget_source(manual),
+            source=basis[1],
         )
 
         listings = fetch_candidate_listings(

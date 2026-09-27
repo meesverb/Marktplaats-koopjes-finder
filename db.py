@@ -193,6 +193,15 @@ MIGRATIONS: list[str] = [
     INSERT INTO listing_query (listing_id, query, first_seen, last_seen)
         SELECT item_id, query, first_seen, last_seen FROM listing WHERE query IS NOT NULL;
     """,
+    # 3: whether price_eur is an asking price. is_bid alone can't say: a
+    # MIN_BID listing is a bid listing whose search-result price is still the
+    # seller's asking price, and that's over half of the Defy market. The
+    # valuation used to drop every is_bid row for that reason. NULL = written
+    # before this column existed; the next crawl that sees the listing fills
+    # it in, and until then it's treated as before (is_bid decides).
+    """
+    ALTER TABLE listing ADD COLUMN price_is_asking INTEGER;
+    """,
 ]
 
 
@@ -542,17 +551,18 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
         conn.execute(
             """
             INSERT INTO listing (item_id, title, description, price_eur, price_type, is_bid,
-                                  city, posted_date, condition, frame_height, url, query,
-                                  first_seen, last_seen)
+                                  price_is_asking, city, posted_date, condition,
+                                  frame_height, url, query, first_seen, last_seen)
             VALUES (:item_id, :title, :description, :price_eur, :price_type, :is_bid,
-                    :city, :posted_date, :condition, :frame_height, :url, :query,
-                    :first_seen, :last_seen)
+                    :price_is_asking, :city, :posted_date, :condition,
+                    :frame_height, :url, :query, :first_seen, :last_seen)
             ON CONFLICT(item_id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
                 price_eur = excluded.price_eur,
                 price_type = excluded.price_type,
                 is_bid = excluded.is_bid,
+                price_is_asking = excluded.price_is_asking,
                 city = excluded.city,
                 posted_date = excluded.posted_date,
                 condition = excluded.condition,
@@ -569,6 +579,7 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "price_eur": listing.price_eur,
                 "price_type": listing.price_type,
                 "is_bid": 1 if listing.price_is_bid else 0,
+                "price_is_asking": 1 if listing.price_is_asking else 0,
                 "city": listing.city,
                 "posted_date": listing.date,
                 "condition": listing.condition,

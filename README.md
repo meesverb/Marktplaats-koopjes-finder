@@ -626,7 +626,12 @@ Three estimators, mixed into one band:
   On every rung a comp must be a complete road bike (a listing in the
   racefietsen category — a frame or crankset from a parts watchlist is not)
   and must not have a different frame material (from the text, or from the
-  reference model it matched).
+  reference model it matched). Only asking prices count: a fixed price, and
+  also a "bieden vanaf" (MIN_BID) price, since that's what the seller asks —
+  over half the Defy listings are MIN_BID. A bid listing that already has
+  bids is left out, because its price may then be the highest bid. Rows
+  stored before this rule existed are re-judged the next time a crawl sees
+  them.
 - **E2 — asking price → selling price.** Marktplaats publishes asking
   prices, not selling prices. Once at least 20 listings have disappeared
   within two weeks and 20 others have been sitting online for 60+ days —
@@ -696,9 +701,12 @@ plus a margin, and its effective price is within budget.
 
 Without enough comps there is no valuation and so no budget. For that case,
 `mijn_fiets.md` has a `verkoopprijs_handmatig` line in its scoring block: put
-your own expected sale price there and the upgrade finder (and the report's
-Upgrade tab) use it instead, saying so in the budget's origin. Left empty,
-it's not used. Everything that falls out comes back with a reason (`--show-rejected`).
+your own expected sale price there — the bike with its stock wheels, since
+the carbon wheelset is budgeted separately per route — and the upgrade
+finder (and the report's Upgrade tab) use it instead, saying so in the
+budget's origin. It also wins over an `indicatief` valuation (fewer than 5
+comps): one stray comp shouldn't quietly move your budget. A valuation on 5+
+comps wins over it. Left empty, it's not used. Everything that falls out comes back with a reason (`--show-rejected`).
 
 - **Frame size is a gate, not a score.** A bike outside the target size never
   appears, whatever it scores. A bike whose size Marktplaats does not report

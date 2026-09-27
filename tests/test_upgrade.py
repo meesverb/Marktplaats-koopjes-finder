@@ -686,6 +686,32 @@ class ReviewFixesTest(unittest.TestCase):
         self.assertIn("zelf opgegeven", budgets.rim.reasons[0])
         self.assertNotIn("taxatie scenario B", " ".join(budgets.rim.reasons))
 
+    def valuation(self, mid, confidence):
+        return val.Valuation(
+            subject_type="owned_item", subject_id="1", scenario="b",
+            low_eur=mid, mid_eur=mid, high_eur=mid, confidence=confidence, evidence=(),
+        )
+
+    def test_a_hard_valuation_beats_the_manual_price(self):
+        self.assertEqual(up.budget_basis(self.valuation(500, "midden"), 390), (500, None))
+
+    def test_an_indicative_valuation_does_not_override_the_manual_price(self):
+        # One stray comp (n < 5) used to replace the owner's own figure.
+        amount, source = up.budget_basis(self.valuation(284, "indicatief"), 390)
+        self.assertEqual(amount, 390)
+        self.assertIn("zelf opgegeven", source)
+        self.assertIn("€284", source)
+        self.assertIn("indicatief", source)
+
+    def test_without_a_manual_price_even_an_indicative_valuation_is_used(self):
+        self.assertEqual(up.budget_basis(self.valuation(284, "indicatief"), None), (284, None))
+
+    def test_nothing_to_go_on(self):
+        self.assertIsNone(up.budget_basis(None, None))
+        amount, source = up.budget_basis(None, 390)
+        self.assertEqual(amount, 390)
+        self.assertIn("te weinig vergelijkbare advertenties", source)
+
 
 if __name__ == "__main__":
     unittest.main()

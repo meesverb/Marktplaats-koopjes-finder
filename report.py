@@ -161,10 +161,12 @@ def load_owner_context(
             ),
         ), None
 
+    amount, source = up.budget_basis(valuations["b"], up.manual_sale_price_from(bike.specs))
     budgets = up.budgets_from_valuation(
-        valuations["b"].mid_eur,
+        amount,
         wheelset_value_eur=context.wheelset.market_value,
         extra_budget_eur=context.extra_budget_eur,
+        source=source,
     )
     context = replace(
         context,

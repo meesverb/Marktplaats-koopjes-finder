@@ -94,6 +94,17 @@ class Listing:
     sleeper_score: Optional[float] = None
     sleeper_reasons: str = ""
 
+    @property
+    def price_is_asking(self) -> bool:
+        """Whether price_eur is what the seller asks, not a bid caught
+        mid-auction. A MIN_BID price from the search results is the asking
+        price, and a bid listing nobody has bid on yet keeps its seller's
+        floor; only once bids are in can the price be the highest bid (that's
+        when enrich_bid_listings() replaces it), so from then on it isn't
+        trusted as an asking price. A property, not a field: a field would
+        add a column to every existing bargains log."""
+        return self.price_eur is not None and not (self.price_is_bid and self.bid_count)
+
 
 LISTING_FIELDS = [f.name for f in dataclass_fields(Listing)]
 
@@ -1292,7 +1303,7 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
     observations = [
         l
         for l in listings
-        if l.is_new and l.ref_label and l.price_eur and not (l.price_is_bid and l.bid_count)
+        if l.is_new and l.ref_label and l.price_eur and l.price_is_asking
     ]
     if not observations:
         return 0

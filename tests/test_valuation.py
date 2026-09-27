@@ -400,11 +400,36 @@ class DatabaseTest(unittest.TestCase):
     def test_bids_and_priceless_listings_stay_out_of_the_comps(self):
         self.add_listings([
             make_listing(item_id="vast", price_eur=500.0),
-            make_listing(item_id="bod", price_eur=500.0, price_is_bid=True),
+            # A running bid: the price can be the highest bid, not an ask.
+            make_listing(item_id="bod", price_eur=500.0, price_is_bid=True,
+                         price_type="FAST_BID", bid_count=3),
             make_listing(item_id="geenprijs", price_eur=None),
         ])
         found = {c.item_id for c in val.fetch_comp_candidates(self.conn)}
         self.assertEqual(found, {"vast"})
+
+    def test_a_min_bid_asking_price_is_a_comp(self):
+        # MIN_BID's search-result price is the seller's asking price (CLAUDE.md
+        # valkuil) — over half the Defy market. Only once bids are in can the
+        # price be a bid, and then it stays out.
+        self.add_listings([
+            make_listing(item_id="vanaf", price_eur=600.0, price_is_bid=True, price_type="MIN_BID"),
+            make_listing(item_id="nietgeboden", price_eur=600.0, price_is_bid=True,
+                         price_type="MIN_BID", bid_count=0),
+            make_listing(item_id="geboden", price_eur=600.0, price_is_bid=True,
+                         price_type="MIN_BID", bid_count=2),
+        ])
+        found = {c.item_id for c in val.fetch_comp_candidates(self.conn)}
+        self.assertEqual(found, {"vanaf", "nietgeboden"})
+
+    def test_rows_from_before_the_asking_column_keep_the_old_rule(self):
+        self.add_listings([
+            make_listing(item_id="oudbod", price_eur=500.0, price_is_bid=True, price_type="MIN_BID"),
+            make_listing(item_id="oudvast", price_eur=500.0),
+        ])
+        self.conn.execute("UPDATE listing SET price_is_asking = NULL")
+        found = {c.item_id for c in val.fetch_comp_candidates(self.conn)}
+        self.assertEqual(found, {"oudvast"})
 
     def test_listings_outside_the_window_are_left_out(self):
         old = (datetime.now(timezone.utc) - timedelta(days=400)).isoformat(timespec="seconds")
@@ -548,7 +573,7 @@ class EndToEndTest(DatabaseTest):
                                      description="Shimano Ultegra", price_eur=1400.0))
         listings.append(make_listing(item_id="bod", title="Giant Defy Composite 2012",
                                      description="Shimano Ultegra", price_eur=1200.0,
-                                     price_is_bid=True))
+                                     price_is_bid=True, price_type="FAST_BID", bid_count=4))
         self.add_listings(listings)
         db.sync_listing_specs(
             self.conn,

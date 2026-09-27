@@ -438,15 +438,18 @@ def fetch_comp_candidates(
     hun specs erbij. Filteren op vergelijkbaarheid gebeurt níet hier maar in
     select_comps(): dat is rekenwerk en moet zonder database testbaar blijven.
 
-    Bied-advertenties blijven buiten de comps. De prijs in `listing` is bij een
-    bod de stand van het bieden, en of er al geboden is weet deze tabel niet —
-    dat is precies de onzekerheid die append_reference_price_observations() ook
-    al buiten de waarderingsdata houdt."""
+    Alleen vraagprijzen tellen mee (`price_is_asking`, zie
+    racefiets_jev.Listing): ook een MIN_BID-advertentie, want haar prijs uit de
+    zoekresultaten ís de vraagprijs — dat is ruim de helft van het aanbod.
+    Een advertentie waarop al geboden is valt af: dan kan de prijs het hoogste
+    bod zijn, een tussenstand. Rijen van vóór die kolom (NULL) houden de oude
+    regel: geen enkele bied-advertentie."""
     sql = [
         "SELECT item_id, title, description, price_eur, url, is_bid, days_online,",
         "       disappeared_at, last_seen, first_seen",
         "FROM listing",
-        "WHERE price_eur IS NOT NULL AND price_eur > 0 AND is_bid = 0",
+        "WHERE price_eur IS NOT NULL AND price_eur > 0",
+        "AND (price_is_asking = 1 OR (price_is_asking IS NULL AND is_bid = 0))",
     ]
     params: list = []
     if window_days > 0:
