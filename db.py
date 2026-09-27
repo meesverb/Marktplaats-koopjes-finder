@@ -209,6 +209,15 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE listing ADD COLUMN missed_at TEXT;
     """,
+    # 5: the full description from the listing's own page, for the few
+    # listings --detail-lookup fetched, and when. The search results stop at
+    # 200 characters; `description` keeps holding that snippet (sleepers and
+    # the report are about what the search shows), this column holds the
+    # rest, and a listing that has it is never fetched again.
+    """
+    ALTER TABLE listing ADD COLUMN full_description TEXT;
+    ALTER TABLE listing ADD COLUMN details_fetched_at TEXT;
+    """,
 ]
 
 
@@ -573,7 +582,9 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 city = excluded.city,
                 posted_date = excluded.posted_date,
                 condition = excluded.condition,
-                frame_height = excluded.frame_height,
+                -- A frame height read from the listing page (--detail-lookup)
+                -- isn't in the search results, so a later run would blank it.
+                frame_height = COALESCE(NULLIF(excluded.frame_height, ''), listing.frame_height),
                 url = excluded.url,
                 query = excluded.query,
                 last_seen = excluded.last_seen,
@@ -707,6 +718,32 @@ def sync_listing_models(
                 count += 1
     conn.commit()
     return count
+
+
+def save_listing_details(conn: sqlite3.Connection, details: dict, fetched_at: str) -> None:
+    """{item_id: full description} from the listing pages fetched this run.
+    Call after sync_listings(), which creates the rows."""
+    for item_id, text in details.items():
+        conn.execute(
+            "UPDATE listing SET full_description = ?, details_fetched_at = ? WHERE item_id = ?",
+            (text, fetched_at, item_id),
+        )
+    conn.commit()
+
+
+def load_listing_details(conn: sqlite3.Connection, item_ids) -> dict:
+    """{item_id: (full description, frame height)} for the listings among
+    `item_ids` whose page was fetched on an earlier run."""
+    found = {}
+    for item_id in item_ids:
+        row = conn.execute(
+            "SELECT full_description, frame_height FROM listing "
+            "WHERE item_id = ? AND details_fetched_at IS NOT NULL",
+            (item_id,),
+        ).fetchone()
+        if row is not None:
+            found[item_id] = (row["full_description"] or "", row["frame_height"] or "")
+    return found
 
 
 def sweep_disappeared(

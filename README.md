@@ -146,6 +146,7 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--no-notify-better` | Skip the sound/notification when a listing beats the reference baseline | off |
 | `--bid-lookup` | Which bidding listings to fetch bid details for: `fast` (FAST_BID only), `all` (also MIN_BID), `none` | `fast` |
 | `--no-bid-lookup` | Alias for `--bid-lookup none` | off |
+| `--detail-lookup` | `budget`: fetch the listing page (full description, "Kenmerken") for complete road bikes within your size and budget — at most 10 per run, each listing once, only with `--db`. `none` skips it | `budget` |
 | `--bids-only` | Only report bidding listings | off |
 | `--min-score` | Only report listings with at least this dealscore (0-100) | none |
 | `--db` | Path to the SQLite database that mirrors the CSV/JSON files (see below) | `koopjes.db` |
@@ -691,6 +692,22 @@ something about the same thing, the text wins (it's more specific —
 "hydraulische schijfrem" where the attribute says "Schijfrem"). On 240
 racefietsen this gave the frame material for 114 listings whose text didn't
 name it.
+
+The groupset is the bigger gap, and it's rarely in the first 200
+characters. So for the few listings that could be an upgrade — a complete
+road bike, not the wrong frame size, an effective price within the larger of
+your two budgets — the run fetches the listing page itself
+(`--detail-lookup budget`, the default): the full description and the
+"Kenmerken" list (material, brake, frame height). At most 10 per run, most
+promising first, and never the same listing twice: the text is stored in
+`koopjes.db` (`listing.full_description`) and put back on later runs. The
+quality score, the upgrade finder and the valuation read the full text;
+reference matching and the slapers stay on the search snippet, since a
+slaper is about what the *search* shows. Needs the database and a budget
+(`mijn_fiets.md`); without either it does nothing. Two rules got stricter
+with the longer text: a labelled groupset line ("Groepset: Ultegra") wins
+over a higher-tier part further down ("Cassette: Dura Ace"), and "Garmin
+houder" or "Wahoo Kickr" isn't a bike computer.
 
 A listing only offers its title and the first ~200 characters of the
 description, so a few shorthand forms are read as well: "Disc" in a model

@@ -458,6 +458,55 @@ class UpgradeResult:
     rejected: tuple[Rejected, ...]
 
 
+# How many listing pages --detail-lookup fetches per run at most. Each is one
+# request plus --delay; the selection below only lets through bikes that
+# could be a candidate, and a listing is never fetched twice, so in practice
+# a run fetches the few new ones since the last.
+DETAIL_LOOKUP_LIMIT = 10
+
+
+def detail_lookup_targets(
+    listings: Sequence[mp.Listing],
+    *,
+    budgets: Budgets,
+    target_size_cm: float,
+    config: dict,
+    size_tolerance_cm: float = DEFAULT_SIZE_TOLERANCE_CM,
+    negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
+    limit: int = DETAIL_LOOKUP_LIMIT,
+) -> list[mp.Listing]:
+    """De advertenties waarvan de volledige omschrijving het verschil kan
+    maken: dezelfde poorten als find_upgrades() behalve de score — complete
+    racefiets, maat niet fout, effectieve prijs binnen het ruimste budget —
+    want juist de score is wat het zoekfragment van 200 tekens onderschat.
+    Wie al een volledige omschrijving heeft valt af. Hoogste huidige score
+    eerst: met een limiet per run gaan de kanshebbers voor."""
+    ceiling = max(budgets.rim.amount, budgets.disc.amount)
+    scored = []
+    for listing in listings:
+        if listing.detail_text:
+            continue
+        category = mp.category_from_url(listing.url)
+        if category is not None and category != mp.ROAD_BIKE_CATEGORY:
+            continue
+        if size_verdict(listing.frame_height, target_size_cm, size_tolerance_cm) == SIZE_WRONG:
+            continue
+        effective = effective_price(listing, negotiation_factor)
+        if effective.amount is None or effective.amount <= 0 or effective.amount > ceiling:
+            continue
+        specs, _ = listing_specs(listing)
+        build = sc.build_from_listing(
+            specs=specs,
+            groupset_label=listing.groupset,
+            groupset_tier=listing.groupset_tier,
+            text=mp.spec_text(listing),
+            label=listing.title,
+        )
+        scored.append((sc.score_build(build, config).total, listing))
+    scored.sort(key=lambda pair: -pair[0])
+    return [listing for _, listing in scored[:limit]]
+
+
 def find_upgrades(
     listings: Sequence[mp.Listing],
     *,
@@ -503,7 +552,7 @@ def find_upgrades(
             rejected.append(Rejected(listing, SIZE_UNKNOWN))
             continue
 
-        text = f"{listing.title} {listing.description}"
+        text = mp.spec_text(listing)
         specs, year_note = listing_specs(listing)
         build = sc.build_from_listing(
             specs=specs,
@@ -595,7 +644,7 @@ def fetch_candidate_listings(
     advertenties blijven buiten de lijst; die zijn niet meer te koop."""
     sql = [
         "SELECT item_id, title, description, price_eur, price_type, is_bid,",
-        "       city, posted_date, condition, frame_height, url, first_seen",
+        "       city, posted_date, condition, frame_height, url, first_seen, full_description",
         "FROM listing",
         "WHERE disappeared_at IS NULL",
     ]
@@ -617,7 +666,8 @@ def fetch_candidate_listings(
     for row in conn.execute("\n".join(sql), params).fetchall():
         title = row["title"] or ""
         description = row["description"] or ""
-        groupset, tier = mp.detect_groupset(f"{title} {description}")
+        detail_text = row["full_description"] or ""
+        groupset, tier = mp.detect_groupset(f"{title} {detail_text or description}")
         listings.append(
             mp.Listing(
                 item_id=row["item_id"],
@@ -635,6 +685,7 @@ def fetch_candidate_listings(
                 price_is_bid=bool(row["is_bid"]),
                 first_seen=row["first_seen"] or "",
                 site_specs=site_specs.get(row["item_id"], {}),
+                detail_text=detail_text,
             )
         )
     return listings

@@ -39,7 +39,7 @@ class TempDirTest(unittest.TestCase):
 
         argv = [
             "--query", "test", "--no-html", "--no-log", "--no-price-history",
-            "--no-notify-better", "--open-browser", "never",
+            "--no-notify-better", "--open-browser", "never", "--delay", "0",
             "--history-file", self.path("history.json"),
             "--reference-file", self.path("geen-referentie.csv"),
             "--price-history-file", self.path("geen-price-history.csv"),
@@ -176,7 +176,7 @@ class DisappearanceSweepTest(TempDirTest):
         db_path = self.path("koopjes.db")
         self.run_query([make_listing(item_id="a")], ["--db", db_path, "--pages", "0"])
         with mock.patch.object(mp, "collect_listings", lambda q, p, d, **kw: []):
-            args = mp.parse_args(["--db", db_path, "--pages", "0", "--no-html", "--no-log",
+            args = mp.parse_args(["--db", db_path, "--pages", "0", "--no-html", "--no-log", "--delay", "0",
                                   "--no-price-history", "--no-notify-better",
                                   "--history-file", self.path("history.json"),
                                   "--reference-file", self.path("geen-referentie.csv"),

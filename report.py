@@ -112,14 +112,17 @@ def load_owner_context(
 
     if db_path is None:
         return _without_valuation(context, "geen database (--no-db), dus geen comps om op te taxeren"), None
-    if not Path(db_path).exists():
-        return _without_valuation(context, f"{db_path} bestaat nog niet, dus geen comps om op te taxeren"), None
-
-    conn = db.connect(db_path)
-    try:
-        comps = val.fetch_comp_candidates(conn)
-    finally:
-        conn.close()
+    # A database that doesn't exist yet (the very first run) has no comps, but
+    # verkoopprijs_handmatig still gives a budget — so carry on with none
+    # instead of stopping here. Not connected: db.connect() would create it.
+    missing = not Path(db_path).exists()
+    comps = []
+    if not missing:
+        conn = db.connect(db_path)
+        try:
+            comps = val.fetch_comp_candidates(conn)
+        finally:
+            conn.close()
 
     subject = val.subject_from_owner_bike(bike)
     comp_set = val.select_comps(subject, comps)
@@ -140,8 +143,10 @@ def load_owner_context(
     if "b" not in valuations:
         manual = up.manual_sale_price_from(bike.specs)
         problem = (
-            f"geen vergelijkbare advertenties in {db_path} ({len(comps)} advertenties met een "
-            "vraagprijs in het meetvenster). Crawl eerst met --query op dit model."
+            f"{db_path} bestaat nog niet, dus geen comps om op te taxeren."
+            if missing
+            else f"geen vergelijkbare advertenties in {db_path} ({len(comps)} advertenties met "
+            "een vraagprijs in het meetvenster). Crawl eerst met --query op dit model."
         )
         if manual is None:
             return _without_valuation(

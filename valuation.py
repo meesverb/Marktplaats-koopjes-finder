@@ -446,7 +446,7 @@ def fetch_comp_candidates(
     regel: geen enkele bied-advertentie."""
     sql = [
         "SELECT item_id, title, description, price_eur, url, is_bid, days_online,",
-        "       disappeared_at, last_seen, first_seen",
+        "       disappeared_at, last_seen, first_seen, full_description",
         "FROM listing",
         "WHERE price_eur IS NOT NULL AND price_eur > 0",
         "AND (price_is_asking = 1 OR (price_is_asking IS NULL AND is_bid = 0))",
@@ -514,6 +514,15 @@ def _derive_days_online(first_seen: Optional[str], as_of: datetime) -> Optional[
     return delta.days
 
 
+def _row_value(row, key: str):
+    """row[key], or None for a row that doesn't have the column — tests and
+    older callers build rows by hand."""
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return None
+
+
 def candidate_from_row(
     row,
     specs: dict[str, str],
@@ -534,7 +543,8 @@ def candidate_from_row(
     alsnog berekend: dat zou een ander getal kunnen geven dan wat op het
     moment van verdwijnen vastgesteld is."""
     title = row["title"] or ""
-    description = row["description"] or ""
+    # The listing page's full text where --detail-lookup fetched it.
+    description = _row_value(row, "full_description") or row["description"] or ""
     _, tier = mp.detect_groupset(f"{title} {description}")
     disappeared = row["disappeared_at"] is not None
     days_online = row["days_online"]
