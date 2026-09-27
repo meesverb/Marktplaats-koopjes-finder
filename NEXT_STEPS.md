@@ -5,6 +5,18 @@ De code, `reference_prices.csv` en de git-geschiedenis (commit messages)
 bevatten de volledige context; dit bestand is alleen een korte routewijzer
 zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 
+## Laatste ronde (27-09-2026)
+
+Op echte data gecontroleerd en bijgewerkt; details per stap onderaan §12 van
+`PLAN_FIETSWAARDE.md`. Kort: `verkoopprijs_handmatig` = 390 (fietsdeel van
+scenario B); MIN_BID-vraagprijzen tellen mee in de taxatie; een crawl die
+bijna compleet was noteert gemiste advertenties in plaats van de sweep over te
+slaan; framemateriaal/remtype uit de Marktplaats-kenmerken; `--detail-lookup`
+haalt de volledige omschrijving op voor kanshebbers binnen budget; het
+Biedpaneel waardeert op vergelijkbare fietsen. Open: bouwjaar in de segmenten,
+en per segment de prijzen van snel verdwenen advertenties zodra de sweep een
+paar weken data heeft.
+
 ## Waar we nu staan
 
 - `racefiets_jev.py`: generieke Marktplaats-scraper (elke `--query`), met
@@ -104,12 +116,12 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
 3. **Luidsprekers >€100.** Onderzoek is gedaan t/m €100 (segmenten €0-25,
    €25-55, €55-75 volledig; €75-100 crawl was klaar maar nog niet allemaal
    opgezocht). Verder omhoog nog niet gestart.
-4. **Fietsen-referenties.** `reference_prices.csv` bevat nog geen enkel
-   fietsmodel — dezelfde prijssegment-aanpak als bij luidsprekers zou daar
-   ook waarde toevoegen. Dit is fase 7 van `PLAN_FIETSWAARDE.md` (op `main`).
-   Neem daarbij mee wat de taxatie van 22-09 opleverde: verkopers schrijven
-   nooit "Composite", maar "Defy Advanced" of "Defy carbon" — daar moeten de
-   patronen op passen.
+4. **Fietsen-referenties uitbreiden.** Fase 7 is gedaan: fietsen staan in
+   `reference_bikes.csv` (Defy-familie + upgradedoelen), niet in
+   `reference_prices.csv`. Uitbreiden met modellen die vaak voorbijkomen
+   helpt de eerste trede van de Biedpaneel-waarde. Let op wat de taxatie van
+   22-09 opleverde: verkopers schrijven zelden "Composite", maar "Defy
+   Advanced" of "Defy carbon".
 5. **"(elektronisch)" bij een groepset die pas een zin later Di2 noemt.** De
    tag eist nu dat Di2/eTap/AXS in dezelfde zinsnede staat als de
    groepsetnaam én van hetzelfde merk is, zodat "Shimano 105, Di2-upgrade
