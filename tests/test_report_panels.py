@@ -272,7 +272,12 @@ class ManualBudgetTest(unittest.TestCase):
 
     def intake(self, value):
         text = Path(repo_file("mijn_fiets.md")).read_text(encoding="utf-8")
-        text = text.replace("verkoopprijs_handmatig =", f"verkoopprijs_handmatig = {value}")
+        # The whole line, whatever the real intake holds today: the owner
+        # filling in an amount must not flip what these tests are about.
+        text, count = re.subn(
+            r"^verkoopprijs_handmatig =.*$", f"verkoopprijs_handmatig = {value}", text, flags=re.M
+        )
+        self.assertEqual(count, 1)
         path = Path(self._tmp.name) / "mijn_fiets.md"
         path.write_text(text, encoding="utf-8")
         return str(path)
