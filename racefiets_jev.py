@@ -408,9 +408,9 @@ def extract_dominant_category(search_response: dict) -> Optional[int]:
     listings from unrelated categories (e.g. "racefiets" eventually pulling
     in PS2 games because their titles contain "racer"); this lets us filter
     those back out."""
-    for facet in search_response.get("facets", []):
+    for facet in search_response.get("facets") or []:
         if facet.get("key") == "RelevantCategories":
-            dominant = [c for c in facet.get("categories", []) if c.get("dominant")]
+            dominant = [c for c in facet.get("categories") or [] if c.get("dominant")]
             if not dominant:
                 return None
             # For an ambiguous query Marktplaats can flag more than one
@@ -423,13 +423,21 @@ def extract_dominant_category(search_response: dict) -> Optional[int]:
     return None
 
 
+def text_value(value) -> str:
+    """A text field from the search JSON as a str. Marktplaats sends some
+    keys with a null value rather than leaving them out, and .get()'s
+    default only covers a missing key; a None that gets through takes the
+    report down at the first html.escape() or slice."""
+    return value if isinstance(value, str) else ""
+
+
 def extract_attribute(raw_listing: dict, key: str) -> str:
     for group in ("attributes", "extendedAttributes"):
         # `or []`: Marktplaats can send the key with a null value, and the
         # default of .get() only covers a missing key.
         for attr in raw_listing.get(group) or []:
             if attr.get("key") == key:
-                return attr.get("value", "")
+                return text_value(attr.get("value"))
     return ""
 
 
@@ -767,18 +775,18 @@ def search_image_urls(raw: dict) -> str:
 def parse_listing(raw: dict) -> Listing:
     price_info = raw.get("priceInfo") or {}
     price_cents = as_number(price_info.get("priceCents"))
-    price_type = price_info.get("priceType", "")
+    price_type = text_value(price_info.get("priceType"))
     # priceCents is 0 for listings with no real price shown (e.g. an
     # unstarted bid or "see description") except when priceType is FREE,
     # where 0 genuinely means the item is free.
     has_real_price = price_cents is not None and (price_cents > 0 or price_type == "FREE")
     price_eur = price_cents / 100 if has_real_price else None
 
-    vip_url = raw.get("vipUrl", "")
+    vip_url = text_value(raw.get("vipUrl"))
     url = BASE_URL + vip_url if vip_url.startswith("/") else vip_url
 
-    title = raw.get("title", "")
-    description = raw.get("description", "")
+    title = text_value(raw.get("title"))
+    description = text_value(raw.get("description"))
     groupset, groupset_tier = detect_groupset(f"{title} {description}")
 
     return Listing(
@@ -787,8 +795,8 @@ def parse_listing(raw: dict) -> Listing:
         description=description,
         price_eur=price_eur,
         price_type=price_type,
-        city=raw.get("location", {}).get("cityName", ""),
-        date=raw.get("date", ""),
+        city=text_value((raw.get("location") or {}).get("cityName")),
+        date=text_value(raw.get("date")),
         condition=extract_attribute(raw, "condition"),
         frame_height=extract_attribute(raw, "frameHeight"),
         groupset=groupset,
@@ -826,7 +834,7 @@ def category_from_url(url: str) -> Optional[str]:
 
 
 def relevant_categories(search_response: dict) -> list[dict]:
-    for facet in search_response.get("facets", []):
+    for facet in search_response.get("facets") or []:
         if facet.get("key") == "RelevantCategories":
             return facet.get("categories") or []
     return []
@@ -1399,8 +1407,20 @@ def load_reference_data(path: str) -> list[dict]:
     file doesn't exist — this feature is entirely optional."""
     try:
         with open(path, encoding=CSV_READ_ENCODING) as f:
-            rows = list(csv.DictReader(f))
+            reader = csv.DictReader(f)
+            rows = list(reader)
     except FileNotFoundError:
+        return []
+
+    # reference_bike_catalog.csv sits next to the pattern files and looks
+    # like one, but has no pattern column: every row would be skipped below
+    # and the run would quietly match nothing.
+    if rows and "pattern" not in (reader.fieldnames or []):
+        print(
+            f"warning: {path} heeft geen 'pattern'-kolom en is dus geen referentiebestand "
+            "(reference_bike_catalog.csv is een catalogus, zie README); er wordt niets herkend",
+            file=sys.stderr,
+        )
         return []
 
     reference = []

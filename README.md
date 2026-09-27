@@ -469,9 +469,12 @@ A third bike file, and a different kind: not regex patterns to match titles
 against, but one row per brand / model / model year with the specs and the
 original price. The pattern files can't hold this — every "Defy Advanced 2"
 from 2016 to 2025 would share one pattern, and with first-match-wins only
-the first of those rows would ever be used. Nothing reads the catalogue
-automatically yet; it's reference data for the valuation (what did this
-bike cost new, in which year) and for looking things up by hand.
+the first of those rows would ever be used — which is also why it can't be
+passed to `--reference-file` (the run warns and matches nothing). Only its
+`brand` column is read automatically: `sleepers.py` uses it to rule out
+listings that name a brand, and `koopjes.py`'s list of unmatched listings
+groups by it. The rest — specs and new prices per model year — is reference
+data for looking things up by hand; the valuation doesn't read it (yet).
 
 Columns: `brand`, `model`, `model_year`, `seen_date`, `category`,
 `frame_material`, `groupset`, `electronic`, `speeds`, `brake_type`,
@@ -835,7 +838,7 @@ python reference_overview.py
 `reference_prices.csv` itself is gitignored by default (like the other
 local/personal files), so it's yours to edit freely without it showing up as
 a change to commit — except this repo's copy is force-added anyway, since it
-already has real researched entries in it (currently a handful of bookshelf
+already has real researched entries in it (currently 43 bookshelf
 speakers, compared against a Denon SC-N10 baseline — see git log for the
 sources). Keep adding to it freely; `git add -f reference_prices.csv` if you
 want your local edits committed too, otherwise they just stay local. The

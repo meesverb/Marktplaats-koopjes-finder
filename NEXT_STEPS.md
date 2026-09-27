@@ -35,8 +35,11 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
   files".
 - `reference_bike_catalog.csv` is iets anders: een catalogus met één rij per
   merk/model/modeljaar (Giant, Trek, Cube, Sensa en via bikezona.com ook
-  andere merken), met specs, nieuwprijs en bron. Nog nergens aangesloten —
-  zie README → "Bike catalogue". Opgebouwd met `catalog_tools/`.
+  andere merken), met specs, nieuwprijs en bron. Geen referentiebestand: met
+  `--reference-file` waarschuwt het script en herkent het niets. Alleen de
+  merkkolom wordt gelezen (slapers, lijst niet-herkende advertenties); specs
+  en nieuwprijzen gebruikt de taxatie nog niet. Zie README → "Bike
+  catalogue". Opgebouwd met `catalog_tools/`.
 - Hulpscripts: `check_hifi_brand.py` (merken-index opzoeken),
   `check_reference_overlaps.py` (patroon-conflicten checken),
   `reference_overview.py` (doorbladerbaar overzicht van de database).

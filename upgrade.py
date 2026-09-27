@@ -764,7 +764,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="intakebestand met de eigen fiets (default: mijn_fiets.md)",
     )
     parser.add_argument(
-        "--config", default=sc.DEFAULT_CONFIG_PATH,
+        "--config", default=sc.BUNDLED_CONFIG_PATH,
         help=f"gewichten voor de kwaliteitsscore (default: {sc.DEFAULT_CONFIG_PATH})",
     )
     parser.add_argument(

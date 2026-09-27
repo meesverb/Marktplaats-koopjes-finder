@@ -3,11 +3,14 @@
 Niet te verwarren met tests/test_scoring.py, dat racefiets_jev.score_listing()
 (de prijs-gebaseerde deal_score) test — twee verschillende scores, zie
 CLAUDE.md."""
+import os
+import tempfile
 import unittest
 
 from helpers import mp, repo_file  # noqa: F401  (zet de repo-root in sys.path)
 
 import scoring as sc
+import upgrade
 
 
 def load_config():
@@ -306,6 +309,20 @@ class ConfigLoadingTest(unittest.TestCase):
             set(config["weights"]),
             {"frame", "drivetrain", "brakes", "wheels", "extras"},
         )
+
+    def test_the_default_config_is_found_from_another_working_directory(self):
+        # upgrade.py/scoring.py started by hand from elsewhere used to end in a
+        # FileNotFoundError: the default was a bare file name.
+        previous = os.getcwd()
+        with tempfile.TemporaryDirectory() as elsewhere:
+            os.chdir(elsewhere)
+            try:
+                config = sc.load_config()
+                parsed = upgrade.build_parser().parse_args([])
+                self.assertEqual(sc.load_config(parsed.config), config)
+            finally:
+                os.chdir(previous)
+        self.assertIn("weights", config)
 
 
 if __name__ == "__main__":

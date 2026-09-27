@@ -6,7 +6,9 @@ listings (first match wins), and a realistic Marktplaats title landing on
 the wrong model. The titles below are written the way sellers write them,
 not copied from the labels.
 """
+import contextlib
 import csv
+import io
 import unittest
 
 from helpers import mp, repo_file
@@ -33,6 +35,15 @@ class ReferenceFileHygieneTest(unittest.TestCase):
                 self.assertGreater(len(reference), 0)
                 self.assertEqual(check_reference_overlaps.find_overlaps(reference), [])
                 self.assertEqual(check_reference_overlaps.find_dead_patterns(reference), [])
+
+    def test_the_catalogue_is_refused_as_a_reference_file_out_loud(self):
+        # It has no pattern column; without the warning a run with
+        # --reference-file reference_bike_catalog.csv silently matches nothing.
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            reference = mp.load_reference_data(repo_file("reference_bike_catalog.csv"))
+        self.assertEqual(reference, [])
+        self.assertIn("geen 'pattern'-kolom", stderr.getvalue())
 
     def test_every_row_names_a_known_kind_and_a_source(self):
         for path in (BIKES, ACCESSORIES):

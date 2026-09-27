@@ -1,7 +1,8 @@
 # Mijn fiets — intake (fase 0)
 
 Brondocument voor de taxatie. Ingevuld door de eigenaar; de afgeleide gevolgen
-en de open punten staan eronder. Fase 1 importeert dit naar `owned_item`.
+en de open punten staan eronder. `valuation.py` (fase 3) leest het scoringsblok
+onderaan en zet de fiets in `owned_item`.
 
 ## Vastgesteld door de eigenaar
 
