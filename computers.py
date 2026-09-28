@@ -109,9 +109,13 @@ PART_RE = re.compile(
 # verkopers plakken: "fietscomputerhouder", "stuurmount", "siliconenhoes".
 # Geen "doos" of "verpakking": "nieuw in doos/verpakking" is een staat, geen
 # los artikel; alleen "doosje" en "lege doos" zijn dat. "(?<!dis)cover":
-# een "Mio Cyclo Discover" is geen hoesje.
+# een "Mio Cyclo Discover" is geen hoesje. De tweede regel: dezelfde houders
+# en hoesjes in het Frans, Spaans, Italiaans en Duits ("Support compteur wahoo
+# élément ace", "Capa wahoo element ace", "Wahoo Elemnt Roam V3 Halterung"),
+# uit de Vinted-export van 28-09-2026; ook Belgische en Duitse verkopers.
 ACCESSORY_WORD_RE = re.compile(
     r"\b\w*(?:houders?|mounts?|beugel|steun|hoesjes?|hoes|case|(?<!dis)cover|bumper|sleeve"
+    r"|supports?|soportes?|supporto|suporte|halterung|staffa|capa|coque|funda|housse|[ée]tui|protection|prot[eè]ge"
     r"|folie|protector|tasje|oplaadkabel|kabel|oplader|lader|adapter"
     r"|sensors?|sensoren|hartslag\w*|borstband|tickr|doosje|handleiding)\b"
     r"|\blege\s+doos\b",
@@ -119,9 +123,11 @@ ACCESSORY_WORD_RE = re.compile(
 )
 # Merken die alleen houders maken. Vóór de modelnaam is het dus een houder.
 ACCESSORY_BRAND_RE = re.compile(r"\b(?:k-?edge|rec-?mounts?|barfly|quad\s?lock|sp\s?connect)\b", re.I)
-# Tussen modelnaam en accessoire: dit maakt er een bundel van.
+# Tussen modelnaam en accessoire: dit maakt er een bundel van. "mit", "inkl",
+# "avec" en "con" om dezelfde reden als de tweede regel hierboven.
 BUNDLE_RE = re.compile(
-    r"\bmet\b|\bincl\w*|\binclusief\b|\binc\b|\+|&|\ben\b|\bplus\b|\bwith\b|\band\b|,",
+    r"\bmet\b|\bincl\w*|\binclusief\b|\binc\b|\+|&|\ben\b|\bplus\b|\bwith\b|\band\b|,"
+    r"|\bmit\b|\binkl\w*|\bavec\b|\bcon\b",
     re.I,
 )
 # Of: het apparaat wordt zelf genoemd, of de titel zegt dat het een set is.
@@ -173,6 +179,10 @@ WITHOUT_DEVICE_RE = re.compile(
 )
 # "Houder voor ...": een accessoire, ook als er een koppelwoord tussen staat.
 FOR_RE = re.compile(r"\b(?:voor|for|geschikt|past|fits|compatible)\b", re.I)
+# Direct vóór de modelnaam, ook zonder accessoirewoord: iets vóór dat model.
+# "Wahoo bike computer for Element ROAM" (€12, Vinted-export 28-09-2026) is
+# een houder.
+FOR_BEFORE_MODEL_RE = re.compile(r"\b(voor|for|pour|para|f(?:ü|ue?)r)\s*$", re.I)
 
 
 class CatalogError(ValueError):
@@ -255,10 +265,25 @@ class TitleVerdict:
     reason: str
 
 
+# Schrijfwijzen die elk patroon anders apart zou moeten kennen: "Garmin
+# EDGE-530", "Garmin Edge  1030 Plus" (twee spaties), "Garmin Egde 800". Alle
+# drie uit de Vinted-export van 28-09-2026 (867 titels, Garmin en Wahoo); de
+# patronen verwachten hoogstens één spatie tussen naam en nummer.
+_SPACES_RE = re.compile(r"\s+")
+_HYPHEN_BEFORE_NUMBER_RE = re.compile(r"(?<=[a-z])-(?=\d)", re.I)
+_EGDE_RE = re.compile(r"\begde\b", re.I)
+
+
+def normalize_title(title: str) -> str:
+    title = _SPACES_RE.sub(" ", title or "").strip()
+    title = _HYPHEN_BEFORE_NUMBER_RE.sub(" ", title)
+    return _EGDE_RE.sub("edge", title)
+
+
 def classify_title(title: str, catalog: Sequence[ComputerModel]) -> Optional[TitleVerdict]:
     """Welk model de titel noemt en wat voor advertentie het is, of None als
     er geen bekend model in staat. Zie het blok boven NOT_A_COMPUTER_RE."""
-    title = title or ""
+    title = normalize_title(title)
     for model in catalog:
         match = model.pattern.search(title)
         if match:
@@ -282,6 +307,9 @@ def classify_title(title: str, catalog: Sequence[ComputerModel]) -> Optional[Tit
     brand = ACCESSORY_BRAND_RE.search(before)
     if brand:
         return verdict("accessoire", f"houdermerk '{brand.group(0)}' vóór de modelnaam")
+    aimed = FOR_BEFORE_MODEL_RE.search(before)
+    if aimed:
+        return verdict("accessoire", f"'{aimed.group(1)}' direct vóór de modelnaam")
     word = ACCESSORY_WORD_RE.search(before)
     if word:
         between = before[word.end():]

@@ -383,6 +383,17 @@ fatbike displays (Bosch, Sparta, Gazelle, Batavus, H6C, Shimano SC-E…,
 before it is `accessoire`, and a title that names neither a bike computer nor
 a brand that makes them is `overig`. What's left shows as "model onbekend".
 
+Spellings sellers use are tidied before matching: runs of spaces become one
+("Garmin Edge  1030 Plus"), a hyphen between a name and a number becomes a
+space ("EDGE-530"), and "Egde" reads as "Edge". "520+", "Explorer 2",
+"Garmin Explore 2" and "Wahoo Element Ace/Mini/Bolt/Roam" match their model.
+Holder and case words also count in French, Spanish, Italian and German
+(support, soporte, supporto, Halterung, staffa, capa, coque, funda, housse,
+étui, protection), and so do the connectors "mit", "inkl", "avec" and "con".
+"For", "voor", "pour", "para" or "für" right before the model name makes it
+an accessory ("Wahoo bike computer for Element ROAM"). All of these came from
+a Vinted export of 867 Garmin and Wahoo titles (28-09-2026).
+
 The `fietscomputer` search covers the **whole category**: with the category
 set, "fietscomputer" returns everything in it (2800 listings on 28-09-2026,
 as many as no query at all). About 95 pages a night instead of ~360 listings

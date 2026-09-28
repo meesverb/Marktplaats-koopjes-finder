@@ -109,6 +109,22 @@ class MatchTest(unittest.TestCase):
         "Te koop Wahoo ELEMNT MINI  fietscomputer": "Wahoo ELEMNT MINI",
         "2x Bryton Rider 420T fietscomputer met hartslagband": "Bryton Rider 420",
         "M460 polar fietscomputer": "Polar M460",
+        # Vinted export of 28-09-2026 (Garmin + Wahoo): spellings that matched
+        # nothing, and two models that weren't in the file.
+        "Garmin Edge 520+": "Garmin Edge 520 Plus",
+        "Garmin Edge 1030+ met houder": "Garmin Edge 1030 Plus",
+        "Garmin edge 130+": "Garmin Edge 130 Plus",
+        "Garmin Edge Explore 820": "Garmin Edge Explore 820",
+        "Garmin edge explorer 2": "Garmin Edge Explore 2",
+        "Garmin Explore 2": "Garmin Edge Explore 2",
+        "Wahoo element ace": "Wahoo ELEMNT ACE",
+        "Element ace": "Wahoo ELEMNT ACE",
+        "Wahoo Element Mini": "Wahoo ELEMNT MINI",
+        "garmin EDGE-530": "Garmin Edge 530",
+        "Garmin Edge  1030 Plus GPS": "Garmin Edge 1030 Plus",
+        "Garmin Egde 800 fietscomputer": "Garmin Edge 800",
+        "Garmin Edge MTB Advanced GPS Bike Computer": "Garmin Edge MTB",
+        "Garmin Edge 530 MTB Bundle": "Garmin Edge 530",
     }
     NOT_A_COMPUTER = (
         "Racefiets met Garmin Edge 530",
@@ -328,7 +344,22 @@ class ClassifyTitleTest(unittest.TestCase):
         "ik zoek een kapotte garmin edge 1030": "gevraagd",
         # the price decides
         "Hammerhead Karoo 3 houder nieuw": "twijfel",
+        "Garmin Edge Explore 820 doosje met boekje": "twijfel",
         "Wahoo Roam I stuurhouder": "twijfel",
+        # Vinted export of 28-09-2026: the same holders and cases in French,
+        # Spanish, Italian and German, and bundles with a foreign connector.
+        "Support compteur wahoo élément ace": "accessoire",
+        "Capa wahoo element ace": "accessoire",
+        "Soporte Wahoo Element Roam": "accessoire",
+        "Wahoo staffa manubrio element bolt": "accessoire",
+        "Coque Wahoo Elemnt Roam 2": "accessoire",
+        "Wahoo bike computer for Element ROAM": "accessoire",
+        "Wahoo Elemnt Roam V3 Halterung original": "twijfel",
+        "Garmin Edge Explore GPS Fahrradcomputer mit Halterung": "computer",
+        "Garmin Edge 1030 Plus + Halterung": "computer",
+        "Garmin Edge 800 en bonne état, vendu avec support vélo": "computer",
+        "Garmin Edge 1000 GPS con staffa": "computer",
+        "Garmin Edge 510 GPS ciclismo + funda": "computer",
         # a bike
         "Racefiets Cube + Garmin Edge 130 Plus": "fiets",
     }
@@ -350,7 +381,6 @@ class ClassifyTitleTest(unittest.TestCase):
         "K-Edge Garmin fiets computer mount": "accessoire",
         "Garmin Snelheidssensor 2 - nieuw": "accessoire",
         "Garmin Varia RTL515": "accessoire",
-        "Garmin Edge Explore 820 doosje met boekje": "accessoire",
         "Garmin Edge batterij vervangen": "defect",
         "Wahoo veiligheidskoort voor Roam en Bolt v1 en V2": "onderdeel",
         # Whole-category crawl, 28-09-2026: it starts with e-bike displays.
