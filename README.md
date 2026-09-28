@@ -328,13 +328,14 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 Photos come from the search results (stored since database migration 6); a
 listing from before that shows a grey square until the next round sees it.
 
-**Profit** = expected selling price − price − costs. The selling price is the
+**Profit** = expected selling price − price − shipping (€3). The selling price is the
 median of what other listings for the same model ask (this and earlier rounds,
 last 180 days, sold ones included), × 0,875 for haggling (the same heuristic
 as `valuation.py`); the band uses the lower and upper quartile instead of the
 median. Only with at least 3 other listings; a running bid is never a
-comparable. `costs_eur` in `computer_scoring.json` (default €0) comes off
-every flip — put shipping or fuel there if you want it counted.
+comparable. `costs_eur` in `computer_scoring.json` comes off every flip and
+off the maximum bid: €3 shipping by default (the owner's choice, 28-09-2026);
+raise it if you also want fuel or packaging counted.
 
 **What counts as a computer.** Only the title is used, and every title with a
 known model gets one kind: `computer`, `accessoire`, `onderdeel`, `defect`
@@ -351,8 +352,10 @@ or without a median under 20% of the original price, or without either under
 without a price stays a computer, marked "kijk op de foto" — better a holder
 that slips through (the photo shows it) than a computer that disappears.
 Always excluded: repairs and defects ("scherm vervangen", "defect", "voor
-onderdelen", "batterij vervangen"), parts ("LCD", "color kit", "koord") and
-wanted ads ("ik zoek ..."). On that crawl this kept 277 computers with a
+onderdelen", "batterij vervangen"), parts ("LCD", "color kit", "koord"),
+wanted ads ("ik zoek ...") and — the one rule that reads the description — a
+listing whose description says the computer isn't included ("accessoires
+zonder de fietscomputer"). On that crawl this kept 277 computers with a
 known model and put exactly the 18 accessories, parts, repairs and wanted ads
 in Uitgefilterd.
 

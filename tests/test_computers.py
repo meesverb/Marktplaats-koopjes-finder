@@ -197,7 +197,7 @@ class SignalTest(unittest.TestCase):
         pc.apply_computer_signals(others + [cheap])
         expected = 180.0 * CONFIG["flip"]["negotiation_factor"]
         self.assertAlmostEqual(cheap.computer.resale_eur, expected)
-        self.assertAlmostEqual(cheap.computer.flip_margin_eur, expected - 90.0)
+        self.assertAlmostEqual(cheap.computer.flip_margin_eur, expected - 90.0 - CONFIG["flip"]["costs_eur"])
         self.assertEqual(cheap.computer.comp_count, 3)
         self.assertEqual(pc.flips(others + [cheap])[0], cheap)
 
@@ -388,6 +388,27 @@ class DoubtTest(unittest.TestCase):
         self.assertIn("kijk op de foto", holder.computer.reason)
 
 
+class DescriptionTest(unittest.TestCase):
+    def test_accessories_without_the_computer(self):
+        # Real listing, 28-09-2026: €200, title says GPS, description says not.
+        box = make_listing(item_id="x", title="Wahoo ELEMNT ROAM GPS Doos met nieuwe accessoires", price_eur=200.0,
+                           description="Te koop: wahoo elemnt roam 3 accessoires zonder de fietscomputer. "
+                                       "Mijn fiets en wahoo zijn gestolen")
+        pc.apply_computer_signals([box])
+        self.assertEqual(box.computer.kind, "accessoire")
+        self.assertIn("zonder de fietscomputer", box.computer.reason)
+
+    def test_other_mentions_of_zonder_are_fine(self):
+        edge = make_listing(item_id="e", title="Garmin Edge 840 GPS Fietscomputer, zonder sensoren", price_eur=350.0,
+                            description="Zonder doos, zonder computerhouder. Werkt perfect.")
+        pc.apply_computer_signals([edge])
+        self.assertEqual(edge.computer.kind, "computer")
+
+    def test_unknown_model_with_the_same_description(self):
+        self.assertEqual(pc.classify_unknown("Wahoo zeer complete set!", "alles zonder de wahoo zelf")[0],
+                         "accessoire")
+
+
 class CategoryTest(unittest.TestCase):
     def test_a_bike_listing_naming_a_computer_is_ignored(self):
         bike = make_listing(item_id="b", title="Giant Defy met Garmin Edge 530", price_eur=900.0,
@@ -417,9 +438,17 @@ class FlipMathTest(unittest.TestCase):
         self.assertAlmostEqual(c.resale_eur, 180.0 * f)
         self.assertAlmostEqual(c.resale_low_eur, 160.0 * f)
         self.assertAlmostEqual(c.resale_high_eur, 200.0 * f)
-        self.assertAlmostEqual(c.profit_eur, 180.0 * f - 90.0)
+        self.assertAlmostEqual(c.profit_eur, 180.0 * f - 90.0 - CONFIG["flip"]["costs_eur"])
         self.assertLess(c.profit_low_eur, c.profit_eur)
         self.assertGreater(c.profit_high_eur, c.profit_eur)
+
+    def test_shipping_is_three_euro_by_default(self):
+        # The owner's choice, 28-09-2026.
+        self.assertEqual(CONFIG["flip"]["costs_eur"], 3)
+        others, target = self.listings()
+        pc.apply_computer_signals(others + [target])
+        self.assertAlmostEqual(target.computer.profit_eur,
+                               180.0 * CONFIG["flip"]["negotiation_factor"] - 90.0 - 3)
 
     def test_costs_come_off_every_flip(self):
         others, target = self.listings()
@@ -433,7 +462,8 @@ class FlipMathTest(unittest.TestCase):
         others, target = self.listings(cheap_price=None, price_type="FAST_BID", price_is_bid=True)
         pc.apply_computer_signals(others + [target])
         self.assertIsNone(target.computer.profit_eur)
-        self.assertAlmostEqual(target.computer.max_bid_eur, 160.0 * CONFIG["flip"]["negotiation_factor"])
+        self.assertAlmostEqual(target.computer.max_bid_eur,
+                               160.0 * CONFIG["flip"]["negotiation_factor"] - CONFIG["flip"]["costs_eur"])
         self.assertEqual(pc.open_bids(others + [target]), [target])
 
     def test_upgrade_net_cost_subtracts_what_the_own_computer_brings(self):

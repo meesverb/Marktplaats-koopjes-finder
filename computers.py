@@ -131,6 +131,16 @@ DEVICE_RE = re.compile(
 )
 # Geen computer, wel in dezelfde categorie: radar en verlichting.
 NOT_A_COMPUTER_ITEM_RE = re.compile(r"\b(?:varia|radar|rtl\s?\d+|\w*lamp|\w*licht|verlichting)\b", re.I)
+# In de beschrijving: de computer zelf zit er níet bij. "Wahoo ELEMNT ROAM GPS
+# Doos met nieuwe accessoires" (€200, 28-09-2026) is volgens de titel een
+# computer; de beschrijving zegt "accessoires zonder de fietscomputer. Mijn
+# fiets en wahoo zijn gestolen". Het enige signaal dat op de beschrijving let:
+# de titel blijft verder leidend (zie de docstring bovenaan).
+WITHOUT_DEVICE_RE = re.compile(
+    r"\bzonder\s+(?:de\s+|het\s+|een\s+)?(?:gps-?)?(?:fiets)?(?:computer|navigatie|garmin|wahoo"
+    r"|hammerhead|karoo|bryton|edge|roam|bolt)\b",
+    re.I,
+)
 # "Houder voor ...": een accessoire, ook als er een koppelwoord tussen staat.
 FOR_RE = re.compile(r"\b(?:voor|for|geschikt|past|fits|compatible)\b", re.I)
 
@@ -258,7 +268,7 @@ def classify_title(title: str, catalog: Sequence[ComputerModel]) -> Optional[Tit
     return verdict("computer")
 
 
-def classify_unknown(title: str) -> tuple[str, str]:
+def classify_unknown(title: str, description: str = "") -> tuple[str, str]:
     """(soort, reden) voor een titel zonder bekend model. "computer" betekent
     hier: model onbekend, maar het lijkt een computer (Van Rysel GPS 500,
     Sigma BC 509, "Wahoo zeer complete set!" — zelfde crawl). Die blijven
@@ -275,9 +285,13 @@ def classify_unknown(title: str) -> tuple[str, str]:
     word = ACCESSORY_WORD_RE.search(title)
     if word:
         device = DEVICE_RE.search(title[: word.start()])
-        if device and BUNDLE_RE.search(title[device.end(): word.start()]):
-            return "computer", f"model onbekend, met accessoires ('{word.group(0)}')"
-        return "accessoire", f"'{word.group(0)}' zonder bekend model"
+        if not (device and BUNDLE_RE.search(title[device.end(): word.start()])):
+            return "accessoire", f"'{word.group(0)}' zonder bekend model"
+    without = WITHOUT_DEVICE_RE.search(description or "")
+    if without:
+        return "accessoire", f"beschrijving: '{without.group(0)}'"
+    if word:
+        return "computer", f"model onbekend, met accessoires ('{word.group(0)}')"
     return "computer", "model onbekend"
 
 
@@ -491,7 +505,7 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
     conn = sqlite3.connect(uri, uri=True)
     try:
         rows = conn.execute(
-            "SELECT item_id, title, price_eur, url FROM listing "
+            "SELECT item_id, title, price_eur, url, description FROM listing "
             "WHERE price_eur IS NOT NULL "
             "AND COALESCE(price_is_asking, is_bid = 0) = 1 "
             "AND (last_seen IS NULL OR last_seen >= ?)",
@@ -502,8 +516,8 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
     finally:
         conn.close()
     found: dict[str, dict[str, float]] = {}
-    for item_id, title, price, url in rows:
-        if in_bike_category(url):
+    for item_id, title, price, url, description in rows:
+        if in_bike_category(url) or WITHOUT_DEVICE_RE.search(description or ""):
             continue
         verdict = classify_title(title, catalog)
         if verdict and verdict.kind == "computer":
@@ -573,7 +587,11 @@ def apply_computer_signals(
         verdict = classify_title(listing.title, catalog)
         if verdict is None or verdict.kind == "fiets":
             continue
-        found.append([listing, verdict.model, verdict.kind, verdict.reason])
+        kind, reason = verdict.kind, verdict.reason
+        without = WITHOUT_DEVICE_RE.search(listing.description or "")
+        if kind in ("computer", "twijfel") and without:
+            kind, reason = "accessoire", f"beschrijving: '{without.group(0)}'"
+        found.append([listing, verdict.model, kind, reason])
     if not found:
         return 0
 
@@ -745,7 +763,7 @@ def print_computers(listings, limit: int = 10) -> None:
           f"{f', {skipped} uitgefilterd (houders, onderdelen, defect)' if skipped else ''} ===")
     fl = [l for l in flips(listings) if l.computer.profit_eur > 0][:limit]
     if fl:
-        print("Flips (winst = verwachte verkoopprijs − prijs − kosten):")
+        print("Flips (winst = verwachte verkoopprijs − prijs − verzendkosten):")
         for l in fl:
             c = l.computer
             print(f"  {_signed(c.profit_eur):>5} ({_euro(c.profit_low_eur)} tot {_euro(c.profit_high_eur)}) "
@@ -775,7 +793,7 @@ def render_panel(listings, config: Optional[dict] = None) -> tuple[int, str]:
         "<p class='muted'>Het complete overzicht, over alle zoekopdrachten heen, staat in "
         "<code>dashboard.html</code> (<code>python dashboard.py</code>). "
         f"<strong>Winst</strong> = wat andere advertenties voor hetzelfde model vragen, na "
-        f"onderhandelingsruimte, min prijs en kosten. <strong>Upgrade</strong> = functiescore min die "
+        f"onderhandelingsruimte, min prijs en verzendkosten. <strong>Upgrade</strong> = functiescore min die "
         f"van de eigen {esc(base['merk'])} {esc(base['model'])}. Geen van beide is de dealscore.</p>",
     ]
     if not found and not filtered_out(listings):

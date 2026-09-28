@@ -166,7 +166,7 @@ def load_dashboard(db_path, config: Optional[dict] = None) -> Dashboard:
 
     pc.apply_computer_signals(listings, db_path=db_path, config=config)
     unknown = [
-        Unknown(l, *pc.classify_unknown(l.title))
+        Unknown(l, *pc.classify_unknown(l.title, l.description))
         for l in listings
         if l.computer is None
     ]
@@ -257,7 +257,7 @@ def flips_panel(d: Dashboard) -> str:
     flips = d.flips
     best = flips[0] if flips else None
     parts = [tiles([
-        ("Flips met winst", str(len(flips)), "advertenties onder de verwachte verkoopprijs"),
+        ("Flips met winst", str(len(flips)), f"na {euro(flip.get('costs_eur', 0))} verzendkosten per stuk"),
         ("Beste flip", signed_euro(best.computer.profit_eur) if best else "—",
          best.computer.model.label if best else "nog niets"),
         ("Samen", euro(sum(l.computer.profit_eur for l in flips)) if flips else "—",
@@ -265,8 +265,9 @@ def flips_panel(d: Dashboard) -> str:
         ("Zonder prijs", str(len(d.open_bids)), "met een maximaal bod"),
     ])]
     parts.append(
-        "<p class='explain'><strong>Winst</strong> = verwachte verkoopprijs − prijs − kosten "
-        f"({euro(flip.get('costs_eur', 0))} per flip, instelbaar in <code>computer_scoring.json</code>). "
+        "<p class='explain'><strong>Winst</strong> = verwachte verkoopprijs − prijs − verzendkosten "
+        f"({euro(flip.get('costs_eur', 0))} per flip, instelbaar als <code>costs_eur</code> in "
+        "<code>computer_scoring.json</code>). "
         "De verkoopprijs is de mediaan van wat andere advertenties voor hetzelfde model vragen "
         f"(nu en de laatste {flip['comp_window_days']} dagen, verkochte meegeteld), "
         f"× {str(flip['negotiation_factor']).replace('.', ',')} voor afdingen. De band eronder is de winst "
@@ -297,7 +298,7 @@ def flips_panel(d: Dashboard) -> str:
     if d.open_bids:
         parts.append("<h3>Zonder prijs — bied maximaal</h3>"
                      "<p class='explain'>Bieden zonder minimum of geen prijs genoemd. Het maximale bod is de "
-                     "lage verkoopschatting min kosten: daarboven speel je bij een tegenvaller verlies.</p>")
+                     "lage verkoopschatting min verzendkosten: daarboven speel je bij een tegenvaller verlies.</p>")
         rows = [
             "<tr>"
             f"<td class='pic'>{thumb(l)}</td>"

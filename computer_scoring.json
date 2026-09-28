@@ -26,11 +26,11 @@
     "unknown_credit": 0.0,
     "support_penalty": {"nee": 15, "beperkt": 5},
     "flip": {
-        "_toelichting": "negotiation_factor is dezelfde heuristiek als het midden van valuation.NEGOTIATION_DEFAULT: vraagprijs naar verkoopprijs, geen meting. costs_eur gaat van elke flip af: zet hier verzendkosten of benzine op als je die mee wilt rekenen.",
+        "_toelichting": "negotiation_factor is dezelfde heuristiek als het midden van valuation.NEGOTIATION_DEFAULT: vraagprijs naar verkoopprijs, geen meting. costs_eur gaat van elke flip af (en van het maximale bod): standaard €3 verzendkosten, op verzoek van de eigenaar (28-09-2026). Zet er meer op als je ook benzine of verpakking wilt meerekenen.",
         "min_comps": 3,
         "negotiation_factor": 0.875,
         "comp_window_days": 180,
-        "costs_eur": 0
+        "costs_eur": 3
     },
     "filter": {
         "_toelichting": "Voor een titel met een houder- of hoeswoord direct na de modelnaam ('Karoo 3 houder nieuw'): onder dit deel van de mediaan van hetzelfde model, of zonder mediaan onder dit deel van de nieuwprijs, of zonder beide onder floor_eur, is het een accessoire.",
