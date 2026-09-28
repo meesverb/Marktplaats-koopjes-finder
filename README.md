@@ -63,6 +63,31 @@ Everything a round prints goes to `logs/koopjes.log`. Relative paths in
 `schedule.json` are relative to that file, so it doesn't matter which
 directory the scheduler starts the round in.
 
+Every round, whatever its outcome, also leaves one line in
+`logs/rondes.jsonl` (slot, start time, `ok`/`fout`/`overgeslagen`, number of
+new listings). `overzicht.html` shows the last 12 under **Laatste rondes** and
+`python koopjes.py status` the last 3, so you can see whether the scheduled
+rounds actually ran and reached Marktplaats.
+
+**Reading the results on your phone.** The crawling stays on your own
+computer (a datacenter IP gets blocked sooner, and the database stays
+yours). To read the results elsewhere, add a folder that OneDrive, Google
+Drive, Dropbox or iCloud syncs to `files` in `schedule.json`:
+
+```json
+"files": { "mirror": "C:/Users/<jij>/OneDrive/koopjes" }
+```
+
+After every round `overzicht.html`, `dashboard.html`, the reports the
+overview links to and `lijsten/*.txt` are copied there, with the same
+relative paths. Never `koopjes.db`, the history or the logs. The folder must
+exist: a missing folder usually means the cloud client isn't running, so the
+round doesn't create it; it only writes `let op: de kopie ... mislukte` in the
+log and otherwise succeeds. On the phone, open the file from the cloud app
+(best in the browser, via "openen in"): a preview that doesn't run
+JavaScript shows only the first tab of the dashboard. Read-only: buying and
+selling are still entered via `python dashboard.py --serve` on the computer.
+
 The shipped `schedule.json` follows a measurement of Marktplaats itself
 (September 2026, category racefietsen): 400-500 new listings a day, spread
 fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:

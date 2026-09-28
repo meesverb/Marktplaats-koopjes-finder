@@ -29,6 +29,7 @@ import contextlib
 import html
 import json
 import os
+import shutil
 import subprocess
 import sys
 import webbrowser
@@ -107,6 +108,11 @@ class Config:
     dashboard: str = "dashboard.html"
     log_file: str = "logs/koopjes.log"
     html: str = "racefiets_report.html"
+    rounds_file: str = "logs/rondes.jsonl"
+    # Optional: a folder a cloud client (OneDrive, Google Drive, Dropbox)
+    # syncs, so the results can be read on a phone while the laptop does the
+    # crawling. Empty = no copy.
+    mirror: str = ""
     extra_args: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -237,6 +243,8 @@ def load_config(path: Path) -> Config:
         dashboard=files.get("dashboard", "dashboard.html"),
         log_file=files.get("log", "logs/koopjes.log"),
         html=files.get("report", "racefiets_report.html"),
+        rounds_file=files.get("rounds", "logs/rondes.jsonl"),
+        mirror=files.get("mirror") or "",
         extra_args=tuple(extra_args),
     )
 
@@ -398,26 +406,29 @@ def run_slot(
         return 1
 
     log = Log(config.base_dir / config.log_file, echo=echo)
+    started = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
         log.line(f"=== {now_local()} ronde '{slot.name}': {', '.join(slot.searches)} ===")
         try:
             with run_lock(lock_path(config)):
-                return _run_locked(config, slot, log, runner)
+                return _run_locked(config, slot, log, runner, started)
         except LockBusy:
             log.line("Overgeslagen: er draait al een ronde. Marktplaats krijgt nooit twee tegelijk.")
+            record_round(config, slot, started, "overgeslagen", 0)
             return 0
         except Exception as exc:  # noqa: BLE001 — a scheduled round has no one watching its console
             # E.g. koopjes.db locked by a manual run for longer than sqlite
             # waits. Without this the traceback goes to a console nobody
             # sees, and the log just stops.
             log.line(f"FOUT: de ronde stopte onverwacht: {type(exc).__name__}: {exc}")
+            with contextlib.suppress(Exception):
+                record_round(config, slot, started, "fout", 0)
             return 1
     finally:
         log.close()
 
 
-def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
-    started = datetime.now(timezone.utc).isoformat(timespec="seconds")
+def _run_locked(config: Config, slot: Slot, log: Log, runner, started: str) -> int:
     sync_searches(config)
     failed = False
 
@@ -435,8 +446,6 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
             failed = True
             log.line(f"FOUT: de taxatie stopte met code {code}")
 
-    overview = write_overview(config)
-    log.line(f"Overzicht bijgewerkt: {overview}")
     dashboard_path, flips = None, []
     try:
         dashboard_path, board = write_dashboard(config)
@@ -456,6 +465,11 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
         if s.get("finished_at", "") >= started and s.get("name") in slot.searches
     ]
     new_this_round = sum(s.get("new", 0) for s in summaries)
+    # Recorded before the overview is written, so the overview (and the copy
+    # on the phone) already shows this round.
+    record_round(config, slot, started, "fout" if failed else "ok", new_this_round)
+    overview = write_overview(config)
+    log.line(f"Overzicht bijgewerkt: {overview}")
     # "auto" opens the overview for new listings in a search with a report.
     # A search without one ("report": false, the bike computers) lives on the
     # dashboard, and there a new listing is mostly an e-bike display: that
@@ -471,8 +485,89 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
         with contextlib.suppress(webbrowser.Error):
             webbrowser.open(dashboard_path.resolve().as_uri())
 
+    if config.mirror:
+        # A cloud folder that's gone (drive not mounted, client signed out)
+        # must not fail the crawl: Marktplaats was reached, only the copy
+        # for the phone is missing, and the log says so.
+        try:
+            target, copied = mirror_outputs(config)
+            log.line(f"Kopie voor onderweg: {copied} bestand(en) naar {target}")
+        except OSError as exc:
+            log.line(f"let op: de kopie naar {config.mirror} mislukte: {exc}")
+
     log.line(f"Klaar: {new_this_round} nieuwe advertentie(s){' — met fouten, zie hierboven' if failed else ''}.")
     return 1 if failed else 0
+
+
+# --- Round record and the copy for the phone --------------------------------
+
+ROUNDS_SHOWN = 12
+
+
+def record_round(config: Config, slot: Slot, started: str, status: str, new: int) -> None:
+    """One line per round, whatever its outcome, so the overview can show
+    whether the scheduled rounds actually ran — runs.jsonl only gets a line
+    when a search got as far as writing its summary."""
+    path = config.base_dir / config.rounds_file
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = {
+        "slot": slot.name,
+        "started_at": started,
+        "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "status": status,
+        "new": new,
+    }
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+
+def load_rounds(path: Path, limit: int = ROUNDS_SHOWN) -> list[dict]:
+    """The latest rounds, newest first. A damaged line is skipped."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return []
+    rounds = []
+    for line in lines[-limit * 2:]:
+        with contextlib.suppress(json.JSONDecodeError):
+            item = json.loads(line)
+            if isinstance(item, dict):
+                rounds.append(item)
+    return rounds[::-1][:limit]
+
+
+def mirror_outputs(config: Config) -> tuple[Path, int]:
+    """Copies what can be read without the laptop — the overview, the
+    dashboard, the reports it links to and the lists — into `files.mirror`,
+    keeping the relative paths so the links between them keep working.
+    Never the database or the history: those stay on the laptop."""
+    base = config.base_dir
+    target = Path(config.mirror).expanduser()
+    if not target.is_absolute():
+        target = base / target
+    if not target.is_dir():
+        # Not created on purpose: a missing cloud folder usually means the
+        # client isn't running, and a fresh local folder would sync nowhere.
+        raise OSError("map bestaat niet")
+    names = {config.overview, config.dashboard}
+    for summary in load_summaries(base / config.summary_file).values():
+        if summary.get("report"):
+            names.add(summary["report"])
+    names.update(str(p.relative_to(base)) for p in (base / LISTS_DIR).glob("*.txt"))
+    copied = 0
+    for name in sorted(names):
+        source = Path(name) if Path(name).is_absolute() else base / name
+        if not source.is_file():
+            continue
+        try:
+            relative = source.resolve().relative_to(base.resolve())
+        except ValueError:
+            relative = Path(source.name)
+        destination = target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+        copied += 1
+    return target, copied
 
 
 # --- Overview page ----------------------------------------------------------
@@ -552,7 +647,8 @@ ul.hl { margin:4px 0 12px; padding-left:18px; } ul.hl li { margin:2px 0; }
 """
 
 
-def render_overview(config: Config, summaries: dict[str, dict], valuations: list[dict]) -> str:
+def render_overview(config: Config, summaries: dict[str, dict], valuations: list[dict],
+                    rounds: Optional[list[dict]] = None) -> str:
     esc = html.escape
     parts = [
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>",
@@ -564,6 +660,23 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         f"<p class='dashlink'><a href='{esc(config.dashboard, quote=True)}'><strong>Fietscomputers-dashboard</strong></a>"
         " — alle fietscomputers op één pagina: flips met winst, upgrades, marktprijzen.</p>",
     ]
+
+    parts.append("<h2>Laatste rondes</h2>")
+    if rounds:
+        labels = {"ok": "<span class='good'>gelukt</span>", "fout": "<span class='warn'>fout — zie log</span>",
+                  "overgeslagen": "<span class='muted'>overgeslagen (er liep er al een)</span>"}
+        parts.append("<div class='table-wrap'><table><thead><tr><th>Ronde</th><th>Gestart</th>"
+                     "<th>Uitkomst</th><th class='num'>Nieuw</th></tr></thead><tbody>")
+        for r in rounds:
+            parts.append(
+                f"<tr><td>{esc(str(r.get('slot', '?')))}</td>"
+                f"<td>{esc(local_time(r.get('started_at', '')))}</td>"
+                f"<td>{labels.get(r.get('status'), esc(str(r.get('status', '?'))))}</td>"
+                f"<td class='num'>{r.get('new', 0)}</td></tr>"
+            )
+        parts.append("</tbody></table></div>")
+    else:
+        parts.append("<p class='muted'>Nog geen rondes vastgelegd.</p>")
 
     parts.append("<h2>Mijn fiets</h2>")
     if valuations:
@@ -750,7 +863,8 @@ def write_overview(config: Config) -> Path:
     summaries = load_summaries(config.base_dir / config.summary_file)
     valuations = latest_valuations(config.base_dir / config.db)
     path = config.base_dir / config.overview
-    path.write_text(render_overview(config, summaries, valuations), encoding="utf-8")
+    rounds = load_rounds(config.base_dir / config.rounds_file)
+    path.write_text(render_overview(config, summaries, valuations, rounds), encoding="utf-8")
     return path
 
 
@@ -987,6 +1101,16 @@ def print_status(config: Config) -> None:
     except LockBusy:
         running = True
     print("Er draait nu een ronde." if running else "Er draait nu geen ronde.")
+    if config.mirror:
+        target = Path(config.mirror).expanduser()
+        if not target.is_absolute():
+            target = config.base_dir / target
+        state = "" if target.is_dir() else " — LET OP: die map bestaat niet"
+        print(f"Kopie voor onderweg: {target}{state}")
+    rounds = load_rounds(config.base_dir / config.rounds_file, limit=3)
+    for r in rounds:
+        print(f"Ronde {r.get('slot', '?')} om {local_time(r.get('started_at', ''))}: "
+              f"{r.get('status', '?')}, {r.get('new', 0)} nieuw")
     print()
     for slot in config.slots.values():
         times = ", ".join(t.label() for t in slot.times) or "handmatig"

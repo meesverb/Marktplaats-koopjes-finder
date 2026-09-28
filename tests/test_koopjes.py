@@ -244,6 +244,70 @@ class RunSlotTest(TempDirTest):
         self.assertIn("overdag", err.getvalue())
 
 
+class RoundRecordAndMirrorTest(TempDirTest):
+    """Every round leaves a line in rondes.jsonl, and with files.mirror the
+    pages are copied to a folder a cloud client syncs to the phone."""
+
+    def run_slot(self, slot, files=None, codes=None):
+        config = koopjes.load_config(write_config(self.dir, files=files or {}))
+        codes = dict(codes or {})
+
+        def runner(command, log, cwd):
+            return codes.get(Path(command[1]).name, 0)
+
+        with koopjes.working_directory(self.dir):
+            return koopjes.run_slot(config, slot, runner=runner, echo=False), config
+
+    def test_each_round_is_recorded_and_shown_in_the_overview(self):
+        self.run_slot("overdag")
+        self.run_slot("nacht", codes={"racefiets_jev.py": 1})
+        rounds = koopjes.load_rounds(self.dir / "logs" / "rondes.jsonl")
+        self.assertEqual([(r["slot"], r["status"]) for r in rounds],
+                         [("nacht", "fout"), ("overdag", "ok")])
+        overview = (self.dir / "overzicht.html").read_text(encoding="utf-8")
+        self.assertIn("Laatste rondes", overview)
+        # The overview is written after the record, so it has this round too.
+        self.assertIn("fout — zie log", overview)
+
+    def test_a_skipped_round_is_recorded(self):
+        config = koopjes.load_config(write_config(self.dir))
+        with koopjes.run_lock(koopjes.lock_path(config)):
+            self.run_slot("overdag")
+        rounds = koopjes.load_rounds(self.dir / "logs" / "rondes.jsonl")
+        self.assertEqual(rounds[0]["status"], "overgeslagen")
+
+    def test_the_mirror_gets_the_pages_and_lists_but_never_the_database(self):
+        cloud = self.dir / "OneDrive" / "koopjes"
+        cloud.mkdir(parents=True)
+        (self.dir / "racefiets_report.html").write_text("<html></html>", encoding="utf-8")
+        (self.dir / "logs").mkdir()
+        with open(self.dir / "logs" / "runs.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"name": "racefietsen", "report": "racefiets_report.html",
+                                "finished_at": "2026-01-01T00:00:00+00:00"}) + "\n")
+        code, _ = self.run_slot("overdag", files={"mirror": str(cloud)})
+        self.assertEqual(code, 0)
+        for name in ["overzicht.html", "dashboard.html", "racefiets_report.html",
+                     "lijsten/beste_koopjes.txt"]:
+            self.assertTrue((cloud / name).is_file(), name)
+        self.assertFalse((cloud / "koopjes.db").exists())
+        log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
+        self.assertIn("Kopie voor onderweg", log)
+
+    def test_a_missing_mirror_folder_does_not_fail_the_round(self):
+        missing = self.dir / "niet-gesynchroniseerd"
+        code, _ = self.run_slot("overdag", files={"mirror": str(missing)})
+        self.assertEqual(code, 0)
+        self.assertFalse(missing.exists())
+        log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
+        self.assertIn("mislukte", log)
+
+    def test_without_a_mirror_nothing_is_copied(self):
+        _, config = self.run_slot("overdag")
+        self.assertEqual(config.mirror, "")
+        log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
+        self.assertNotIn("Kopie voor onderweg", log)
+
+
 class ComputersRoundTest(TempDirTest):
     """De overdagronde voor fietscomputers: ondiep, nieuwste eerst, en het
     dashboard opent alleen voor een nieuwe flip."""
