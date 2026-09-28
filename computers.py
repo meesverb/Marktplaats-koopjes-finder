@@ -78,7 +78,7 @@ NUMERIC = ("introductiejaar", "nieuwprijs_eur", "schermgrootte_inch", "batterijd
 # ("Hammerhead Karoo 3 houder nieuw", "Wahoo Roam I stuurhouder"). Dat
 # laatste geval is `twijfel`: de prijs beslist (apply_computer_signals()).
 
-KINDS_EXCLUDED = ("accessoire", "onderdeel", "defect", "gevraagd")
+KINDS_EXCLUDED = ("accessoire", "onderdeel", "defect", "gevraagd", "e-bike")
 
 # Staat een van deze woorden vóór de modelnaam, dan gaat de titel over een
 # fiets (of een trainer) die toevallig een computer noemt: "Racefiets Cube +
@@ -127,6 +127,14 @@ BUNDLE_RE = re.compile(
 DEVICE_RE = re.compile(
     r"\b(?:fiets)?computer\b|\bgps\b|\b(?:fiets)?navigatie\b|\bbundel\b|\bbundle\b|\bset\b"
     r"|\bcompleet\b|\bcombo\b|\bpakket\b",
+    re.I,
+)
+# E-bike-displays en -bediening: de hele categorie fietscomputers (2800
+# advertenties op 28-09-2026) begint met Bosch Nyon, Kiox en Intuvia. Ze horen
+# bij een e-bike-systeem en passen niet op een racefiets.
+EBIKE_RE = re.compile(
+    r"\b(?:bosch|intuvia|kiox|nyon|purion|smartphone\s?hub|shimano\s+steps|steps\s+[a-z]?\d|yamaha|bafang"
+    r"|brose|panasonic|giant\s+ride\s?control|ridecontrol|e-?bike\w*|ebike\w*|elektrische\s+fiets\w*)\b",
     re.I,
 )
 # Geen computer, wel in dezelfde categorie: radar en verlichting.
@@ -274,10 +282,11 @@ def classify_unknown(title: str, description: str = "") -> tuple[str, str]:
     Sigma BC 509, "Wahoo zeer complete set!" — zelfde crawl). Die blijven
     zichtbaar, zonder score of winst; de eigenaar wilde geen computer kwijt."""
     title = title or ""
-    for kind, regex in (("gevraagd", WANTED_RE), ("defect", REPAIR_RE), ("onderdeel", PART_RE)):
+    for kind, regex in (("gevraagd", WANTED_RE), ("e-bike", EBIKE_RE), ("defect", REPAIR_RE), ("onderdeel", PART_RE)):
         found = regex.search(title)
         if found:
-            label = {"gevraagd": "zoekadvertentie", "defect": "reparatie of defect", "onderdeel": "los onderdeel"}[kind]
+            label = {"gevraagd": "zoekadvertentie", "e-bike": "e-bike-display of -bediening",
+                     "defect": "reparatie of defect", "onderdeel": "los onderdeel"}[kind]
             return kind, f"{label} ('{found.group(0)}')"
     found = NOT_A_COMPUTER_ITEM_RE.search(title) or ACCESSORY_BRAND_RE.search(title)
     if found:

@@ -353,6 +353,11 @@ class ClassifyTitleTest(unittest.TestCase):
         "Garmin Edge Explore 820 doosje met boekje": "accessoire",
         "Garmin Edge batterij vervangen": "defect",
         "Wahoo veiligheidskoort voor Roam en Bolt v1 en V2": "onderdeel",
+        # Whole-category crawl, 28-09-2026: it starts with e-bike displays.
+        "Bosch Nyon e-bike fietscomputer - Z": "e-bike",
+        "Bosch Kiox 300 Display, Fietscomputer": "e-bike",
+        "Bosch Intuvia 100 + Bosch LED Remote": "e-bike",
+        "Shimano Steps E7000 display": "e-bike",
     }
 
     def test_real_titles_without_a_known_model(self):
