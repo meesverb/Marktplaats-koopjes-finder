@@ -306,10 +306,16 @@ A listing whose **title** names a known bike computer gets a place in the
 report's **Fietscomputers** tab and a `=== Fietscomputers` block in the console
 (only when a run has any). The models, one row each with a source, are in
 `reference_bike_computers.csv`; the weights in `computer_scoring.json`. A bike
-"met Garmin Edge 530" is not matched (the title is about a bike), nor is
-"Houder voor Garmin Edge 530" (an accessory before the model name). A title
-that mentions a repair or a defect ("scherm vervangen", "defect", "werkt
-niet") is shown, but is never an upgrade, a flip or a comparable price.
+"Racefiets ... + Garmin Edge 530" is not matched (a bike word before the
+model name), nor is "Houder voor Garmin Edge 530" (an accessory before it);
+"Garmin Edge 800 fiets navigatie" is. Shown, but never an upgrade, a flip or
+a comparable price: a title with a repair or defect ("scherm vervangen",
+"defect", "voor onderdelen"), a part ("LCD", "color kit", "koord"), and a
+title with a holder or case word anywhere ("stuurhouder", "mount", "hoes")
+whose price is under 40% of the median for that model — so "Wahoo Roam I
+stuurhouder" for €15 is out, "Garmin Edge 530 + stuurmount" for €170 is in.
+Without enough other listings of the model to compare with, such a title
+stays a computer.
 
 Two measures, shown separately — neither is the dealscore:
 
@@ -330,6 +336,7 @@ Two measures, shown separately — neither is the dealscore:
   a comparable.
 
 ```bash
+python koopjes.py run nacht        # includes the "fietscomputer" search: every brand in the file, all pages
 python racefiets_jev.py --query "garmin edge" --pages 1
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo

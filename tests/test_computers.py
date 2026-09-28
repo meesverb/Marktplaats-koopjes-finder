@@ -99,12 +99,25 @@ class MatchTest(unittest.TestCase):
         "Bryton Rider 750": "Bryton Rider 750",
         "Magene C606": "Magene C606",
         "Garmin Edge 530 met houder": "Garmin Edge 530",
+        # Real titles from the full crawl of 28-09-2026 that were first missed.
+        "Garmin Edge 800 fiets Navigatie met accessoires": "Garmin Edge 800",
+        "Garmin Edge 130 MTB fietscomputer inclusief beugel": "Garmin Edge 130",
+        "Garmin Edge Explorer": "Garmin Edge Explore",
+        "Garmin Edge Touring Plus Fietsnavigatie": "Garmin Edge Touring Plus",
+        "Garmin edge Touring": "Garmin Edge Touring",
+        "Compacte Fietscomputer Garmin Edge 25": "Garmin Edge 20/25",
+        "Te koop Wahoo ELEMNT MINI  fietscomputer": "Wahoo ELEMNT MINI",
+        "2x Bryton Rider 420T fietscomputer met hartslagband": "Bryton Rider 420",
+        "M460 polar fietscomputer": "Polar M460",
     }
     NOT_A_COMPUTER = (
         "Racefiets met Garmin Edge 530",
         "Houder voor Garmin Edge 530",
         "Wahoo Kickr",
         "Wahoo Kickr met Elemnt Bolt",
+        "Racefiets Cube + Garmin Edge 130 Plus",
+        "Siliconen beschermhoes voor Garmin Edge 1030",
+        "wahoo fietscomputerhouders (2 stuks) element Bolt v1 v2",
         "Garmin Varia RTL515",
         "Testadvertentie",
     )
@@ -194,7 +207,7 @@ class SignalTest(unittest.TestCase):
         others = [self.listing(f"a{i}", "Garmin Edge 830", p) for i, p in enumerate((200.0, 220.0, 240.0))]
         repair = self.listing("r", "Garmin Edge 830 scherm vervangen", 110.0)
         pc.apply_computer_signals(others + [repair])
-        self.assertTrue(repair.computer.repair)
+        self.assertIn("reparatie", repair.computer.excluded)
         self.assertIsNone(repair.computer.flip_margin_eur)
         self.assertFalse(repair.computer.is_upgrade)
         self.assertNotIn(repair, pc.flips(others + [repair]))
@@ -202,6 +215,26 @@ class SignalTest(unittest.TestCase):
         self.assertEqual(others[0].computer.comp_count, 2)
         _, html = pc.render_panel(others + [repair])
         self.assertIn("reparatie of defect", html)
+
+    def test_parts_are_never_a_computer_deal(self):
+        # From the full category crawl, 28-09-2026: these topped the flip list.
+        others = [self.listing(f"a{i}", "Garmin Edge 830", p) for i, p in enumerate((170.0, 185.0, 225.0))]
+        lcd = self.listing("l", "Garmin LCD scherm Edge 830", 35.0)
+        pc.apply_computer_signals(others + [lcd])
+        self.assertEqual(lcd.computer.excluded, "los onderdeel of accessoire")
+        self.assertNotIn(lcd, pc.flips(others + [lcd]) + pc.upgrades(others + [lcd]))
+
+    def test_cheap_holder_is_an_accessory_expensive_one_a_computer(self):
+        others = [self.listing(f"a{i}", "Wahoo Elemnt Roam", p) for i, p in enumerate((120.0, 140.0, 160.0))]
+        holder = self.listing("h", "Wahoo Roam I stuurhouder", 15.0)
+        bundle = self.listing("b", "Garmin Edge 530 + Stuurmount", 170.0)
+        pc.apply_computer_signals(others + [holder, bundle])
+        self.assertIn("vermoedelijk accessoire", holder.computer.excluded)
+        self.assertNotIn(holder, pc.flips(others + [holder]))
+        # Only 0 other Edge 530s: can't judge, so it stays a computer.
+        self.assertEqual(bundle.computer.excluded, "")
+        # The holder's €15 isn't a comparable for the Roams.
+        self.assertEqual(others[0].computer.comp_count, 2)
 
     def test_a_running_bid_is_not_a_comparable(self):
         bids = [

@@ -58,8 +58,12 @@ VOCABULARY = {
 }
 NUMERIC = ("introductiejaar", "nieuwprijs_eur", "schermgrootte_inch", "batterijduur_uur", "gewicht_g")
 
-# Een titel met een van deze woorden gaat over een fiets (of een trainer) die
-# toevallig een computer noemt. \b houdt "fietscomputer" erbuiten.
+# Staat een van deze woorden vóór de modelnaam, dan gaat de titel over een
+# fiets (of een trainer) die toevallig een computer noemt: "Racefiets Cube +
+# Garmin Edge 130 Plus". Erna is het een omschrijving van de computer zelf:
+# "Garmin Edge 800 fiets Navigatie", "Garmin Edge 130 MTB fietscomputer" —
+# die vielen in de volledige crawl van 28-09-2026 eerst ten onrechte weg.
+# \b houdt "fietscomputer" erbuiten.
 NOT_A_COMPUTER_RE = re.compile(
     r"\b(?:racefiets\w*|fiets|fietsen|mountainbike|mtb|gravel\s?bike|gravelfiets|e-?bike"
     r"|tijdritfiets|kickr|trainer|fietstrainer)\b",
@@ -83,6 +87,29 @@ REPAIR_RE = re.compile(
     r"|voor\s+onderdelen|werkt\s+niet|accu\s?vervang\w*)\b",
     re.I,
 )
+
+
+# Losse onderdelen met een modelnaam in de titel ("Garmin LCD scherm Edge
+# 830", "Hammerhead Karoo 2 custom color kit", "veiligheidskoord voor Roam")
+# — gezien in de volledige crawl van de categorie, 28-09-2026. Waar ook in de
+# titel: dit zijn nooit hele computers.
+PART_RE = re.compile(
+    r"\b(?:lcd|colou?r\s?kit|kleur\s?kit|\w*koord|tether|onderdel\w*|reserveonderdel\w*)\b",
+    re.I,
+)
+# Een houder of hoes kan ook ná de modelnaam staan ("Wahoo Roam I
+# stuurhouder", "Bolt 2.0 aero race mount"), maar "Garmin Edge 530 +
+# stuurmount" voor €170 is gewoon een computer. Zo'n woord ergens in de titel
+# maakt een advertentie alleen verdacht; de prijs beslist (ACCESSORY_MAX_SHARE).
+# Geen \b vooraan: "fietscomputerhouder" en "stuurmount" moeten ook meetellen.
+ACCESSORY_ANYWHERE_RE = re.compile(
+    r"(?:houders?|mount|hoes|hoesje|beugel|cover|folie|protector|steun)\b", re.I
+)
+# Onder dit deel van de mediaan van hetzelfde model is een verdachte titel een
+# accessoire. Een werkende Edge 530 voor 40% van de mediaan zou een koopje
+# zijn dat je mist; dat risico is kleiner dan een houder van €15 bovenaan de
+# flipmarge.
+ACCESSORY_MAX_SHARE = 0.4
 
 
 class CatalogError(ValueError):
@@ -159,17 +186,16 @@ def default_config() -> dict:
 
 
 def match_model(title: str, catalog: Sequence[ComputerModel]) -> Optional[ComputerModel]:
-    """Het eerste model waarvan het patroon in de titel staat, of None als de
-    titel over een fiets of een los accessoire gaat."""
+    """Het eerste model waarvan het patroon in de titel staat, of None als er
+    een fiets- of accessoirewoord vóór de modelnaam staat."""
     title = title or ""
-    if NOT_A_COMPUTER_RE.search(title):
-        return None
     for model in catalog:
         match = model.pattern.search(title)
         if match:
-            accessory = ACCESSORY_RE.search(title)
-            if accessory and accessory.start() < match.start():
-                return None
+            for other in (NOT_A_COMPUTER_RE, ACCESSORY_RE):
+                found = other.search(title)
+                if found and found.start() < match.start():
+                    return None
             return model
     return None
 
@@ -277,11 +303,14 @@ class ComputerSignal:
     flip_margin_eur: Optional[float]
     comp_count: int
     comp_note: str
-    repair: bool = False  # reparatie of defect in de titel (REPAIR_RE)
+    # Waarom deze advertentie geen upgrade, flip of vergelijkingsprijs is,
+    # of "" als hij gewoon meetelt: reparatie/defect, onderdeel, of een
+    # houder/hoes die te goedkoop is om een computer te zijn.
+    excluded: str = ""
 
     @property
     def is_upgrade(self) -> bool:
-        return not self.repair and self.upgrade_delta is not None and self.upgrade_delta > 0
+        return not self.excluded and self.upgrade_delta is not None and self.upgrade_delta > 0
 
 
 def _comparable_price(listing) -> Optional[float]:
@@ -318,9 +347,18 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
     found: dict[str, dict[str, float]] = {}
     for item_id, title, price in rows:
         model = match_model(title, catalog)
-        if model:
+        if model and not _title_exclusion(title) and not ACCESSORY_ANYWHERE_RE.search(title or ""):
             found.setdefault(model.label, {})[item_id] = price
     return found
+
+
+def _title_exclusion(title: str) -> str:
+    """De reden als de titel alleen al zegt dat dit geen werkende computer is."""
+    if REPAIR_RE.search(title or ""):
+        return "reparatie of defect in de titel"
+    if PART_RE.search(title or ""):
+        return "los onderdeel of accessoire"
+    return ""
 
 
 def apply_computer_signals(
@@ -348,11 +386,31 @@ def apply_computer_signals(
     if not matched:
         return 0
 
+    excluded = {listing.item_id: _title_exclusion(listing.title) for listing, _ in matched}
+
+    # Eerst de schone prijzen (geen houder- of hoeswoord), om te zien wat
+    # een model normaal kost; daarmee valt een verdachte titel met een
+    # lage prijs af als accessoire.
     comps = db_comparables(db_path, catalog, flip["comp_window_days"])
+    suspect = []
     for listing, model in matched:
-        if REPAIR_RE.search(listing.title or ""):
+        if excluded[listing.item_id]:
             continue
         price = _comparable_price(listing)
+        if ACCESSORY_ANYWHERE_RE.search(listing.title or ""):
+            suspect.append((listing, model, price))
+        elif price is not None:
+            comps.setdefault(model.label, {})[listing.item_id] = price
+    for listing, model, price in suspect:
+        clean = list(comps.get(model.label, {}).values())
+        if listing.price_eur is not None and len(clean) >= flip["min_comps"]:
+            median = statistics.median(clean)
+            if listing.price_eur < ACCESSORY_MAX_SHARE * median:
+                excluded[listing.item_id] = (
+                    f"houder/hoes in de titel en €{listing.price_eur:.0f} is "
+                    f"{listing.price_eur / median:.0%} van de mediaan (€{median:.0f}) — vermoedelijk accessoire"
+                )
+                continue
         if price is not None:
             comps.setdefault(model.label, {})[listing.item_id] = price
 
@@ -365,10 +423,10 @@ def apply_computer_signals(
                 per_100 = round(delta / listing.price_eur * 100, 1)
 
         others = [p for item_id, p in comps.get(model.label, {}).items() if item_id != listing.item_id]
-        repair = bool(REPAIR_RE.search(listing.title or ""))
+        reason = excluded[listing.item_id]
         resale = margin = None
-        if repair:
-            note = "reparatie of defect in de titel — geen flipmarge"
+        if reason:
+            note = f"{reason} — geen flipmarge"
         elif len(others) >= flip["min_comps"]:
             resale = round(statistics.median(others) * flip["negotiation_factor"], 2)
             note = (f"mediaan van {len(others)} andere advertenties × "
@@ -377,7 +435,7 @@ def apply_computer_signals(
                 margin = round(resale - listing.price_eur, 2)
         else:
             note = f"te weinig vergelijkingsmateriaal ({len(others)} andere, minimaal {flip['min_comps']})"
-        listing.computer = ComputerSignal(model, features, delta, per_100, resale, margin, len(others), note, repair)
+        listing.computer = ComputerSignal(model, features, delta, per_100, resale, margin, len(others), note, reason)
     return len(matched)
 
 
@@ -467,7 +525,7 @@ def render_panel(listings, config: Optional[dict] = None) -> tuple[int, str]:
             f"<td class='num' title='{esc(c.features.summary, quote=True)}'>{c.features.score:.0f}"
             f"{'<div class=muted>' + str(len(c.features.unknown)) + ' onbekend</div>' if c.features.unknown else ''}</td>"
             f"<td>{esc(c.model.label)}<div class='muted'>{esc(c.features.summary)}</div>"
-            f"{'<div class=muted><strong>' + esc(c.comp_note) + '</strong></div>' if c.repair else ''}</td>"
+            f"{'<div class=muted><strong>' + esc(c.comp_note) + '</strong></div>' if c.excluded else ''}</td>"
             f"<td><a href='{esc(l.url, quote=True)}' target='_blank' rel='noopener'>{esc(l.title)}</a></td>"
             "</tr>"
         )
