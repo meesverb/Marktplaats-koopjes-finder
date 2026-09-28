@@ -243,7 +243,10 @@ The script now says so when it happens. `--category fietsonderdelen` picks
 the category (or categories) yourself, and Marktplaats filters server-side,
 so no pages are spent on the rest. Use the category's key from the URL on
 marktplaats.nl or its number; an unknown one lists the categories that do
-have results for the query. Several categories must share a main category
+have results for the query. With several categories, one that has no results
+for the query today is skipped with a warning ("let op: categorie ... heeft
+nu geen resultaten"), so a quiet day in one category doesn't cost the whole
+search; only when none of them has results is it an error. Several categories must share a main category
 (e.g. `fietsonderdelen,fietsen-racefietsen`, both under *fietsen-en-brommers*).
 Common ones for bikes: `fietsen-racefietsen`, `fietsonderdelen`,
 `fietsaccessoires-fietscomputers`.

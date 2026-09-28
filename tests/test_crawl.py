@@ -153,6 +153,15 @@ class ResolveCategoriesTest(unittest.TestCase):
             mp.resolve_categories(self.facet(), ["fietscomputers"])
         self.assertIn("fietsonderdelen (255)", str(ctx.exception))
 
+    def test_a_category_without_results_today_is_skipped_if_another_has_them(self):
+        # 28-09-2026: "tomtom" had nothing in activity-trackers, and the whole
+        # query fetched nothing. Only when none of them is there is it an error.
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            result = mp.resolve_categories(self.facet(), ["fietsonderdelen", "fietscomputers"])
+        self.assertEqual(result, (445, [462]))
+        self.assertIn("'fietscomputers' heeft nu geen resultaten", err.getvalue())
+
     def test_categories_under_different_main_categories_are_refused(self):
         with self.assertRaises(ValueError):
             mp.resolve_categories(self.facet(), ["fietsonderdelen", "wielrennen"])
