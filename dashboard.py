@@ -1222,12 +1222,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send(self, code: int, body: str, content_type: str = "text/plain; charset=utf-8") -> None:
         data = body.encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            # De browser verbrak de verbinding terwijl de pagina nog onderweg
+            # was (ververst, gesloten, of twee keer geopend). Op Windows gaf dat
+            # een traceback met WinError 10053 in het venster, terwijl er niets
+            # mis is: de volgende aanvraag werkt gewoon.
+            self.close_connection = True
 
     def _back(self, message: str) -> None:
         self.send_response(303)

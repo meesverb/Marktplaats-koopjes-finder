@@ -262,5 +262,22 @@ class LiveServerTest(unittest.TestCase):
         self.assertIn("python dashboard.py --serve", html)
 
 
+class AbortedConnectionTest(unittest.TestCase):
+    def test_a_browser_that_hangs_up_is_not_an_error(self):
+        # Windows, WinError 10053: de browser sloot de verbinding terwijl de
+        # pagina nog werd verstuurd. Geen traceback in het venster.
+        class Wfile:
+            def write(self, data):
+                raise ConnectionAbortedError(10053, "verbinding verbroken")
+
+        handler = dashboard.DashboardHandler.__new__(dashboard.DashboardHandler)
+        handler.wfile = Wfile()
+        handler.send_response = handler.send_header = lambda *a: None
+        handler.end_headers = lambda: None
+        handler.close_connection = False
+        handler._send(200, "<html></html>", "text/html; charset=utf-8")
+        self.assertTrue(handler.close_connection)
+
+
 if __name__ == "__main__":
     unittest.main()
