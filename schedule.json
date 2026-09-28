@@ -39,6 +39,12 @@
       "reference_file": "reference_bike_accessories.csv",
       "report": false,
       "note": "De hele categorie fietscomputers: met de categorie erbij geeft 'fietscomputer' precies alles (2800 advertenties op 28-09-2026, net zoveel als zonder zoekwoord). Dat is ~95 pagina's per nacht, tegen ~360 advertenties voor de 17 merken los; het vond 87 extra computers met een bekend model (o.a. 'Garmin 830', 'Garmin 1030 incl. stuurmontage'). De e-bike-displays en houders filtert computers.py eruit. Geen rapport (report: false): alles staat in dashboard.html."
+    },
+    "sporthorloges": {
+      "query": "fenix,forerunner,epix",
+      "category": "sporthorloges,smartwatches",
+      "report": false,
+      "note": "Garmin-sporthorloges voor watches.py (reference_sport_watches.csv). Alleen de categorieën sporthorloges en smartwatches: daar staan de horloges zelf, bandjes en kabels staan in telefoon- en wearable-categorieën. Op 28-09-2026 samen ~820 advertenties (fenix 474, forerunner 264, epix 80), dus ~28 pagina's per nacht. Proef: kijk na een paar weken met 'python watches.py' of er genoeg flips zijn voordat er een dashboardtab komt."
     }
   },
   "slots": {
@@ -51,7 +57,7 @@
       "open_browser": "auto"
     },
     "nacht": {
-      "searches": ["giant-defy", "ultegra-6700", "powermeter", "fietscomputer"],
+      "searches": ["giant-defy", "ultegra-6700", "powermeter", "fietscomputer", "sporthorloges"],
       "pages": 0,
       "sort": "newest",
       "bid_lookup": "fast",

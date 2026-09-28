@@ -146,16 +146,19 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    advertentie die uit een latere export wegvalt is níet als verkocht
    gemarkeerd; wie verkoopsnelheid op Vinted wil meten, moet eerst weten of
    twee exports dezelfde zoekopdracht volledig dekken.
-8. **Sporthorloges als tweede markt** (`reference_sport_watches.csv`, sinds
-   28-09-2026). Alleen de referentiedata: 26 Garmin-modellen (Fenix 5 t/m
-   8 Pro, Epix Gen 2/Pro, Forerunner 45 t/m 970) met bron per rij; 348 van
-   450 echte titels herkend. Nog niet gedaan, in deze volgorde: (a) een
-   zoekopdracht in `schedule.json` (categorie voor horloges opzoeken, net als
-   bij `fietscomputer`), (b) het flipdeel van `computers.py` (comps,
-   verkoopschatting, marge, `classify_title()`) voor horloges bruikbaar maken
-   — de filterwoorden daar zijn fietscomputer-specifiek, (c) een tab in het
-   dashboard. Ontbrekende Garmin-modellen die in de steekproef voorkwamen:
-   Fenix 3/3 HR, Fenix E, Fenix 9, Enduro 3, Instinct (2, 2X, E), Venu (2, 3,
-   Sq, X1), Vivoactive 3/4/5, Forerunner 35/235/630. Geen europrijs gevonden
-   voor Fenix 7 Pro, Epix Pro en Fenix 8; bij de oudere Forerunners staat
-   alleen de dollarprijs. Andere merken (Polar, Coros, Suunto) nog niet.
+8. **Sporthorloges als tweede markt** (`reference_sport_watches.csv`,
+   `watches.py`, zoekopdracht `sporthorloges` in de nachtronde; sinds
+   28-09-2026). Eerste meting op één momentopname, zelfde methode als de
+   fietscomputers: 46 van 605 horloges zijn ook bij de lage schatting een
+   flip (7,6 per 100), tegen 10 van 216 fietscomputers (4,6 per 100); zie
+   README → "Sport watches". Dat is een aanwijzing, geen bewijs. Na een paar
+   weken nachtrondes beslissen, met: nieuwe horloges per dag, hoe snel ze
+   verdwijnen (de tab Patronen rekent nu alleen fietscomputers), en of de
+   flips ook bij nieuwe advertenties voorkomen en niet alleen bij wat is
+   blijven liggen. Pas daarna: een tab in het dashboard, een overdagronde
+   zoals bij `computers`, en de ontbrekende Garmin-modellen (Fenix 3/3 HR,
+   Fenix E, Fenix 9, Enduro 3, Instinct, Venu, Vivoactive, Forerunner
+   35/235/630). Varianten delen nu een rij (5/5S, Solar, Sapphire, 43/47/51
+   mm); als de meting doorgaat, is splitsen waar de prijzen echt verschillen
+   de volgende verbetering. Geen europrijs voor Fenix 7 Pro, Epix Pro en
+   Fenix 8.

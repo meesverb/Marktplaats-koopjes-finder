@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 from urllib.parse import parse_qs, quote, urlsplit
 
 import computers as pc
@@ -150,10 +150,14 @@ def _with_trades(d: Dashboard, db_path) -> Dashboard:
     return d
 
 
-def _load_market(db_path, config: dict) -> Dashboard:
-    settings = config["dashboard"]
+def load_active_listings(db_path, categories: Sequence[str], settings: dict):
+    """(advertenties, nieuwste waarneming, id's van de nieuwe) uit koopjes.db:
+    niet verdwenen, in een van `categories` (de categorie uit de URL), en
+    gezien binnen `active_days` van de nieuwste waarneming. Ook voor de
+    sporthorloges (watches.py). Zonder database of zonder rijen: ([], None,
+    set())."""
     if not Path(db_path).exists():
-        return Dashboard([], config=config)
+        return [], None, set()
     uri = Path(db_path).resolve().as_uri() + "?mode=ro"
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
@@ -162,18 +166,19 @@ def _load_market(db_path, config: dict) -> Dashboard:
         images = "image_urls" if "image_urls" in columns else "'' AS image_urls"
         asking = "price_is_asking" if "price_is_asking" in columns else "NULL AS price_is_asking"
         reserved = "reserved_at" if "reserved_at" in columns else "NULL AS reserved_at"
+        where = " OR ".join("url LIKE ?" for _ in categories)
         rows = conn.execute(
             f"SELECT item_id, title, description, price_eur, price_type, is_bid, {asking}, "
             f"city, posted_date, condition, url, first_seen, last_seen, {images}, {reserved} "
-            "FROM listing WHERE disappeared_at IS NULL AND url LIKE ?",
-            (f"%/{COMPUTER_CATEGORY}/%",),
+            f"FROM listing WHERE disappeared_at IS NULL AND ({where})",
+            tuple(f"%/{category}/%" for category in categories),
         ).fetchall()
     finally:
         conn.close()
 
     seen = [t for t in (_parse_time(r["last_seen"]) for r in rows) if t]
     if not seen:
-        return Dashboard([], config=config)
+        return [], None, set()
     newest = max(seen)
     active_since = newest - timedelta(days=settings["active_days"])
     new_since = newest - timedelta(hours=settings["new_hours"])
@@ -213,6 +218,13 @@ def _load_market(db_path, config: dict) -> Dashboard:
     if len(new_ids) == len(listings):
         # De allereerste ronde: alles is "nieuw", en dan zegt het label niets.
         new_ids = set()
+    return listings, newest, new_ids
+
+
+def _load_market(db_path, config: dict) -> Dashboard:
+    listings, newest, new_ids = load_active_listings(db_path, (COMPUTER_CATEGORY,), config["dashboard"])
+    if newest is None:
+        return Dashboard([], config=config)
 
     pc.apply_computer_signals(listings, db_path=db_path, config=config)
     # Alleen titels zonder bekend model; een fiets met computer ("Racefiets

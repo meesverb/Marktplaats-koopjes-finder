@@ -118,7 +118,14 @@ ACCESSORY_WORD_RE = re.compile(
     r"|supports?|soportes?|supporto|suporte|halterung|staffa|capa|coque|funda|housse|[ée]tui|protection|prot[eè]ge"
     r"|folie|protector|tasje|oplaadkabel|kabel|oplader|lader|adapter"
     r"|sensors?|sensoren|hartslag\w*|borstband|tickr|doosje|handleiding)\b"
-    r"|\blege\s+doos\b",
+    r"|\blege\s+doos\b"
+    # Horlogebandjes (sporthorloges, watches.py). Zonder \w* vooraan bij
+    # "band": dat zou "in verband met" meenemen.
+    r"|\b(?:\w*bandjes?|band|polsband|horlogeband|armband|straps?)\b"
+    # Ook uit de sporthorloges (28-09-2026): "Forerunner 945 Tri accessoires:
+    # HRM-Swim + Quick Release kit" (€65), "25009 Docking Station Garmin Fenix
+    # 5/6/7/8" (€10), "Roestvrijstalen Bezel voor Garmin Fenix 7".
+    r"|\b(?:accessoires?|accessories|docking\w*|\w*station|charger|cradle|bezel)\b",
     re.I,
 )
 # Merken die alleen houders maken. Vóór de modelnaam is het dus een houder.
@@ -133,7 +140,9 @@ BUNDLE_RE = re.compile(
 # Of: het apparaat wordt zelf genoemd, of de titel zegt dat het een set is.
 DEVICE_RE = re.compile(
     r"\b(?:fiets)?computer\b|\bgps\b|\b(?:fiets)?navigatie\b|\bbundel\b|\bbundle\b|\bset\b"
-    r"|\bcompleet\b|\bcombo\b|\bpakket\b",
+    r"|\bcompleet\b|\bcombo\b|\bpakket\b"
+    # Voor sporthorloges: "Garmin Forerunner 245 sporthorloge + bandje".
+    r"|\b\w*horloge\b|\bsmartwatch\b",
     re.I,
 )
 # E-bike-displays en -bediening: de hele categorie fietscomputers (2800
@@ -546,6 +555,15 @@ class ComputerSignal:
         return round(self.price_eur - self.own_resale_eur, 2)
 
 
+def listed_price(listing) -> Optional[float]:
+    """De prijs als bedrag, of None. €0 is geen prijs: dat is priceType FREE
+    ("gratis"), en bij de sporthorloges van 28-09-2026 was dat een ruilaanbod
+    ("Garmin Fenix 8 - 47 mm - Topconditie graag ruilen voor 43mm") dat met
+    een winst van €559 boven aan de flips stond. racefiets_jev.market_prices()
+    laat €0 om dezelfde reden weg."""
+    return listing.price_eur if listing.price_eur else None
+
+
 def _comparable_price(listing) -> Optional[float]:
     """Wat een andere advertentie vraagt, als vergelijkingsprijs. Een lopend
     bod (FAST_BID met biedingen) is geen vraagprijs en telt niet mee, een
@@ -553,10 +571,11 @@ def _comparable_price(listing) -> Optional[float]:
     die niet in de advertentie staat."""
     if getattr(listing, "reserved", False) or not listing.price_is_asking:
         return None
-    return listing.price_eur
+    return listed_price(listing)
 
 
-def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) -> dict[str, dict[str, float]]:
+def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int,
+                   categories: Optional[Sequence[str]] = None) -> dict[str, dict[str, float]]:
     """{modellabel: {item_id: prijs}} uit eerdere runs in koopjes.db. Alleen
     vraagprijzen (`price_is_asking`, migratie 3; bij oudere rijen waar die
     NULL is beslist `is_bid`, zoals db.py dat ook doet), alleen titels die
@@ -565,7 +584,12 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
     (verdwenen) tellen dus mee. Wat nu gereserveerd online staat telt niet,
     net als in een run zelf (_comparable_price); verdwijnt hij, dan telt hij
     weer mee zoals elke verdwenen advertentie. Opent de database alleen-lezen;
-    een ontbrekende database is geen fout."""
+    een ontbrekende database is geen fout.
+
+    `categories`: alleen advertenties uit deze Marktplaats-categorieën. Voor
+    sporthorloges (watches.py): "Garmin Fenix 6 bandje" staat in een
+    telefoon- of wearable-categorie en is geen vergelijkingsprijs voor een
+    horloge, en een "Forerunner"-titel uit de fietscomputercrawl evenmin."""
     if not db_path or not Path(db_path).exists():
         return {}
     since = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat(timespec="seconds")
@@ -581,7 +605,7 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
                         if "reserved_at" in columns else "")
         rows = conn.execute(
             "SELECT item_id, title, price_eur, url, description FROM listing "
-            "WHERE price_eur IS NOT NULL "
+            "WHERE price_eur > 0 "
             "AND COALESCE(price_is_asking, is_bid = 0) = 1 "
             f"{not_reserved}"
             "AND (last_seen IS NULL OR last_seen >= ?)",
@@ -594,6 +618,8 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
     found: dict[str, dict[str, float]] = {}
     for item_id, title, price, url, description in rows:
         if in_bike_category(url) or WITHOUT_DEVICE_RE.search(description or ""):
+            continue
+        if categories is not None and listing_category(url) not in categories:
             continue
         verdict = classify_title(title, catalog)
         if verdict and verdict.kind == "computer":
@@ -608,7 +634,7 @@ def _resolve_doubt(listing, model: ComputerModel, clean: list, reason: str, conf
     Liever een houder die als computer doorglipt (die zie je aan de foto) dan
     een echte computer die in Uitgefilterd verdwijnt."""
     rules = config["filter"]
-    price = listing.price_eur
+    price = listed_price(listing)
     if price is None:
         return "computer", f"{reason}; geen prijs — kijk op de foto"
     if len(clean) >= config["flip"]["min_comps"]:
@@ -660,11 +686,13 @@ def apply_computer_signals(
     db_path=None,
     catalog: Optional[Sequence[ComputerModel]] = None,
     config: Optional[dict] = None,
+    comp_categories: Optional[Sequence[str]] = None,
 ) -> int:
     """Zet `listing.computer` voor elke advertentie waarvan de titel een
     bekend model noemt en die geen fiets is — ook voor accessoires, onderdelen
     en dergelijke, met de reden, zodat ze in Uitgefilterd te zien zijn. Geeft
-    het aantal echte computers terug. De rest blijft None."""
+    het aantal echte computers terug. De rest blijft None. `comp_categories`
+    beperkt de vergelijkingsprijzen uit de database (zie db_comparables)."""
     catalog = catalog if catalog is not None else _default_catalog()
     config = config or default_config()
     base = config["baseline"]
@@ -691,7 +719,7 @@ def apply_computer_signals(
 
     # Eerst de zekere computers als vergelijkingsprijs; daartegen worden de
     # twijfelgevallen beslist, en wat dan een computer blijkt telt ook mee.
-    comps = db_comparables(db_path, catalog, flip["comp_window_days"])
+    comps = db_comparables(db_path, catalog, flip["comp_window_days"], comp_categories)
     for listing, model, kind, _ in found:
         price = _comparable_price(listing) if kind == "computer" else None
         if price is not None:
@@ -714,7 +742,7 @@ def apply_computer_signals(
     count = 0
     for listing, model, kind, reason in found:
         features = feature_score(model, config)
-        signal = ComputerSignal(model, features, kind, reason, listing.price_eur,
+        signal = ComputerSignal(model, features, kind, reason, listed_price(listing),
                                 costs_eur=flip.get("costs_eur", 0.0), own_resale_eur=own_resale)
         listing.computer = signal
         if not signal.is_computer:
@@ -816,6 +844,8 @@ def _signed(value: Optional[float], suffix: str = "") -> str:
 
 def price_kind(listing) -> str:
     """Wat voor prijs er staat — dat bepaalt hoe hard de winst is."""
+    if listing.price_type == "FREE":
+        return "gratis of ruilen, prijs onbekend"
     if listing.price_eur is None:
         return "bieden, geen prijs" if listing.price_is_bid else "geen prijs genoemd"
     if listing.price_type == "MIN_BID":
@@ -843,7 +873,7 @@ def flips(listings) -> list:
 def open_bids(listings) -> list:
     """Computers zonder prijs waarvoor wel een maximaal bod te geven is."""
     found = [l for l in active_computers(listings)
-             if l.price_eur is None and l.computer.max_bid_eur is not None]
+             if l.computer.price_eur is None and l.computer.max_bid_eur is not None]
     return sorted(found, key=lambda l: -l.computer.max_bid_eur)
 
 
