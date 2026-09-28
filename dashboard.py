@@ -74,7 +74,8 @@ class Dashboard:
     progress: Optional[tr.Progress] = None  # Mijn flips
     patterns: Optional[pt.Patterns] = None  # Patronen
     bought: dict = field(default_factory=dict)  # item_id -> Trade
-    vinted: Optional[vn.VintedView] = None  # tab Vinted, als er een export is ingelezen
+    vinted: Optional[vn.VintedView] = None  # tab Vinted; None = nog geen export ingelezen
+    db_path: str = ""
     # Alleen in de live versie (--serve): formulieren, met het geheim dat
     # bewijst dat een POST van deze pagina komt en niet van een andere site.
     editable: bool = False
@@ -134,6 +135,7 @@ def load_dashboard(db_path, config: Optional[dict] = None) -> Dashboard:
     d = _with_trades(_load_market(db_path, config), db_path)
     d.patterns = pt.load_patterns(db_path, config)
     d.vinted = vn.load_view(db_path, config)
+    d.db_path = str(Path(db_path).resolve())
     return d
 
 
@@ -541,6 +543,12 @@ def _ratio(value: Optional[float]) -> str:
 
 def vinted_panel(d: Dashboard) -> str:
     v = d.vinted
+    if v is None:
+        # Altijd een tab, ook zonder export: zo is te zien dat de import in een
+        # andere database belandde dan deze, in plaats van dat de tab ontbreekt.
+        return ("<p class='empty'>Nog geen Vinted-export in deze database "
+                f"(<code>{esc(d.db_path)}</code>). Lees er een in met "
+                "<code>python vinted.py import productsList_....csv</code> en ververs deze pagina.</p>")
     flip = d.config["flip"]
     flips = v.flips
     parts = [tiles([
@@ -1023,7 +1031,7 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
         ("mijn", mine_label, mine_panel(d)),
         ("alle", f"Alle computers ({computers})", all_panel(d)),
         ("markt", "Marktprijzen", market_panel(d)),
-        *([("vinted", f"Vinted ({len(d.vinted.flips)})", vinted_panel(d))] if d.vinted else []),
+        ("vinted", f"Vinted ({len(d.vinted.flips)})" if d.vinted else "Vinted", vinted_panel(d)),
         ("patronen", "Patronen", patterns_panel(d)),
         ("uitgefilterd", f"Uitgefilterd ({len(d.excluded)})", excluded_panel(d)),
     ]

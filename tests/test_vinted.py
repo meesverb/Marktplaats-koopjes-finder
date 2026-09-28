@@ -240,9 +240,12 @@ class ViewTest(VintedTestCase):
         self.assertIsNone(vn.load_view(self.db))
         self.assertIsNone(vn.load_view(str(self.dir / "bestaat_niet.db")))
 
-    def test_dashboard_gets_a_tab_only_with_an_export(self):
+    def test_dashboard_tab_says_how_to_import_until_there_is_an_export(self):
         self.marktplaats("Garmin Edge 530", [160.0, 180.0, 200.0])
-        self.assertNotIn("panel-vinted", dashboard.render(dashboard.load_dashboard(self.db)))
+        html = dashboard.render(dashboard.load_dashboard(self.db))
+        self.assertIn("panel-vinted", html)
+        self.assertIn("python vinted.py import", html)
+        self.assertIn(str(Path(self.db).resolve()), html)  # welke database het dashboard leest
         self.load(self.export([vinted_row("1", "Garmin Edge 530", 120.0)]))
         html = dashboard.render(dashboard.load_dashboard(self.db))
         self.assertIn("panel-vinted", html)
@@ -260,6 +263,25 @@ class CliTest(VintedTestCase):
         text = out.getvalue()
         self.assertIn("1 advertenties, 1 nieuw", text)
         self.assertIn("Garmin Edge 530", text)
+
+    def test_default_database_is_the_one_koopjes_py_uses(self):
+        # Niet "koopjes.db" in de map waar je staat: vanuit Downloads gaf dat
+        # een tweede, lege database die het dashboard nooit las.
+        self.assertEqual(Path(vn.DEFAULT_DB), Path(vn.__file__).resolve().parent / "koopjes.db")
+
+    def test_import_into_a_new_database_says_so(self):
+        path = self.export([vinted_row("1", "Garmin Edge 530", 120.0)])
+        fresh = str(self.dir / "ergens" / "anders.db")
+        Path(fresh).parent.mkdir()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            vn.main(["import", str(path), "--db", fresh])
+        self.assertIn(str(Path(fresh).resolve()), out.getvalue())
+        self.assertIn("bestond nog niet", out.getvalue())
+        out = io.StringIO()
+        with redirect_stdout(out):
+            vn.main(["import", str(path), "--db", fresh])
+        self.assertNotIn("bestond nog niet", out.getvalue())
 
     def test_a_wrong_file_fails_clearly(self):
         path = self.export([], header=["Title", "Price"])

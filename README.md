@@ -341,7 +341,7 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
 | **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns |
 | **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
-| **Vinted** | only once you've read in a Vinted export (below): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
+| **Vinted** | once you've read in a Vinted export (below; until then the tab says how, and which database it reads): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
 | **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. Gone listings that were reserved when a round last saw them are counted apart ("eerst gereserveerd"): those were almost certainly sold. Only reservations a round actually saw count, so it's a lower bound. The hour of posting isn't available: Marktplaats only says "Vandaag"/"Gisteren" |
 | **Uitgefilterd** | holders, cases, parts, broken ones and wanted ads, each with the reason, to check that no real computer ended up there |
 
@@ -450,7 +450,11 @@ export a Vinted search yourself (a CSV with the columns "Item Title", "Item
 Price", "Item Service Fee", "Item Total Price", "Item Currency", "Item URL",
 ...) and read it in. The time of the export comes from the file name
 (`productsList_2026-09-28T14-57-35-028Z.csv`), or `--at`. A file without
-those columns stops with the name of the missing one.
+those columns stops with the name of the missing one. It always writes to the
+`koopjes.db` next to the script (the one `koopjes.py` uses), whatever folder
+you type the command in, prints which file that is, and warns when it had to
+create it — so an import from your Downloads folder still ends up in the
+dashboard. `--db` picks another one.
 
 ```bash
 python vinted.py import productsList_2026-09-28T14-53-37-277Z.csv productsList_2026-09-28T14-57-35-028Z.csv

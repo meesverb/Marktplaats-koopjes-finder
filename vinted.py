@@ -39,7 +39,11 @@ from typing import Optional, Sequence
 import computers as pc
 import db
 
-DEFAULT_DB = "koopjes.db"
+HERE = Path(__file__).resolve().parent
+# De database van koopjes.py (naast schedule.json), ongeacht de map waarin je
+# het commando typt. De exports staan meestal in Downloads, en "koopjes.db"
+# relatief aan die map gaf daar stilletjes een tweede, lege database.
+DEFAULT_DB = str(HERE / "koopjes.db")
 NOT_AVAILABLE = "Not Available"
 REQUIRED_COLUMNS = ("Item Title", "Item Price", "Item Service Fee", "Item Total Price", "Item Currency", "Item URL")
 # Alleen een http(s)-adres: de URL komt als link in het dashboard.
@@ -487,7 +491,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         parser.add_argument("--db", default=DEFAULT_DB, help=f"database (standaard {DEFAULT_DB})")
         parser.add_argument("--at", help="tijdstip van de export (ISO), als het niet in de bestandsnaam staat")
         args = parser.parse_args(argv[1:])
-        conn = db.connect(args.db)
+        target = Path(args.db).resolve()
+        existed = target.exists()
+        conn = db.connect(str(target))
+        print(f"Database: {target}")
+        if not existed:
+            print("Let op: die database bestond nog niet en is nu nieuw aangemaakt. Het dashboard ziet deze "
+                  "Vinted-data alleen als het dezelfde database gebruikt.")
         try:
             for path in args.files:
                 try:
