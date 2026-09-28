@@ -727,6 +727,32 @@ def sync_listing_models(
     return count
 
 
+LINE_MODEL_NOTE = "modellijn uit reference_bike_catalog.csv (model_lines.py)"
+
+
+def upsert_line_models(conn: sqlite3.Connection, lines) -> int:
+    """model_lines.ModelLine -> `model` (kind 'bike'), so sync_listing_models()
+    has a row to link a line match to. Only a name and a pattern: no new
+    price, no material — the catalogue has those per model year, and a line
+    spans many years and both materials. specs_json has the same two keys as
+    an imported reference row, so export_csv() reads it the same way."""
+    specs_json = json.dumps({"specs": "", "better_than_baseline": False})
+    for line in lines:
+        conn.execute(
+            """
+            INSERT INTO model (kind, brand, model, pattern, specs_json, notes)
+            VALUES ('bike', ?, ?, ?, ?, ?)
+            ON CONFLICT(kind, pattern) DO UPDATE SET
+                brand = excluded.brand,
+                model = excluded.model,
+                notes = excluded.notes
+            """,
+            (line.brand, line.label, line.pattern, specs_json, LINE_MODEL_NOTE),
+        )
+    conn.commit()
+    return len(lines)
+
+
 def save_listing_details(conn: sqlite3.Connection, details: dict, fetched_at: str) -> None:
     """{item_id: full description} from the listing pages fetched this run.
     Call after sync_listings(), which creates the rows."""

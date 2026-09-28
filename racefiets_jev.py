@@ -25,12 +25,13 @@ import webbrowser
 from dataclasses import dataclass, asdict, field, fields as dataclass_fields
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 from urllib.parse import quote_plus, urlencode
 
 import requests
 
 import db
+import model_lines
 import sleepers
 
 BASE_URL = "https://www.marktplaats.nl"
@@ -1630,6 +1631,7 @@ def load_reference_data(path: str) -> list[dict]:
                 "score": (row.get("score") or "").strip(),
                 "specs": (row.get("specs") or "").strip(),
                 "better": (row.get("better_than_baseline") or "").strip().lower() in ("1", "true", "yes", "ja"),
+                "kind": (row.get("kind") or "").strip().lower(),
             }
         )
     return reference
@@ -2854,6 +2856,7 @@ def sync_database(
     crawl_note: str = "",
     crawl_near_complete: bool = False,
     fetched_details: Optional[dict] = None,
+    line_models: Sequence = (),
 ) -> None:
     """Mirror this run into koopjes.db, alongside the CSV/JSON files that
     stay the ones actually read elsewhere (reference_overview.py etc.) —
@@ -2883,6 +2886,10 @@ def sync_database(
         db.sync_listing_specs(
             conn, {l.item_id: l.site_specs for l in listings}, source=db.SITE_SPEC_SOURCE
         )
+        if line_models:
+            # Before sync_listing_models(), which links a match only to a
+            # `model` row that already exists.
+            db.upsert_line_models(conn, line_models)
         if reference_matches:
             db.sync_listing_models(conn, reference_matches)
         db.record_crawl_run(
@@ -2961,6 +2968,16 @@ def run_for_query(
     # where guessing wrong corrupts data.
     crawl_complete = getattr(listings, "complete", False)
     crawl_note = getattr(listings, "note", "")
+    # Read here too: the filters below hand back a plain list, and a flag
+    # read off that afterwards was always False.
+    crawl_near_complete = getattr(listings, "near_complete", False)
+    # Everything the crawl saw, not just what passes the filters below: the
+    # filters are about what the report shows, not about what's worth
+    # remembering. A €1500 bike in the wrong size is still a price for its
+    # model, and the price history, the seen-history and koopjes.db are
+    # where those are kept. Only the report (and the bid lookup, which
+    # costs a request per listing) sticks to the filtered set.
+    crawled_listings = list(listings)
 
     # Filter on what the search results already tell us before the bid lookup,
     # which costs one request (plus --delay) per bidding listing: a listing
@@ -2988,20 +3005,26 @@ def run_for_query(
     listings = filter_by_price(listings, args.min_price, args.max_price)
 
     reference = load_reference_data(args.reference_file)
-    reference_matches = apply_reference_data(listings, reference)
+    reference_matches = apply_reference_data(crawled_listings, reference)
+    line_models: list = []
+    if model_lines.is_bike_reference(reference):
+        line_models = model_lines.load_lines()
+        model_lines.apply_lines(
+            crawled_listings, model_lines.LineMatcher(line_models), reference_matches
+        )
 
     if not args.no_price_history:
         market_stats = load_reference_market_stats(args.price_history_file)
-        apply_reference_market_stats(listings, market_stats)
+        apply_reference_market_stats(crawled_listings, market_stats)
 
     listings = flag_bargains(listings, args.bargain_ratio)
 
     history = load_history(args.history_file)
-    history = apply_history(listings, history)
+    history = apply_history(crawled_listings, history)
     save_history(args.history_file, history)
 
     if not args.no_price_history:
-        recorded = append_reference_price_observations(args.price_history_file, listings)
+        recorded = append_reference_price_observations(args.price_history_file, crawled_listings)
         if recorded:
             print(f"Recorded {recorded} price observation(s) to {args.price_history_file}")
 
@@ -3023,15 +3046,16 @@ def run_for_query(
         sync_database(
             args,
             query,
-            listings,
+            crawled_listings,
             crawled_item_ids=crawled_item_ids,
             started_at=started_at,
             finished_at=finished_at,
             reference_matches=reference_matches,
             crawl_complete=crawl_complete,
             crawl_note=crawl_note,
-            crawl_near_complete=getattr(listings, "near_complete", False),
+            crawl_near_complete=crawl_near_complete,
             fetched_details=fetched_details,
+            line_models=line_models,
         )
 
     # Captured before --bids-only/--min-score filter the list for the

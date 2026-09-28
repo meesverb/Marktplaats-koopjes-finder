@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 602 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 621 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -90,6 +90,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `sleepers.py` | slapers: advertenties waarvan titel en tekst niets over de fiets zeggen (geen merk, weinig tekst, haast, bieden zonder bod). Alleen uit de zoekresultaten; eigen tab in het rapport, los van dealscore en waardescore |
 | `report.py` | rapportpanelen (fase 6): Biedpaneel, Upgrade, Mijn fiets, plus de waardescore-kolom; alleen lezen uit `koopjes.db` |
 | `report_template.html` | HTML-sjabloon van het rapport (`string.Template`), wordt runtime ingelezen |
+| `model_lines.py` | brede herkenning: merk + modellijn (Giant TCR, Trek Émonda, ...) uit `reference_bike_catalog.csv`, alleen bij een fiets-referentiebestand. Alleen een label, geen marktfeiten; `reference_bikes.csv` gaat voor |
 | `db.py` | SQLite-schema, migraties, import van de oude bestanden, CSV-export; sinds fase 1b aangesloten op het script (`--db`/`--no-db`) |
 | `valuation.py` | waarderingsmotor (fase 3): E1/E2/E3 op de comps in `koopjes.db`, schrijft naar `valuation` + `valuation_evidence`. Leest `mijn_fiets.md` |
 | `tests/` | stdlib-unittests; `helpers.py` heeft `make_listing()` en een `FakeSession` |

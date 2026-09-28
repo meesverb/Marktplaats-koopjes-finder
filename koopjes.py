@@ -739,8 +739,8 @@ def model_family(title: str, brands: list[str]) -> str:
 
 
 def unmatched_listings(config: Config) -> list[dict]:
-    """Complete road bikes seen in the last two weeks that no row in the
-    bike reference file matched — the gaps in reference_bikes.csv."""
+    """Complete road bikes seen in the last two weeks that neither the bike
+    reference file nor a model line (model_lines.py) matched."""
     path = config.base_dir / config.db
     if not path.exists():
         return []
@@ -783,7 +783,8 @@ def render_unmatched(listings: list[dict], brands: list[str]) -> str:
         f"Racefietsen zonder referentie — {now_local()}",
         "",
         f"{len(listings)} complete racefietsen uit de laatste {UNMATCHED_DAYS} dagen die door geen enkele "
-        "rij in reference_bikes.csv herkend worden, gegroepeerd op merk + eerste modelwoord",
+        "rij in reference_bikes.csv en door geen modellijn uit de catalogus herkend worden, "
+        "gegroepeerd op merk + eerste modelwoord",
         "(dat groeperen is een hulpmiddel, geen herkenning). Meest voorkomend eerst.",
         "Geef dit bestand aan Claude met de vraag welke modellen onderzocht en toegevoegd moeten worden.",
         "",

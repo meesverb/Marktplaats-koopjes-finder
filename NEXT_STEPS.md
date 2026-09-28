@@ -5,6 +5,25 @@ De code, `reference_prices.csv` en de git-geschiedenis (commit messages)
 bevatten de volledige context; dit bestand is alleen een korte routewijzer
 zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 
+## Laatste ronde (28-09-2026): modellijnen + alles bewaren
+
+- `model_lines.py`: bij een fietszoekopdracht krijgt elke advertentie met
+  merk + lijn uit de catalogus een label (Giant TCR, Trek Émonda, ~350
+  lijnen). Proefcrawl racefietsen (4 pagina's): 50 van 120 gekoppeld, was ±3.
+  Alleen een naam, geen nieuwprijs; `reference_bikes.csv` blijft voorgaan.
+- De prijs-/maatfilters gelden alleen nog voor het rapport: prijsgeschiedenis,
+  `seen_listings.json` en `koopjes.db` krijgen alles wat gecrawld is. Terloops
+  gerepareerd: `near_complete` ging verloren zodra er een filter aan stond.
+- `schedule.json`: overdag 20 pagina's i.p.v. 8. Het zoekwoord "racefiets"
+  binnen de categorie beperkt niets (12744 met, 12744 zonder, 28-09-2026).
+- Blijft liggen: (1) "Beter dan referentie" hangt nog aan de handmatige vlag
+  `better_than_baseline` (één rij); afleiden uit catalogus/groepset is een
+  eigen stap. (2) Upgraden vanaf een andere fiets dan de Defy Composite:
+  de geschiedenis per lijn bouwt zich nu op, maar taxatie en upgrade-finder
+  gaan nog uit van `mijn_fiets.md`. (3) Merken zonder catalogusregels (Koga,
+  Gazelle, Bulls, Cannondale Topstone, Ridley Kanzo) blijven ongekoppeld —
+  zie `lijsten/zonder_referentie.txt`.
+
 ## Laatste ronde (27-09-2026)
 
 Op echte data gecontroleerd en bijgewerkt; details per stap onderaan §12 van

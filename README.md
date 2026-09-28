@@ -52,8 +52,9 @@ to be pasted into a conversation: `beste_koopjes.txt` (per search the upgrade
 candidates and the highest deal scores, each with its URL and the reasons
 behind the score; running bids left out, since their price is only the bid so
 far) and `zonder_referentie.txt` (complete road bikes from the last 14 days
-that no row in `reference_bikes.csv` recognises, grouped by brand and first
-model word, most frequent first — the gaps in the reference file).
+that neither a row in `reference_bikes.csv` nor a model line from the
+catalogue recognises (see "Model lines" below), grouped by brand and first
+model word, most frequent first — the gaps in the recognition).
 
 Everything a round prints goes to `logs/koopjes.log`. Relative paths in
 `schedule.json` are relative to that file, so it doesn't matter which
@@ -65,7 +66,7 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 
 | Slot | When | What |
 | --- | --- | --- |
-| `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
+| `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 20 pages — 150-180 arrive between two runs, so 8 pages would catch every new one; 20 (≈600 listings, just over a day) makes the report show more than just today's arrivals, and every one of them goes into the price history and `koopjes.db`. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
 | `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, then `valuation.py` |
 | `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
 
@@ -126,7 +127,7 @@ growing, so you end up with a history of every bargain ever spotted.
 | --- | --- | --- |
 | `--query` | Search query | `racefiets` |
 | `--pages` | Number of result pages to fetch (30 listings/page). `0` = fetch everything Marktplaats allows browsing to (see note below) | `1` |
-| `--min-price` / `--max-price` | Filter by price in EUR | none |
+| `--min-price` / `--max-price` | Filter by price in EUR (the report only: every crawled listing still goes into the history files and `koopjes.db`, see below) | none |
 | `--min-frame-height` / `--max-frame-height` | Filter by frame size in cm; bikes without a stated size are kept (see below) | none |
 | `--strict-frame-height` | With the frame size filter, also drop bikes that don't state a size | off |
 | `--sort` | `optimized` (Marktplaats' own "Standaard" order) or `newest` (newest first — use this for scheduled runs, see below) | `optimized` |
@@ -476,6 +477,26 @@ sourced specs name the material. The valuation uses it: a listing matched to
 the aluminium "Giant Defy 0-5" row is no comp for a carbon Defy Composite,
 even when its text never says "alu".
 
+### Model lines — broad recognition from the catalogue
+
+`reference_bikes.csv` only knows a handful of researched models. Every other
+bike used to show "—" under Referentie and never built up a price history.
+So on top of that file, a bike search (a `--reference-file` with `kind`
+`bike` rows, i.e. `reference_bikes.csv`) also recognises **model lines**:
+brand + first model word from `reference_bike_catalog.csv` — Giant TCR,
+Trek Émonda, Canyon Ultimate, Cannondale CAAD10, Scott Addict, ~350 in all
+(`model_lines.py`). A line only counts with its brand in front of it ("Giant
+… TCR", at most three words apart in the title, right next to each other in
+the description), because many line names are also other brands' models or
+plain words.
+
+A line is a name only: no new price, year or material (those differ per
+model year). What it gives a listing is a label, so its asking price counts
+towards "2e-hands gem. (n=…)" for that line, plus a `listing_model` row in
+`koopjes.db`. A row in `reference_bikes.csv` still wins the report's
+columns — a Defy Composite stays "Giant Defy Composite" — and the line is
+recorded next to it. The speaker and accessory files don't switch lines on.
+
 ### Bike catalogue — `reference_bike_catalog.csv`
 
 A third bike file, and a different kind: not regex patterns to match titles
@@ -537,9 +558,11 @@ state.
 
 ### Your own market price history — `--price-history-file`
 
-Every time a listing matching a reference model is seen for the first time,
-its price gets logged to `reference_price_history.csv` (created
-automatically). From the second time a model shows up, the report also
+Every time a listing matching a reference model (or a model line, see above)
+is seen for the first time, its price gets logged to `reference_price_history.csv` (created
+automatically). This covers everything the crawl saw, including listings
+the price and frame-size filters keep out of the report: a €1500 bike in
+the wrong size is still a price for its model. From the second time a model shows up, the report also
 displays "2e-hands gem. €X (n=Y)" — the actual average secondhand asking
 price you've personally observed for that model, based on Y past sightings.
 This needs no research or original price at all, grows automatically the
@@ -551,7 +574,8 @@ with `--no-price-history`.
 
 Every run also mirrors its listings into a local SQLite database
 (`koopjes.db` by default, created automatically), on top of — not instead
-of — the CSV/JSON files above: every field the script parses (price, city,
+of — the CSV/JSON files above. It gets every listing the crawl saw, not just
+those that pass `--min-price`/`--max-price`/the frame-size filters: every field the script parses (price, city,
 condition, frame size, bid status, ...) gets upserted per listing, a
 `crawl_run` row logs the query and page count, and `seen_listings.json` /
 `reference_prices.csv` / `reference_price_history.csv` get re-imported into

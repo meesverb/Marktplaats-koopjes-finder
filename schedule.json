@@ -44,7 +44,7 @@
   "slots": {
     "overdag": {
       "searches": ["racefietsen"],
-      "pages": 8,
+      "pages": 20,
       "sort": "newest",
       "bid_lookup": "fast",
       "times": ["08:30", "13:30", "19:30"],
