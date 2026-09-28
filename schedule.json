@@ -44,8 +44,8 @@
       "query": "garmin",
       "category": "sporthorloges,smartwatches,activity-trackers",
       "report": false,
-      "bid_lookup": "none",
-      "note": "Alle Garmin-horloges voor het horlogedashboard (dashboard_horloges.html, markets.py). Alleen de categorieën sporthorloges, smartwatches en activity-trackers: daar staan de horloges zelf; bandjes en kabels staan grotendeels in telefoon- en wearable-categorieën. In activity-trackers staan ook Fenixen en Forerunners die de verkoper daar neerzette. Op 28-09-2026 1707 advertenties, 58 pagina's (de nachtronde); ~115 nieuwe op een maandag tot 20:45, dus 2 pagina's per 4 uur overdag is genoeg. Geen rapport: alles staat in het dashboard. Geen biedopvragingen (bid_lookup none, ook 's nachts): ~300 van de 1707 zijn bieden zonder prijs, dat zou elke nacht 300 extra verzoeken zijn; ze staan in het dashboard onder 'Zonder prijs — bied maximaal'."
+      "bid_lookup": "fast",
+      "note": "Alle Garmin-horloges voor het horlogedashboard (dashboard_horloges.html, markets.py). Alleen de categorieën sporthorloges, smartwatches en activity-trackers: daar staan de horloges zelf; bandjes en kabels staan grotendeels in telefoon- en wearable-categorieën. In activity-trackers staan ook Fenixen en Forerunners die de verkoper daar neerzette. Op 28-09-2026 1707 advertenties, 58 pagina's (de nachtronde); ~115 nieuwe op een maandag tot 20:45, dus 2 pagina's per 4 uur overdag is genoeg. Geen rapport: alles staat in het dashboard. Biedopvragingen ook overdag (bid_lookup fast gaat vóór de none van het slot computers): biedadvertenties zijn belangrijk (de eigenaar, 28-09-2026). ~300 van de 1707 zijn bieden zonder prijs, dus 's nachts ~300 extra verzoeken; overdag alleen die op de 2 nieuwste pagina's. Het opgehaalde bod blijft in de database staan tot de volgende opvraging (migratie 11)."
     }
   },
   "slots": {

@@ -161,9 +161,14 @@ class ReportSettingTest(TempDirTest):
         with self.assertRaisesRegex(koopjes.ConfigError, "'bid_lookup'"):
             koopjes.load_config(write_config(self.dir, searches=searches, slots=slots))
 
-    def test_the_shipped_schedule_skips_bid_lookups_for_watches(self):
+    def test_the_shipped_schedule_looks_up_watch_bids_also_by_day(self):
+        # Biedadvertenties zijn belangrijk (de eigenaar, 28-09-2026): ook in
+        # de overdagronde, waar het slot zelf "none" zegt.
         config = koopjes.load_config(Path(repo_file("schedule.json")))
-        self.assertEqual(config.searches["sporthorloges"]["bid_lookup"], "none")
+        self.assertEqual(config.searches["sporthorloges"]["bid_lookup"], "fast")
+        commands = [" ".join(c) for c in koopjes.search_commands(config, config.slots["computers"])]
+        self.assertTrue(any("--watchlist sporthorloges" in c and "--bid-lookup fast" in c for c in commands))
+        self.assertTrue(any("--watchlist fietscomputer" in c and "--bid-lookup none" in c for c in commands))
 
     def test_report_must_be_true_or_false(self):
         with self.assertRaisesRegex(koopjes.ConfigError, "'report'"):

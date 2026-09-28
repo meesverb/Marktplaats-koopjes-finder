@@ -306,6 +306,17 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE trade ADD COLUMN market TEXT;
     """,
+    # 11: what the bid lookup (--bid-lookup) found on the listing page: how
+    # many bids, the minimum Marktplaats accepts, and when that was looked
+    # up. Before this only the resulting price was stored, and a round
+    # without lookups (the daytime rounds) wrote NULL over a FAST_BID's
+    # price, so the running bid the night round had fetched was gone again
+    # by 10:00. sync_listings() now keeps the last lookup until a new one.
+    """
+    ALTER TABLE listing ADD COLUMN bid_count INTEGER;
+    ALTER TABLE listing ADD COLUMN bid_minimum REAL;
+    ALTER TABLE listing ADD COLUMN bids_checked_at TEXT;
+    """,
 ]
 
 
@@ -658,25 +669,44 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
     `listing_price` observation per priced listing. A listing that reappears
     after being marked disappeared has its disappeared_at cleared — it's
     back. reserved_at keeps the first sighting of a reservation, and goes
-    back to NULL once a crawl sees the listing unreserved (migration 9)."""
+    back to NULL once a crawl sees the listing unreserved (migration 9).
+
+    Bids (migration 11): a listing looked up this run (bid_count set) stores
+    what the lookup found. One that wasn't keeps the last lookup — and, if
+    the search results give no price of their own (a FAST_BID), the price
+    that lookup gave, instead of NULL. A later lookup replaces both."""
     for listing in listings:
+        looked_up = getattr(listing, "bid_count", None) is not None
         conn.execute(
             """
             INSERT INTO listing (item_id, title, description, price_eur, price_type, is_bid,
                                   price_is_asking, city, posted_date, condition,
                                   frame_height, url, query, first_seen, last_seen, image_urls,
-                                  reserved_at)
+                                  reserved_at, bid_count, bid_minimum, bids_checked_at)
             VALUES (:item_id, :title, :description, :price_eur, :price_type, :is_bid,
                     :price_is_asking, :city, :posted_date, :condition,
                     :frame_height, :url, :query, :first_seen, :last_seen, :image_urls,
-                    :reserved_at)
+                    :reserved_at, :bid_count, :bid_minimum, :bids_checked_at)
             ON CONFLICT(item_id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
-                price_eur = excluded.price_eur,
-                price_type = excluded.price_type,
-                is_bid = excluded.is_bid,
-                price_is_asking = excluded.price_is_asking,
+                price_eur = CASE WHEN excluded.price_eur IS NULL AND excluded.bids_checked_at IS NULL
+                                      AND listing.bids_checked_at IS NOT NULL
+                                      AND excluded.price_type = listing.price_type
+                                 THEN listing.price_eur ELSE excluded.price_eur END,
+                is_bid = CASE WHEN excluded.price_eur IS NULL AND excluded.bids_checked_at IS NULL
+                                   AND listing.bids_checked_at IS NOT NULL
+                                   AND excluded.price_type = listing.price_type
+                              THEN listing.is_bid ELSE excluded.is_bid END,
+                price_is_asking = CASE WHEN excluded.price_eur IS NULL AND excluded.bids_checked_at IS NULL
+                                            AND listing.bids_checked_at IS NOT NULL
+                                            AND excluded.price_type = listing.price_type
+                                       THEN listing.price_is_asking ELSE excluded.price_is_asking END,
+                bid_count = CASE WHEN excluded.bids_checked_at IS NULL
+                                 THEN listing.bid_count ELSE excluded.bid_count END,
+                bid_minimum = CASE WHEN excluded.bids_checked_at IS NULL
+                                   THEN listing.bid_minimum ELSE excluded.bid_minimum END,
+                bids_checked_at = COALESCE(excluded.bids_checked_at, listing.bids_checked_at),
                 city = excluded.city,
                 posted_date = excluded.posted_date,
                 condition = excluded.condition,
@@ -711,6 +741,9 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "last_seen": observed_at,
                 "image_urls": getattr(listing, "image_urls", "") or "",
                 "reserved_at": observed_at if getattr(listing, "reserved", False) else None,
+                "bid_count": getattr(listing, "bid_count", None),
+                "bid_minimum": getattr(listing, "bid_minimum", None),
+                "bids_checked_at": observed_at if looked_up else None,
             },
         )
         conn.execute(
