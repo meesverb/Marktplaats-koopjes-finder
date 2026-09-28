@@ -1,6 +1,11 @@
 {
     "_toelichting": "Gewichten voor computers.py. Gekozen door de eigenaar op 28-09-2026: route erop + rerouting, planning op het apparaat en training/sensoren wegen het zwaarst; knoppen gaan voor touch; merken zonder updates krijgen aftrek. Batterijduur telde niet mee in zijn keuze en weegt daarom licht.",
-    "baseline": {"merk": "Wahoo", "model": "ELEMNT ROAM v1"},
+    "baseline": {
+        "merk": "Wahoo",
+        "model": "ELEMNT ROAM v1",
+        "_eigen_verkoopprijs": "Wat de eigen computer bij verkoop oplevert, voor 'netto' in de tab Upgrades. Leeg (null) = de marktschatting voor het model. Op 75 gezet door de eigenaar (28-09-2026): zijn Roam heeft een zwarte vlek rechtsonder in het scherm, verder werkt hij goed; een onbeschadigde leverde op dat moment ±109 op.",
+        "eigen_verkoopprijs_eur": 75
+    },
     "weights": {
         "navigatie": 35,
         "planning": 20,

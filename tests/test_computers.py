@@ -466,11 +466,23 @@ class FlipMathTest(unittest.TestCase):
                                160.0 * CONFIG["flip"]["negotiation_factor"] - CONFIG["flip"]["costs_eur"])
         self.assertEqual(pc.open_bids(others + [target]), [target])
 
-    def test_upgrade_net_cost_subtracts_what_the_own_computer_brings(self):
+    def test_own_value_set_by_the_owner_wins(self):
+        # 28-09-2026: his Roam has a black spot on the screen; he set €75.
+        self.assertEqual(CONFIG["baseline"]["eigen_verkoopprijs_eur"], 75)
         roams = [make_listing(item_id=f"r{i}", title="Wahoo Elemnt Roam", price_eur=p)
                  for i, p in enumerate((100.0, 120.0, 140.0))]
         edge = make_listing(item_id="e", title="Garmin Edge 1040", price_eur=250.0)
         pc.apply_computer_signals(roams + [edge])
+        self.assertEqual(edge.computer.own_resale_eur, 75)
+        self.assertEqual(edge.computer.net_upgrade_cost_eur, 175.0)
+
+    def test_upgrade_net_cost_subtracts_what_the_own_computer_brings(self):
+        roams = [make_listing(item_id=f"r{i}", title="Wahoo Elemnt Roam", price_eur=p)
+                 for i, p in enumerate((100.0, 120.0, 140.0))]
+        edge = make_listing(item_id="e", title="Garmin Edge 1040", price_eur=250.0)
+        config = pc.load_config()
+        config["baseline"]["eigen_verkoopprijs_eur"] = None  # back to the market estimate
+        pc.apply_computer_signals(roams + [edge], config=config)
         own = 120.0 * CONFIG["flip"]["negotiation_factor"]
         self.assertAlmostEqual(edge.computer.own_resale_eur, own)
         self.assertAlmostEqual(edge.computer.net_upgrade_cost_eur, 250.0 - own)

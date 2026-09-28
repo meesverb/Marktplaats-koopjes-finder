@@ -560,6 +560,24 @@ def _resale_band(prices: list, factor: float) -> tuple[float, float, float]:
     return round(low * factor, 2), round(median * factor, 2), round(high * factor, 2)
 
 
+def market_resale(db_path, catalog: Optional[Sequence[ComputerModel]] = None,
+                  config: Optional[dict] = None, exclude: frozenset = frozenset()) -> dict[str, float]:
+    """{modellabel: verwachte verkoopprijs nu} uit koopjes.db, met dezelfde
+    regels als de flipwinst (mediaan × onderhandelingsfactor, minimaal
+    min_comps advertenties). Voor de voorraad in "Mijn flips". `exclude`:
+    de advertenties waar de eigenaar zelf kocht — zijn eigen koopje zou de
+    schatting van wat hij ervoor terugkrijgt anders omlaag trekken."""
+    catalog = catalog if catalog is not None else _default_catalog()
+    flip = (config or default_config())["flip"]
+    comps = db_comparables(db_path, catalog, flip["comp_window_days"])
+    result = {}
+    for label, prices in comps.items():
+        kept = [p for item_id, p in prices.items() if item_id not in exclude]
+        if len(kept) >= flip["min_comps"]:
+            result[label] = _resale_band(kept, flip["negotiation_factor"])[1]
+    return result
+
+
 def apply_computer_signals(
     listings,
     *,
@@ -612,8 +630,10 @@ def apply_computer_signals(
         if price is not None:
             comps.setdefault(model.label, {})[listing.item_id] = price
 
-    own = list(comps.get(baseline.label, {}).values()) if baseline else []
-    own_resale = _resale_band(own, factor)[1] if len(own) >= flip["min_comps"] else None
+    own_resale = base.get("eigen_verkoopprijs_eur")
+    if own_resale is None:
+        own = list(comps.get(baseline.label, {}).values()) if baseline else []
+        own_resale = _resale_band(own, factor)[1] if len(own) >= flip["min_comps"] else None
 
     count = 0
     for listing, model, kind, reason in found:

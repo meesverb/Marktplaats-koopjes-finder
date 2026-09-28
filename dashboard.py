@@ -3,6 +3,7 @@ fietscomputers te koop staat, in plaats van een rapport per zoekterm.
 
     python dashboard.py                 # schrijft dashboard.html uit koopjes.db
     python dashboard.py --open          # en opent hem
+    python dashboard.py --serve         # live in de browser, met Gekocht/Verkocht-knoppen
 
 Gebouwd uit de database, niet uit één run: de zoekopdracht "fietscomputer"
 in schedule.json zoekt op 17 merken, en elk merk leverde een eigen rapport op
@@ -17,23 +18,32 @@ hoesjes, onderdelen, defecte en gezochte — om na te kijken dat er geen echte
 computer tussen zit). De rekenregels staan in computers.py en
 computer_scoring.json; dit bestand toont alleen.
 
-Leest alleen uit de database, schrijft er niets in.
+Het geschreven dashboard.html leest alleen. `--serve` start een klein
+programma op je eigen computer (alleen bereikbaar via 127.0.0.1) dat dezelfde
+pagina live toont, met knoppen om je eigen aan- en verkopen vast te leggen in
+koopjes.db (tabel `trade`, zie trades.py). Dat is het enige dat hier schrijft.
 """
 from __future__ import annotations
 
 import argparse
+import hmac
 import html
+import secrets
 import sqlite3
 import statistics
 import sys
 import webbrowser
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
+from urllib.parse import parse_qs, quote, urlsplit
 
 import computers as pc
+import db
 import racefiets_jev as mp
+import trades as tr
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = "dashboard.html"
@@ -58,6 +68,13 @@ class Dashboard:
     newest_seen: str = ""
     new_ids: set = field(default_factory=set)
     config: dict = field(default_factory=dict)
+    progress: Optional[tr.Progress] = None  # Mijn flips
+    bought: dict = field(default_factory=dict)  # item_id -> Trade
+    # Alleen in de live versie (--serve): formulieren, met het geheim dat
+    # bewijst dat een POST van deze pagina komt en niet van een andere site.
+    editable: bool = False
+    token: str = ""
+    message: str = ""
 
     @property
     def computers(self) -> list:
@@ -74,17 +91,19 @@ class Dashboard:
         rows += [(u.listing, u.kind, u.reason) for u in self.unknown if u.kind != "computer"]
         return sorted(rows, key=lambda r: (r[1], r[0].title.lower()))
 
+    # Wat je al gekocht hebt, is geen kans meer: weg uit Flips en Upgrades
+    # (in Alle computers blijft het staan, met een vinkje).
     @property
     def flips(self) -> list:
-        return [l for l in pc.flips(self.listings) if l.computer.profit_eur > 0]
+        return [l for l in pc.flips(self.listings) if l.computer.profit_eur > 0 and l.item_id not in self.bought]
 
     @property
     def open_bids(self) -> list:
-        return pc.open_bids(self.listings)
+        return [l for l in pc.open_bids(self.listings) if l.item_id not in self.bought]
 
     @property
     def upgrades(self) -> list:
-        return pc.upgrades(self.listings)
+        return [l for l in pc.upgrades(self.listings) if l.item_id not in self.bought]
 
 
 # --- Uit de database ---------------------------------------------------------
@@ -103,6 +122,21 @@ def load_dashboard(db_path, config: Optional[dict] = None) -> Dashboard:
     nieuwste en niet aan nu, zodat een dashboard na een week zonder rondes
     niet leeg is maar de stand van de laatste ronde laat zien."""
     config = config or pc.default_config()
+    return _with_trades(_load_market(db_path, config), db_path)
+
+
+def _with_trades(d: Dashboard, db_path) -> Dashboard:
+    """Mijn flips erbij: de eigen trades, met de huidige marktwaarde per model."""
+    trades = tr.load_trades(db_path)
+    own_ids = frozenset(t.item_id for t in trades if t.item_id)
+    market = (pc.market_resale(db_path, config=d.config, exclude=own_ids)
+              if trades and Path(db_path).exists() else {})
+    d.progress = tr.progress(trades, market, d.config["flip"].get("costs_eur", 0.0))
+    d.bought = {t.item_id: t for t in trades if t.item_id}
+    return d
+
+
+def _load_market(db_path, config: dict) -> Dashboard:
     settings = config["dashboard"]
     if not Path(db_path).exists():
         return Dashboard([], config=config)
@@ -197,6 +231,17 @@ def signed_euro(amount: Optional[float]) -> str:
     return ("+" if amount >= 0 else "") + euro(amount)
 
 
+MONTHS = ("jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec")
+
+
+def nl_date(value: Optional[str]) -> str:
+    try:
+        day = date.fromisoformat((value or "")[:10])
+    except ValueError:
+        return value or "?"
+    return f"{day.day} {MONTHS[day.month - 1]} {day.year}"
+
+
 def local_time(iso: str) -> str:
     moment = _parse_time(iso)
     if moment is None:
@@ -221,7 +266,30 @@ def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str
     return (
         f"<td class='what'><div class='model'>{new}{esc(model_label)}</div>"
         f"<a href='{esc(listing.url, quote=True)}' target='_blank' rel='noopener'>{esc(listing.title)}</a>"
-        f"<span class='muted'>{place}</span>{note_html}</td>"
+        f"<span class='muted'>{place}</span>{note_html}{buy_control(listing, d)}</td>"
+    )
+
+
+def hidden(d: Dashboard, **values) -> str:
+    fields = {"token": d.token, **values}
+    return "".join(f"<input type='hidden' name='{k}' value='{esc(str(v), quote=True)}'>" for k, v in fields.items())
+
+
+def buy_control(listing, d: Dashboard) -> str:
+    """"Gekocht" bij een advertentie: een badge als hij al in Mijn flips
+    staat, anders (alleen live) een knop met de prijs alvast ingevuld."""
+    trade = d.bought.get(listing.item_id)
+    if trade:
+        return (f"<div class='owned'>✓ gekocht op {esc(nl_date(trade.bought_at))} voor "
+                f"{euro(trade.buy_price_eur)}</div>")
+    if not d.editable:
+        return ""
+    price = "" if listing.price_eur is None else f"{listing.price_eur:.0f}"
+    return (
+        "<form class='inline' method='post' action='/gekocht'>"
+        f"{hidden(d, item_id=listing.item_id)}"
+        f"<label>€<input name='prijs' value='{price}' inputmode='decimal' size='5' required "
+        "aria-label='Inkoopprijs'></label><button>Gekocht</button></form>"
     )
 
 
@@ -322,7 +390,8 @@ def upgrades_panel(d: Dashboard) -> str:
     parts = [tiles([
         ("Upgrades te koop", str(len(ups)), f"kunnen meer dan je {base_label}"),
         (f"Je {base.model if base else 'computer'} levert op", euro(own) if own is not None else "—",
-         "verwachte verkoopprijs" if own is not None else "te weinig vergelijkbare advertenties"),
+         ("zelf ingesteld (eigen_verkoopprijs_eur)" if d.config["baseline"].get("eigen_verkoopprijs_eur") is not None
+          else "verwachte verkoopprijs") if own is not None else "te weinig vergelijkbare advertenties"),
         ("Goedkoopste, netto", euro(min(nets)) if nets else "—",
          "prijs min wat je eigen computer oplevert (negatief: je houdt geld over)"),
     ])]
@@ -457,6 +526,157 @@ def excluded_panel(d: Dashboard) -> str:
     return "\n".join(parts)
 
 
+def month_chart(monthly: list) -> str:
+    """Winst per maand als staafjes. Eén reeks, dus geen legenda; elke staaf
+    heeft zijn bedrag erboven en een tooltip. Verlies hangt onder de nullijn."""
+    if not monthly:
+        return ""
+    width, height, pad_top, pad_bottom = 640, 180, 22, 26
+    values = [v for _, v in monthly]
+    top, bottom = max(max(values), 0), min(min(values), 0)
+    span = (top - bottom) or 1
+    plot = height - pad_top - pad_bottom
+    zero = pad_top + plot * top / span
+    slot = width / len(monthly)
+    bar = min(48, slot * 0.6)
+    parts = [f"<svg class='chart' viewBox='0 0 {width} {height}' role='img' "
+             "aria-label='Gerealiseerde winst per maand'>",
+             f"<line x1='0' x2='{width}' y1='{zero:.1f}' y2='{zero:.1f}' class='axis'/>"]
+    for i, (month, value) in enumerate(monthly):
+        x = i * slot + (slot - bar) / 2
+        h = abs(value) / span * plot
+        y = zero - h if value >= 0 else zero
+        year, mon = month.split("-")
+        label = f"{MONTHS[int(mon) - 1]} '{year[2:]}"
+        parts.append(
+            f"<g><title>{esc(label)}: {esc(signed_euro(value))}</title>"
+            f"<rect x='{x:.1f}' y='{y:.1f}' width='{bar:.1f}' height='{max(h, 1):.1f}' rx='3' class='bar'/>"
+            f"<text x='{x + bar / 2:.1f}' y='{(y - 6) if value >= 0 else (y + h + 14):.1f}' "
+            f"class='val'>{esc(signed_euro(value))}</text>"
+            f"<text x='{x + bar / 2:.1f}' y='{height - 8}' class='lab'>{esc(label)}</text></g>"
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def mine_panel(d: Dashboard) -> str:
+    p = d.progress or tr.progress([], {}, 0.0)
+    shipping = d.config["flip"].get("costs_eur", 0.0)
+    today = date.today().isoformat()
+    error = ""
+    if p.estimate_error is not None:
+        direction = "boven" if p.estimate_error >= 0 else "onder"
+        error = f"{abs(p.estimate_error):.0%} {direction} de schatting (n={p.estimate_n})"
+    parts = [tiles([
+        ("Gerealiseerde winst", signed_euro(p.realized_profit_eur) if p.sold else "—",
+         f"{len(p.sold)} verkocht, samen {euro(p.revenue_eur)} omzet" if p.sold else "nog niets verkocht"),
+        ("Op voorraad", str(len(p.stock)), f"{euro(p.invested_in_stock_eur)} erin gestoken" if p.stock else "niets"),
+        ("Verwachte winst voorraad", signed_euro(p.expected_stock_profit_eur),
+         f"na {euro(shipping)} verzendkosten per stuk"),
+        ("Gemiddeld verkocht na", f"{p.avg_days_to_sell:.0f} dagen" if p.avg_days_to_sell is not None else "—",
+         error or "hoe goed de schatting klopte, verschijnt na je eerste verkopen"),
+    ])]
+    if not d.editable:
+        parts.append("<p class='explain'>Invoeren doe je in de live versie: <code>python dashboard.py --serve</code>. "
+                     "Die opent dit dashboard met knoppen <em>Gekocht</em> en <em>Verkocht</em>.</p>")
+    if p.monthly:
+        parts.append("<h3>Winst per maand</h3>" + month_chart(p.monthly))
+
+    parts.append(f"<h3>Op voorraad ({len(p.stock)})</h3>")
+    if p.stock:
+        rows = []
+        for s in p.stock:
+            t = s.trade
+            sell = ""
+            if d.editable:
+                guess = "" if s.expected_resale_eur is None else f"{s.expected_resale_eur:.0f}"
+                sell = (
+                    "<form class='inline' method='post' action='/verkocht'>"
+                    f"{hidden(d, id=t.id)}"
+                    f"<label>€<input name='prijs' value='{guess}' inputmode='decimal' size='5' required "
+                    "aria-label='Verkoopprijs'></label>"
+                    f"<label>kosten €<input name='kosten' value='{shipping:g}' inputmode='decimal' size='3' "
+                    "aria-label='Verzendkosten'></label>"
+                    f"<input type='date' name='datum' value='{today}' aria-label='Verkocht op'>"
+                    "<select name='via' aria-label='Verkocht via'><option>marktplaats</option><option>vinted</option>"
+                    "<option>anders</option></select><button>Verkocht</button></form>"
+                    + delete_form(d, t.id)
+                )
+            link = (f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
+                    if t.url else esc(t.title))
+            rows.append(
+                "<tr>"
+                f"<td class='what'><div class='model'>{esc(t.model or 'model onbekend')}</div>{link}"
+                f"{'<div class=note>' + esc(t.notes) + '</div>' if t.notes else ''}{sell}</td>"
+                f"<td data-sort='{t.bought_at}'>{esc(nl_date(t.bought_at))}"
+                f"<div class='sub'>{t.days_held()} dagen</div></td>"
+                f"<td class='num' data-sort='{t.cost_basis_eur}'>{euro(t.cost_basis_eur)}</td>"
+                f"<td class='num' data-sort='{s.expected_resale_eur or ''}'>{euro(s.expected_resale_eur)}</td>"
+                f"<td class='num' data-sort='{s.expected_profit_eur if s.expected_profit_eur is not None else ''}'>"
+                f"{signed_euro(s.expected_profit_eur)}</td>"
+                "</tr>"
+            )
+        parts.append(table([("Wat", "text"), ("Gekocht", "text"), ("Inkoop", "num"), ("Verwacht verkoop", "num"),
+                            ("Verwachte winst", "num")], rows))
+    else:
+        parts.append("<p class='empty'>Niets op voorraad. Klik bij een advertentie op <em>Gekocht</em>, of voeg "
+                     "hieronder iets toe dat je ergens anders kocht.</p>")
+
+    parts.append(f"<h3>Verkocht ({len(p.sold)})</h3>")
+    if p.sold:
+        rows = []
+        for t in p.sold:
+            actions = ""
+            if d.editable:
+                actions = (
+                    "<form class='inline' method='post' action='/terug'>"
+                    f"{hidden(d, id=t.id)}<button class='quiet'>terug naar voorraad</button></form>"
+                    + delete_form(d, t.id)
+                )
+            link = (f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
+                    if t.url else esc(t.title))
+            vs = ""
+            if t.expected_resale_eur:
+                vs = f"<div class='sub'>verwacht {euro(t.expected_resale_eur)}</div>"
+            rows.append(
+                "<tr>"
+                f"<td class='what'><div class='model'>{esc(t.model or 'model onbekend')}</div>{link}{actions}</td>"
+                f"<td data-sort='{t.sold_at}'>{esc(nl_date(t.sold_at))}"
+                f"<div class='sub'>{t.days_held()} dagen · {esc(t.sold_via or '')}</div></td>"
+                f"<td class='num' data-sort='{t.cost_basis_eur}'>{euro(t.cost_basis_eur)}</td>"
+                f"<td class='num' data-sort='{t.sell_price_eur}'>{euro(t.sell_price_eur)}"
+                f"<div class='sub'>−{euro(t.sell_costs_eur or 0)} kosten</div>{vs}</td>"
+                f"<td class='num profit' data-sort='{t.profit_eur}'>{signed_euro(t.profit_eur)}</td>"
+                "</tr>"
+            )
+        parts.append(table([("Wat", "text"), ("Verkocht", "text"), ("Inkoop", "num"), ("Verkoopprijs", "num"),
+                            ("Winst", "num")], rows))
+
+    if d.editable:
+        labels = [m.label for m in pc._default_catalog()]
+        options = "".join(f"<option>{esc(l)}</option>" for l in labels)
+        parts.append(
+            "<h3>Zelf toevoegen</h3><p class='explain'>Voor wat je niet via een advertentie hierboven kocht, "
+            "zoals een aankoop op Vinted.</p>"
+            "<form class='addform' method='post' action='/toevoegen'>"
+            f"{hidden(d)}"
+            "<label>Wat<input name='titel' required placeholder='bijv. Wahoo Roam, vlek rechtsonder'></label>"
+            f"<label>Model<select name='model'><option value=''>model onbekend</option>{options}</select></label>"
+            "<label>Inkoop €<input name='prijs' inputmode='decimal' size='6' required></label>"
+            "<label>Kosten €<input name='kosten' inputmode='decimal' size='4' value='0'></label>"
+            f"<label>Gekocht op<input type='date' name='datum' value='{today}'></label>"
+            "<label>Notitie<input name='notitie'></label>"
+            "<button>Toevoegen</button></form>"
+        )
+    return "\n".join(parts)
+
+
+def delete_form(d: Dashboard, trade_id: int) -> str:
+    return ("<form class='inline' method='post' action='/verwijder' "
+            "onsubmit=\"return confirm('Deze regel verwijderen?')\">"
+            f"{hidden(d, id=trade_id)}<button class='quiet'>verwijderen</button></form>")
+
+
 CSS = """
 :root { color-scheme: light; --surface: #fcfcfb; --card: #ffffff; --line: #e4e3df;
   --text: #0b0b0b; --text-2: #52514e; --muted: #6b6a66; --accent: #2a78d6; --good: #0ca30c;
@@ -513,6 +733,25 @@ ul.changes li.minus::before { content: "−"; color: var(--bad); }
 tr.hidden { display: none; }
 .empty { color: var(--muted); padding: 12px 0; }
 code { font-size: .85em; }
+.banner { background: var(--badge); border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
+.owned { margin-top: 4px; font-size: .82rem; font-weight: 600; }
+form.inline { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: .85rem; }
+form.inline input, form.inline select, .addform input, .addform select { font: inherit; padding: 3px 6px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
+form.inline input[size] { width: auto; }
+button { font: inherit; font-size: .85rem; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; cursor: pointer; }
+button.quiet { background: none; color: var(--text-2); border-color: var(--line); }
+nav.tabs button { font-size: inherit; border-radius: 0; }
+.addform { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.addform label { display: flex; flex-direction: column; font-size: .8rem; color: var(--text-2); gap: 3px; }
+svg.chart { width: 100%; max-width: 720px; height: auto; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; }
+svg.chart .bar { fill: var(--accent); }
+svg.chart .axis { stroke: var(--line); }
+svg.chart text { font-size: 15px; text-anchor: middle; fill: var(--text-2); }
+svg.chart text.val { fill: var(--text); font-weight: 600; }
 """
 
 JS = """
@@ -577,9 +816,12 @@ if (search) { [search, brand, onlyNew].forEach(el => el.addEventListener('input'
 
 def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
     computers = len(d.computers) + len(d.unknown_computers)
+    p = d.progress
+    mine_label = f"Mijn flips ({signed_euro(p.realized_profit_eur)})" if p and p.sold else "Mijn flips"
     tabs = [
         ("flips", f"Flips ({len(d.flips)})", flips_panel(d)),
         ("upgrades", f"Upgrades ({len(d.upgrades)})", upgrades_panel(d)),
+        ("mijn", mine_label, mine_panel(d)),
         ("alle", f"Alle computers ({computers})", all_panel(d)),
         ("markt", "Marktprijzen", market_panel(d)),
         ("uitgefilterd", f"Uitgefilterd ({len(d.excluded)})", excluded_panel(d)),
@@ -592,20 +834,23 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
         f"<section class='panel' id='panel-{name}'{'' if i == 0 else ' hidden'}>{body}</section>"
         for i, (name, _, body) in enumerate(tabs)
     )
+    notices = ""
+    if d.message:
+        notices += f"<div class='banner' role='status'>{esc(d.message)}</div>"
     if not d.listings:
-        panels = ("<p class='empty'>Nog geen fietscomputers in de database. Draai eerst een ronde: "
-                  "<code>python koopjes.py run nacht</code>.</p>")
-        nav = ""
+        notices += ("<div class='banner'>Nog geen fietscomputers in de database. Draai eerst een ronde: "
+                    "<code>python koopjes.py run nacht</code>.</div>")
     link = f" · <a href='{esc(overview_link, quote=True)}'>racefietsen: overzicht</a>" if overview_link else ""
     new = f" ({len(d.new_ids)} nieuw)" if d.new_ids else ""
+    live = " · <strong>live</strong> (wijzigingen gaan in koopjes.db)" if d.editable else ""
     meta = (f"Bijgewerkt {datetime.now().strftime('%d-%m-%Y %H:%M')} · {computers} computers te koop{new} "
-            f"· laatste ronde {local_time(d.newest_seen)}{link}")
+            f"· laatste ronde {local_time(d.newest_seen)}{link}{live}")
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         f"<title>Fietscomputers</title><style>{CSS}</style></head><body><main>"
         "<h1>Fietscomputers op Marktplaats</h1>"
-        f"<div class='meta'>{meta}</div>"
+        f"<div class='meta'>{meta}</div>{notices}"
         f"<nav class='tabs'>{nav}</nav>{panels}"
         f"</main><script>{JS}</script></body></html>"
     )
@@ -617,16 +862,250 @@ def write_dashboard(db_path, out_path, overview_link: Optional[str] = None) -> D
     return d
 
 
+# --- Live: --serve --------------------------------------------------------------
+
+
+class FormError(ValueError):
+    """Een formulier met iets dat niet klopt; de tekst gaat terug naar de pagina."""
+
+
+def parse_euro(value: str, what: str, required: bool = True) -> Optional[float]:
+    text = (value or "").replace("€", "").replace(" ", "").replace(",", ".")
+    if not text:
+        if required:
+            raise FormError(f"{what} ontbreekt.")
+        return None
+    try:
+        amount = float(text)
+    except ValueError:
+        raise FormError(f"{what} '{value}' is geen bedrag.") from None
+    if amount < 0:
+        raise FormError(f"{what} kan niet negatief zijn.")
+    return round(amount, 2)
+
+
+def parse_day(value: str) -> str:
+    if not value:
+        return date.today().isoformat()
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise FormError(f"Datum '{value}' klopt niet (jjjj-mm-dd).") from None
+
+
+def parse_id(value: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise FormError("Onbekende regel.") from None
+
+
+def action_bought(db_path, form: dict) -> str:
+    item_id = form.get("item_id", "")
+    price = parse_euro(form.get("prijs"), "Inkoopprijs")
+    d = load_dashboard(db_path)
+    listing = next((l for l in d.listings if l.item_id == item_id), None)
+    if listing is None:
+        raise FormError("Die advertentie staat niet (meer) in het dashboard; voeg hem zelf toe onder Mijn flips.")
+    if item_id in d.bought:
+        raise FormError(f"'{listing.title}' staat al in Mijn flips.")
+    c = listing.computer
+    conn = db.connect(str(db_path))
+    try:
+        db.add_trade(conn, title=listing.title, bought_at=parse_day(form.get("datum")), buy_price_eur=price,
+                     item_id=item_id, url=listing.url, model=c.model.label if c else None,
+                     expected_resale_eur=c.resale_eur if c else None)
+    finally:
+        conn.close()
+    return f"Gekocht: {listing.title} voor {euro(price)}. Hij staat nu onder Mijn flips."
+
+
+def action_add(db_path, form: dict) -> str:
+    title = (form.get("titel") or "").strip()
+    if not title:
+        raise FormError("Vul in wat het is.")
+    model = form.get("model") or None
+    if model and model not in {m.label for m in pc._default_catalog()}:
+        raise FormError(f"Onbekend model '{model}'.")
+    price = parse_euro(form.get("prijs"), "Inkoopprijs")
+    costs = parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
+    market = pc.market_resale(db_path) if model else {}
+    conn = db.connect(str(db_path))
+    try:
+        db.add_trade(conn, title=title, bought_at=parse_day(form.get("datum")), buy_price_eur=price,
+                     buy_costs_eur=costs, model=model, expected_resale_eur=market.get(model),
+                     notes=(form.get("notitie") or "").strip())
+    finally:
+        conn.close()
+    return f"Toegevoegd: {title} voor {euro(price)}."
+
+
+def action_sold(db_path, form: dict) -> str:
+    trade_id = parse_id(form.get("id"))
+    price = parse_euro(form.get("prijs"), "Verkoopprijs")
+    costs = parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
+    via = form.get("via") if form.get("via") in ("marktplaats", "vinted", "anders") else "anders"
+    sold_at = parse_day(form.get("datum"))
+    bought = next((t for t in tr.load_trades(db_path) if t.id == trade_id), None)
+    if bought is None:
+        raise FormError("Onbekende regel.")
+    if sold_at < bought.bought_at[:10]:
+        raise FormError(f"Verkocht op {nl_date(sold_at)} ligt vóór de aankoop ({nl_date(bought.bought_at)}).")
+    conn = db.connect(str(db_path))
+    try:
+        if not db.sell_trade(conn, trade_id, sold_at=sold_at, sell_price_eur=price,
+                             sell_costs_eur=costs, sold_via=via):
+            raise FormError("Onbekende regel.")
+    finally:
+        conn.close()
+    return f"Verkocht voor {euro(price)}."
+
+
+def action_unsell(db_path, form: dict) -> str:
+    conn = db.connect(str(db_path))
+    try:
+        if not db.unsell_trade(conn, parse_id(form.get("id"))):
+            raise FormError("Onbekende regel.")
+    finally:
+        conn.close()
+    return "Terug naar voorraad."
+
+
+def action_delete(db_path, form: dict) -> str:
+    conn = db.connect(str(db_path))
+    try:
+        if not db.delete_trade(conn, parse_id(form.get("id"))):
+            raise FormError("Onbekende regel.")
+    finally:
+        conn.close()
+    return "Verwijderd."
+
+
+ACTIONS = {
+    "/gekocht": action_bought,
+    "/toevoegen": action_add,
+    "/verkocht": action_sold,
+    "/terug": action_unsell,
+    "/verwijder": action_delete,
+}
+MAX_FORM_BYTES = 10_000
+
+
+class DashboardHandler(BaseHTTPRequestHandler):
+    """GET / toont het dashboard live; POST naar een van ACTIONS schrijft en
+    stuurt terug naar de pagina (tab Mijn flips) met een melding.
+
+    Alleen bereikbaar via 127.0.0.1. Een andere website kan je browser toch
+    een formulier naar localhost laten sturen; daarom draagt elk formulier
+    een geheim dat bij het starten wordt gekozen (token), en worden Host en
+    Origin gecontroleerd (tegen DNS-rebinding)."""
+
+    db_path = "koopjes.db"
+    token = ""
+    server_version = "koopjes-dashboard"
+
+    def _origins(self) -> set:
+        port = self.server.server_address[1]
+        return {f"127.0.0.1:{port}", f"localhost:{port}"}
+
+    def _host_ok(self) -> bool:
+        return self.headers.get("Host", "") in self._origins()
+
+    def _send(self, code: int, body: str, content_type: str = "text/plain; charset=utf-8") -> None:
+        data = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _back(self, message: str) -> None:
+        self.send_response(303)
+        self.send_header("Location", "/?melding=" + quote(message) + "#mijn")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        url = urlsplit(self.path)
+        if url.path not in ("/", "/index.html"):
+            return self._send(404, "Niet gevonden")
+        if not self._host_ok():
+            return self._send(403, "Alleen via 127.0.0.1")
+        d = load_dashboard(self.db_path)
+        d.editable, d.token = True, self.token
+        d.message = parse_qs(url.query).get("melding", [""])[0][:300]
+        self._send(200, render(d), "text/html; charset=utf-8")
+
+    def do_POST(self) -> None:
+        origin = self.headers.get("Origin")
+        if not self._host_ok() or (origin and urlsplit(origin).netloc not in self._origins()):
+            return self._send(403, "Alleen via 127.0.0.1")
+        action = ACTIONS.get(urlsplit(self.path).path)
+        if action is None:
+            return self._send(404, "Niet gevonden")
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_FORM_BYTES:
+            return self._send(413, "Te groot")
+        raw = self.rfile.read(length).decode("utf-8", errors="replace")
+        form = {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
+        if not hmac.compare_digest(form.get("token", ""), self.token):
+            # Een verouderde pagina (programma opnieuw gestart) of een
+            # andere site: niets doen, alleen de verse pagina tonen.
+            return self._back("De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.")
+        try:
+            message = action(self.db_path, form)
+        except FormError as exc:
+            message = f"Niet opgeslagen: {exc}"
+        self._back(message)
+
+    def log_message(self, format: str, *args) -> None:
+        pass  # geen regel per verzoek in de terminal
+
+
+def make_server(db_path, port: int = 8765) -> ThreadingHTTPServer:
+    """De server, klaar om te draaien (serve_forever). Migreert de database
+    eerst, zodat de tabel `trade` bestaat."""
+    db.connect(str(db_path)).close()
+    handler = type("Handler", (DashboardHandler,), {"db_path": str(db_path), "token": secrets.token_urlsafe(24)})
+    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+
+
+def serve(db_path, port: int, open_browser: bool) -> int:
+    try:
+        httpd = make_server(db_path, port)
+    except OSError as exc:
+        print(f"Kan niet starten op poort {port}: {exc}. Probeer --port met een ander getal.", file=sys.stderr)
+        return 1
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+    print(f"Dashboard live op {url} — stoppen met Ctrl+C.")
+    if open_browser:
+        webbrowser.open(url)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nGestopt.")
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Bouw dashboard.html met alle fietscomputers uit koopjes.db.")
     parser.add_argument("--db", default="koopjes.db")
     parser.add_argument("--out", default=DEFAULT_OUT)
     parser.add_argument("--open", action="store_true", help="open het dashboard in de browser")
+    parser.add_argument("--serve", action="store_true",
+                        help="toon het dashboard live, met knoppen om aan- en verkopen vast te leggen")
+    parser.add_argument("--port", type=int, default=8765, help="poort voor --serve (standaard 8765)")
+    parser.add_argument("--no-browser", action="store_true", help="bij --serve de browser niet openen")
     args = parser.parse_args(argv)
     if not Path(args.db).exists():
         print(f"Database {args.db} bestaat niet. Draai eerst een ronde: python koopjes.py run nacht",
               file=sys.stderr)
         return 1
+    if args.serve:
+        return serve(args.db, args.port, not args.no_browser)
     overview = "overzicht.html" if (Path(args.out).resolve().parent / "overzicht.html").exists() else None
     d = write_dashboard(args.db, args.out, overview)
     print(f"Dashboard: {args.out} — {len(d.computers) + len(d.unknown_computers)} computers, "

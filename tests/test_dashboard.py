@@ -114,5 +114,118 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("bestaat niet", err.getvalue())
 
 
+class LiveServerTest(unittest.TestCase):
+    """--serve: the live dashboard that writes the owner's buys and sales."""
+
+    def setUp(self):
+        import http.client
+        import re
+        import threading
+        import urllib.parse
+
+        self.http, self.re, self.urlparse = http.client, re, urllib.parse
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.db = str(self.dir / "koopjes.db")
+        conn = db.connect(self.db)
+        try:
+            market = [computer(f"a{i}", "Garmin Edge 530", p) for i, p in enumerate((160.0, 180.0, 200.0, 220.0))]
+            db.sync_listings(conn, "garmin edge", market + [computer("c", "Garmin Edge 530", 90.0)],
+                             datetime.now(timezone.utc).isoformat())
+        finally:
+            conn.close()
+        self.httpd = dashboard.make_server(self.db, 0)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
+        self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
+
+    def request(self, method, path="/", fields=None, host=None, origin=None):
+        conn = self.http.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        headers = {"Host": host or f"127.0.0.1:{self.port}"}
+        body = None
+        if fields is not None:
+            body = self.urlparse.urlencode(fields)
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        if origin:
+            headers["Origin"] = origin
+        conn.request(method, path, body, headers)
+        response = conn.getresponse()
+        text = response.read().decode()
+        conn.close()
+        return response.status, self.urlparse.unquote(response.getheader("Location") or ""), text
+
+    def token(self):
+        _, _, page = self.request("GET")
+        return self.re.search(r"name='token' value='([^']+)'", page).group(1)
+
+    def test_buying_from_a_flip_row_and_selling_it(self):
+        import trades as tr
+
+        status, location, _ = self.request("POST", "/gekocht", {"token": self.token(), "item_id": "c", "prijs": "85"})
+        self.assertEqual(status, 303)
+        self.assertIn("Gekocht", location)
+        (trade,) = tr.load_trades(self.db)
+        self.assertEqual((trade.item_id, trade.buy_price_eur, trade.model), ("c", 85.0, "Garmin Edge 530"))
+        self.assertIsNotNone(trade.expected_resale_eur)
+
+        _, _, page = self.request("GET")
+        self.assertIn("✓ gekocht", page)
+        # Bought is no longer a chance: gone from the flips.
+        self.assertNotIn("c", {l.item_id for l in dashboard.load_dashboard(self.db).flips})
+
+        self.request("POST", "/verkocht", {"token": self.token(), "id": trade.id, "prijs": "150,50",
+                                           "kosten": "3", "datum": "2026-10-01", "via": "vinted"})
+        (trade,) = tr.load_trades(self.db)
+        self.assertEqual((trade.sell_price_eur, trade.sold_via, trade.profit_eur), (150.5, "vinted", 62.5))
+        _, _, page = self.request("GET")
+        self.assertIn("Mijn flips (+€62)", page)
+
+    def test_adding_a_buy_from_elsewhere(self):
+        import trades as tr
+
+        self.request("POST", "/toevoegen", {"token": self.token(), "titel": "Roam van Vinted",
+                                            "model": "Wahoo ELEMNT ROAM v1", "prijs": "60", "kosten": "3"})
+        (trade,) = tr.load_trades(self.db)
+        self.assertEqual((trade.title, trade.buy_costs_eur, trade.item_id), ("Roam van Vinted", 3.0, None))
+
+    def test_a_sale_before_the_buy_is_refused(self):
+        import trades as tr
+
+        self.request("POST", "/toevoegen", {"token": self.token(), "titel": "x", "prijs": "10",
+                                            "datum": "2026-09-10"})
+        (trade,) = tr.load_trades(self.db)
+        _, location, _ = self.request("POST", "/verkocht", {"token": self.token(), "id": trade.id, "prijs": "20",
+                                                            "datum": "2026-09-01"})
+        self.assertIn("vóór de aankoop", location)
+        self.assertFalse(tr.load_trades(self.db)[0].sold)
+
+    def test_bad_input_is_reported_not_saved(self):
+        import trades as tr
+
+        _, location, _ = self.request("POST", "/toevoegen", {"token": self.token(), "titel": "x", "prijs": "abc"})
+        self.assertIn("Niet opgeslagen", location)
+        self.assertEqual(tr.load_trades(self.db), [])
+
+    def test_no_token_no_write(self):
+        import trades as tr
+
+        _, location, _ = self.request("POST", "/toevoegen", {"titel": "x", "prijs": "10"})
+        self.assertIn("niets opgeslagen", location)
+        self.assertEqual(tr.load_trades(self.db), [])
+
+    def test_other_sites_and_hosts_are_refused(self):
+        token = self.token()
+        status, _, _ = self.request("POST", "/toevoegen", {"token": token, "titel": "x", "prijs": "10"},
+                                    origin="https://evil.example")
+        self.assertEqual(status, 403)
+        self.assertEqual(self.request("GET", host="evil.example")[0], 403)
+
+    def test_static_page_has_no_forms(self):
+        html = dashboard.render(dashboard.load_dashboard(self.db))
+        self.assertNotIn("<form", html)
+        self.assertIn("python dashboard.py --serve", html)
+
+
 if __name__ == "__main__":
     unittest.main()

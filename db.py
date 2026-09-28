@@ -36,6 +36,7 @@ import json
 import sqlite3
 import sys
 from datetime import datetime, timezone
+from typing import Optional
 
 # Each entry is one migration's DDL, applied in order. Add new entries to
 # extend the schema; never edit an already-shipped one, or a DB created under
@@ -224,6 +225,31 @@ MIGRATIONS: list[str] = [
     # from a Garmin holder at a glance.
     """
     ALTER TABLE listing ADD COLUMN image_urls TEXT;
+    """,
+    # 7: the owner's own buys and sales ("Mijn flips" in dashboard.py). What
+    # he actually paid and got, not a market observation: kept out of
+    # `listing`/`listing_price`, and never used as a comparable. item_id and
+    # url point at the listing he bought from, if it was on Marktplaats (a
+    # Vinted buy has neither). expected_resale_eur is what the dashboard
+    # expected when he bought, so its estimate can be checked afterwards.
+    """
+    CREATE TABLE trade (
+        id INTEGER PRIMARY KEY,
+        item_id TEXT,
+        url TEXT,
+        title TEXT NOT NULL,
+        model TEXT,
+        bought_at TEXT NOT NULL,
+        buy_price_eur REAL NOT NULL,
+        buy_costs_eur REAL NOT NULL DEFAULT 0,
+        expected_resale_eur REAL,
+        sold_at TEXT,
+        sell_price_eur REAL,
+        sell_costs_eur REAL NOT NULL DEFAULT 0,
+        sold_via TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL
+    );
     """,
 ]
 
@@ -888,6 +914,85 @@ def delete_watchlist(conn: sqlite3.Connection, name: str) -> bool:
     cur = conn.execute("DELETE FROM watchlist WHERE name = ?", (name,))
     conn.commit()
     return cur.rowcount > 0
+
+
+# --- Own trades (migration 7) --------------------------------------------------
+
+
+def add_trade(
+    conn: sqlite3.Connection,
+    *,
+    title: str,
+    bought_at: str,
+    buy_price_eur: float,
+    buy_costs_eur: float = 0.0,
+    item_id: Optional[str] = None,
+    url: Optional[str] = None,
+    model: Optional[str] = None,
+    expected_resale_eur: Optional[float] = None,
+    notes: str = "",
+) -> int:
+    """Record a buy; returns its id."""
+    cur = conn.execute(
+        """
+        INSERT INTO trade (item_id, url, title, model, bought_at, buy_price_eur, buy_costs_eur,
+                           expected_resale_eur, notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (item_id, url, title, model, bought_at, buy_price_eur, buy_costs_eur,
+         expected_resale_eur, notes, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def sell_trade(
+    conn: sqlite3.Connection,
+    trade_id: int,
+    *,
+    sold_at: str,
+    sell_price_eur: float,
+    sell_costs_eur: float = 0.0,
+    sold_via: str = "",
+) -> bool:
+    """Mark a buy as sold; returns whether the trade exists. Selling again
+    overwrites: a typo in the price is corrected by entering it again."""
+    cur = conn.execute(
+        "UPDATE trade SET sold_at = ?, sell_price_eur = ?, sell_costs_eur = ?, sold_via = ? WHERE id = ?",
+        (sold_at, sell_price_eur, sell_costs_eur, sold_via, trade_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def unsell_trade(conn: sqlite3.Connection, trade_id: int) -> bool:
+    """Back to stock (a sale that fell through)."""
+    cur = conn.execute(
+        "UPDATE trade SET sold_at = NULL, sell_price_eur = NULL, sell_costs_eur = 0, sold_via = NULL "
+        "WHERE id = ?",
+        (trade_id,),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_trade(conn: sqlite3.Connection, trade_id: int) -> bool:
+    cur = conn.execute("DELETE FROM trade WHERE id = ?", (trade_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def list_trades(conn: sqlite3.Connection) -> list[dict]:
+    """All trades, oldest buy first. Empty on a database from before
+    migration 7 opened read-only (the dashboard does that)."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'trade'"
+    ).fetchone()
+    if not exists:
+        return []
+    cur = conn.execute("SELECT * FROM trade ORDER BY bought_at, id")
+    names = [c[0] for c in cur.description]
+    return [dict(zip(names, row)) for row in cur.fetchall()]
 
 
 def _parse_iso(value: str) -> datetime:

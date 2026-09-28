@@ -320,6 +320,7 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 | Tab | What |
 | --- | --- |
 | **Flips** | every computer below its expected selling price, biggest profit first. Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
+| **Mijn flips** | what you bought and sold yourself: realised profit, what's in stock and what it should bring now, average days to sell, how far the dashboard's estimate was off, and profit per month. Entered in the live version (below) |
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
 | **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns |
 | **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
@@ -327,6 +328,30 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 
 Photos come from the search results (stored since database migration 6); a
 listing from before that shows a grey square until the next round sees it.
+
+**Recording your own buys and sales — `python dashboard.py --serve`.** The
+written `dashboard.html` only reads. `--serve` starts a small program on your
+own computer (only reachable at `http://127.0.0.1:8765/`, `--port` to change)
+that shows the same dashboard live and opens it in your browser; stop it with
+Ctrl+C. Every listing then has a **Gekocht** button with its price filled in,
+and **Mijn flips** has a **Verkocht** form per item in stock (sale price,
+shipping — €3 filled in —, date, Marktplaats/Vinted/other), "terug naar
+voorraad", "verwijderen", and a form for buys made elsewhere (a Vinted buy,
+say). Everything goes into `koopjes.db`, table `trade` (migration 7): what
+you paid and got, plus what the dashboard expected at the time you bought,
+so you can see how good its estimates are. Your own buys and sales are never
+used as comparables for other listings, and your own buy doesn't count
+towards the estimate of what it will sell for. Something you bought
+disappears from Flips and Upgrades and gets a ✓ in Alle computers. Every form
+carries a secret chosen at start-up, and the program checks where a request
+comes from, so another website can't write into your database through your
+browser.
+
+**Your own computer's value.** "Netto" in Upgrades is the price minus what
+your own computer sells for: `eigen_verkoopprijs_eur` under `baseline` in
+`computer_scoring.json`, set to €75 (a black spot bottom right on the screen,
+otherwise fine; an undamaged Roam v1 was estimated at ±€109). Set it to
+`null` to use the market estimate again.
 
 **Profit** = expected selling price − price − shipping (€3). The selling price is the
 median of what other listings for the same model ask (this and earlier rounds,
@@ -379,6 +404,7 @@ was filtered out; a run without any doesn't show the tab.
 ```bash
 python koopjes.py run nacht        # includes the "fietscomputer" search: every brand in the file, all pages
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
+python dashboard.py --serve        # live, with Gekocht/Verkocht buttons (Ctrl+C to stop)
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo
 ```
