@@ -139,6 +139,32 @@ class ReportSettingTest(TempDirTest):
         self.assertEqual(len(commands), 1)
         self.assertNotIn("--no-html", commands[0])
 
+    def test_a_search_can_have_its_own_bid_lookup(self):
+        searches = {
+            "racefietsen": {"query": "racefiets"},
+            "fietscomputer": {"query": "fietscomputer", "report": False},
+            "sporthorloges": {"query": "garmin", "report": False, "bid_lookup": "none"},
+        }
+        slots = {"nacht": {"searches": ["racefietsen", "fietscomputer", "sporthorloges"], "pages": 0,
+                           "bid_lookup": "fast", "times": ["03:00"]}}
+        config = koopjes.load_config(write_config(self.dir, searches=searches, slots=slots))
+        self.assertNotIn("bid_lookup", config.searches["sporthorloges"]["filters"])
+        commands = [" ".join(c) for c in koopjes.search_commands(config, config.slots["nacht"])]
+        self.assertEqual(len(commands), 3)
+        self.assertIn("--watchlist racefietsen --pages 0 --sort newest --bid-lookup fast", commands[0])
+        self.assertIn("--watchlist fietscomputer --pages 0 --sort newest --bid-lookup fast", commands[1])
+        self.assertIn("--watchlist sporthorloges --pages 0 --sort newest --bid-lookup none", commands[2])
+
+    def test_bid_lookup_of_a_search_must_be_known(self):
+        searches = {"x": {"query": "x", "bid_lookup": "soms"}}
+        slots = {"nacht": {"searches": ["x"], "times": ["03:00"]}}
+        with self.assertRaisesRegex(koopjes.ConfigError, "'bid_lookup'"):
+            koopjes.load_config(write_config(self.dir, searches=searches, slots=slots))
+
+    def test_the_shipped_schedule_skips_bid_lookups_for_watches(self):
+        config = koopjes.load_config(Path(repo_file("schedule.json")))
+        self.assertEqual(config.searches["sporthorloges"]["bid_lookup"], "none")
+
     def test_report_must_be_true_or_false(self):
         with self.assertRaisesRegex(koopjes.ConfigError, "'report'"):
             koopjes.load_config(self.config("nee"))
@@ -179,8 +205,13 @@ class RunSlotTest(TempDirTest):
     def test_a_round_writes_the_dashboard_and_the_overview_links_to_it(self):
         self.run_slot("nacht")
         self.assertTrue((self.dir / "dashboard.html").exists())
+        self.assertTrue((self.dir / "dashboard_horloges.html").exists())
         overview = (self.dir / "overzicht.html").read_text(encoding="utf-8")
         self.assertIn("href='dashboard.html'", overview)
+        self.assertIn("href='dashboard_horloges.html'", overview)
+        # Elk dashboard linkt naar het andere.
+        self.assertIn("href='dashboard_horloges.html'",
+                      (self.dir / "dashboard.html").read_text(encoding="utf-8"))
         log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
         self.assertIn("Dashboard bijgewerkt", log)
 
@@ -253,14 +284,20 @@ class ComputersRoundTest(TempDirTest):
     def test_the_shipped_schedule_checks_the_newest_computers_by_day(self):
         config = koopjes.load_config(Path(repo_file("schedule.json")))
         slot = config.slots["computers"]
-        self.assertEqual(slot.searches, ("fietscomputer",))
+        # Ook de Garmin-horloges (sinds 28-09-2026): zelfde slot, zodat er
+        # geen nieuwe taak in de Taakplanner nodig is.
+        self.assertEqual(slot.searches, ("fietscomputer", "sporthorloges"))
         # Ondiep: de weg-detectie (alleen bij pages 0) blijft bij de nachtronde.
         self.assertGreater(slot.pages, 0)
         self.assertEqual((slot.sort, slot.open_browser), ("newest", "auto"))
         # Met "fast" kostte een ronde 17 biedopvragingen bovenop de 3 zoekverzoeken.
         self.assertEqual(slot.bid_lookup, "none")
         self.assertIn("fietscomputer", config.slots["nacht"].searches)
+        self.assertIn("sporthorloges", config.slots["nacht"].searches)
         self.assertEqual(config.slots["nacht"].pages, 0)
+        watches = config.searches["sporthorloges"]
+        self.assertFalse(watches["report"])
+        self.assertEqual(watches["filters"]["category"], "sporthorloges,smartwatches,activity-trackers")
 
     def run_round(self, new_listings):
         from datetime import datetime, timedelta, timezone
@@ -305,6 +342,47 @@ class ComputersRoundTest(TempDirTest):
         self.assertTrue(opened[0].endswith("dashboard.html"))
         self.assertIn("Nieuwe flip: €", log)
         self.assertIn("Garmin Edge 530 voor €90", log)
+
+    def test_a_new_watch_flip_opens_the_watch_dashboard(self):
+        from datetime import datetime, timedelta, timezone
+
+        watch_url = "https://www.marktplaats.nl/v/sieraden-tassen-en-uiterlijk/sporthorloges/{}-x"
+        searches = {"racefietsen": {"query": "racefiets"},
+                    "sporthorloges": {"query": "garmin", "category": "sporthorloges", "report": False}}
+        slots = {"computers": {"searches": ["sporthorloges"], "pages": 2, "times": ["14:00"],
+                               "open_browser": "auto"}}
+        config = koopjes.load_config(write_config(self.dir, searches=searches, slots=slots))
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(timespec="seconds")
+        market = [make_listing(item_id=f"a{i}", title="Garmin Fenix 6 Pro", price_eur=p,
+                               url=watch_url.format(f"a{i}"), first_seen=old)
+                  for i, p in enumerate((200.0, 200.0, 210.0, 220.0))]
+        cheap = make_listing(item_id="c", title="Garmin Fenix 6 Pro", price_eur=100.0, url=watch_url.format("c"))
+
+        def runner(command, log, cwd):
+            if Path(command[1]).name == "racefiets_jev.py":
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                cheap.first_seen = now
+                conn = db.connect(str(self.dir / "koopjes.db"))
+                try:
+                    db.sync_listings(conn, "garmin", market + [cheap], now)
+                finally:
+                    conn.close()
+                with open(self.dir / "logs" / "runs.jsonl", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"name": "sporthorloges", "query": "garmin", "finished_at": now,
+                                        "new": 1, "listings": 5}) + "\n")
+            return 0
+
+        with koopjes.working_directory(self.dir), mock.patch.object(koopjes.webbrowser, "open") as opened:
+            self.assertEqual(koopjes.run_slot(config, "computers", runner=runner, echo=False), 0)
+        log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
+        self.assertIn("Nieuwe flip (horloges): €", log)
+        self.assertIn("Garmin Fenix 6 Pro voor €100", log)
+        paths = [call.args[0] for call in opened.call_args_list]
+        self.assertEqual(len(paths), 1)
+        self.assertTrue(paths[0].endswith("dashboard_horloges.html"))
+        overview = (self.dir / "overzicht.html").read_text(encoding="utf-8")
+        # De zoekopdracht linkt naar het dashboard van zijn eigen markt.
+        self.assertIn("<a href='dashboard_horloges.html'>dashboard</a>", overview)
 
     def test_new_listings_without_a_flip_open_nothing(self):
         # Nieuw is in deze categorie vooral een e-bike-display: geen reden om

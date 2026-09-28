@@ -1,9 +1,13 @@
 """Het dashboard: één pagina voor alles wat er op Marktplaats aan
-fietscomputers te koop staat, in plaats van een rapport per zoekterm.
+fietscomputers te koop staat, in plaats van een rapport per zoekterm. En net
+zo'n pagina voor de sporthorloges (markets.py beschrijft de markten).
 
     python dashboard.py                 # schrijft dashboard.html uit koopjes.db
     python dashboard.py --open          # en opent hem
+    python dashboard.py --markt sporthorloges   # dashboard_horloges.html
+    python dashboard.py --markt alle    # beide
     python dashboard.py --serve         # live in de browser, met Gekocht/Verkocht-knoppen
+                                        # (fietscomputers op /, sporthorloges op /horloges)
 
 Gebouwd uit de database, niet uit één run: de zoekopdracht "fietscomputer"
 in schedule.json zoekt op 17 merken, en elk merk leverde een eigen rapport op
@@ -43,6 +47,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 import computers as pc
 import db
+import markets as mk
 import racefiets_jev as mp
 import patterns as pt
 import trades as tr
@@ -50,15 +55,15 @@ import vinted as vn
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = "dashboard.html"
-COMPUTER_CATEGORY = "fietsaccessoires-fietscomputers"
+COMPUTER_CATEGORY = mk.COMPUTERS.categories[0]
 
 esc = html.escape
 
 
 @dataclass
 class Unknown:
-    """Een advertentie zonder bekend model: een computer met onbekend model,
-    of iets dat is uitgefilterd."""
+    """Een advertentie zonder bekend model: een computer (of horloge) met
+    onbekend model, of iets dat is uitgefilterd."""
     listing: mp.Listing
     kind: str
     reason: str
@@ -81,20 +86,28 @@ class Dashboard:
     editable: bool = False
     token: str = ""
     message: str = ""
+    market: mk.Market = mk.COMPUTERS
+    # Links naar de andere dashboards: (label, href).
+    other_links: list = field(default_factory=list)
 
+    # De signalen heten .computer omdat ze uit computers.py komen; bij de
+    # sporthorloges zijn het horloges.
     @property
-    def computers(self) -> list:
+    def items(self) -> list:
         return pc.active_computers(self.listings)
 
     @property
-    def unknown_computers(self) -> list:
-        return [u for u in self.unknown if u.kind == "computer"]
+    def unknown_items(self) -> list:
+        return [u for u in self.unknown if u.kind == self.market.item]
+
+    computers = items
+    unknown_computers = unknown_items
 
     @property
     def excluded(self) -> list:
-        """(listing, soort, reden) voor alles wat geen computer is."""
+        """(listing, soort, reden) voor alles wat geen computer (horloge) is."""
         rows = [(l, l.computer.kind, l.computer.reason) for l in pc.filtered_out(self.listings)]
-        rows += [(u.listing, u.kind, u.reason) for u in self.unknown if u.kind != "computer"]
+        rows += [(u.listing, u.kind, u.reason) for u in self.unknown if u.kind != self.market.item]
         return sorted(rows, key=lambda r: (r[1], r[0].title.lower()))
 
     # Wat je al gekocht hebt, is geen kans meer: weg uit Flips en Upgrades
@@ -113,6 +126,8 @@ class Dashboard:
 
     @property
     def upgrades(self) -> list:
+        if not self.market.has_upgrades:
+            return []
         return [l for l in pc.upgrades(self.listings) if self._available(l)]
 
 
@@ -126,27 +141,31 @@ def _parse_time(value: str) -> Optional[datetime]:
         return None
 
 
-def load_dashboard(db_path, config: Optional[dict] = None) -> Dashboard:
-    """De actieve advertenties in de categorie fietscomputers: niet verdwenen
+def load_dashboard(db_path, config: Optional[dict] = None, market: mk.Market = mk.COMPUTERS) -> Dashboard:
+    """De actieve advertenties in de categorieën van `market`: niet verdwenen
     en gezien binnen `active_days` van de nieuwste waarneming. Relatief aan de
     nieuwste en niet aan nu, zodat een dashboard na een week zonder rondes
     niet leeg is maar de stand van de laatste ronde laat zien."""
     config = config or pc.default_config()
-    d = _with_trades(_load_market(db_path, config), db_path)
-    d.patterns = pt.load_patterns(db_path, config)
-    d.vinted = vn.load_view(db_path, config)
+    d = _with_trades(_load_market(db_path, config, market), db_path)
+    d.patterns = pt.load_patterns(db_path, config, market)
+    d.vinted = vn.load_view(db_path, config) if market.has_vinted else None
     d.db_path = str(Path(db_path).resolve())
     return d
 
 
 def _with_trades(d: Dashboard, db_path) -> Dashboard:
-    """Mijn flips erbij: de eigen trades, met de huidige marktwaarde per model."""
-    trades = tr.load_trades(db_path)
-    own_ids = frozenset(t.item_id for t in trades if t.item_id)
-    market = (pc.market_resale(db_path, config=d.config, exclude=own_ids)
+    """Mijn flips erbij: de eigen trades van deze markt, met de huidige
+    marktwaarde per model. `bought` kent alle trades: wat gekocht is, is geen
+    kans meer, uit welk dashboard het ook gekocht werd."""
+    everything = tr.load_trades(db_path)
+    trades = [t for t in everything if mk.trade_market(t) is d.market]
+    own_ids = frozenset(t.item_id for t in everything if t.item_id)
+    market = (pc.market_resale(db_path, catalog=d.market.catalog(), config=d.config, exclude=own_ids,
+                               categories=d.market.comp_categories)
               if trades and Path(db_path).exists() else {})
     d.progress = tr.progress(trades, market, d.config["flip"].get("costs_eur", 0.0))
-    d.bought = {t.item_id: t for t in trades if t.item_id}
+    d.bought = {t.item_id: t for t in everything if t.item_id}
     return d
 
 
@@ -221,21 +240,45 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
     return listings, newest, new_ids
 
 
-def _load_market(db_path, config: dict) -> Dashboard:
-    listings, newest, new_ids = load_active_listings(db_path, (COMPUTER_CATEGORY,), config["dashboard"])
+def _load_market(db_path, config: dict, market: mk.Market = mk.COMPUTERS) -> Dashboard:
+    listings, newest, new_ids = load_active_listings(db_path, market.categories, config["dashboard"])
     if newest is None:
-        return Dashboard([], config=config)
+        return Dashboard([], config=config, market=market)
 
-    pc.apply_computer_signals(listings, db_path=db_path, config=config)
+    catalog = market.catalog()
+    pc.apply_computer_signals(listings, db_path=db_path, catalog=catalog, config=config,
+                              comp_categories=market.comp_categories)
     # Alleen titels zonder bekend model; een fiets met computer ("Racefiets
     # Cube + Garmin Edge 130 Plus") hoort hier niet bij.
-    catalog = pc._default_catalog()
     unknown = [
-        Unknown(l, *pc.classify_unknown(l.title, l.description))
+        Unknown(l, *market.classify_unknown(l.title, l.description))
         for l in listings
         if l.computer is None and pc.classify_title(l.title, catalog) is None
     ]
-    return Dashboard(listings, unknown, newest.isoformat(timespec="minutes"), new_ids, config)
+    return Dashboard(listings, unknown, newest.isoformat(timespec="minutes"), new_ids, config, market=market)
+
+
+def model_resale(d: Dashboard) -> dict[str, float]:
+    """{modellabel: verwachte verkoopprijs} over alle vergelijkingsprijzen van
+    het model (niet per advertentie zonder zichzelf, zoals bij een flip)."""
+    if not d.db_path:
+        return {}
+    return pc.market_resale(d.db_path, catalog=d.market.catalog(), config=d.config,
+                            categories=d.market.comp_categories)
+
+
+def market_rows(d: Dashboard) -> list[tuple[str, list, Optional[float]]]:
+    """Per model: (label, actieve advertenties, mediaan vraagprijs), meeste
+    advertenties eerst. Gereserveerde en lopende biedingen tellen niet mee
+    voor de mediaan."""
+    by_model: dict[str, list] = {}
+    for l in d.items:
+        by_model.setdefault(l.computer.model.label, []).append(l)
+    rows = []
+    for label, items in by_model.items():
+        asking = [l.price_eur for l in items if l.price_eur and l.price_is_asking and not l.reserved]
+        rows.append((label, items, statistics.median(asking) if asking else None))
+    return sorted(rows, key=lambda r: (-len(r[1]), r[0]))
 
 
 # --- HTML ---------------------------------------------------------------------
@@ -304,7 +347,7 @@ def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str
 
 
 def hidden(d: Dashboard, **values) -> str:
-    fields = {"token": d.token, **values}
+    fields = {"token": d.token, "markt": d.market.key, **values}
     return "".join(f"<input type='hidden' name='{k}' value='{esc(str(v), quote=True)}'>" for k, v in fields.items())
 
 
@@ -374,7 +417,7 @@ def flips_panel(d: Dashboard) -> str:
         f"× {str(flip['negotiation_factor']).replace('.', ',')} voor afdingen. De band eronder is de winst "
         "bij het goedkoopste en duurste kwart van die advertenties. Bij <em>huidig bod</em> loopt de prijs "
         "nog op; bij <em>vraagprijs, bieden kan</em> kun je vaak lager uitkomen. Gereserveerde advertenties "
-        "staan hier niet (wel in Alle computers) en tellen niet als vergelijkingsprijs zolang ze online staan.</p>"
+        f"staan hier niet (wel in Alle {d.market.items}) en tellen niet als vergelijkingsprijs zolang ze online staan.</p>"
     )
     if flips:
         rows = []
@@ -395,7 +438,7 @@ def flips_panel(d: Dashboard) -> str:
         parts.append(table([("", ""), ("Winst", "num"), ("Inkoop", "num"), ("Verkoop", "num"),
                             ("Advertentie", "text")], rows))
     else:
-        parts.append("<p class='empty'>Geen computer die onder de verwachte verkoopprijs staat.</p>")
+        parts.append(f"<p class='empty'>Geen {d.market.item} die onder de verwachte verkoopprijs staat.</p>")
 
     if d.open_bids:
         parts.append("<h3>Zonder prijs — bied maximaal</h3>"
@@ -463,8 +506,9 @@ def upgrades_panel(d: Dashboard) -> str:
 
 
 def all_panel(d: Dashboard) -> str:
-    items = [(l, l.computer.model.label, l.computer) for l in d.computers]
-    items += [(u.listing, "model onbekend", None) for u in d.unknown_computers]
+    scored = d.market.has_score
+    items = [(l, l.computer.model.label, l.computer) for l in d.items]
+    items += [(u.listing, "model onbekend", None) for u in d.unknown_items]
     brands = sorted({label.split(" ")[0] for _, label, c in items if c is not None})
     options = "".join(f"<option value='{esc(b)}'>{esc(b)}</option>" for b in brands)
     parts = [
@@ -488,28 +532,36 @@ def all_panel(d: Dashboard) -> str:
             f"<td class='pic'>{thumb(l)}</td>"
             f"{price_cell(l)}"
             f"<td class='num' data-sort='{profit if profit is not None else ''}'>{signed_euro(profit)}</td>"
-            f"<td class='num' data-sort='{delta if delta is not None else ''}'>"
-            f"{'—' if delta is None else f'{delta:+.0f}'}</td>"
-            f"<td class='num' data-sort='{score if score is not None else ''}'>{'—' if score is None else f'{score:.0f}'}</td>"
-            f"{listing_cell(l, d, label, note)}"
+            + (f"<td class='num' data-sort='{delta if delta is not None else ''}'>"
+               f"{'—' if delta is None else f'{delta:+.0f}'}</td>"
+               f"<td class='num' data-sort='{score if score is not None else ''}'>{'—' if score is None else f'{score:.0f}'}</td>"
+               if scored else "")
+            + f"{listing_cell(l, d, label, note)}"
             "</tr>"
         )
-    parts.append(table([("", ""), ("Prijs", "num"), ("Winst", "num"), ("Upgrade", "num"),
-                        ("Score", "num"), ("Advertentie", "text")], rows, "all-table"))
+    head = [("", ""), ("Prijs", "num"), ("Winst", "num")]
+    if scored:
+        head += [("Upgrade", "num"), ("Score", "num")]
+    parts.append(table(head + [("Advertentie", "text")], rows, "all-table"))
     return "\n".join(parts)
 
 
 def market_panel(d: Dashboard) -> str:
     factor = d.config["flip"]["negotiation_factor"]
+    scored = d.market.has_score
     by_model: dict[str, list] = {}
-    for l in d.computers:
+    for l in d.items:
         by_model.setdefault(l.computer.model.label, []).append(l)
+    # Over alle vergelijkingsprijzen van het model; per advertentie rekent de
+    # flip zonder die advertentie zelf, en dat hoort niet in een tabel per model.
+    per_model = model_resale(d)
     rows = []
     for label, items in sorted(by_model.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         model = items[0].computer.model
-        asking = [l.price_eur for l in items if l.price_is_asking and l.price_eur is not None]
+        # Geen €0: dat is "gratis" of een ruilaanbod (computers.listed_price()).
+        asking = [pc.listed_price(l) for l in items if l.price_is_asking and pc.listed_price(l) is not None]
         median = statistics.median(asking) if asking else None
-        resale = items[0].computer.resale_eur
+        resale = per_model.get(label, items[0].computer.resale_eur)
         new_price = model.number("nieuwprijs_eur")
         rows.append(
             "<tr>"
@@ -521,15 +573,17 @@ def market_panel(d: Dashboard) -> str:
             f"<td class='num' data-sort='{resale if resale is not None else ''}'>"
             f"{euro(resale) if resale is not None else euro(median * factor) if median else '—'}</td>"
             f"<td class='num' data-sort='{new_price if new_price else ''}'>{euro(new_price)}</td>"
-            f"<td class='num' data-sort='{items[0].computer.features.score}'>{items[0].computer.features.score:.0f}</td>"
-            "</tr>"
+            + (f"<td class='num' data-sort='{items[0].computer.features.score}'>{items[0].computer.features.score:.0f}</td>"
+               if scored else "")
+            + "</tr>"
         )
     intro = ("<p class='explain'>Per model wat er nu te koop staat. <strong>Verwacht verkoop</strong> is de "
              f"mediaan-vraagprijs × {str(factor).replace('.', ',')}, over alle advertenties van de laatste "
              f"{d.config['flip']['comp_window_days']} dagen (ook verkochte). Nieuwprijs alleen waar een bron "
-             "hem gaf (<code>reference_bike_computers.csv</code>).</p>")
-    return intro + table([("Model", "text"), ("Te koop", "num"), ("Laagste", "num"), ("Mediaan vraag", "num"),
-                          ("Verwacht verkoop", "num"), ("Nieuwprijs", "num"), ("Score", "num")], rows)
+             f"hem gaf (<code>{esc(d.market.catalog_path.name)}</code>).</p>")
+    head = [("Model", "text"), ("Te koop", "num"), ("Laagste", "num"), ("Mediaan vraag", "num"),
+            ("Verwacht verkoop", "num"), ("Nieuwprijs", "num")]
+    return intro + table(head + ([("Score", "num")] if scored else []), rows)
 
 
 def _vinted_thumb(item: vn.VintedItem) -> str:
@@ -638,14 +692,25 @@ def excluded_panel(d: Dashboard) -> str:
     for _, kind, _ in rows_data:
         counts[kind] = counts.get(kind, 0) + 1
     summary = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items(), key=lambda kv: -kv[1]))
-    parts = [
+    if d.market is not mk.COMPUTERS:
+        parts = [
+            f"<p class='explain'>Wat níet als {esc(d.market.item)} meetelt, met de reden — om na te kijken dat er "
+            f"geen echt {esc(d.market.item)} tussen zit. Bandjes, laders en hoesjes herkent het filter aan hun "
+            "plek in de titel: <em>vóór</em> de modelnaam (\"Bandje voor Garmin Fenix 6\") is een accessoire, "
+            "<em>erna met</em> \"met\"/\"incl.\"/\"+\" (\"Fenix 6 met siliconen polsband\") een horloge met "
+            "extra's. Staat het woord er direct achter (\"Fenix 6 Pro bandje\"), dan beslist de prijs t.o.v. "
+            "hetzelfde model. Andere merken en Garmin-producten die geen horloge zijn (weegschaal, "
+            f"hartslagband, navigatie) staan hier als <em>overig</em>. Nu: {esc(summary) or 'niets'}.</p>"
+        ]
+    else:
+        parts = [
         "<p class='explain'>Wat níet als computer meetelt, met de reden — om na te kijken dat er geen "
         "echte computer tussen zit. Houders en hoesjes herkent het filter aan hun plek in de titel: "
         "<em>vóór</em> de modelnaam (\"Hoesje voor Garmin 1000\") is een accessoire, <em>erna met</em> "
         "\"met\"/\"incl.\"/\"+\" (\"Edge 530 + stuurmount\") een computer met extra's. Staat het "
         "woord er direct achter (\"Karoo 3 houder nieuw\"), dan beslist de prijs t.o.v. hetzelfde model. "
         f"Nu: {esc(summary) or 'niets'}.</p>"
-    ]
+        ]
     rows = [
         "<tr>"
         f"<td class='pic'>{thumb(l)}</td>"
@@ -787,14 +852,14 @@ def mine_panel(d: Dashboard) -> str:
                             ("Winst", "num")], rows))
 
     if d.editable:
-        labels = [m.label for m in pc._default_catalog()]
+        labels = [m.label for m in d.market.catalog()]
         options = "".join(f"<option>{esc(l)}</option>" for l in labels)
         parts.append(
             "<h3>Zelf toevoegen</h3><p class='explain'>Voor wat je niet via een advertentie hierboven kocht, "
             "zoals een aankoop op Vinted.</p>"
             "<form class='addform' method='post' action='/toevoegen'>"
             f"{hidden(d)}"
-            "<label>Wat<input name='titel' required placeholder='bijv. Wahoo Roam, vlek rechtsonder'></label>"
+            f"<label>Wat<input name='titel' required placeholder='{esc(d.market.example_title, quote=True)}'></label>"
             f"<label>Model<select name='model'><option value=''>model onbekend</option>{options}</select></label>"
             "<label>Inkoop €<input name='prijs' inputmode='decimal' size='6' required></label>"
             "<label>Kosten €<input name='kosten' inputmode='decimal' size='4' value='0'></label>"
@@ -825,7 +890,7 @@ def patterns_panel(d: Dashboard) -> str:
                 else "van de rest is nog niets verdwenen" if p.flip_days is not None else "nog niets verdwenen")
     parts = [tiles([
         ("Gegevens", f"{p.days_of_data} dagen", f"sinds {nl_date(p.since.date().isoformat())}" if p.since else "nog niets"),
-        ("Verdwenen", str(p.gone), f"van {p.total} computers ooit gezien; {p.gone_reserved} eerst gereserveerd"),
+        ("Verdwenen", str(p.gone), f"van {p.total} {d.market.items} ooit gezien; {p.gone_reserved} eerst gereserveerd"),
         ("Gemeten afdingfactor", factor_value, factor_sub),
         ("Flips weg na", f"{p.flip_days:.0f} dagen" if p.flip_days is not None else "—",
          (flip_sub + f" (n={p.flip_n})") if p.flip_days is not None else flip_sub),
@@ -1034,16 +1099,21 @@ if (search) { [search, brand, onlyNew].forEach(el => el.addEventListener('input'
 
 
 def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
-    computers = len(d.computers) + len(d.unknown_computers)
+    m = d.market
+    computers = len(d.items) + len(d.unknown_items)
     p = d.progress
     mine_label = f"Mijn flips ({signed_euro(p.realized_profit_eur)})" if p and p.sold else "Mijn flips"
-    tabs = [
-        ("flips", f"Flips ({len(d.flips)})", flips_panel(d)),
-        ("upgrades", f"Upgrades ({len(d.upgrades)})", upgrades_panel(d)),
+    tabs = [("flips", f"Flips ({len(d.flips)})", flips_panel(d))]
+    if m.has_upgrades:
+        tabs.append(("upgrades", f"Upgrades ({len(d.upgrades)})", upgrades_panel(d)))
+    tabs += [
         ("mijn", mine_label, mine_panel(d)),
-        ("alle", f"Alle computers ({computers})", all_panel(d)),
+        ("alle", f"Alle {m.items} ({computers})", all_panel(d)),
         ("markt", "Marktprijzen", market_panel(d)),
-        ("vinted", f"Vinted ({len(d.vinted.flips)})" if d.vinted else "Vinted", vinted_panel(d)),
+    ]
+    if m.has_vinted:
+        tabs.append(("vinted", f"Vinted ({len(d.vinted.flips)})" if d.vinted else "Vinted", vinted_panel(d)))
+    tabs += [
         ("patronen", "Patronen", patterns_panel(d)),
         ("uitgefilterd", f"Uitgefilterd ({len(d.excluded)})", excluded_panel(d)),
     ]
@@ -1059,26 +1129,30 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
     if d.message:
         notices += f"<div class='banner' role='status'>{esc(d.message)}</div>"
     if not d.listings:
-        notices += ("<div class='banner'>Nog geen fietscomputers in de database. Draai eerst een ronde: "
+        notices += (f"<div class='banner'>Nog geen {esc(m.short.lower())} in de database. Draai eerst een ronde: "
                     "<code>python koopjes.py run nacht</code>.</div>")
     link = f" · <a href='{esc(overview_link, quote=True)}'>racefietsen: overzicht</a>" if overview_link else ""
+    link += "".join(f" · <a href='{esc(href, quote=True)}'>{esc(label)}</a>" for label, href in d.other_links)
     new = f" ({len(d.new_ids)} nieuw)" if d.new_ids else ""
     live = " · <strong>live</strong> (wijzigingen gaan in koopjes.db)" if d.editable else ""
-    meta = (f"Bijgewerkt {datetime.now().strftime('%d-%m-%Y %H:%M')} · {computers} computers te koop{new} "
+    meta = (f"Bijgewerkt {datetime.now().strftime('%d-%m-%Y %H:%M')} · {computers} {m.items} te koop{new} "
             f"· laatste ronde {local_time(d.newest_seen)}{link}{live}")
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>Fietscomputers</title><style>{CSS}</style></head><body><main>"
-        "<h1>Fietscomputers op Marktplaats</h1>"
+        f"<title>{esc(m.short)}</title><style>{CSS}</style></head><body><main>"
+        f"<h1>{esc(m.title)}</h1>"
         f"<div class='meta'>{meta}</div>{notices}"
         f"<nav class='tabs'>{nav}</nav>{panels}"
         f"</main><script>{JS}</script></body></html>"
     )
 
 
-def write_dashboard(db_path, out_path, overview_link: Optional[str] = None) -> Dashboard:
-    d = load_dashboard(db_path)
+def write_dashboard(db_path, out_path, overview_link: Optional[str] = None,
+                    market: mk.Market = mk.COMPUTERS, other_links: Sequence = ()) -> Dashboard:
+    """`other_links`: (label, href) naar de dashboards van de andere markten."""
+    d = load_dashboard(db_path, market=market)
+    d.other_links = list(other_links)
     Path(out_path).write_text(render(d, overview_link), encoding="utf-8")
     return d
 
@@ -1124,7 +1198,8 @@ def parse_id(value: str) -> int:
 def action_bought(db_path, form: dict) -> str:
     item_id = form.get("item_id", "")
     price = parse_euro(form.get("prijs"), "Inkoopprijs")
-    d = load_dashboard(db_path)
+    market = mk.by_key(form.get("markt"))
+    d = load_dashboard(db_path, market=market)
     listing = next((l for l in d.listings if l.item_id == item_id), None)
     if listing is None:
         raise FormError("Die advertentie staat niet (meer) in het dashboard; voeg hem zelf toe onder Mijn flips.")
@@ -1135,7 +1210,7 @@ def action_bought(db_path, form: dict) -> str:
     try:
         db.add_trade(conn, title=listing.title, bought_at=parse_day(form.get("datum")), buy_price_eur=price,
                      item_id=item_id, url=listing.url, model=c.model.label if c else None,
-                     expected_resale_eur=c.resale_eur if c else None)
+                     expected_resale_eur=c.resale_eur if c else None, market=market.key)
     finally:
         conn.close()
     return f"Gekocht: {listing.title} voor {euro(price)}. Hij staat nu onder Mijn flips."
@@ -1146,16 +1221,18 @@ def action_add(db_path, form: dict) -> str:
     if not title:
         raise FormError("Vul in wat het is.")
     model = form.get("model") or None
-    if model and model not in {m.label for m in pc._default_catalog()}:
+    target = mk.by_key(form.get("markt"))
+    if model and model not in target.labels():
         raise FormError(f"Onbekend model '{model}'.")
     price = parse_euro(form.get("prijs"), "Inkoopprijs")
     costs = parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
-    market = pc.market_resale(db_path) if model else {}
+    market = (pc.market_resale(db_path, catalog=target.catalog(), categories=target.comp_categories)
+              if model else {})
     conn = db.connect(str(db_path))
     try:
         db.add_trade(conn, title=title, bought_at=parse_day(form.get("datum")), buy_price_eur=price,
                      buy_costs_eur=costs, model=model, expected_resale_eur=market.get(model),
-                     notes=(form.get("notitie") or "").strip())
+                     notes=(form.get("notitie") or "").strip(), market=target.key)
     finally:
         conn.close()
     return f"Toegevoegd: {title} voor {euro(price)}."
@@ -1248,20 +1325,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # mis is: de volgende aanvraag werkt gewoon.
             self.close_connection = True
 
-    def _back(self, message: str) -> None:
+    def _back(self, message: str, market: mk.Market = mk.COMPUTERS) -> None:
         self.send_response(303)
-        self.send_header("Location", "/?melding=" + quote(message) + "#mijn")
+        self.send_header("Location", market.serve_path + "?melding=" + quote(message) + "#mijn")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
     def do_GET(self) -> None:
         url = urlsplit(self.path)
-        if url.path not in ("/", "/index.html"):
+        path = "/" if url.path == "/index.html" else url.path.rstrip("/") or "/"
+        market = next((m for m in mk.MARKETS.values() if m.serve_path == path), None)
+        if market is None:
             return self._send(404, "Niet gevonden")
         if not self._host_ok():
             return self._send(403, "Alleen via 127.0.0.1")
-        d = load_dashboard(self.db_path)
+        d = load_dashboard(self.db_path, market=market)
         d.editable, d.token = True, self.token
+        d.other_links = [(m.short, m.serve_path) for m in mk.MARKETS.values() if m is not market]
         d.message = parse_qs(url.query).get("melding", [""])[0][:300]
         self._send(200, render(d), "text/html; charset=utf-8")
 
@@ -1277,15 +1357,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._send(413, "Te groot")
         raw = self.rfile.read(length).decode("utf-8", errors="replace")
         form = {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
+        market = mk.by_key(form.get("markt"))
         if not hmac.compare_digest(form.get("token", ""), self.token):
             # Een verouderde pagina (programma opnieuw gestart) of een
             # andere site: niets doen, alleen de verse pagina tonen.
-            return self._back("De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.")
+            return self._back("De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.", market)
         try:
             message = action(self.db_path, form)
         except FormError as exc:
             message = f"Niet opgeslagen: {exc}"
-        self._back(message)
+        self._back(message, market)
 
     def log_message(self, format: str, *args) -> None:
         pass  # geen regel per verzoek in de terminal
@@ -1306,7 +1387,7 @@ def serve(db_path, port: int, open_browser: bool) -> int:
         print(f"Kan niet starten op poort {port}: {exc}. Probeer --port met een ander getal.", file=sys.stderr)
         return 1
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
-    print(f"Dashboard live op {url} — stoppen met Ctrl+C.")
+    print(f"Dashboard live op {url} (sporthorloges: {url}horloges) — stoppen met Ctrl+C.")
     if open_browser:
         webbrowser.open(url)
     try:
@@ -1319,9 +1400,13 @@ def serve(db_path, port: int, open_browser: bool) -> int:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Bouw dashboard.html met alle fietscomputers uit koopjes.db.")
+    parser = argparse.ArgumentParser(description="Bouw dashboard.html met alle fietscomputers uit koopjes.db "
+                                                 "(of dashboard_horloges.html met de sporthorloges).")
     parser.add_argument("--db", default="koopjes.db")
-    parser.add_argument("--out", default=DEFAULT_OUT)
+    parser.add_argument("--markt", choices=[*mk.MARKETS, "alle"], default=mk.COMPUTERS.key,
+                        help="welk dashboard (standaard fietscomputers; 'alle' schrijft ze allebei)")
+    parser.add_argument("--out", help="uitvoerbestand (standaard dashboard.html, dashboard_horloges.html); "
+                                      "alleen bij één markt")
     parser.add_argument("--open", action="store_true", help="open het dashboard in de browser")
     parser.add_argument("--serve", action="store_true",
                         help="toon het dashboard live, met knoppen om aan- en verkopen vast te leggen")
@@ -1334,12 +1419,25 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     if args.serve:
         return serve(args.db, args.port, not args.no_browser)
-    overview = "overzicht.html" if (Path(args.out).resolve().parent / "overzicht.html").exists() else None
-    d = write_dashboard(args.db, args.out, overview)
-    print(f"Dashboard: {args.out} — {len(d.computers) + len(d.unknown_computers)} computers, "
-          f"{len(d.flips)} flips, {len(d.upgrades)} upgrades, {len(d.excluded)} uitgefilterd")
+    chosen = list(mk.MARKETS.values()) if args.markt == "alle" else [mk.MARKETS[args.markt]]
+    if args.out and len(chosen) > 1:
+        print("--out kan alleen bij één markt; laat hem weg bij --markt alle.", file=sys.stderr)
+        return 1
+    written = []
+    for market in chosen:
+        out = args.out or (DEFAULT_OUT if market is mk.COMPUTERS else market.dashboard_file)
+        base = Path(out).resolve().parent
+        overview = "overzicht.html" if (base / "overzicht.html").exists() else None
+        others = [(m.short, m.dashboard_file) for m in mk.MARKETS.values()
+                  if m is not market and (base / m.dashboard_file).exists()]
+        d = write_dashboard(args.db, out, overview, market, others)
+        extra = f", {len(d.upgrades)} upgrades" if market.has_upgrades else ""
+        print(f"Dashboard: {out} — {len(d.items) + len(d.unknown_items)} {market.items}, "
+              f"{len(d.flips)} flips{extra}, {len(d.excluded)} uitgefilterd")
+        written.append(out)
     if args.open:
-        webbrowser.open(Path(args.out).resolve().as_uri())
+        for out in written:
+            webbrowser.open(Path(out).resolve().as_uri())
     return 0
 
 

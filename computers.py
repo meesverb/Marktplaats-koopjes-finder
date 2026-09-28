@@ -130,6 +130,9 @@ ACCESSORY_WORD_RE = re.compile(
 )
 # Merken die alleen houders maken. Vóór de modelnaam is het dus een houder.
 ACCESSORY_BRAND_RE = re.compile(r"\b(?:k-?edge|rec-?mounts?|barfly|quad\s?lock|sp\s?connect)\b", re.I)
+# Reden bij een accessoirewoord na de modelnaam met alleen een apparaatwoord
+# ervoor, geen koppelwoord ("Garmin Edge 530 GPS houder").
+DEVICE_ONLY = "apparaatwoord maar geen 'met'"
 # Tussen modelnaam en accessoire: dit maakt er een bundel van. "mit", "inkl",
 # "avec" en "con" om dezelfde reden als de tweede regel hierboven.
 BUNDLE_RE = re.compile(
@@ -332,8 +335,13 @@ def classify_title(title: str, catalog: Sequence[ComputerModel]) -> Optional[Tit
     word = ACCESSORY_WORD_RE.search(after)
     if word:
         between = after[: word.start()]
-        if BUNDLE_RE.search(between) or DEVICE_RE.search(between) or DEVICE_RE.search(after):
+        if BUNDLE_RE.search(between):
             return verdict("computer", f"met accessoires ('{word.group(0)}')")
+        if DEVICE_RE.search(between) or DEVICE_RE.search(after):
+            # Zonder koppelwoord is dit minder zeker: "Garmin Venu Smartwatch
+            # bandjes en beschermhoezen" (€25) zijn alleen de bandjes.
+            # apply_computer_signals() laat de prijs dat beslissen.
+            return verdict("computer", f"met accessoires ('{word.group(0)}'), {DEVICE_ONLY}")
         return verdict("twijfel", f"'{word.group(0)}' direct na de modelnaam")
     return verdict("computer")
 
@@ -657,6 +665,20 @@ def _resolve_doubt(listing, model: ComputerModel, clean: list, reason: str, conf
     return "computer", f"{reason}, maar €{price:.0f} past bij een computer"
 
 
+def _accessory_by_price(listing, clean: list, reason: str, config: dict) -> tuple[str, str]:
+    """Een computer "met accessoires" die voor minder dan max_share_of_median
+    van hetzelfde model te koop staat, is een accessoire. Alleen met genoeg
+    vergelijkingsprijzen; anders blijft het een computer."""
+    price = listed_price(listing)
+    if price is None or len(clean) < config["flip"]["min_comps"]:
+        return "computer", reason
+    median = statistics.median(clean)
+    if price < config["filter"]["max_share_of_median"] * median:
+        return "accessoire", (f"{reason}, maar €{price:.0f} is {price / median:.0%} van de mediaan "
+                              f"(€{median:.0f}) — vermoedelijk alleen de accessoires")
+    return "computer", reason
+
+
 def _resale_band(prices: list, factor: float) -> tuple[float, float, float]:
     """(laag, midden, hoog): kwartielen en mediaan van de vraagprijzen, maal de
     onderhandelingsfactor."""
@@ -666,15 +688,17 @@ def _resale_band(prices: list, factor: float) -> tuple[float, float, float]:
 
 
 def market_resale(db_path, catalog: Optional[Sequence[ComputerModel]] = None,
-                  config: Optional[dict] = None, exclude: frozenset = frozenset()) -> dict[str, float]:
+                  config: Optional[dict] = None, exclude: frozenset = frozenset(),
+                  categories: Optional[Sequence[str]] = None) -> dict[str, float]:
     """{modellabel: verwachte verkoopprijs nu} uit koopjes.db, met dezelfde
     regels als de flipwinst (mediaan × onderhandelingsfactor, minimaal
     min_comps advertenties). Voor de voorraad in "Mijn flips". `exclude`:
     de advertenties waar de eigenaar zelf kocht — zijn eigen koopje zou de
-    schatting van wat hij ervoor terugkrijgt anders omlaag trekken."""
+    schatting van wat hij ervoor terugkrijgt anders omlaag trekken.
+    `categories`: zie db_comparables()."""
     catalog = catalog if catalog is not None else _default_catalog()
     flip = (config or default_config())["flip"]
-    comps = db_comparables(db_path, catalog, flip["comp_window_days"])
+    comps = db_comparables(db_path, catalog, flip["comp_window_days"], categories)
     result = {}
     for label, prices in comps.items():
         kept = [p for item_id, p in prices.items() if item_id not in exclude]
@@ -722,17 +746,29 @@ def apply_computer_signals(
 
     # Eerst de zekere computers als vergelijkingsprijs; daartegen worden de
     # twijfelgevallen beslist, en wat dan een computer blijkt telt ook mee.
+    # Een accessoirewoord na de modelnaam met alleen een apparaatwoord ervoor
+    # is ook niet helemaal zeker: "Garmin Venu Smartwatch bandjes en
+    # beschermhoezen" (€25, sporthorloges 28-09-2026) telde als horloge. Met
+    # een koppelwoord ("Venu Sq - Inclusief Oplaadkabel", €40) is het wél het
+    # apparaat, en een goedkope. Dezelfde prijstoets als bij twijfel, maar
+    # alleen omlaag (_accessory_by_price()).
+    def with_extras(kind, reason):
+        return kind == "computer" and reason.endswith(DEVICE_ONLY)
+
     comps = db_comparables(db_path, catalog, flip["comp_window_days"], comp_categories)
-    for listing, model, kind, _ in found:
-        price = _comparable_price(listing) if kind == "computer" else None
+    for listing, model, kind, reason in found:
+        price = _comparable_price(listing) if kind == "computer" and not with_extras(kind, reason) else None
         if price is not None:
             comps.setdefault(model.label, {})[listing.item_id] = price
     for item in found:
         listing, model, kind, reason = item
-        if kind != "twijfel":
+        if kind != "twijfel" and not with_extras(kind, reason):
             continue
         clean = [p for i, p in comps.get(model.label, {}).items() if i != listing.item_id]
-        item[2], item[3] = _resolve_doubt(listing, model, clean, reason, config)
+        if kind == "twijfel":
+            item[2], item[3] = _resolve_doubt(listing, model, clean, reason, config)
+        else:
+            item[2], item[3] = _accessory_by_price(listing, clean, reason, config)
         price = _comparable_price(listing) if item[2] == "computer" else None
         if price is not None:
             comps.setdefault(model.label, {})[listing.item_id] = price
