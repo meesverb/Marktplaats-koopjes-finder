@@ -43,6 +43,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 import computers as pc
 import db
 import racefiets_jev as mp
+import patterns as pt
 import trades as tr
 
 HERE = Path(__file__).resolve().parent
@@ -69,6 +70,7 @@ class Dashboard:
     new_ids: set = field(default_factory=set)
     config: dict = field(default_factory=dict)
     progress: Optional[tr.Progress] = None  # Mijn flips
+    patterns: Optional[pt.Patterns] = None  # Patronen
     bought: dict = field(default_factory=dict)  # item_id -> Trade
     # Alleen in de live versie (--serve): formulieren, met het geheim dat
     # bewijst dat een POST van deze pagina komt en niet van een andere site.
@@ -122,7 +124,9 @@ def load_dashboard(db_path, config: Optional[dict] = None) -> Dashboard:
     nieuwste en niet aan nu, zodat een dashboard na een week zonder rondes
     niet leeg is maar de stand van de laatste ronde laat zien."""
     config = config or pc.default_config()
-    return _with_trades(_load_market(db_path, config), db_path)
+    d = _with_trades(_load_market(db_path, config), db_path)
+    d.patterns = pt.load_patterns(db_path, config)
+    return d
 
 
 def _with_trades(d: Dashboard, db_path) -> Dashboard:
@@ -677,6 +681,86 @@ def delete_form(d: Dashboard, trade_id: int) -> str:
             f"{hidden(d, id=trade_id)}<button class='quiet'>verwijderen</button></form>")
 
 
+def patterns_panel(d: Dashboard) -> str:
+    p = d.patterns or pt.Patterns()
+    assumed = d.config["flip"]["negotiation_factor"]
+    comma = lambda x: f"{x:.2f}".replace(".", ",")
+    if p.measured_factor is not None:
+        factor_value = comma(p.measured_factor)
+        factor_sub = f"aanname {comma(assumed)}; n={p.measured_n} snel verdwenen"
+    else:
+        factor_value = "—"
+        factor_sub = f"nog {max(pt.MIN_FOR_FACTOR - p.measured_n, 0)} snel verdwenen advertenties nodig (nu {p.measured_n})"
+    flip_sub = (f"de rest: {p.other_days:.0f} dagen" if p.other_days is not None
+                else "van de rest is nog niets verdwenen" if p.flip_days is not None else "nog niets verdwenen")
+    parts = [tiles([
+        ("Gegevens", f"{p.days_of_data} dagen", f"sinds {nl_date(p.since.date().isoformat())}" if p.since else "nog niets"),
+        ("Verdwenen", str(p.gone), f"van {p.total} computers ooit gezien"),
+        ("Gemeten afdingfactor", factor_value, factor_sub),
+        ("Flips weg na", f"{p.flip_days:.0f} dagen" if p.flip_days is not None else "—",
+         (flip_sub + f" (n={p.flip_n})") if p.flip_days is not None else flip_sub),
+    ])]
+    if p.days_of_data < 28:
+        parts.append(
+            "<div class='banner'>Nog weinig gegevens. Patronen worden betrouwbaar na een paar weken nachtelijke "
+            "volledige rondes (<code>python koopjes.py run nacht</code>): alleen dan wordt vastgesteld dat een "
+            f"advertentie verdwenen is. Per model verschijnt een getal pas vanaf {pt.MIN_PER_MODEL} advertenties.</div>")
+    parts.append(
+        "<p class='explain'>Uit alles wat de crawl ooit zag, ook verdwenen advertenties. <strong>Verdwenen is niet "
+        "verkocht</strong>: een advertentie kan ook ingetrokken zijn. Wie binnen "
+        f"{pt.QUICK_DAYS} dagen weg is, was realistisch geprijsd — de laatste prijs daarvan, gedeeld door de "
+        "mediaan-vraagprijs van het model, is de <em>gemeten afdingfactor</em>. Staat die er, dan kun je hem in "
+        "<code>computer_scoring.json</code> als <code>negotiation_factor</code> zetten in plaats van de aanname.</p>")
+
+    rows = []
+    for m in p.models:
+        pct = lambda x: "—" if x is None else f"{x:.0%}"
+        rows.append(
+            "<tr>"
+            f"<td class='what'><div class='model'>{esc(m.model)}</div></td>"
+            f"<td class='num' data-sort='{m.seen}'>{m.seen}</td>"
+            f"<td class='num' data-sort='{m.gone}'>{m.gone}</td>"
+            f"<td class='num' data-sort='{m.median_days_gone if m.median_days_gone is not None else ''}'>"
+            f"{'—' if m.median_days_gone is None else f'{m.median_days_gone:.0f}'}</td>"
+            f"<td class='num' data-sort='{m.quick_share if m.quick_share is not None else ''}'>{pct(m.quick_share)}</td>"
+            f"<td class='num' data-sort='{m.median_ask or ''}'>{euro(m.median_ask)}</td>"
+            f"<td class='num' data-sort='{m.quick_price or ''}'>{euro(m.quick_price)}"
+            f"{'<div class=sub>factor ' + comma(m.factor) + '</div>' if m.factor else ''}</td>"
+            f"<td class='num' data-sort='{m.dropped_share if m.dropped_share is not None else ''}'>{pct(m.dropped_share)}</td>"
+            "</tr>")
+    parts.append("<h3>Per model</h3>")
+    parts.append(table([("Model", "text"), ("Gezien", "num"), ("Verdwenen", "num"), ("Dagen online", "num"),
+                        (f"Weg ≤{pt.QUICK_DAYS} d", "num"), ("Mediaan vraag", "num"), ("Snel weg voor", "num"),
+                        ("Prijs verlaagd", "num")], rows))
+
+    if p.months:
+        parts.append("<h3>Mediaan vraagprijs per maand</h3><p class='explain'>Van nieuwe advertenties die maand; "
+                     "alleen modellen met minstens één maand van 3 of meer.</p>")
+        rows = []
+        for model, months in sorted(p.monthly.items()):
+            if not any(n >= 3 for _, n in months.values()):
+                continue
+            cells = "".join(
+                f"<td class='num'>{euro(months[m][0]) if m in months else '—'}"
+                f"{'<div class=sub>n=' + str(months[m][1]) + '</div>' if m in months else ''}</td>"
+                for m in p.months)
+            rows.append(f"<tr><td class='what'><div class='model'>{esc(model)}</div></td>{cells}</tr>")
+        heads = [("Model", "text")] + [(f"{MONTHS[int(m[5:]) - 1]} '{m[2:4]}", "") for m in p.months]
+        parts.append(table(heads, rows))
+
+    if p.weekday_new:
+        top = max(v for _, v, _ in p.weekday_new) or 1
+        rows = "".join(
+            f"<tr><td>{esc(day)}</td><td class='num'>{avg:.1f}".replace(".", ",") + "</td>"
+            f"<td><div class='meter' style='width:{avg / top * 100:.0f}%'></div></td>"
+            f"<td class='num sub'>{n} dagen</td></tr>"
+            for day, avg, n in p.weekday_new)
+        parts.append("<h3>Nieuwe advertenties per weekdag</h3><p class='explain'>Gemiddeld per dag, gemeten aan de "
+                     "nachtelijke crawl (de eerste ronde telt niet mee). Het uur van plaatsen geeft Marktplaats niet.</p>"
+                     f"<div class='table-wrap'><table><tbody>{rows}</tbody></table></div>")
+    return "\n".join(parts)
+
+
 CSS = """
 :root { color-scheme: light; --surface: #fcfcfb; --card: #ffffff; --line: #e4e3df;
   --text: #0b0b0b; --text-2: #52514e; --muted: #6b6a66; --accent: #2a78d6; --good: #0ca30c;
@@ -748,6 +832,7 @@ nav.tabs button { font-size: inherit; border-radius: 0; }
 .addform label { display: flex; flex-direction: column; font-size: .8rem; color: var(--text-2); gap: 3px; }
 svg.chart { width: 100%; max-width: 720px; height: auto; background: var(--card); border: 1px solid var(--line);
   border-radius: 10px; }
+.meter { height: 10px; border-radius: 4px; background: var(--accent); min-width: 2px; }
 svg.chart .bar { fill: var(--accent); }
 svg.chart .axis { stroke: var(--line); }
 svg.chart text { font-size: 15px; text-anchor: middle; fill: var(--text-2); }
@@ -824,6 +909,7 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
         ("mijn", mine_label, mine_panel(d)),
         ("alle", f"Alle computers ({computers})", all_panel(d)),
         ("markt", "Marktprijzen", market_panel(d)),
+        ("patronen", "Patronen", patterns_panel(d)),
         ("uitgefilterd", f"Uitgefilterd ({len(d.excluded)})", excluded_panel(d)),
     ]
     nav = "".join(
