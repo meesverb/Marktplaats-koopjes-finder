@@ -1087,6 +1087,25 @@ def other_dominant_categories(search_response: dict, kept: Optional[int]) -> lis
     ]
 
 
+# One more try after a failed page, after this long. Seen 28-09-2026: a
+# single 403 from Marktplaats' CloudFront between two fine requests, gone a
+# minute later. Without a second try that one response ended the crawl, and a
+# nightly full crawl that stops early marks nothing as gone — a whole night of
+# data. One retry, well spaced, is still polite; a second failure stops as
+# before. With --delay 0 (tests, a quick manual run) there's no wait.
+RETRY_WAIT_SECONDS = 60
+
+
+def _fetch_with_retry(fetch, page: int, delay: float) -> dict:
+    try:
+        return fetch(page)
+    except (requests.RequestException, RuntimeError) as exc:
+        wait = max(RETRY_WAIT_SECONDS, delay) if delay > 0 else 0
+        print(f"warning: page {page} failed ({exc}); trying once more in {wait:.0f}s", file=sys.stderr)
+        time.sleep(wait)
+        return fetch(page)
+
+
 def collect_listings(
     query: str,
     pages: int,
@@ -1113,7 +1132,7 @@ def collect_listings(
     category_filter: Optional[tuple[int, list[int]]] = None
     if categories:
         try:
-            first = fetch_api_page(session, query, 1, sort)
+            first = _fetch_with_retry(lambda p: fetch_api_page(session, query, p, sort), 1, delay)
             category_filter = resolve_categories(first, categories)
         except (requests.RequestException, RuntimeError, ValueError) as exc:
             print(f"error: --category: {exc}", file=sys.stderr)
@@ -1140,7 +1159,7 @@ def collect_listings(
     page = 1
     while True:
         try:
-            data = fetch(page)
+            data = _fetch_with_retry(fetch, page, delay)
         except (requests.RequestException, RuntimeError) as exc:
             print(f"warning: failed to fetch page {page}: {exc}", file=sys.stderr)
             fetch_error = f"pagina {page} kon niet worden opgehaald"

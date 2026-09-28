@@ -281,11 +281,14 @@ class TitleVerdict:
 _SPACES_RE = re.compile(r"\s+")
 _HYPHEN_BEFORE_NUMBER_RE = re.compile(r"(?<=[a-z])-(?=\d)", re.I)
 _EGDE_RE = re.compile(r"\begde\b", re.I)
+# Hetzelfde bij de sporthorloges (crawl van 28-09-2026): "Garmin Forunner 245".
+_FORERUNNER_TYPO_RE = re.compile(r"\b(?:forunner|foreruner|forrunner|forerunnner)\b", re.I)
 
 
 def normalize_title(title: str) -> str:
     title = _SPACES_RE.sub(" ", title or "").strip()
     title = _HYPHEN_BEFORE_NUMBER_RE.sub(" ", title)
+    title = _FORERUNNER_TYPO_RE.sub("forerunner", title)
     return _EGDE_RE.sub("edge", title)
 
 

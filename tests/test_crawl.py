@@ -187,6 +187,29 @@ class CompletenessTest(unittest.TestCase):
         self.assertFalse(result.complete)
         self.assertIn("pagina 2", result.note)
 
+    def test_one_failed_page_gets_a_second_try(self):
+        # 28-09-2026: a single 403 between two good requests. The retry keeps
+        # the crawl complete, so the nightly sweep still runs.
+        session = self.html_session({
+            1: response([raw_listing(itemId="a")], total=2, max_page=2),
+            2: response([raw_listing(itemId="b")], total=2, max_page=2),
+        })
+        page_two = mp.BASE_URL + "/q/test/p/2/"
+        good = session.pages.pop(page_two)
+        real_get = session.get
+
+        def flaky_get(url, timeout=0):
+            response = real_get(url, timeout)  # the first try gets an empty page
+            if url == page_two:
+                session.pages[page_two] = good  # ... the second one works
+            return response
+
+        session.get = flaky_get
+        result, err = collect(session)
+        self.assertEqual({l.item_id for l in result}, {"a", "b"})
+        self.assertTrue(result.complete)
+        self.assertIn("trying once more", err)
+
     def test_a_listing_repeated_across_pages_makes_it_incomplete(self):
         # 2 slots, but one listing twice: the third result was never served.
         session = self.html_session({

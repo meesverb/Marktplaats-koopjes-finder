@@ -73,6 +73,24 @@ class RealTitlesTest(unittest.TestCase):
             "Garmin Forerunner 265 46 mm wit/zwart met een blauw/wit": "Forerunner 265",
             "Garmin Forerunner 570 Sporthorloge 42mm Zwart": "Forerunner 570",
             "Garmin Forerunner 45 zwart met een zwarte siliconen polsband": "Forerunner 45",
+            # Uit de volledige crawl van "garmin" in de horlogecategorieën.
+            "Garmin Forerunner 235": "Forerunner 235",
+            "Garmin Fenix 3 HR - 51 mm": "Fenix 3 HR",
+            "Garmin Fenix E - als nieuw": "Fenix E",
+            "Garmin Fenix 9 - 43mm - Splinternieuw en ongebruikt": "Fenix 9",
+            "Garmin Forunner 245": "Forerunner 245",  # tikfout, normalize_title()
+            "Nieuwe Garmin Forerunner Music 265 GPS Smartwatch": "Forerunner 265",
+            "Garmin vivoactife 3": "Vivoactive 3",
+            "Garmin Venu 2 Plus 43 mm cream gold rand van roestvrij staal": "Venu 2 Plus",
+            "Garmin Venu 2S 40 mm slate rand van roestvrij staal met": "Venu 2",
+            "Garmin - Venu 3S - 41MM - Pebble Gray / Slate (Garmin Watch)": "Venu 3",
+            "Garmin Venu Sq 40 mm grijs op siliconenbandje leisteen": "Venu Sq",
+            "Garmin Instinct 2X Solar 50 mm grafiet met een grafiet": "Instinct 2X",
+            "Garmin Instinct 2S - Smartwatch - GPS - Camo Edition Zwart": "Instinct 2",
+            "Garmin Instinct Solar 45 mm geel met een gele siliconen": "Instinct",
+            "Garmin Vivoactive 4s 40 mm wit met een witte siliconen": "Vivoactive 4",
+            "Garmin sport horloge Swim 2": "Swim 2",
+            "Garmin Forerunner 305 GPS-horloge met hartslagmeter": None,
         }
         for title, expected in cases.items():
             with self.subTest(title=title):
@@ -80,11 +98,13 @@ class RealTitlesTest(unittest.TestCase):
 
     def test_models_not_in_the_file_stay_unrecognised(self):
         # Niet opgezocht, dus niet herkend — en zeker niet als een buurmodel.
+        # Geen bron met jaar of prijs gevonden (zie NEXT_STEPS.md): die staan
+        # als "horloge, model onbekend" in het dashboard.
         for title in (
-            "Garmin Forerunner 235",
-            "Garmin Fenix 3 HR - 51 mm",
-            "Garmin Fenix E - als nieuw",
-            "Garmin Fenix 9 - 43mm - Splinternieuw en ongebruikt",
+            "Garmin Tactix 7 - Premium Tactische GPS Smartwatch",
+            "Garmin Quatix 7 Pro - Marine Smartwatch",
+            "Garmin Approach S70 GPS Golfhorloge 47mm Zwart",
+            "Garmin Descent MK3i 51mm DLC Titanium Smartwatch",
             "Garmin Edge 830 scherm vervangen",
         ):
             with self.subTest(title=title):
