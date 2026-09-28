@@ -138,3 +138,11 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    pakt het hoogste bod, `format_bid_info` toont het minimum ernaast). Kijk
    één keer op een lopende bied-advertentie met biedingen en noteer het hier
    — niet gokken, dit soort details staat nergens gedocumenteerd.
+7. **Vinted naast Marktplaats** (`vinted.py`, tab Vinted, sinds 28-09-2026).
+   De eigenaar maakt zelf een export van een Vinted-zoekopdracht; het script
+   haalt niets op. Nog niet gemeten, dus nu aannames: de afdingfactor op
+   Vinted (er wordt gerekend met de vraagprijs, zonder bod) en de verzending
+   uit het buitenland (€4,50 is NL; de export zegt niet uit welk land). Een
+   advertentie die uit een latere export wegvalt is níet als verkocht
+   gemarkeerd; wie verkoopsnelheid op Vinted wil meten, moet eerst weten of
+   twee exports dezelfde zoekopdracht volledig dekken.

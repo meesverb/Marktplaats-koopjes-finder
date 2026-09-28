@@ -251,6 +251,41 @@ MIGRATIONS: list[str] = [
         created_at TEXT NOT NULL
     );
     """,
+    # 8: Vinted exports (vinted.py). Kept out of `listing` for three reasons:
+    # an export is a search the owner ran in his browser, not a complete
+    # crawl, so sweep_disappeared() must never mark anything in it as gone; a
+    # Vinted price must never become a comparable for a Marktplaats flip
+    # (db_comparables() reads `listing` only); and Vinted doesn't search
+    # within a category, so watches, trainers and clothing come along too.
+    # fee_eur is Vinted's buyer protection as the export states it (EUR 0.70
+    # + 5% on 28-09-2026), stored as given rather than recomputed.
+    """
+    CREATE TABLE vinted_listing (
+        item_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        price_eur REAL,
+        fee_eur REAL,
+        total_eur REAL,
+        brand TEXT,
+        size TEXT,
+        condition TEXT,
+        favorites INTEGER,
+        url TEXT,
+        image_url TEXT,
+        seller_id TEXT,
+        is_business INTEGER,
+        first_exported_at TEXT NOT NULL,
+        last_exported_at TEXT NOT NULL,
+        export_file TEXT
+    );
+
+    CREATE TABLE vinted_price (
+        item_id TEXT NOT NULL REFERENCES vinted_listing(item_id),
+        exported_at TEXT NOT NULL,
+        price_eur REAL NOT NULL,
+        PRIMARY KEY (item_id, exported_at)
+    );
+    """,
 ]
 
 

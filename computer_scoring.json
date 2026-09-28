@@ -47,5 +47,10 @@
         "_toelichting": "Actief = niet verdwenen en gezien binnen active_days van de nieuwste waarneming in de categorie. new_hours: zo lang heet een advertentie nieuw.",
         "active_days": 3,
         "new_hours": 24
+    },
+    "vinted": {
+        "_toelichting": "Voor vinted.py en de tab Vinted. shipping_eur: wat de koper op Vinted aan verzending betaalt, bovenop de vraagprijs en de kopersbescherming (die staat per advertentie in de export). 4,50 is de bovenkant van 2,50-4,50 voor een klein pakket in Nederland volgens https://geldkwebbel.nl/vinted-verzendkosten/ (28-09-2026); uit het buitenland is het meer, en de export zegt niet waarvandaan. max_price_eur: daarboven is het een fiets of set met een computer erbij ('Pack vélo route ... + Garmin 1040', €2500), geen computer.",
+        "shipping_eur": 4.5,
+        "max_price_eur": 1000
     }
 }

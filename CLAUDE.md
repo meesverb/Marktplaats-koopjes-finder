@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 679 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 699 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -88,7 +88,8 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
 | `koopjes.py` + `schedule.json` | automatische rondes: `schedule.json` beschrijft zoekopdrachten en tijdsloten, `koopjes.py run <slot>` draait er één (lock, log, `overzicht.html`), `koopjes.py schedule` geeft de inplan-commando's |
 | `computers.py` + `computer_scoring.json` | fietscomputers: herkent het model in de titel tegen `reference_bike_computers.csv`, functiescore met de gewichten die de eigenaar koos, upgrade t.o.v. de eigen Roam v1 en flipmarge. `classify_title()` deelt elke titel in (computer, accessoire, onderdeel, defect, gevraagd); los van dealscore en waardescore. `python computers.py` toont de score per model |
-| `dashboard.py` | het fietscomputer-dashboard: `dashboard.html` uit `koopjes.db`, tabs Flips / Upgrades / Alle computers / Marktprijzen / Uitgefilterd. `koopjes.py` bouwt het na elke ronde; de zoekopdracht `fietscomputer` heeft `"report": false`, dus geen rapport per merk meer. Leest alleen, behalve `--serve`: dat toont het live en schrijft de eigen aan- en verkopen |
+| `dashboard.py` | het fietscomputer-dashboard: `dashboard.html` uit `koopjes.db`, tabs Flips / Upgrades / Alle computers / Marktprijzen / Vinted / Uitgefilterd. `koopjes.py` bouwt het na elke ronde; de zoekopdracht `fietscomputer` heeft `"report": false`, dus geen rapport per merk meer. Leest alleen, behalve `--serve`: dat toont het live en schrijft de eigen aan- en verkopen |
+| `vinted.py` | Vinted-exports (een CSV die de eigenaar zelf maakt) inlezen in `koopjes.db` (tabellen `vinted_listing`/`vinted_price`, migratie 8) en naast Marktplaats zetten: tab Vinted in het dashboard, `python vinted.py` in de console. Haalt zelf niets op bij Vinted; Vinted-prijzen zijn nooit vergelijkingsprijs voor Marktplaats |
 | `trades.py` | Mijn flips: de eigen aan- en verkopen (tabel `trade`, migratie 7) en de voortgang daarvan. Invoeren via `python dashboard.py --serve` (lokaal, 127.0.0.1, met token); nooit een vergelijkingsprijs |
 | `patterns.py` | lange-termijnpatronen voor de tab Patronen: verkoopsnelheid per model, gemeten afdingfactor (snel verdwenen ÷ mediaan vraag, vanaf n=20), flips achteraf, prijs per maand, nieuw per weekdag. Verdwenen ≠ verkocht; alleen lezen |
 | `sleepers.py` | slapers: advertenties waarvan titel en tekst niets over de fiets zeggen (geen merk, weinig tekst, haast, bieden zonder bod). Alleen uit de zoekresultaten; eigen tab in het rapport, los van dealscore en waardescore |

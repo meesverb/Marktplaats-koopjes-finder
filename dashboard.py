@@ -13,10 +13,11 @@ dat ene merk. Hier staat alles bij elkaar, met de vergelijkingsprijzen over
 alle zoektermen en eerdere rondes heen.
 
 Tabs: Flips (wat je per advertentie verdient), Upgrades (t.o.v. de eigen
-computer), Alle computers, Marktprijzen per model, en Uitgefilterd (houders,
-hoesjes, onderdelen, defecte en gezochte — om na te kijken dat er geen echte
-computer tussen zit). De rekenregels staan in computers.py en
-computer_scoring.json; dit bestand toont alleen.
+computer), Alle computers, Marktprijzen per model, Vinted (alleen na `python
+vinted.py import`: wat je op Vinted koopt en op Marktplaats verkoopt), en
+Uitgefilterd (houders, hoesjes, onderdelen, defecte en gezochte — om na te
+kijken dat er geen echte computer tussen zit). De rekenregels staan in
+computers.py en computer_scoring.json; dit bestand toont alleen.
 
 Het geschreven dashboard.html leest alleen. `--serve` start een klein
 programma op je eigen computer (alleen bereikbaar via 127.0.0.1) dat dezelfde
@@ -45,6 +46,7 @@ import db
 import racefiets_jev as mp
 import patterns as pt
 import trades as tr
+import vinted as vn
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = "dashboard.html"
@@ -72,6 +74,7 @@ class Dashboard:
     progress: Optional[tr.Progress] = None  # Mijn flips
     patterns: Optional[pt.Patterns] = None  # Patronen
     bought: dict = field(default_factory=dict)  # item_id -> Trade
+    vinted: Optional[vn.VintedView] = None  # tab Vinted, als er een export is ingelezen
     # Alleen in de live versie (--serve): formulieren, met het geheim dat
     # bewijst dat een POST van deze pagina komt en niet van een andere site.
     editable: bool = False
@@ -126,6 +129,7 @@ def load_dashboard(db_path, config: Optional[dict] = None) -> Dashboard:
     config = config or pc.default_config()
     d = _with_trades(_load_market(db_path, config), db_path)
     d.patterns = pt.load_patterns(db_path, config)
+    d.vinted = vn.load_view(db_path, config)
     return d
 
 
@@ -503,6 +507,100 @@ def market_panel(d: Dashboard) -> str:
              "hem gaf (<code>reference_bike_computers.csv</code>).</p>")
     return intro + table([("Model", "text"), ("Te koop", "num"), ("Laagste", "num"), ("Mediaan vraag", "num"),
                           ("Verwacht verkoop", "num"), ("Nieuwprijs", "num"), ("Score", "num")], rows)
+
+
+def _vinted_thumb(item: vn.VintedItem) -> str:
+    if not item.row.image_url:
+        return "<div class='thumb empty' aria-hidden='true'></div>"
+    return (f"<a href='{esc(item.row.url, quote=True)}' target='_blank' rel='noopener'>"
+            f"<img class='thumb' src='{esc(item.row.image_url, quote=True)}' alt='' loading='lazy'></a>")
+
+
+def _vinted_cell(item: vn.VintedItem, label: str) -> str:
+    new = "<span class='badge'>nieuw</span> " if item.is_new else ""
+    extra = [item.row.condition, f"{item.row.favorites} fav." if item.row.favorites is not None else "",
+             "zakelijke verkoper" if item.row.is_business else ""]
+    muted = " · ".join(x for x in extra if x)
+    return (f"<td class='what'><div class='model'>{new}{esc(label)}</div>"
+            f"<a href='{esc(item.row.url, quote=True)}' target='_blank' rel='noopener'>{esc(item.row.title)}</a>"
+            f"{f'<span class=muted> · {esc(muted)}</span>' if muted else ''}</td>")
+
+
+def _ratio(value: Optional[float]) -> str:
+    return "—" if value is None else f"{value:.2f}".replace(".", ",")
+
+
+def vinted_panel(d: Dashboard) -> str:
+    v = d.vinted
+    flip = d.config["flip"]
+    flips = v.flips
+    parts = [tiles([
+        ("Op Vinted", str(len(v.computers)), f"computers met bekend model, export {local_time(v.newest_export)}"),
+        ("Vinted ÷ Marktplaats", _ratio(v.median_ratio), "mediaan over de modellen met genoeg vergelijking"),
+        ("Koop op Vinted", str(len(flips)), "onder de Marktplaats-verkoopprijs"),
+        ("Beste", signed_euro(flips[0].profit_eur) if flips else "—",
+         flips[0].model.label if flips else "nog niets"),
+    ])]
+    parts.append(
+        "<p class='explain'>Uit de Vinted-exports die je met <code>python vinted.py import</code> inlas. "
+        "<strong>Je betaalt</strong> = vraagprijs + kopersbescherming (uit de export) + "
+        f"€{v.shipping_eur:.2f}".replace(".", ",") + " verzending (<code>vinted.shipping_eur</code>; uit het "
+        "buitenland meer). "
+        "<strong>Verkoop</strong> is de verwachte verkoopprijs op Marktplaats, dezelfde als in Flips; "
+        f"de winst gaat daar nog {euro(v.costs_eur)} verzending af. Vinted-prijzen tellen nooit mee voor "
+        "de Marktplaats-schattingen. Een advertentie die niet in een nieuwe export staat, is niet verkocht: "
+        "een export is één zoekopdracht.</p>"
+    )
+    if flips:
+        rows = [
+            "<tr>"
+            f"<td class='pic'>{_vinted_thumb(i)}</td>"
+            f"<td class='num profit' data-sort='{i.profit_eur}'>"
+            f"<span class='gain' aria-hidden='true'>▲</span>{signed_euro(i.profit_eur)}</td>"
+            f"<td class='num' data-sort='{i.cost_eur}'>{euro(i.cost_eur)}"
+            f"<div class='sub'>vraagt {euro(i.row.price_eur)}</div></td>"
+            f"<td class='num' data-sort='{i.resale_eur}'>{euro(i.resale_eur)}"
+            f"<div class='sub'>n={i.mp_count} op Marktplaats</div></td>"
+            f"{_vinted_cell(i, i.model.label)}"
+            "</tr>"
+            for i in flips
+        ]
+        parts.append("<h3>Koop op Vinted, verkoop op Marktplaats</h3>")
+        parts.append(table([("", ""), ("Winst", "num"), ("Je betaalt", "num"), ("Verkoop MP", "num"),
+                            ("Advertentie", "text")], rows))
+    else:
+        parts.append("<p class='empty'>Geen Vinted-advertentie onder de Marktplaats-verkoopprijs.</p>")
+
+    rows = []
+    for m in v.models:
+        ratio = m.ratio
+        rows.append(
+            "<tr>"
+            f"<td class='what'><div class='model'>{esc(m.model.label)}</div></td>"
+            f"<td class='num' data-sort='{len(m.vinted)}'>{len(m.vinted)}</td>"
+            f"<td class='num' data-sort='{m.vinted[0]}'>{euro(m.vinted[0])}</td>"
+            f"<td class='num' data-sort='{m.vinted_median}'>{euro(m.vinted_median)}</td>"
+            f"<td class='num' data-sort='{len(m.marktplaats)}'>{len(m.marktplaats)}</td>"
+            f"<td class='num' data-sort='{m.mp_median if m.mp_median is not None else ''}'>{euro(m.mp_median)}</td>"
+            f"<td class='num' data-sort='{m.resale_eur if m.resale_eur is not None else ''}'>{euro(m.resale_eur)}</td>"
+            f"<td class='num' data-sort='{ratio if ratio is not None else ''}'>{_ratio(ratio)}</td>"
+            "</tr>"
+        )
+    parts.append("<h3>Per model</h3><p class='explain'>Vraagprijzen op Vinted (nu) naast Marktplaats (de laatste "
+                 f"{flip['comp_window_days']} dagen, verkochte meegeteld). Vinted ÷ MP pas vanaf "
+                 f"{flip['min_comps']} Marktplaats-advertenties. Op Vinted blijven dure advertenties vaak lang "
+                 "staan, dus een hogere mediaan daar is nog geen hogere verkoopprijs.</p>")
+    parts.append(table([("Model", "text"), ("Vinted", "num"), ("Laagste", "num"), ("Mediaan", "num"),
+                        ("MP", "num"), ("Mediaan MP", "num"), ("Verkoop MP", "num"), ("Vinted ÷ MP", "num")], rows))
+    counts: dict[str, int] = {}
+    for i in v.excluded:
+        counts[i.kind] = counts.get(i.kind, 0) + 1
+    if counts or v.unknown:
+        summary = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+        parts.append(f"<p class='explain'>Niet meegeteld: {len(v.unknown)} zonder bekend model"
+                     f"{', ' + esc(summary) if summary else ''} (horloges, trainers, kleding, houders en fietsen "
+                     "die Vinted bij de zoekopdracht meegaf).</p>")
+    return "\n".join(parts)
 
 
 def excluded_panel(d: Dashboard) -> str:
@@ -912,6 +1010,7 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
         ("mijn", mine_label, mine_panel(d)),
         ("alle", f"Alle computers ({computers})", all_panel(d)),
         ("markt", "Marktprijzen", market_panel(d)),
+        *([("vinted", f"Vinted ({len(d.vinted.flips)})", vinted_panel(d))] if d.vinted else []),
         ("patronen", "Patronen", patterns_panel(d)),
         ("uitgefilterd", f"Uitgefilterd ({len(d.excluded)})", excluded_panel(d)),
     ]

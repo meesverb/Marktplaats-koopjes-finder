@@ -324,6 +324,7 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
 | **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns |
 | **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
+| **Vinted** | only once you've read in a Vinted export (below): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
 | **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. The hour of posting isn't available: Marktplaats only says "Vandaag"/"Gisteren" |
 | **Uitgefilterd** | holders, cases, parts, broken ones and wanted ads, each with the reason, to check that no real computer ended up there |
 
@@ -426,6 +427,42 @@ Two measures, shown separately — neither is the dealscore:
 A regular report (`racefiets_jev.py`) of a run that contains bike computers
 still gets a small **Fietscomputers** tab with its flips, upgrades and what
 was filtered out; a run without any doesn't show the tab.
+
+**Vinted next to Marktplaats — `vinted.py`.** Vinted has no crawl here: you
+export a Vinted search yourself (a CSV with the columns "Item Title", "Item
+Price", "Item Service Fee", "Item Total Price", "Item Currency", "Item URL",
+...) and read it in. The time of the export comes from the file name
+(`productsList_2026-09-28T14-57-35-028Z.csv`), or `--at`. A file without
+those columns stops with the name of the missing one.
+
+```bash
+python vinted.py import productsList_2026-09-28T14-53-37-277Z.csv productsList_2026-09-28T14-57-35-028Z.csv
+python vinted.py                   # per model Vinted vs Marktplaats, and what to buy on Vinted
+python dashboard.py                # the same in the tab Vinted
+```
+
+The listings go into their own tables (`vinted_listing`, `vinted_price`,
+database migration 8), never into `listing`: a Vinted price is never a
+comparable for a Marktplaats flip, and a listing missing from a later export
+isn't marked sold (an export is one search, not a full crawl). What you pay is
+the asking price plus the buyer protection the export states (€0,70 + 5% on
+28-09-2026) plus `vinted.shipping_eur` in `computer_scoring.json` (€4,50, the
+top of what a small parcel within the Netherlands costs; more from abroad —
+the export doesn't say from where). The profit is the Marktplaats selling
+price from Flips minus that and minus `costs_eur`. Titles are sorted with the
+same rules as the dashboard, plus what only Vinted returns because it doesn't
+search within a category: watches (Wahoo Rival, Forerunner, "montre",
+"reloj"), trainers, pedals, car navigation, and anything above
+`vinted.max_price_eur` (€1000: a bike with a computer thrown in). Doubtful
+titles are judged against the Marktplaats median, as on the dashboard.
+
+What a comparison of both sites on 28-09-2026 showed (Garmin and Wahoo, 562
+computers on Vinted, 254 on Marktplaats): for the models that sell a lot
+(Edge 530, 830, Explore, Explore 2, 540, 840, 1040, 1050) the median asking
+price is within 10% on both sites, so buying on Vinted pays only listing by
+listing. Older models ask much more on Vinted (Edge 1000 twice as much), but
+most of those listings have been online a long time, so that's no higher
+selling price.
 
 ```bash
 python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
