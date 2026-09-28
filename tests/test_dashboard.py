@@ -86,6 +86,41 @@ class DashboardTest(unittest.TestCase):
         self.sync(self.market() + [fresh])
         self.assertEqual(dashboard.load_dashboard(self.db).new_ids, {"f"})
 
+    def test_a_reserved_listing_is_no_flip_and_no_comp_while_it_is_online(self):
+        reserved = computer("r", "Garmin Edge 530", 90.0, reserved=True)
+        self.sync(self.market() + [reserved])
+        d = dashboard.load_dashboard(self.db)
+        ids = lambda items: {l.item_id for l in items}
+        self.assertIn("r", ids(d.computers))  # nog wel in Alle computers
+        self.assertNotIn("r", ids(d.flips))
+        self.assertNotIn("r", ids(d.upgrades))
+        self.assertIn("gereserveerd", dashboard.all_panel(d))
+        # Niet als vergelijkingsprijs: de mediaan blijft die van de vier andere.
+        comps = dashboard.pc.db_comparables(self.db, dashboard.pc._default_catalog(), 180)
+        self.assertEqual(set(comps["Garmin Edge 530"]), {"a0", "a1", "a2", "a3"})
+
+    def test_a_reserved_listing_that_disappeared_counts_as_a_comp_again(self):
+        self.sync(self.market() + [computer("r", "Garmin Edge 530", 90.0, reserved=True)])
+        conn = db.connect(self.db)
+        try:
+            db.sweep_disappeared(conn, "garmin edge", {"a0", "a1", "a2", "a3"}, self.now.isoformat())
+        finally:
+            conn.close()
+        comps = dashboard.pc.db_comparables(self.db, dashboard.pc._default_catalog(), 180)
+        self.assertEqual(comps["Garmin Edge 530"]["r"], 90.0)
+
+    def test_a_database_from_before_migration_9_still_has_comps(self):
+        # Het dashboard opent alleen-lezen en migreert niet.
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        conn = db.connect(self.db)
+        try:
+            conn.execute("ALTER TABLE listing DROP COLUMN reserved_at")
+            conn.commit()
+        finally:
+            conn.close()
+        d = dashboard.load_dashboard(self.db)
+        self.assertIn("c", {l.item_id for l in d.flips})
+
     def test_a_running_bid_is_labelled_as_one(self):
         bid = computer("x", "Garmin Edge 530", 60.0, price_type="FAST_BID", price_is_bid=True, bid_count=3)
         self.sync(self.market() + [bid])

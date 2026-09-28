@@ -26,13 +26,14 @@ class TempDirTest(unittest.TestCase):
     def path(self, name: str) -> str:
         return str(self.tmp / name)
 
-    def run_query(self, listings, extra_argv, complete=True, near_complete=False):
+    def run_query(self, listings, extra_argv, complete=True, near_complete=False, cut_off_ids=()):
         # complete: a real crawl reports whether it saw every result; most
         # sweep tests below are about a crawl that did.
         def fake_collect(query, pages, delay, **crawl_options):
             note = "164 van de 165 resultaten gezien" if near_complete else "1 van de 26354 resultaten gezien"
             return mp.CrawlResult(
-                listings, complete=complete, note=note, near_complete=near_complete
+                listings, complete=complete, note=note, near_complete=near_complete,
+                cut_off_ids=cut_off_ids,
             )
 
         def fake_enrich(ls, delay, mode, session=None):
@@ -348,6 +349,62 @@ class SweepAcrossQueriesTest(TempDirTest):
         conn.close()
         self.assertEqual(swept, 1)
         self.assertIsNotNone(row["disappeared_at"])
+
+
+class WindowWarningTest(TempDirTest):
+    def test_a_shallow_newest_round_that_saw_only_new_listings_says_so(self):
+        first = [make_listing(item_id="oud")]
+        self.run_query(first, ["--db", self.path("koopjes.db"), "--pages", "2", "--sort", "newest"])
+        new = [make_listing(item_id=f"n{i}") for i in range(6)]
+        ids = tuple(l.item_id for l in new)
+        self.run_query(new, ["--db", self.path("koopjes.db"), "--pages", "2", "--sort", "newest"],
+                       complete=False, cut_off_ids=ids)
+        self.assertIn("onderste 5 advertenties op pagina 2", self.stderr.getvalue())
+        # Tot het bekende terrein gekomen: geen melding.
+        self.run_query(new, ["--db", self.path("koopjes.db"), "--pages", "2", "--sort", "newest"],
+                       complete=False, cut_off_ids=ids)
+        self.assertNotIn("onderste 5", self.stderr.getvalue())
+
+
+class ReservedTest(TempDirTest):
+    """Migratie 9: wanneer een ronde de advertentie gereserveerd zag."""
+
+    def reserved_at(self, conn, item_id="a"):
+        return conn.execute("SELECT reserved_at FROM listing WHERE item_id = ?", (item_id,)).fetchone()[0]
+
+    def test_first_sighting_is_kept_and_unreserving_clears_it(self):
+        conn = db.connect(self.path("koopjes.db"))
+        try:
+            db.sync_listings(conn, "q", [make_listing(item_id="a")], "2026-09-28T03:00:00+00:00")
+            self.assertIsNone(self.reserved_at(conn))
+            db.sync_listings(conn, "q", [make_listing(item_id="a", reserved=True)], "2026-09-28T10:00:00+00:00")
+            db.sync_listings(conn, "q", [make_listing(item_id="a", reserved=True)], "2026-09-28T14:00:00+00:00")
+            self.assertEqual(self.reserved_at(conn), "2026-09-28T10:00:00+00:00")
+            # De koper haakte af: weer gewoon te koop.
+            db.sync_listings(conn, "q", [make_listing(item_id="a")], "2026-09-28T18:00:00+00:00")
+            self.assertIsNone(self.reserved_at(conn))
+        finally:
+            conn.close()
+
+    def test_a_new_listing_that_is_already_reserved(self):
+        conn = db.connect(self.path("koopjes.db"))
+        try:
+            db.sync_listings(conn, "q", [make_listing(item_id="a", reserved=True)], "2026-09-28T03:00:00+00:00")
+            self.assertEqual(self.reserved_at(conn), "2026-09-28T03:00:00+00:00")
+        finally:
+            conn.close()
+
+    def test_the_sweep_keeps_the_reservation(self):
+        # Verdwenen terwijl gereserveerd: dat is juist het verkocht-signaal.
+        conn = db.connect(self.path("koopjes.db"))
+        try:
+            db.sync_listings(conn, "q", [make_listing(item_id="a", reserved=True)], "2026-09-28T03:00:00+00:00")
+            db.sweep_disappeared(conn, "q", set(), "2026-09-29T03:00:00+00:00")
+            row = conn.execute("SELECT disappeared_at, reserved_at FROM listing WHERE item_id = 'a'").fetchone()
+        finally:
+            conn.close()
+        self.assertIsNotNone(row["disappeared_at"])
+        self.assertEqual(row["reserved_at"], "2026-09-28T03:00:00+00:00")
 
 
 def mp_listing(item_id):

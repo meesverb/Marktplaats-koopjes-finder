@@ -437,23 +437,39 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
 
     overview = write_overview(config)
     log.line(f"Overzicht bijgewerkt: {overview}")
+    dashboard_path, flips = None, []
     try:
-        dashboard = write_dashboard(config)
-        log.line(f"Dashboard bijgewerkt: {dashboard}")
+        dashboard_path, board = write_dashboard(config)
+        log.line(f"Dashboard bijgewerkt: {dashboard_path}")
+        flips = new_flips(board, started)
     except Exception as exc:  # het dashboard mag een ronde niet laten mislukken
         failed = True
         log.line(f"FOUT: het dashboard kon niet gebouwd worden: {exc}")
+    for listing in flips:
+        c = listing.computer
+        log.line(f"Nieuwe flip: €{c.profit_eur:.0f} winst — {c.model.label} voor €{listing.price_eur:.0f} — {listing.url}")
     unmatched, deals = write_lists(config)
     log.line(f"Lijsten bijgewerkt: {unmatched} en {deals}")
 
-    new_this_round = sum(
-        s.get("new", 0)
-        for s in load_summaries(config.base_dir / config.summary_file).values()
+    summaries = [
+        s for s in load_summaries(config.base_dir / config.summary_file).values()
         if s.get("finished_at", "") >= started and s.get("name") in slot.searches
+    ]
+    new_this_round = sum(s.get("new", 0) for s in summaries)
+    # "auto" opens the overview for new listings in a search with a report.
+    # A search without one ("report": false, the bike computers) lives on the
+    # dashboard, and there a new listing is mostly an e-bike display: that
+    # page only opens for a new flip, which is what's worth dropping
+    # everything for.
+    new_reported = sum(
+        s.get("new", 0) for s in summaries if config.searches[s["name"]].get("report", True)
     )
-    if slot.open_browser == "always" or (slot.open_browser == "auto" and new_this_round):
+    if slot.open_browser == "always" or (slot.open_browser == "auto" and new_reported):
         with contextlib.suppress(webbrowser.Error):
             webbrowser.open(overview.resolve().as_uri())
+    if slot.open_browser == "auto" and flips and dashboard_path is not None:
+        with contextlib.suppress(webbrowser.Error):
+            webbrowser.open(dashboard_path.resolve().as_uri())
 
     log.line(f"Klaar: {new_this_round} nieuwe advertentie(s){' — met fouten, zie hierboven' if failed else ''}.")
     return 1 if failed else 0
@@ -713,13 +729,21 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
     return "\n".join(parts)
 
 
-def write_dashboard(config: Config) -> Path:
-    """dashboard.html: alle fietscomputers uit de database op één pagina."""
+def write_dashboard(config: Config):
+    """dashboard.html: alle fietscomputers uit de database op één pagina.
+    Geeft (pad, dashboard.Dashboard) terug."""
     import dashboard
 
     path = config.base_dir / config.dashboard
-    dashboard.write_dashboard(config.base_dir / config.db, path, overview_link=config.overview)
-    return path
+    board = dashboard.write_dashboard(config.base_dir / config.db, path, overview_link=config.overview)
+    return path, board
+
+
+def new_flips(board, since: str) -> list:
+    """De flips (winst na verzendkosten, niet gekocht, niet gereserveerd) die
+    deze ronde voor het eerst zag: first_seen is, net als `since`, een
+    UTC-tijd in ISO-vorm, dus ze vergelijken als tekst."""
+    return [l for l in board.flips if (l.first_seen or "") >= since]
 
 
 def write_overview(config: Config) -> Path:
@@ -1031,7 +1055,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print_schedule(config)
             return 0
         if args.command == "dashboard":
-            print(f"Dashboard bijgewerkt: {write_dashboard(config)}")
+            print(f"Dashboard bijgewerkt: {write_dashboard(config)[0]}")
             return 0
         if args.command == "lists":
             unmatched, deals = write_lists(config)

@@ -158,7 +158,12 @@ class CrawlResult(list):
     page that fails to load ends the crawl early."""
 
     def __init__(
-        self, listings=(), complete: bool = False, note: str = "", near_complete: bool = False
+        self,
+        listings=(),
+        complete: bool = False,
+        note: str = "",
+        near_complete: bool = False,
+        cut_off_ids: tuple = (),
     ):
         super().__init__(listings)
         self.complete = complete
@@ -166,6 +171,10 @@ class CrawlResult(list):
         # Every page loaded and paging ran to the end, but a handful of the
         # total went unseen — see NEAR_COMPLETE_MAX_MISSING.
         self.near_complete = near_complete
+        # The item ids of the last page, in page order, when the crawl
+        # stopped at --pages while Marktplaats had more; empty otherwise.
+        # See window_too_small().
+        self.cut_off_ids = cut_off_ids
 
 
 # A full crawl takes a few seconds per page, and a listing that is sold or
@@ -1127,6 +1136,7 @@ def collect_listings(
     skipped_wanted = 0
     fetch_error: Optional[str] = None
     reached_end = False
+    cut_off_ids: tuple = ()
     page = 1
     while True:
         try:
@@ -1186,6 +1196,8 @@ def collect_listings(
         reached_site_limit = page >= max_page
         if reached_site_limit:
             reached_end = True
+        elif reached_requested_limit:
+            cut_off_ids = tuple(raw.get("itemId") for raw in raw_listings if raw.get("itemId"))
         if reached_requested_limit or reached_site_limit:
             break
         page += 1
@@ -1235,7 +1247,32 @@ def collect_listings(
         and total_results is not None
         and total_results - len(raw_ids) <= near_complete_max_missing(total_results)
     )
-    return CrawlResult(listings.values(), complete=complete, note=note, near_complete=near_complete)
+    return CrawlResult(
+        listings.values(), complete=complete, note=note, near_complete=near_complete,
+        cut_off_ids=cut_off_ids,
+    )
+
+
+# How many listings at the bottom of the last page window_too_small() looks
+# at. Not just the last one: with --sort newest the listing at the very
+# bottom is often one posted a few minutes after the previous round, and so
+# new without anything being missed. Not the whole page either: on page 1
+# Marktplaats puts its paid "Dagtoppers" on top whatever the sort, and those
+# are usually listings seen before (28-09-2026, fietscomputers: 7 of the 30).
+WINDOW_CHECK_LISTINGS = 5
+
+
+def window_too_small(cut_off_ids, history: dict, kept_ids) -> bool:
+    """A shallow --sort newest crawl whose last listings were all new has
+    probably not reached the previous round: there may be new listings
+    beyond the last page that this round didn't see (the next full crawl
+    will). Only the listings that survived this run's filters (`kept_ids`)
+    count: a "gezocht" ad, or a racefiets outside the price or frame range,
+    never goes into the history, so it would look new every round. Fewer
+    than WINDOW_CHECK_LISTINGS of those on the last page, or no history to
+    compare against, and there is nothing to say."""
+    tail = [i for i in cut_off_ids if i in kept_ids][-WINDOW_CHECK_LISTINGS:]
+    return bool(history) and len(tail) == WINDOW_CHECK_LISTINGS and not any(i in history for i in tail)
 
 
 def filter_by_price(
@@ -2973,6 +3010,7 @@ def run_for_query(
     # where guessing wrong corrupts data.
     crawl_complete = getattr(listings, "complete", False)
     crawl_note = getattr(listings, "note", "")
+    cut_off_ids = getattr(listings, "cut_off_ids", ())
 
     # Filter on what the search results already tell us before the bid lookup,
     # which costs one request (plus --delay) per bidding listing: a listing
@@ -3009,6 +3047,17 @@ def run_for_query(
     listings = flag_bargains(listings, args.bargain_ratio)
 
     history = load_history(args.history_file)
+    # Before apply_history(), which adds this round's listings to it.
+    if args.sort == "newest" and window_too_small(
+        cut_off_ids, history, {listing.item_id for listing in listings}
+    ):
+        print(
+            f"let op: de onderste {WINDOW_CHECK_LISTINGS} advertenties op pagina {args.pages} waren "
+            f"allemaal nieuw. Met --sort newest betekent dat dat er achter pagina {args.pages} nog "
+            "nieuwe kunnen staan die deze ronde niet zag (een volledige crawl vindt ze wel). Zet "
+            "'pages' hoger of draai deze ronde vaker.",
+            file=sys.stderr,
+        )
     history = apply_history(listings, history)
     save_history(args.history_file, history)
 

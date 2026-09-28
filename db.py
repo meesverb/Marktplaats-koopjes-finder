@@ -286,6 +286,18 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (item_id, exported_at)
     );
     """,
+    # 9: when a crawl first saw the listing marked "gereserveerd". The search
+    # results say so (Listing.reserved), but the dashboard is built from this
+    # table, so without the column a reserved Edge 530 stayed on the Flips
+    # tab. It is also the nearest thing to "sold" Marktplaats shows: a
+    # listing that disappears while reserved was almost certainly bought,
+    # one that disappears without it may just have been withdrawn. Cleared
+    # when a crawl sees the listing unreserved again (the buyer backed out).
+    # NULL on rows from before this column: not seen reserved, which is all
+    # anyone knew then.
+    """
+    ALTER TABLE listing ADD COLUMN reserved_at TEXT;
+    """,
 ]
 
 
@@ -637,16 +649,19 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
     """Upsert this run's listings into `listing`, and record one
     `listing_price` observation per priced listing. A listing that reappears
     after being marked disappeared has its disappeared_at cleared — it's
-    back."""
+    back. reserved_at keeps the first sighting of a reservation, and goes
+    back to NULL once a crawl sees the listing unreserved (migration 9)."""
     for listing in listings:
         conn.execute(
             """
             INSERT INTO listing (item_id, title, description, price_eur, price_type, is_bid,
                                   price_is_asking, city, posted_date, condition,
-                                  frame_height, url, query, first_seen, last_seen, image_urls)
+                                  frame_height, url, query, first_seen, last_seen, image_urls,
+                                  reserved_at)
             VALUES (:item_id, :title, :description, :price_eur, :price_type, :is_bid,
                     :price_is_asking, :city, :posted_date, :condition,
-                    :frame_height, :url, :query, :first_seen, :last_seen, :image_urls)
+                    :frame_height, :url, :query, :first_seen, :last_seen, :image_urls,
+                    :reserved_at)
             ON CONFLICT(item_id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
@@ -663,6 +678,8 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 url = excluded.url,
                 query = excluded.query,
                 image_urls = COALESCE(NULLIF(excluded.image_urls, ''), listing.image_urls),
+                reserved_at = CASE WHEN excluded.reserved_at IS NULL THEN NULL
+                                   ELSE COALESCE(listing.reserved_at, excluded.reserved_at) END,
                 last_seen = excluded.last_seen,
                 disappeared_at = NULL,
                 days_online = NULL,
@@ -685,6 +702,7 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "first_seen": listing.first_seen or observed_at,
                 "last_seen": observed_at,
                 "image_urls": getattr(listing, "image_urls", "") or "",
+                "reserved_at": observed_at if getattr(listing, "reserved", False) else None,
             },
         )
         conn.execute(

@@ -97,18 +97,22 @@ class Dashboard:
         return sorted(rows, key=lambda r: (r[1], r[0].title.lower()))
 
     # Wat je al gekocht hebt, is geen kans meer: weg uit Flips en Upgrades
-    # (in Alle computers blijft het staan, met een vinkje).
+    # (in Alle computers blijft het staan, met een vinkje). Een gereserveerde
+    # advertentie evenmin: die is al aan een ander toegezegd.
+    def _available(self, listing) -> bool:
+        return listing.item_id not in self.bought and not listing.reserved
+
     @property
     def flips(self) -> list:
-        return [l for l in pc.flips(self.listings) if l.computer.profit_eur > 0 and l.item_id not in self.bought]
+        return [l for l in pc.flips(self.listings) if l.computer.profit_eur > 0 and self._available(l)]
 
     @property
     def open_bids(self) -> list:
-        return [l for l in pc.open_bids(self.listings) if l.item_id not in self.bought]
+        return [l for l in pc.open_bids(self.listings) if self._available(l)]
 
     @property
     def upgrades(self) -> list:
-        return [l for l in pc.upgrades(self.listings) if l.item_id not in self.bought]
+        return [l for l in pc.upgrades(self.listings) if self._available(l)]
 
 
 # --- Uit de database ---------------------------------------------------------
@@ -155,9 +159,10 @@ def _load_market(db_path, config: dict) -> Dashboard:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(listing)")}
         images = "image_urls" if "image_urls" in columns else "'' AS image_urls"
         asking = "price_is_asking" if "price_is_asking" in columns else "NULL AS price_is_asking"
+        reserved = "reserved_at" if "reserved_at" in columns else "NULL AS reserved_at"
         rows = conn.execute(
             f"SELECT item_id, title, description, price_eur, price_type, is_bid, {asking}, "
-            f"city, posted_date, condition, url, first_seen, last_seen, {images} "
+            f"city, posted_date, condition, url, first_seen, last_seen, {images}, {reserved} "
             "FROM listing WHERE disappeared_at IS NULL AND url LIKE ?",
             (f"%/{COMPUTER_CATEGORY}/%",),
         ).fetchall()
@@ -192,6 +197,7 @@ def _load_market(db_path, config: dict) -> Dashboard:
             price_is_bid=bool(r["is_bid"]),
             first_seen=r["first_seen"] or "",
             image_urls=r["image_urls"] or "",
+            reserved=r["reserved_at"] is not None,
         )
         # Het bod zelf staat niet in de database; price_is_asking = 0 zegt
         # wel dat de prijs een lopend bod is (db.py, migratie 3). Eén bod is
@@ -272,6 +278,8 @@ def thumb(listing) -> str:
 
 def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str:
     new = "<span class='badge'>nieuw</span> " if listing.item_id in d.new_ids else ""
+    if listing.reserved:
+        new += "<span class='badge reserved'>gereserveerd</span> "
     place = f" · {esc(listing.city)}" if listing.city else ""
     note_html = f"<div class='note'>{esc(note)}</div>" if note else ""
     return (
@@ -351,7 +359,8 @@ def flips_panel(d: Dashboard) -> str:
         f"(nu en de laatste {flip['comp_window_days']} dagen, verkochte meegeteld), "
         f"× {str(flip['negotiation_factor']).replace('.', ',')} voor afdingen. De band eronder is de winst "
         "bij het goedkoopste en duurste kwart van die advertenties. Bij <em>huidig bod</em> loopt de prijs "
-        "nog op; bij <em>vraagprijs, bieden kan</em> kun je vaak lager uitkomen.</p>"
+        "nog op; bij <em>vraagprijs, bieden kan</em> kun je vaak lager uitkomen. Gereserveerde advertenties "
+        "staan hier niet (wel in Alle computers) en tellen niet als vergelijkingsprijs zolang ze online staan.</p>"
     )
     if flips:
         rows = []
@@ -796,7 +805,7 @@ def patterns_panel(d: Dashboard) -> str:
                 else "van de rest is nog niets verdwenen" if p.flip_days is not None else "nog niets verdwenen")
     parts = [tiles([
         ("Gegevens", f"{p.days_of_data} dagen", f"sinds {nl_date(p.since.date().isoformat())}" if p.since else "nog niets"),
-        ("Verdwenen", str(p.gone), f"van {p.total} computers ooit gezien"),
+        ("Verdwenen", str(p.gone), f"van {p.total} computers ooit gezien; {p.gone_reserved} eerst gereserveerd"),
         ("Gemeten afdingfactor", factor_value, factor_sub),
         ("Flips weg na", f"{p.flip_days:.0f} dagen" if p.flip_days is not None else "—",
          (flip_sub + f" (n={p.flip_n})") if p.flip_days is not None else flip_sub),
@@ -808,7 +817,9 @@ def patterns_panel(d: Dashboard) -> str:
             f"advertentie verdwenen is. Per model verschijnt een getal pas vanaf {pt.MIN_PER_MODEL} advertenties.</div>")
     parts.append(
         "<p class='explain'>Uit alles wat de crawl ooit zag, ook verdwenen advertenties. <strong>Verdwenen is niet "
-        "verkocht</strong>: een advertentie kan ook ingetrokken zijn. Wie binnen "
+        "verkocht</strong>: een advertentie kan ook ingetrokken zijn. Verdween hij terwijl hij gereserveerd "
+        "stond (<em>eerst gereserveerd</em>), dan is hij vrijwel zeker verkocht; dat telt alleen als een ronde "
+        "de reservering zag, dus het is een ondergrens. Wie binnen "
         f"{pt.QUICK_DAYS} dagen weg is, was realistisch geprijsd — de laatste prijs daarvan, gedeeld door de "
         "mediaan-vraagprijs van het model, is de <em>gemeten afdingfactor</em>. Staat die er, dan kun je hem in "
         "<code>computer_scoring.json</code> als <code>negotiation_factor</code> zetten in plaats van de aanname.</p>")
@@ -820,7 +831,8 @@ def patterns_panel(d: Dashboard) -> str:
             "<tr>"
             f"<td class='what'><div class='model'>{esc(m.model)}</div></td>"
             f"<td class='num' data-sort='{m.seen}'>{m.seen}</td>"
-            f"<td class='num' data-sort='{m.gone}'>{m.gone}</td>"
+            f"<td class='num' data-sort='{m.gone}'>{m.gone}"
+            f"{f'<div class=sub>{m.gone_reserved} gereserveerd</div>' if m.gone_reserved else ''}</td>"
             f"<td class='num' data-sort='{m.median_days_gone if m.median_days_gone is not None else ''}'>"
             f"{'—' if m.median_days_gone is None else f'{m.median_days_gone:.0f}'}</td>"
             f"<td class='num' data-sort='{m.quick_share if m.quick_share is not None else ''}'>{pct(m.quick_share)}</td>"
@@ -857,7 +869,7 @@ def patterns_panel(d: Dashboard) -> str:
             f"<td class='num sub'>{n} dagen</td></tr>"
             for day, avg, n in p.weekday_new)
         parts.append("<h3>Nieuwe advertenties per weekdag</h3><p class='explain'>Gemiddeld per dag, gemeten aan de "
-                     "nachtelijke crawl (de eerste ronde telt niet mee). Het uur van plaatsen geeft Marktplaats niet.</p>"
+                     "rondes (de eerste ronde telt niet mee). Het uur van plaatsen geeft Marktplaats niet.</p>"
                      f"<div class='table-wrap'><table><tbody>{rows}</tbody></table></div>")
     return "\n".join(parts)
 
@@ -907,6 +919,7 @@ td.what { min-width: 260px; }
 .model { font-weight: 600; }
 .badge { display: inline-block; font-size: .7rem; font-weight: 700; padding: 1px 6px; border-radius: 8px;
   background: var(--badge); color: var(--text); vertical-align: 1px; }
+.badge.reserved { background: var(--line); color: var(--text-2); }
 ul.changes { margin: 0; padding: 0; list-style: none; font-size: .82rem; }
 ul.changes li::before { display: inline-block; width: 1.1em; font-weight: 700; }
 ul.changes li.plus::before { content: "+"; color: var(--good); }

@@ -55,6 +55,22 @@ class PatternsTest(unittest.TestCase):
         self.assertIsNone(p.measured_factor)
         self.assertEqual(p.measured_n, 15)
 
+    def test_gone_while_reserved_is_counted_apart(self):
+        self.history()
+        conn = db.connect(self.db)
+        try:
+            conn.execute("UPDATE listing SET reserved_at = first_seen WHERE item_id IN ('e0', 'e2', 'e1')")
+            conn.commit()
+        finally:
+            conn.close()
+        p = pt.load_patterns(self.db)
+        # e0 en e2 zijn verdwenen; e1 staat gereserveerd nog online en telt niet.
+        self.assertEqual(p.gone_reserved, 2)
+        self.assertEqual(p.models[0].gone_reserved, 2)
+        html = dashboard.patterns_panel(dashboard.load_dashboard(self.db))
+        self.assertIn("2 eerst gereserveerd", html)
+        self.assertIn("2 gereserveerd", html)
+
     def test_flips_in_hindsight(self):
         self.history()
         p = pt.load_patterns(self.db)

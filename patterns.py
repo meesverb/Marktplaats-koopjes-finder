@@ -8,7 +8,10 @@ advertentie voor het eerst en het laatst gezien is, wanneer hij verdween
 waarneming (listing_price). Verdwenen is niet verkocht — een advertentie kan
 ook ingetrokken of verlopen zijn. Het is een benadering, dezelfde als de
 taxatie van de eigen fiets gebruikt (valuation.py, E2), en de pagina zegt
-dat erbij.
+dat erbij. Dichter bij verkocht komt een advertentie die verdween terwijl
+hij gereserveerd stond (listing.reserved_at, migratie 9); die worden apart
+geteld. Alleen wat een ronde gereserveerd zag telt, dus het is een
+ondergrens.
 
 Wat er níet in kan: het uur waarop advertenties geplaatst worden. Marktplaats
 geeft "Vandaag"/"Gisteren" als plaatsingsdatum, en first_seen is het moment
@@ -47,6 +50,7 @@ class Seen:
     days_online: Optional[int]
     first_price: Optional[float]
     last_price: Optional[float]
+    reserved: bool = False  # stond gereserveerd bij de laatste waarneming
 
 
 @dataclass
@@ -54,6 +58,7 @@ class ModelPattern:
     model: str
     seen: int
     gone: int
+    gone_reserved: int  # waarvan eerst gereserveerd: vrijwel zeker verkocht
     median_days_gone: Optional[float]
     quick_share: Optional[float]  # deel van de verdwenen dat binnen QUICK_DAYS weg was
     median_ask: Optional[float]
@@ -73,6 +78,7 @@ class Patterns:
     until: Optional[datetime] = None
     total: int = 0
     gone: int = 0
+    gone_reserved: int = 0
     models: list = field(default_factory=list)  # ModelPattern, meest geziene eerst
     measured_factor: Optional[float] = None
     measured_n: int = 0
@@ -106,9 +112,13 @@ def load_seen(db_path, config: Optional[dict] = None) -> list[Seen]:
     uri = Path(db_path).resolve().as_uri() + "?mode=ro"
     conn = sqlite3.connect(uri, uri=True)
     try:
+        # Alleen-lezen migreert niet; een database van vóór migratie 9 heeft
+        # reserved_at nog niet.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(listing)")}
+        reserved = "l.reserved_at" if "reserved_at" in columns else "NULL"
         rows = conn.execute(
             "SELECT l.item_id, l.title, l.description, l.url, l.first_seen, l.last_seen, l.disappeared_at, "
-            "l.days_online, l.price_eur, "
+            f"l.days_online, l.price_eur, {reserved}, "
             "(SELECT p.price_eur FROM listing_price p WHERE p.item_id = l.item_id "
             " ORDER BY p.observed_at LIMIT 1) AS first_price "
             "FROM listing l WHERE l.url LIKE ?",
@@ -119,7 +129,7 @@ def load_seen(db_path, config: Optional[dict] = None) -> list[Seen]:
     finally:
         conn.close()
     seen = []
-    for item_id, title, description, url, first, last, gone_at, days, price, first_price in rows:
+    for item_id, title, description, url, first, last, gone_at, days, price, reserved_at, first_price in rows:
         verdict = pc.classify_title(title, catalog)
         if verdict is None or verdict.kind != "computer" or pc.WITHOUT_DEVICE_RE.search(description or ""):
             continue
@@ -127,7 +137,7 @@ def load_seen(db_path, config: Optional[dict] = None) -> list[Seen]:
         if first_t is None or last_t is None:
             continue
         seen.append(Seen(item_id, verdict.model.label, first_t, last_t, gone_at is not None, days,
-                         first_price if first_price is not None else price, price))
+                         first_price if first_price is not None else price, price, reserved_at is not None))
     return seen
 
 
@@ -140,6 +150,7 @@ def compute(seen: list[Seen], config: Optional[dict] = None) -> Patterns:
     p.since = min(s.first_seen for s in seen)
     p.until = max(s.last_seen for s in seen)
     p.total, p.gone = len(seen), sum(s.gone for s in seen)
+    p.gone_reserved = sum(s.gone and s.reserved for s in seen)
 
     by_model: dict[str, list[Seen]] = {}
     for s in seen:
@@ -157,6 +168,7 @@ def compute(seen: list[Seen], config: Optional[dict] = None) -> Patterns:
             model=model,
             seen=len(items),
             gone=len(gone),
+            gone_reserved=sum(s.reserved for s in gone),
             median_days_gone=statistics.median(s.days_online for s in gone) if len(gone) >= MIN_PER_MODEL else None,
             quick_share=len(quick) / len(gone) if len(gone) >= MIN_PER_MODEL else None,
             median_ask=median_ask,

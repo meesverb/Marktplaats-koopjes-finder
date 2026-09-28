@@ -244,6 +244,101 @@ class RunSlotTest(TempDirTest):
         self.assertIn("overdag", err.getvalue())
 
 
+class ComputersRoundTest(TempDirTest):
+    """De overdagronde voor fietscomputers: ondiep, nieuwste eerst, en het
+    dashboard opent alleen voor een nieuwe flip."""
+
+    URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsaccessoires-fietscomputers/{}-x"
+
+    def test_the_shipped_schedule_checks_the_newest_computers_by_day(self):
+        config = koopjes.load_config(Path(repo_file("schedule.json")))
+        slot = config.slots["computers"]
+        self.assertEqual(slot.searches, ("fietscomputer",))
+        # Ondiep: de weg-detectie (alleen bij pages 0) blijft bij de nachtronde.
+        self.assertGreater(slot.pages, 0)
+        self.assertEqual((slot.sort, slot.open_browser), ("newest", "auto"))
+        # Met "fast" kostte een ronde 17 biedopvragingen bovenop de 3 zoekverzoeken.
+        self.assertEqual(slot.bid_lookup, "none")
+        self.assertIn("fietscomputer", config.slots["nacht"].searches)
+        self.assertEqual(config.slots["nacht"].pages, 0)
+
+    def run_round(self, new_listings):
+        from datetime import datetime, timedelta, timezone
+
+        searches = {
+            "racefietsen": {"query": "racefiets"},
+            "fietscomputer": {"query": "fietscomputer", "report": False},
+        }
+        slots = {"computers": {"searches": ["fietscomputer"], "pages": 2, "times": ["14:00"],
+                               "open_browser": "auto"}}
+        config = koopjes.load_config(write_config(self.dir, searches=searches, slots=slots))
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(timespec="seconds")
+        market = [make_listing(item_id=f"a{i}", title="Garmin Edge 530", price_eur=p,
+                               url=self.URL.format(f"a{i}"), first_seen=old)
+                  for i, p in enumerate((160.0, 180.0, 200.0, 220.0))]
+
+        def runner(command, log, cwd):
+            if Path(command[1]).name == "racefiets_jev.py":
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                for l in new_listings:
+                    l.first_seen = now
+                conn = db.connect(str(self.dir / "koopjes.db"))
+                try:
+                    db.sync_listings(conn, "fietscomputer", market + new_listings, now)
+                finally:
+                    conn.close()
+                with open(self.dir / "logs" / "runs.jsonl", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"name": "fietscomputer", "finished_at": now,
+                                        "new": len(new_listings) + 5}) + "\n")
+            return 0
+
+        with koopjes.working_directory(self.dir), mock.patch.object(koopjes.webbrowser, "open") as opened:
+            code = koopjes.run_slot(config, "computers", runner=runner, echo=False)
+        self.assertEqual(code, 0)
+        log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
+        return [call.args[0] for call in opened.call_args_list], log
+
+    def test_a_new_flip_opens_the_dashboard(self):
+        cheap = make_listing(item_id="c", title="Garmin Edge 530", price_eur=90.0, url=self.URL.format("c"))
+        opened, log = self.run_round([cheap])
+        self.assertEqual(len(opened), 1)
+        self.assertTrue(opened[0].endswith("dashboard.html"))
+        self.assertIn("Nieuwe flip: €", log)
+        self.assertIn("Garmin Edge 530 voor €90", log)
+
+    def test_new_listings_without_a_flip_open_nothing(self):
+        # Nieuw is in deze categorie vooral een e-bike-display: geen reden om
+        # het overzicht open te gooien.
+        dear = make_listing(item_id="d", title="Garmin Edge 530", price_eur=250.0, url=self.URL.format("d"))
+        opened, log = self.run_round([dear])
+        self.assertEqual(opened, [])
+        self.assertNotIn("Nieuwe flip", log)
+
+    def test_new_listings_in_a_search_with_a_report_still_open_the_overview(self):
+        from datetime import datetime, timezone
+
+        slots = {"overdag": {"searches": ["racefietsen"], "pages": 8, "times": ["08:30"], "open_browser": "auto"}}
+        config = koopjes.load_config(write_config(self.dir, slots=slots))
+
+        def runner(command, log, cwd):
+            (self.dir / "logs").mkdir(exist_ok=True)
+            with open(self.dir / "logs" / "runs.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps({"name": "racefietsen", "new": 3,
+                                    "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}) + "\n")
+            return 0
+
+        with koopjes.working_directory(self.dir), mock.patch.object(koopjes.webbrowser, "open") as opened:
+            koopjes.run_slot(config, "overdag", runner=runner, echo=False)
+        (url,) = [call.args[0] for call in opened.call_args_list]
+        self.assertTrue(url.endswith("overzicht.html"))
+
+    def test_a_reserved_new_flip_opens_nothing(self):
+        cheap = make_listing(item_id="c", title="Garmin Edge 530", price_eur=90.0, url=self.URL.format("c"),
+                             reserved=True)
+        opened, _ = self.run_round([cheap])
+        self.assertEqual(opened, [])
+
+
 class SummaryTest(TempDirTest):
     def test_the_script_appends_one_line_per_report(self):
         listings = {

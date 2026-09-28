@@ -71,6 +71,7 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 | --- | --- | --- |
 | `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
 | `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, then `valuation.py` |
+| `computers` | 10:00, 14:00, 18:00, 22:00 | the newest bike computers only, 2 pages, no bid lookups (3 requests a round), so a cheap flip doesn't wait for the night. The whole category gets about 100-120 new listings a day, roughly a quarter of them a computer with a known model (measured 28-09-2026: at 18:40 "Vandaag" filled 3-4 pages newest first, "Gisteren" about 4), so 2 pages every 4 hours leaves room — also for the ~7 paid "Dagtoppers" Marktplaats puts on top of page 1 whatever the sort. With `bid_lookup` `fast` a round cost 17 bid lookups on top of that; a bidding listing therefore shows under "Zonder prijs — bied maximaal" by day, and the night round fills in the running bid. Being shallow, it never marks anything as gone: that stays with the night round |
 | `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
 
 Change the searches' filters (a `max_price` for your budget, say) and the
@@ -82,7 +83,23 @@ which gave 17 separate reports (`racefiets_report_garmin-edge.html`, …); now
 everything is on the dashboard, and those files are no longer written (old
 ones can be deleted). Slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
 `times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation` and
-`open_browser`.
+`open_browser` (and a `note`, which is ignored). With `open_browser` `auto`,
+`overzicht.html` opens when a search *with* a report found new listings, and
+`dashboard.html` opens when the round found a new **flip** — a bike computer
+first seen this round, below its expected selling price after shipping, not
+bought by you and not reserved. The log names each one (`Nieuwe flip: €25
+winst — Garmin Edge 530 voor €90 — https://...`). A new listing in a search
+without a report doesn't open anything: in the bike computer category that is
+mostly an e-bike display.
+
+A shallow round sorted newest first can tell when its pages weren't enough:
+if the bottom 5 listings of its last page were all new, the previous round
+wasn't reached and there may be new listings beyond that page. Only listings
+that pass the search's filters count: one outside the price or frame range
+never goes into the history, so it would look new every time. The log then
+says `let op: de onderste 5 advertenties op pagina 2 waren allemaal nieuw` —
+raise `pages`, or run the slot more often. (The bottom 5 rather than the
+whole page, because page 1 starts with the Dagtoppers, which are usually old.)
 
 ## Usage
 
@@ -319,13 +336,13 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 
 | Tab | What |
 | --- | --- |
-| **Flips** | every computer below its expected selling price, biggest profit first. Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
+| **Flips** | every computer below its expected selling price, biggest profit first; reserved listings are left out (they're in Alle computers, marked "gereserveerd"). Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
 | **Mijn flips** | what you bought and sold yourself: realised profit, what's in stock and what it should bring now, average days to sell, how far the dashboard's estimate was off, and profit per month. Entered in the live version (below) |
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
 | **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns |
 | **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
 | **Vinted** | only once you've read in a Vinted export (below): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
-| **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. The hour of posting isn't available: Marktplaats only says "Vandaag"/"Gisteren" |
+| **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. Gone listings that were reserved when a round last saw them are counted apart ("eerst gereserveerd"): those were almost certainly sold. Only reservations a round actually saw count, so it's a lower bound. The hour of posting isn't available: Marktplaats only says "Vandaag"/"Gisteren" |
 | **Uitgefilterd** | holders, cases, parts, broken ones and wanted ads, each with the reason, to check that no real computer ended up there |
 
 Photos come from the search results (stored since database migration 6); a
@@ -466,6 +483,7 @@ selling price.
 
 ```bash
 python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
+python koopjes.py run computers    # by day: only the newest 2 pages; opens the dashboard on a new flip
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
 python dashboard.py --serve        # live, with Gekocht/Verkocht buttons (Ctrl+C to stop)
 python computers.py                 # feature score per model, with the difference to your own
@@ -756,7 +774,12 @@ missed by the next full crawl as well is marked disappeared as of its first
 miss, and one that turns up again in any crawl is cleared. The console says
 `verdwijn-sweep voorlopig` when this happens. The database remembers every query that
 found a listing (table `listing_query`), so a Defy last seen by the daytime
-"racefiets" run still counts for the nightly "giant defy" sweep. `valuation.py` reads from this
+"racefiets" run still counts for the nightly "giant defy" sweep. It also
+remembers when a crawl first saw a listing marked reserved
+(`listing.reserved_at`, migration 9; cleared when a crawl sees it unreserved
+again). A reserved listing that is still online doesn't count as a comparable
+price for the bike computers, just as within a run; once it disappears it
+counts like any other gone listing. `valuation.py` reads from this
 database (see below); disable writing to it entirely with `--no-db`.
 
 ### Watchlists — `--watchlist`

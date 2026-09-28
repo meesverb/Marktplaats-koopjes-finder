@@ -548,7 +548,9 @@ class ComputerSignal:
 
 def _comparable_price(listing) -> Optional[float]:
     """Wat een andere advertentie vraagt, als vergelijkingsprijs. Een lopend
-    bod (FAST_BID met biedingen) is geen vraagprijs en telt niet mee."""
+    bod (FAST_BID met biedingen) is geen vraagprijs en telt niet mee, een
+    gereserveerde evenmin: die is al aan iemand toegezegd, tegen een prijs
+    die niet in de advertentie staat."""
     if getattr(listing, "reserved", False) or not listing.price_is_asking:
         return None
     return listing.price_eur
@@ -560,18 +562,28 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
     NULL is beslist `is_bid`, zoals db.py dat ook doet), alleen titels die
     zonder twijfel een computer zijn, niet uit een fietscategorie, en alleen
     advertenties die de afgelopen `window_days` nog gezien zijn — verkochte
-    (verdwenen) tellen dus mee. Opent de database alleen-lezen; een
-    ontbrekende database is geen fout."""
+    (verdwenen) tellen dus mee. Wat nu gereserveerd online staat telt niet,
+    net als in een run zelf (_comparable_price); verdwijnt hij, dan telt hij
+    weer mee zoals elke verdwenen advertentie. Opent de database alleen-lezen;
+    een ontbrekende database is geen fout."""
     if not db_path or not Path(db_path).exists():
         return {}
     since = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat(timespec="seconds")
     uri = Path(db_path).resolve().as_uri() + "?mode=ro"
     conn = sqlite3.connect(uri, uri=True)
     try:
+        # Alleen-lezen migreert niet: een database van vóór migratie 9 (het
+        # dashboard gebouwd voordat er een nieuwe ronde draaide) heeft de
+        # kolom nog niet, en een fout hier zou stil alle vergelijkingsprijzen
+        # kosten.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(listing)")}
+        not_reserved = ("AND (reserved_at IS NULL OR disappeared_at IS NOT NULL) "
+                        if "reserved_at" in columns else "")
         rows = conn.execute(
             "SELECT item_id, title, price_eur, url, description FROM listing "
             "WHERE price_eur IS NOT NULL "
             "AND COALESCE(price_is_asking, is_bid = 0) = 1 "
+            f"{not_reserved}"
             "AND (last_seen IS NULL OR last_seen >= ?)",
             (since,),
         ).fetchall()

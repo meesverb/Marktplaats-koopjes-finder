@@ -242,6 +242,59 @@ class CompletenessTest(unittest.TestCase):
         self.assertTrue(result.complete)
 
 
+class WindowCheckTest(unittest.TestCase):
+    """Een ondiepe ronde op nieuwste-eerst (de fietscomputers overdag, 2
+    pagina's): zegt het log het als er misschien nieuwe achter de laatste
+    pagina lagen?"""
+
+    def html_session(self, pages: dict):
+        return FakeSession({
+            mp.BASE_URL + ("/q/test/" if n == 1 else f"/q/test/p/{n}/"): html(data)
+            for n, data in pages.items()
+        })
+
+    def test_a_crawl_cut_off_at_pages_remembers_its_last_page(self):
+        session = self.html_session({
+            1: response([raw_listing(itemId="a"), raw_listing(itemId="b")], total=90, max_page=3),
+            2: response([raw_listing(itemId="c"), raw_listing(itemId="d")], total=90, max_page=3,
+                        offset=30),
+        })
+        result, _ = collect(session, pages=2)
+        self.assertEqual(result.cut_off_ids, ("c", "d"))
+
+    def test_a_crawl_that_reached_the_end_was_not_cut_off(self):
+        session = self.html_session({1: response([raw_listing(itemId="a")], total=1, max_page=1)})
+        result, _ = collect(session, pages=2)
+        self.assertEqual(result.cut_off_ids, ())
+
+    def check(self, page, history, kept=None):
+        return mp.window_too_small(page, history, set(page) if kept is None else kept)
+
+    def test_all_new_at_the_bottom_means_the_window_may_be_too_small(self):
+        page = tuple(f"n{i}" for i in range(30))
+        self.assertTrue(self.check(page, {"oud": {}}))
+
+    def test_one_known_listing_at_the_bottom_is_enough(self):
+        page = tuple(f"n{i}" for i in range(29)) + ("oud",)
+        self.assertFalse(self.check(page, {"oud": {}}))
+
+    def test_known_dagtoppers_on_top_do_not_hide_a_gap(self):
+        # Marktplaats zet betaalde Dagtoppers bovenaan pagina 1, ook bij nieuwste eerst.
+        page = ("oud",) * 7 + tuple(f"n{i}" for i in range(23))
+        self.assertTrue(self.check(page, {"oud": {}}))
+
+    def test_listings_the_filters_dropped_do_not_count(self):
+        # Te duur of verkeerde maat: nooit in de geschiedenis, dus altijd "nieuw".
+        page = tuple(f"n{i}" for i in range(25)) + ("oud",) + tuple(f"duur{i}" for i in range(4))
+        kept = set(page) - {f"duur{i}" for i in range(4)}
+        self.assertFalse(self.check(page, {"oud": {}}, kept))
+        self.assertFalse(self.check(("n1", "n2", "n3"), {"oud": {}}))  # te weinig om iets te zeggen
+
+    def test_no_history_or_no_cut_off_says_nothing(self):
+        self.assertFalse(self.check(tuple(f"n{i}" for i in range(30)), {}))
+        self.assertFalse(self.check((), {"oud": {}}))
+
+
 class CategoryTest(unittest.TestCase):
     def test_a_second_dominant_category_is_reported_not_silently_dropped(self):
         page = html(response(
