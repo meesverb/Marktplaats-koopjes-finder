@@ -146,3 +146,28 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    advertentie die uit een latere export wegvalt is níet als verkocht
    gemarkeerd; wie verkoopsnelheid op Vinted wil meten, moet eerst weten of
    twee exports dezelfde zoekopdracht volledig dekken.
+8. **Sporthorloges als tweede markt** (sinds 28-09-2026, compleet zoals de
+   fietscomputers): zoekopdracht `sporthorloges` ("garmin" in sporthorloges,
+   smartwatches en activity-trackers) in de nacht- en overdagronde,
+   `dashboard_horloges.html` (Flips, Mijn flips, Alle horloges,
+   Marktprijzen, Patronen, Uitgefilterd), live op `/horloges` met
+   `dashboard.py --serve`, eigen aankopen per markt (migratie 10). 81
+   Garmin-modellen, 1263 van 1707 titels herkend. Waar je na een paar weken
+   naar kijkt, en wat nog open ligt:
+   - **De afdingfactor.** 0,875 is voor horloges niet gemeten; de tab
+     Patronen van het horlogedashboard meet hem vanaf 20 snel verdwenen
+     advertenties. Wijkt hij af, dan hoort er een eigen factor per markt bij
+     (nu delen beide markten `computer_scoring.json`).
+   - **Varianten in één rij** (5/5S, Solar, Sapphire, 43/47/51 mm, en MARQ
+     zonder "gen 2" in de titel). Geeft dat veel valse flips bij één model,
+     splits dan die rij — alleen met een bron voor het prijsverschil.
+   - **Geen bron gevonden** voor Tactix (7, 8, Delta), Quatix, Approach
+     S12/S42/S70, Descent Mk3/G1 en Vivomove HR/Style: die staan als
+     "horloge, model onbekend" in Alle horloges.
+   - **Geen biedopvragingen** voor horloges (`"bid_lookup": "none"`, ~300
+     per nacht bespaard): een bieden-advertentie zonder prijs staat onder
+     "Zonder prijs — bied maximaal", ook als er al geboden is. Wil je het
+     lopende bod zien, open de advertentie.
+   - Andere merken (Polar, Coros, Suunto) zijn niet meegenomen; de
+     zoekopdracht is "garmin". Een merk erbij = rijen met bron in
+     `reference_sport_watches.csv` plus de zoekterm.

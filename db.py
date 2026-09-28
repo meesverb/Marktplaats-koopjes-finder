@@ -298,6 +298,14 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE listing ADD COLUMN reserved_at TEXT;
     """,
+    # 10: which dashboard a buy belongs to — "fietscomputers" or
+    # "sporthorloges" (markets.py). Each dashboard's Mijn flips shows its own
+    # market, and values a stock item against that market's listings. NULL on
+    # rows from before: markets.trade_market() then goes by the model name,
+    # and without one they are bike computers, the only market there was.
+    """
+    ALTER TABLE trade ADD COLUMN market TEXT;
+    """,
 ]
 
 
@@ -984,16 +992,18 @@ def add_trade(
     model: Optional[str] = None,
     expected_resale_eur: Optional[float] = None,
     notes: str = "",
+    market: Optional[str] = None,
 ) -> int:
-    """Record a buy; returns its id."""
+    """Record a buy; returns its id. `market` is the dashboard it was bought
+    from (markets.py); None for a caller that doesn't know."""
     cur = conn.execute(
         """
         INSERT INTO trade (item_id, url, title, model, bought_at, buy_price_eur, buy_costs_eur,
-                           expected_resale_eur, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           expected_resale_eur, notes, created_at, market)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (item_id, url, title, model, bought_at, buy_price_eur, buy_costs_eur,
-         expected_resale_eur, notes, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+         expected_resale_eur, notes, datetime.now(timezone.utc).isoformat(timespec="seconds"), market),
     )
     conn.commit()
     return cur.lastrowid

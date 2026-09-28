@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 719 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 753 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -88,7 +88,8 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
 | `koopjes.py` + `schedule.json` | automatische rondes: `schedule.json` beschrijft zoekopdrachten en tijdsloten, `koopjes.py run <slot>` draait er één (lock, log, `overzicht.html`), `koopjes.py schedule` geeft de inplan-commando's |
 | `computers.py` + `computer_scoring.json` | fietscomputers: herkent het model in de titel tegen `reference_bike_computers.csv`, functiescore met de gewichten die de eigenaar koos, upgrade t.o.v. de eigen Roam v1 en flipmarge. `classify_title()` deelt elke titel in (computer, accessoire, onderdeel, defect, gevraagd); los van dealscore en waardescore. `python computers.py` toont de score per model |
-| `dashboard.py` | het fietscomputer-dashboard: `dashboard.html` uit `koopjes.db`, tabs Flips / Upgrades / Alle computers / Marktprijzen / Vinted / Uitgefilterd. `koopjes.py` bouwt het na elke ronde; de zoekopdracht `fietscomputer` heeft `"report": false`, dus geen rapport per merk meer. Leest alleen, behalve `--serve`: dat toont het live en schrijft de eigen aan- en verkopen |
+| `dashboard.py` | de dashboards per markt (`markets.py`): `dashboard.html` (fietscomputers: Flips / Upgrades / Mijn flips / Alle computers / Marktprijzen / Vinted / Patronen / Uitgefilterd) en `dashboard_horloges.html` (sporthorloges: zonder Upgrades en Vinted), uit `koopjes.db`. `koopjes.py` bouwt beide na elke ronde; `--markt sporthorloges`/`alle` met de hand. Leest alleen, behalve `--serve`: dat toont beide live (`/` en `/horloges`) en schrijft de eigen aan- en verkopen, met hun markt |
+| `markets.py` | de markten naast elkaar: categorieën, referentiebestand, bestandsnaam, welke tabbladen, indeling van titels zonder model. `trade_market()` zegt bij welke markt een eigen aankoop hoort (migratie 10, `trade.market`) |
 | `vinted.py` | Vinted-exports (een CSV die de eigenaar zelf maakt) inlezen in `koopjes.db` (tabellen `vinted_listing`/`vinted_price`, migratie 8) en naast Marktplaats zetten: tab Vinted in het dashboard, `python vinted.py` in de console. Haalt zelf niets op bij Vinted; Vinted-prijzen zijn nooit vergelijkingsprijs voor Marktplaats |
 | `trades.py` | Mijn flips: de eigen aan- en verkopen (tabel `trade`, migratie 7) en de voortgang daarvan. Invoeren via `python dashboard.py --serve` (lokaal, 127.0.0.1, met token); nooit een vergelijkingsprijs |
 | `patterns.py` | lange-termijnpatronen voor de tab Patronen: verkoopsnelheid per model, gemeten afdingfactor (snel verdwenen ÷ mediaan vraag, vanaf n=20), flips achteraf, prijs per maand, nieuw per weekdag. Verdwenen ≠ verkocht; alleen lezen |
@@ -105,5 +106,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `reference_bikes.csv`, `reference_bike_accessories.csv` | fase 7: fietsen resp. fietscomputers/powermeters, met `kind`/`brand`/`source_url`. Ook met `git add -f` toegevoegd. Accessoires niet in het fietsbestand zetten — zie README |
 | `reference_bike_computers.csv` | één rij per fietscomputermodel: specs, navigatie (rerouting, kaarten, planning op het apparaat), training, ondersteuning, met bron. Vaste woorden per kolom (zie README); leeg = niet nagezocht. De volgorde is de matchvolgorde. Ook met `git add -f` toegevoegd |
 | `reference_bike_catalog.csv` | catalogus: één rij per merk/model/modeljaar met specs, nieuwprijs, `market` (NL of ES) en bron-URL. Geen patronen — wordt niet tegen titels gematcht. Ook met `git add -f` toegevoegd |
+| `reference_sport_watches.csv` | Garmin-sporthorloges (Fenix, Epix, Forerunner): één rij per model, zelfde vorm als `reference_bike_computers.csv` (patroon, matchvolgorde), te lezen met `computers.load_catalog(pad)`. Europrijs alleen uit een bron met euro's, dollarprijs apart en nooit omgerekend. 81 Garmin-modellen; zonder bron geen rij (Tactix, Quatix, Approach S12/S42/S70 staan er daarom niet in). Ook met `git add -f` toegevoegd |
+| `watches.py` | sporthorloges: de categorieën (sporthorloges, smartwatches, activity-trackers) en `classify_unknown()` voor titels zonder bekend model (horloge met onbekend model, bandje, ander merk, geen horloge). `python watches.py` toont de markt en de flips in de console. Zoekopdracht `sporthorloges` ("garmin") in de nacht- en overdagronde, zonder biedopvragingen |
 | `catalog_tools/` | de scripts die `reference_bike_catalog.csv` opbouwen (Wayback, merksites, bikezona). Draai ze vanuit een lege scratch-map, niet vanuit de repo — ze schrijven een cache in de werkmap |
 | `check_hifi_brand.py`, `check_reference_overlaps.py`, `reference_overview.py` | hulpscripts bij het onderhouden van die database |

@@ -28,7 +28,7 @@ python koopjes.py status            # check schedule.json, see when each search 
 python koopjes.py run overdag       # one round, exactly as the scheduler will start it
 python koopjes.py schedule          # Task Scheduler (Windows) / cron lines, paths filled in
 python koopjes.py lists             # lijsten/beste_koopjes.txt and lijsten/zonder_referentie.txt
-python koopjes.py dashboard         # rebuild dashboard.html (all bike computers) without a round
+python koopjes.py dashboard         # rebuild dashboard.html and dashboard_horloges.html without a round
 ```
 
 Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
@@ -40,7 +40,9 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
    `schedule.json` stays the one place to change them;
 3. runs `racefiets_jev.py` once for all the slot's searches, with the slot's
    `pages`, `sort` and `bid_lookup` — and once more, with `--no-html`, for
-   the searches marked `"report": false` (see below);
+   the searches marked `"report": false` (see below). A search can have its
+   own `"bid_lookup"`, which goes before the slot's (the sport watches use
+   `"none"`, see "Sport watches"); it then runs in a call of its own;
 4. with `"valuation": true`, runs `valuation.py`, so the valuation history
    builds up by itself;
 5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
@@ -49,7 +51,11 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
    photo (see "Slapers" below), a link to each full report, the latest
    valuation of your own bike, and the schedule;
 6. rebuilds **`dashboard.html`**, one page with every bike computer on
-   Marktplaats (see "Fietscomputers" below). `overzicht.html` links to it.
+   Marktplaats (see "Fietscomputers" below), and **`dashboard_horloges.html`**,
+   the same for Garmin sport watches (see "Sport watches"). `overzicht.html`
+   links to both, and each dashboard to the other. A new flip is logged
+   ("Nieuwe flip: …", or "Nieuwe flip (horloges): …") and, in a slot with
+   `"open_browser": "auto"`, opens the dashboard it is on.
 
 After every round two plain-text lists are rewritten in `lijsten/`, written
 to be pasted into a conversation: `beste_koopjes.txt` (per search the upgrade
@@ -70,8 +76,8 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 | Slot | When | What |
 | --- | --- | --- |
 | `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
-| `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, then `valuation.py` |
-| `computers` | 10:00, 14:00, 18:00, 22:00 | the newest bike computers only, 2 pages, no bid lookups (3 requests a round), so a cheap flip doesn't wait for the night. The whole category gets about 100-120 new listings a day, roughly a quarter of them a computer with a known model (measured 28-09-2026: at 18:40 "Vandaag" filled 3-4 pages newest first, "Gisteren" about 4), so 2 pages every 4 hours leaves room — also for the ~7 paid "Dagtoppers" Marktplaats puts on top of page 1 whatever the sort. With `bid_lookup` `fast` a round cost 17 bid lookups on top of that; a bidding listing therefore shows under "Zonder prijs — bied maximaal" by day, and the night round fills in the running bid. Being shallow, it never marks anything as gone: that stays with the night round |
+| `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, all Garmin watches (`sporthorloges`, ~58 pages, no bid lookups), then `valuation.py` |
+| `computers` | 10:00, 14:00, 18:00, 22:00 | the newest bike computers and Garmin watches only, 2 pages each, no bid lookups (3 requests per search, 6 a round), so a cheap flip doesn't wait for the night. Watches: ~115 new on a Monday until 20:45 (28-09-2026), so 2 pages every 4 hours is enough there too. The whole category gets about 100-120 new listings a day, roughly a quarter of them a computer with a known model (measured 28-09-2026: at 18:40 "Vandaag" filled 3-4 pages newest first, "Gisteren" about 4), so 2 pages every 4 hours leaves room — also for the ~7 paid "Dagtoppers" Marktplaats puts on top of page 1 whatever the sort. With `bid_lookup` `fast` a round cost 17 bid lookups on top of that; a bidding listing therefore shows under "Zonder prijs — bied maximaal" by day, and the night round fills in the running bid. Being shallow, it never marks anything as gone: that stays with the night round |
 | `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
 
 Change the searches' filters (a `max_price` for your budget, say) and the
@@ -379,7 +385,16 @@ as `valuation.py`); the band uses the lower and upper quartile instead of the
 median. Only with at least 3 other listings; a running bid is never a
 comparable. `costs_eur` in `computer_scoring.json` comes off every flip and
 off the maximum bid: €3 shipping by default (the owner's choice, 28-09-2026);
-raise it if you also want fuel or packaging counted.
+raise it if you also want fuel or packaging counted. A "gratis" listing
+(priceType FREE, €0) has no price rather than a price of €0: it's never a flip
+or a comparable and shows under the maximum bids, labelled "gratis of ruilen,
+prijs onbekend" — among the sport watches it was a swap offer that topped the
+flips at +€559. A title with an accessory word right after the model and only
+a device word in between, no "met"/"incl."/"+" ("Garmin Venu Smartwatch
+bandjes en beschermhoezen", €25), is checked against the price: under 40% of
+the same model's median (`max_share_of_median`) it counts as an accessory.
+With a linking word ("Venu Sq - Inclusief Oplaadkabel", €40) it stays the
+device — a cheap one.
 
 **What counts as a computer.** Only the title is used, and every title with a
 known model gets one kind: `computer`, `accessoire`, `onderdeel`, `defect`
@@ -489,7 +504,7 @@ selling price.
 python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
 python koopjes.py run computers    # by day: only the newest 2 pages; opens the dashboard on a new flip
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
-python dashboard.py --serve        # live, with Gekocht/Verkocht buttons (Ctrl+C to stop)
+python dashboard.py --serve        # live, with Gekocht/Verkocht buttons (Ctrl+C to stop); watches at /horloges
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo
 ```
@@ -737,6 +752,97 @@ sh /path/to/repo/catalog_tools/run_all.sh
 market and a basis, and that no model year appears that the source didn't
 state.
 
+### Sport watches — `dashboard_horloges.html` (`markets.py`, `watches.py`)
+
+A second market next to bike computers, built the same way: every Garmin
+watch on Marktplaats, its model recognised from the title, flips worked out
+against the same model's asking prices, and a dashboard of its own.
+
+- **The search** `sporthorloges` in `schedule.json`: "garmin" in the
+  categories `sporthorloges`, `smartwatches` and `activity-trackers` — that's
+  where the watches are; straps and cables mostly sit in phone and wearable
+  categories, and `activity-trackers` also holds Fenixes and Forerunners that
+  sellers put there. 1707 listings on 28-09-2026, 58 pages. In the night slot
+  (complete, so gone listings are marked for Patronen) and in the `computers`
+  slot by day (2 pages). Its own `"bid_lookup": "none"`: about 300 of those
+  listings are "bieden" without a price, and looking each one up would be 300
+  extra requests every night. They show under "Zonder prijs — bied maximaal",
+  as the bike computers do by day.
+- **The models** in `reference_sport_watches.csv` (below): 81 Garmin models,
+  from the Forerunner 30 and Venu Sq to the Fenix 9 Pro and MARQ. On the full
+  crawl 1263 of 1707 titles name one; the rest are mostly straps, cables and
+  other brands.
+- **The dashboard** `dashboard_horloges.html`: the same page as the bike
+  computers' — tabs Flips, Mijn flips, Alle horloges, Marktprijzen, Patronen
+  and Uitgefilterd — without Upgrades (there is no own watch to compare with),
+  Vinted and the feature score. `koopjes.py` writes it after every round;
+  `python dashboard.py --markt sporthorloges` (or `--markt alle`) by hand.
+  `python dashboard.py --serve` shows it live at
+  `http://127.0.0.1:8765/horloges`, with the same Gekocht/Verkocht buttons;
+  a buy remembers its market (database migration 10, `trade.market`), so each
+  dashboard's Mijn flips shows its own. Buys from before that have no market
+  and belong to the bike computers, unless their model is a watch.
+- **The calculation** is the bike computers' (`computers.apply_computer_signals()`)
+  with the watch catalogue and the same `computer_scoring.json` — the same
+  assumed 0,875 and €3 costs — with comparables from the three watch
+  categories only. `watches.py` holds what is specific to watches: the
+  categories, and what a title without a known model is (`classify_unknown()`:
+  a Garmin watch with an unknown model stays visible in Alle horloges —
+  "Te koop Garmin horloge" may be a sleeper —; straps, chargers, other brands
+  such as Apple, and Garmin products that aren't watches such as the Index
+  scale go to Uitgefilterd, each with the reason). `markets.py` puts the two
+  markets side by side: categories, catalogue, file, which tabs.
+- `python watches.py` prints the same per model and the flips in the console.
+
+Read the flips with care. Variants share a row (5/5S, Solar, Sapphire, Music,
+43/47/51 mm), so a model's median mixes them and some "flips" are the cheaper
+variant — the band under each profit shows how wide the spread is. The 0,875
+is not measured for watches; Patronen measures it once 20 quickly-gone
+listings of the market are in (a few weeks of night rounds). What the first
+crawl said, one snapshot, same method and day for both ("garmin,wahoo" in the
+bike computer category for comparison):
+
+| | Known model | Flips > €0 | Still a profit at the low estimate | … of which > €25 |
+| --- | --- | --- | --- | --- |
+| bike computers | 216 | 14 | 10 (4.6 per 100) | 6 |
+| sport watches (Fenix/Forerunner/Epix only) | 605 | 96 | 46 (7.6 per 100) | 15 |
+
+### The sport watch catalogue — `reference_sport_watches.csv`
+
+One row per model, same shape as `reference_bike_computers.csv` — a regex
+`pattern`, and the file order is the match order, so "Fenix 7 Pro" comes
+before "Fenix 7" — and it loads with `computers.load_catalog(path)`.
+
+Columns: `merk`, `model`, `pattern`, `introductiejaar`, `nieuwprijs_eur`,
+`prijs_bron`, `nieuwprijs_usd`, `kaarten_op_horloge` (`ja`/`nee`/empty),
+`extra_opmerkingen`, `bron_url`.
+
+- **A euro price only where a source gives euros**: Garmin's Benelux press
+  releases (garmin.prezly.com, "adviesprijs"; all ~110 read through its
+  sitemap), a DC Rainmaker comparison table that states EUR, or, for the
+  Fenix E, Android Planet's launch article. `nieuwprijs_usd` is DC Rainmaker's
+  US price and is never converted. DC Rainmaker updates its comparison
+  tables over time (the Vivoactive 3 shows $129 there), so a table price is
+  only used where another source agrees; otherwise the note mentions it and
+  the field stays empty.
+- **No source, no row.** Tactix, Quatix, Approach S12/S42/S70 and Descent
+  Mk3/G1 had no source with a year or price; they show as "horloge, model
+  onbekend".
+- **`kaarten_op_horloge` only where the source says so.** It is not the
+  `kaarten` column of the bike computer file (`routeerbaar`, `basiskaart`,
+  ...); that vocabulary says something the sources for watches don't.
+- **Variants share a row** where the price tier is the same (5/5S, 265/265S,
+  Music editions, Solar/Sapphire). Where the tier differs, they have their own
+  row (Fenix 5X, Fenix 6 Pro, Fenix 7 Pro, Epix Pro, MARQ Gen 2). A "Fenix 6S Sapphire"
+  without "Pro" lands on Fenix 6; whether every Sapphire edition was a Pro is
+  not checked.
+- **Two-digit Forerunners need the name**: "Forerunner 55" or "FR55", never
+  "Garmin 55" — too easily a size in mm.
+
+`tests/test_sport_watches.py` checks sources, fixed words, shadowing, and a
+set of real titles; `tests/test_watches.py` the flip calculation, the
+dashboard, the live version and Mijn flips per market.
+
 ### Your own market price history — `--price-history-file`
 
 Every time a listing matching a reference model is seen for the first time,
@@ -763,7 +869,10 @@ if they no longer turn up — a shallow `--pages 3` run only looked at part of
 the market, so it never draws that conclusion. Neither does a `--pages 0`
 crawl that didn't see every result: Marktplaats stops paging after about
 5000 listings (167 pages; "racefiets" has 26000+ results), a page can fail
-to load, and the default sort order repeats listings across pages. The sweep
+to load, and the default sort order repeats listings across pages. A page
+that fails gets one more try after 60 seconds (seen 28-09-2026: a single 403
+from Marktplaats between two good requests); only a second failure ends the
+crawl as incomplete. With `--delay 0` there is no wait. The sweep
 only runs when the number of distinct listings seen matches the total
 Marktplaats reports, and says why it skipped otherwise — use a narrower query
 (e.g. "giant defy"), `--category`, and `--sort newest` for the full crawl

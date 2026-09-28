@@ -1,7 +1,7 @@
 {
   "_uitleg": [
     "Dit bestand beschrijft alle automatische zoekrondes. Pas het hier aan; koopjes.py zet het bij elke ronde door naar de watchlists in koopjes.db.",
-    "searches: per zoekopdracht een 'query' plus filters. Toegestaan: min_price, max_price, min_frame_height, max_frame_height, strict_frame_height, bargain_ratio, reference_file, category, bids_only, min_score. Een 'note' mag ook, als geheugensteun.",
+    "searches: per zoekopdracht een 'query' plus filters. Toegestaan: min_price, max_price, min_frame_height, max_frame_height, strict_frame_height, bargain_ratio, reference_file, category, bids_only, min_score. Verder 'report' (false: geen rapport, alleen het dashboard) en 'bid_lookup' (fast, all, none: gaat vóór die van het tijdslot). Een 'note' mag ook, als geheugensteun.",
     "slots: per ronde welke zoekopdrachten, hoe diep (pages, 0 = alles tot ~5000), sortering (newest of optimized), bid_lookup (fast, all, none), tijden ('HH:MM' of 'zo HH:MM'), of er getaxeerd wordt (valuation) en of het overzicht opent (open_browser: auto, always, never). Bij auto opent het overzicht als er nieuwe advertenties zijn in een zoekopdracht met rapport, en het dashboard als er een nieuwe flip is.",
     "Na een wijziging: 'python koopjes.py status' controleert het bestand, 'python koopjes.py schedule' geeft de inplan-commando's opnieuw."
   ],
@@ -39,6 +39,13 @@
       "reference_file": "reference_bike_accessories.csv",
       "report": false,
       "note": "De hele categorie fietscomputers: met de categorie erbij geeft 'fietscomputer' precies alles (2800 advertenties op 28-09-2026, net zoveel als zonder zoekwoord). Dat is ~95 pagina's per nacht, tegen ~360 advertenties voor de 17 merken los; het vond 87 extra computers met een bekend model (o.a. 'Garmin 830', 'Garmin 1030 incl. stuurmontage'). De e-bike-displays en houders filtert computers.py eruit. Geen rapport (report: false): alles staat in dashboard.html."
+    },
+    "sporthorloges": {
+      "query": "garmin",
+      "category": "sporthorloges,smartwatches,activity-trackers",
+      "report": false,
+      "bid_lookup": "none",
+      "note": "Alle Garmin-horloges voor het horlogedashboard (dashboard_horloges.html, markets.py). Alleen de categorieën sporthorloges, smartwatches en activity-trackers: daar staan de horloges zelf; bandjes en kabels staan grotendeels in telefoon- en wearable-categorieën. In activity-trackers staan ook Fenixen en Forerunners die de verkoper daar neerzette. Op 28-09-2026 1707 advertenties, 58 pagina's (de nachtronde); ~115 nieuwe op een maandag tot 20:45, dus 2 pagina's per 4 uur overdag is genoeg. Geen rapport: alles staat in het dashboard. Geen biedopvragingen (bid_lookup none, ook 's nachts): ~300 van de 1707 zijn bieden zonder prijs, dat zou elke nacht 300 extra verzoeken zijn; ze staan in het dashboard onder 'Zonder prijs — bied maximaal'."
     }
   },
   "slots": {
@@ -51,7 +58,7 @@
       "open_browser": "auto"
     },
     "nacht": {
-      "searches": ["giant-defy", "ultegra-6700", "powermeter", "fietscomputer"],
+      "searches": ["giant-defy", "ultegra-6700", "powermeter", "fietscomputer", "sporthorloges"],
       "pages": 0,
       "sort": "newest",
       "bid_lookup": "fast",
@@ -59,13 +66,13 @@
       "valuation": true
     },
     "computers": {
-      "searches": ["fietscomputer"],
+      "searches": ["fietscomputer", "sporthorloges"],
       "pages": 2,
       "sort": "newest",
       "bid_lookup": "none",
       "times": ["10:00", "14:00", "18:00", "22:00"],
       "open_browser": "auto",
-      "note": "Alleen de nieuwste fietscomputers, zodat een goedkope flip niet tot de nachtronde blijft liggen. Gemeten op 28-09-2026 (18:40): de hele categorie krijgt ~100-120 nieuwe per dag, ongeveer een kwart een bekend computermodel; 2 pagina's (60) per 4 uur is dus ruim, ook met de ~7 Dagtoppers die Marktplaats bovenaan pagina 1 zet. 3 verzoeken per ronde. Geen biedopvragingen (bid_lookup none): met fast waren dat er 17 op 60 advertenties, per ronde opnieuw; een bieden-advertentie staat overdag dus onder 'Zonder prijs — bied maximaal', en de nachtronde vult het lopende bod in. zegt het log 'let op: de onderste 5 advertenties ... waren allemaal nieuw', zet pages dan hoger. Weg-detectie blijft bij de nachtronde (alleen pages 0 doet de sweep). Het dashboard opent alleen bij een nieuwe flip."
+      "note": "Alleen de nieuwste fietscomputers en Garmin-horloges (2 pagina's elk), zodat een goedkope flip niet tot de nachtronde blijft liggen. Horloges: ~115 nieuwe per dag (28-09-2026), zie de zoekopdracht sporthorloges. Gemeten op 28-09-2026 (18:40): de hele categorie krijgt ~100-120 nieuwe per dag, ongeveer een kwart een bekend computermodel; 2 pagina's (60) per 4 uur is dus ruim, ook met de ~7 Dagtoppers die Marktplaats bovenaan pagina 1 zet. 3 verzoeken per zoekopdracht, 6 per ronde. Geen biedopvragingen (bid_lookup none): met fast waren dat er 17 op 60 advertenties, per ronde opnieuw; een bieden-advertentie staat overdag dus onder 'Zonder prijs — bied maximaal', en de nachtronde vult het lopende bod in. zegt het log 'let op: de onderste 5 advertenties ... waren allemaal nieuw', zet pages dan hoger. Weg-detectie blijft bij de nachtronde (alleen pages 0 doet de sweep). Het dashboard opent alleen bij een nieuwe flip."
     },
     "week": {
       "searches": ["racefietsen"],

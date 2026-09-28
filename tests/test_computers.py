@@ -514,6 +514,19 @@ class FlipMathTest(unittest.TestCase):
                                160.0 * CONFIG["flip"]["negotiation_factor"] - CONFIG["flip"]["costs_eur"])
         self.assertEqual(pc.open_bids(others + [target]), [target])
 
+    def test_free_listing_is_no_price_not_zero(self):
+        # priceType FREE (€0) is "gratis" — at the sport watches on 28-09-2026
+        # a swap offer that topped the flips with +€559. No price: a max bid,
+        # never a flip, and not a comparable that drags the median down.
+        others, target = self.listings(cheap_price=0.0, price_type="FREE")
+        pc.apply_computer_signals(others + [target])
+        self.assertIsNone(target.computer.price_eur)
+        self.assertIsNone(target.computer.profit_eur)
+        self.assertNotIn(target, pc.flips(others + [target]))
+        self.assertEqual(pc.open_bids(others + [target]), [target])
+        self.assertEqual(pc.price_kind(target), "gratis of ruilen, prijs onbekend")
+        self.assertEqual(others[0].computer.comp_count, 4)
+
     def test_own_value_set_by_the_owner_wins(self):
         # 28-09-2026: his Roam has a black spot on the screen; he set €75.
         self.assertEqual(CONFIG["baseline"]["eigen_verkoopprijs_eur"], 75)

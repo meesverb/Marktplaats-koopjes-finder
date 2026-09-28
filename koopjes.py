@@ -105,6 +105,7 @@ class Config:
     summary_file: str = "logs/runs.jsonl"
     overview: str = "overzicht.html"
     dashboard: str = "dashboard.html"
+    watch_dashboard: str = "dashboard_horloges.html"
     log_file: str = "logs/koopjes.log"
     html: str = "racefiets_report.html"
     extra_args: tuple[str, ...] = field(default_factory=tuple)
@@ -158,12 +159,20 @@ def validate_search(name: str, spec) -> dict:
     report = spec.get("report", True)
     if not isinstance(report, bool):
         raise ConfigError(f"zoekopdracht {name!r}: 'report' moet true of false zijn")
-    filters = {k: v for k, v in spec.items() if k not in ("query", "note", "report")}
+    # "bid_lookup" per zoekopdracht gaat vóór die van het tijdslot. De
+    # sporthorloges hebben ~300 bieden-advertenties zonder prijs (28-09-2026):
+    # met "fast" is dat elke nacht 300 extra verzoeken naast 58 zoekpagina's.
+    bid_lookup = spec.get("bid_lookup")
+    if bid_lookup is not None and bid_lookup not in BID_LOOKUP_CHOICES:
+        raise ConfigError(
+            f"zoekopdracht {name!r}: 'bid_lookup' moet een van {', '.join(BID_LOOKUP_CHOICES)} zijn"
+        )
+    filters = {k: v for k, v in spec.items() if k not in ("query", "note", "report", "bid_lookup")}
     try:
         mp.args_for_watchlist(mp.parse_args([]), {"name": name, "query": query, "filters": filters})
     except ValueError as exc:
         raise ConfigError(str(exc)) from None
-    return {"query": query.strip(), "filters": filters, "report": report}
+    return {"query": query.strip(), "filters": filters, "report": report, "bid_lookup": bid_lookup}
 
 
 def load_config(path: Path) -> Config:
@@ -235,6 +244,7 @@ def load_config(path: Path) -> Config:
         summary_file=files.get("summary", "logs/runs.jsonl"),
         overview=files.get("overview", "overzicht.html"),
         dashboard=files.get("dashboard", "dashboard.html"),
+        watch_dashboard=files.get("dashboard_horloges", "dashboard_horloges.html"),
         log_file=files.get("log", "logs/koopjes.log"),
         html=files.get("report", "racefiets_report.html"),
         extra_args=tuple(extra_args),
@@ -284,14 +294,14 @@ def lock_path(config: Config) -> Path:
 
 
 def search_command(config: Config, slot: Slot, searches: Optional[tuple] = None,
-                   html: bool = True) -> list[str]:
+                   html: bool = True, bid_lookup: Optional[str] = None) -> list[str]:
     command = [
         sys.executable,
         str(HERE / "racefiets_jev.py"),
         "--watchlist", ",".join(searches or slot.searches),
         "--pages", str(slot.pages),
         "--sort", slot.sort,
-        "--bid-lookup", slot.bid_lookup,
+        "--bid-lookup", bid_lookup or slot.bid_lookup,
         "--open-browser", "never",
         "--db", config.db,
         "--html", config.html,
@@ -305,15 +315,17 @@ def search_command(config: Config, slot: Slot, searches: Optional[tuple] = None,
 
 def search_commands(config: Config, slot: Slot) -> list[list[str]]:
     """Eén racefiets_jev-aanroep voor de zoekopdrachten met een eigen rapport,
-    één met --no-html voor die zonder (zie validate_search: "report")."""
-    with_report = tuple(s for s in slot.searches if config.searches[s].get("report", True))
-    without = tuple(s for s in slot.searches if s not in with_report)
-    commands = []
-    if with_report:
-        commands.append(search_command(config, slot, with_report))
-    if without:
-        commands.append(search_command(config, slot, without, html=False))
-    return commands
+    één met --no-html voor die zonder (zie validate_search: "report"), en
+    apart per afwijkende "bid_lookup" van een zoekopdracht."""
+    groups: dict[tuple, list] = {}
+    for name in slot.searches:
+        search = config.searches[name]
+        key = (search.get("report", True), search.get("bid_lookup") or slot.bid_lookup)
+        groups.setdefault(key, []).append(name)
+    # Met rapport eerst, zoals altijd; daarbinnen in de volgorde van het slot.
+    ordered = sorted(groups.items(), key=lambda kv: not kv[0][0])
+    return [search_command(config, slot, tuple(names), html=report, bid_lookup=bid_lookup)
+            for (report, bid_lookup), names in ordered]
 
 
 def valuation_command(config: Config) -> list[str]:
@@ -437,17 +449,29 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
 
     overview = write_overview(config)
     log.line(f"Overzicht bijgewerkt: {overview}")
-    dashboard_path, flips = None, []
+    to_open = []  # dashboards met een nieuwe flip
     try:
-        dashboard_path, board = write_dashboard(config)
-        log.line(f"Dashboard bijgewerkt: {dashboard_path}")
+        markets_to_build = dashboard_markets()
+    except Exception as exc:  # bv. een referentiebestand dat niet te lezen is
+        failed, markets_to_build = True, []
+        log.line(f"FOUT: de dashboards konden niet gebouwd worden: {exc}")
+    for market in markets_to_build:
+        try:
+            path, board = write_dashboard(config, market)
+        except Exception as exc:  # een dashboard mag een ronde niet laten mislukken
+            failed = True
+            log.line(f"FOUT: het dashboard ({market.short.lower()}) kon niet gebouwd worden: {exc}")
+            continue
+        log.line(f"Dashboard bijgewerkt: {path}")
         flips = new_flips(board, started)
-    except Exception as exc:  # het dashboard mag een ronde niet laten mislukken
-        failed = True
-        log.line(f"FOUT: het dashboard kon niet gebouwd worden: {exc}")
-    for listing in flips:
-        c = listing.computer
-        log.line(f"Nieuwe flip: €{c.profit_eur:.0f} winst — {c.model.label} voor €{listing.price_eur:.0f} — {listing.url}")
+        # De regel voor fietscomputers is die van vóór de horloges; logs en
+        # wie ze leest blijven zo hetzelfde.
+        label = "Nieuwe flip" if market.key == "fietscomputers" else f"Nieuwe flip ({market.items})"
+        for listing in flips:
+            c = listing.computer
+            log.line(f"{label}: €{c.profit_eur:.0f} winst — {c.model.label} voor €{listing.price_eur:.0f} — {listing.url}")
+        if flips:
+            to_open.append(path)
     unmatched, deals = write_lists(config)
     log.line(f"Lijsten bijgewerkt: {unmatched} en {deals}")
 
@@ -467,9 +491,10 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
     if slot.open_browser == "always" or (slot.open_browser == "auto" and new_reported):
         with contextlib.suppress(webbrowser.Error):
             webbrowser.open(overview.resolve().as_uri())
-    if slot.open_browser == "auto" and flips and dashboard_path is not None:
-        with contextlib.suppress(webbrowser.Error):
-            webbrowser.open(dashboard_path.resolve().as_uri())
+    if slot.open_browser == "auto":
+        for path in to_open:
+            with contextlib.suppress(webbrowser.Error):
+                webbrowser.open(path.resolve().as_uri())
 
     log.line(f"Klaar: {new_this_round} nieuwe advertentie(s){' — met fouten, zie hierboven' if failed else ''}.")
     return 1 if failed else 0
@@ -563,6 +588,8 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         f"<p class='muted'>Bijgewerkt {esc(now_local())} · schema: {esc(config.path.name)}</p>",
         f"<p class='dashlink'><a href='{esc(config.dashboard, quote=True)}'><strong>Fietscomputers-dashboard</strong></a>"
         " — alle fietscomputers op één pagina: flips met winst, upgrades, marktprijzen.</p>",
+        f"<p class='dashlink'><a href='{esc(config.watch_dashboard, quote=True)}'><strong>Sporthorloges-dashboard"
+        "</strong></a> — alle Garmin-horloges op één pagina: flips met winst, marktprijzen.</p>",
     ]
 
     parts.append("<h2>Mijn fiets</h2>")
@@ -600,7 +627,10 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
             if report:
                 link = f"<a href='{esc(report)}'>openen</a>"
             elif not search.get("report", True):
-                link = f"<a href='{esc(config.dashboard, quote=True)}'>dashboard</a>"
+                import markets
+
+                market = markets.for_search(search["filters"]) or markets.COMPUTERS
+                link = f"<a href='{esc(dashboard_file(config, market), quote=True)}'>dashboard</a>"
             else:
                 link = "<span class='muted'>—</span>"
             parts.append(
@@ -729,13 +759,28 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
     return "\n".join(parts)
 
 
-def write_dashboard(config: Config):
-    """dashboard.html: alle fietscomputers uit de database op één pagina.
-    Geeft (pad, dashboard.Dashboard) terug."""
-    import dashboard
+def dashboard_markets() -> list:
+    import markets
 
-    path = config.base_dir / config.dashboard
-    board = dashboard.write_dashboard(config.base_dir / config.db, path, overview_link=config.overview)
+    return list(markets.MARKETS.values())
+
+
+def dashboard_file(config: Config, market) -> str:
+    return config.dashboard if market.key == "fietscomputers" else config.watch_dashboard
+
+
+def write_dashboard(config: Config, market=None):
+    """dashboard.html: alle fietscomputers uit de database op één pagina; met
+    `market` de sporthorloges (dashboard_horloges.html). Geeft (pad,
+    dashboard.Dashboard) terug. Elk dashboard linkt naar de andere."""
+    import dashboard
+    import markets
+
+    market = market or markets.COMPUTERS
+    path = config.base_dir / dashboard_file(config, market)
+    others = [(m.short, dashboard_file(config, m)) for m in dashboard_markets() if m is not market]
+    board = dashboard.write_dashboard(config.base_dir / config.db, path, overview_link=config.overview,
+                                      market=market, other_links=others)
     return path, board
 
 
@@ -1016,7 +1061,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="show the schedule and when each search last ran")
     sub.add_parser("schedule", help="print Task Scheduler (Windows) and cron commands")
     sub.add_parser("overview", help="rebuild the overview page")
-    sub.add_parser("dashboard", help="rebuild dashboard.html (all bike computers, from the database)")
+    sub.add_parser("dashboard", help="rebuild dashboard.html and dashboard_horloges.html (from the database)")
     sub.add_parser(
         "lists",
         help="write lijsten/zonder_referentie.txt and lijsten/beste_koopjes.txt "
@@ -1055,7 +1100,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             print_schedule(config)
             return 0
         if args.command == "dashboard":
-            print(f"Dashboard bijgewerkt: {write_dashboard(config)[0]}")
+            for market in dashboard_markets():
+                print(f"Dashboard bijgewerkt: {write_dashboard(config, market)[0]}")
             return 0
         if args.command == "lists":
             unmatched, deals = write_lists(config)

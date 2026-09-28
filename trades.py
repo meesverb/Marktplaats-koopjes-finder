@@ -38,6 +38,7 @@ class Trade:
     sell_costs_eur: float = 0.0
     sold_via: Optional[str] = None
     notes: Optional[str] = None
+    market: Optional[str] = None  # migratie 10; zie markets.trade_market()
 
     @property
     def sold(self) -> bool:

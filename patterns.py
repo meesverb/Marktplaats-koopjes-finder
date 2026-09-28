@@ -1,6 +1,6 @@
-"""Patronen: wat de verzamelde fietscomputer-advertenties over langere tijd
-zeggen. Rekent op koopjes.db (alleen lezen) en wordt getoond in de tab
-Patronen van het dashboard.
+"""Patronen: wat de verzamelde fietscomputer-advertenties (of sporthorloges,
+per markt: markets.py) over langere tijd zeggen. Rekent op koopjes.db
+(alleen lezen) en wordt getoond in de tab Patronen van het dashboard.
 
 Alles leunt op wat de nachtelijke volledige crawl vastlegt: wanneer een
 advertentie voor het eerst en het laatst gezien is, wanneer hij verdween
@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Optional
 
 import computers as pc
+import markets as mk
 
 # Zelfde grens als valuation.QUICK_SALE_DAYS: wie binnen twee weken weg is,
 # was realistisch geprijsd.
@@ -103,12 +104,12 @@ def _time(value) -> Optional[datetime]:
         return None
 
 
-def load_seen(db_path, config: Optional[dict] = None) -> list[Seen]:
-    """Alle computers (geen accessoires) die ooit in de categorie gezien zijn,
-    ook de verdwenen."""
+def load_seen(db_path, config: Optional[dict] = None, market: mk.Market = mk.COMPUTERS) -> list[Seen]:
+    """Alle computers (geen accessoires) — of horloges — die ooit in de
+    categorieën van de markt gezien zijn, ook de verdwenen."""
     if not db_path or not Path(db_path).exists():
         return []
-    catalog = pc._default_catalog()
+    catalog = market.catalog()
     uri = Path(db_path).resolve().as_uri() + "?mode=ro"
     conn = sqlite3.connect(uri, uri=True)
     try:
@@ -121,8 +122,8 @@ def load_seen(db_path, config: Optional[dict] = None) -> list[Seen]:
             f"l.days_online, l.price_eur, {reserved}, "
             "(SELECT p.price_eur FROM listing_price p WHERE p.item_id = l.item_id "
             " ORDER BY p.observed_at LIMIT 1) AS first_price "
-            "FROM listing l WHERE l.url LIKE ?",
-            ("%/fietsaccessoires-fietscomputers/%",),
+            "FROM listing l WHERE " + " OR ".join("l.url LIKE ?" for _ in market.categories),
+            tuple(f"%/{category}/%" for category in market.categories),
         ).fetchall()
     except sqlite3.Error:
         return []
@@ -223,5 +224,5 @@ def compute(seen: list[Seen], config: Optional[dict] = None) -> Patterns:
     return p
 
 
-def load_patterns(db_path, config: Optional[dict] = None) -> Patterns:
-    return compute(load_seen(db_path, config), config)
+def load_patterns(db_path, config: Optional[dict] = None, market: mk.Market = mk.COMPUTERS) -> Patterns:
+    return compute(load_seen(db_path, config, market), config)
