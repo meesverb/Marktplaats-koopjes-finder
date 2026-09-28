@@ -106,6 +106,29 @@ class ConfigTest(TempDirTest):
             self.assertIn(part, joined)
 
 
+    def test_a_slot_can_fetch_every_listing_text(self):
+        path = write_config(self.dir)
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw["slots"]["nacht"].update({"detail_lookup": "all", "detail_limit": 150})
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        config = koopjes.load_config(path)
+        joined = " ".join(koopjes.search_command(config, config.slots["nacht"]))
+        self.assertIn("--detail-lookup all", joined)
+        self.assertIn("--detail-limit 150", joined)
+        # Zonder instelling blijft het de standaard van het script.
+        self.assertNotIn("--detail-lookup", " ".join(koopjes.search_command(config, config.slots["overdag"])))
+
+    def test_an_unknown_detail_lookup_is_refused(self):
+        for bad in ({"detail_lookup": "alles"}, {"detail_limit": -1}, {"detail_limit": "200"}):
+            with self.subTest(bad=bad):
+                path = write_config(self.dir)
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                raw["slots"]["nacht"].update(bad)
+                path.write_text(json.dumps(raw), encoding="utf-8")
+                with self.assertRaises(koopjes.ConfigError):
+                    koopjes.load_config(path)
+
+
 class RunSlotTest(TempDirTest):
     def run_slot(self, slot, codes=None):
         config = koopjes.load_config(write_config(self.dir))

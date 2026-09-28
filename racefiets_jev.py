@@ -809,8 +809,18 @@ def extract_specs(text: str) -> dict[str, str]:
 
 def extract_listing_specs(listings: list[Listing]) -> dict[str, dict[str, str]]:
     """extract_specs() for every listing, keyed by item_id, ready to hand to
-    db.sync_listing_specs()."""
-    return {listing.item_id: extract_specs(spec_text(listing)) for listing in listings}
+    db.sync_listing_specs(). The groupset comes along: detect_groupset() has
+    already read it (from the full text where the page was fetched), and
+    without it in `spec` the database only knew it for the listings that
+    happened to be in a report."""
+    result = {}
+    for listing in listings:
+        specs = extract_specs(spec_text(listing))
+        if listing.groupset_tier is not None and listing.groupset:
+            specs["groupset"] = listing.groupset
+            specs["groupset_tier"] = str(listing.groupset_tier)
+        result[listing.item_id] = specs
+    return result
 
 
 def spec_text(listing: Listing) -> str:
@@ -2300,17 +2310,48 @@ def write_html(
     )
 
 
-def lookup_listing_details(args: argparse.Namespace, listings: list[Listing]) -> dict:
+# --detail-lookup all, without --detail-limit: a nightly run of 20 pages sees
+# roughly 450 new listings, so 200 a run keeps a scheduled run to about five
+# minutes of page requests and still catches up within a few nights.
+DETAIL_LOOKUP_ALL_LIMIT = 200
+
+
+def all_detail_targets(listings: list[Listing], limit: int) -> list[Listing]:
+    """--detail-lookup all: every complete road bike whose page hasn't been
+    fetched yet, most expensive first. The expensive ones are where the
+    description lists the parts one by one, and where a wrong guess about
+    the build costs the most. A listing without a price yet (a FAST_BID
+    without bids) goes last rather than being skipped."""
+    candidates = [
+        l for l in listings
+        if not l.detail_text and category_from_url(l.url) == ROAD_BIKE_CATEGORY
+    ]
+    candidates.sort(key=lambda l: -(l.price_eur or 0.0))
+    return candidates[:limit]
+
+
+def lookup_listing_details(
+    args: argparse.Namespace, listings: list[Listing], crawled: Optional[list[Listing]] = None
+) -> dict:
     """--detail-lookup: first put back what earlier runs fetched (no
-    request), then fetch the listing page for the few new listings that could
-    be an upgrade (upgrade.detail_lookup_targets()). Returns {item_id: full
-    description} for the pages fetched now, for sync_database() to store.
+    request), then fetch the listing page for new listings: under `budget`
+    the few that could be an upgrade (upgrade.detail_lookup_targets()),
+    under `all` every complete road bike the crawl saw (all_detail_targets()).
+    Returns {item_id: full description} for the pages fetched now, for
+    sync_database() to store.
+
+    `listings` is what passed the report's filters, `crawled` everything the
+    crawl saw. Stored text goes back onto all of them: sync_database() writes
+    the specs of every crawled listing, and without its full text a listing
+    outside the filters would have its specs rewritten from the snippet.
 
     Needs the database — without it every run would fetch the same pages
-    again — and a budget from mijn_fiets.md, since "could be an upgrade"
-    means "within budget". Without either it does nothing, quietly for
-    --no-db and with a line otherwise."""
-    if args.no_db or getattr(args, "detail_lookup", "none") == "none" or not listings:
+    again. `budget` also needs a budget from mijn_fiets.md, since "could be
+    an upgrade" means "within budget"; without one it fetches nothing, with a
+    line saying why."""
+    crawled = listings if crawled is None else crawled
+    mode = getattr(args, "detail_lookup", "none")
+    if args.no_db or not crawled:
         return {}
     import report
     import upgrade
@@ -2318,33 +2359,45 @@ def lookup_listing_details(args: argparse.Namespace, listings: list[Listing]) ->
     if Path(args.db).exists():
         conn = db.connect(args.db)
         try:
-            stored = db.load_listing_details(conn, [l.item_id for l in listings])
+            stored = db.load_listing_details(conn, [l.item_id for l in crawled])
             stored_site = db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE) if stored else {}
         finally:
             conn.close()
-        for listing in listings:
+        for listing in crawled:
             if listing.item_id in stored:
                 text, frame_height = stored[listing.item_id]
                 apply_listing_details(listing, text, stored_site.get(listing.item_id, {}), frame_height)
-
-    owner, problem = report.load_owner_context(args.mijn_fiets, args.db)
-    reason = problem or (None if owner is None or owner.budgets is not None else owner.valuation_problem)
-    if owner is None or owner.budgets is None or owner.target_size_cm is None:
-        if reason:
-            print(f"--detail-lookup overgeslagen: {reason}", file=sys.stderr)
+    # Putting stored text back costs no request, so `none` does it too: it's
+    # about fetching, and a run with it shouldn't undo what earlier runs read.
+    if mode == "none":
         return {}
-    targets = upgrade.detail_lookup_targets(
-        listings,
-        budgets=owner.budgets,
-        target_size_cm=owner.target_size_cm,
-        config=owner.config,
-    )
+
+    limit = getattr(args, "detail_limit", None)
+    if mode == "all":
+        targets = all_detail_targets(crawled, DETAIL_LOOKUP_ALL_LIMIT if limit is None else limit)
+        what = "racefiets(en), duurste eerst"
+    else:
+        owner, problem = report.load_owner_context(args.mijn_fiets, args.db)
+        reason = problem or (None if owner is None or owner.budgets is not None else owner.valuation_problem)
+        if owner is None or owner.budgets is None or owner.target_size_cm is None:
+            if reason:
+                print(f"--detail-lookup overgeslagen: {reason}", file=sys.stderr)
+            return {}
+        extra = {} if limit is None else {"limit": limit}
+        targets = upgrade.detail_lookup_targets(
+            listings,
+            budgets=owner.budgets,
+            target_size_cm=owner.target_size_cm,
+            config=owner.config,
+            **extra,
+        )
+        what = "kanshebber(s) binnen budget"
     if not targets:
         return {}
 
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
-    print(f"Advertentiepagina's ophalen voor {len(targets)} kanshebber(s) binnen budget...", file=sys.stderr)
+    print(f"Advertentiepagina's ophalen voor {len(targets)} {what}...", file=sys.stderr)
     fetched = {}
     for i, listing in enumerate(targets, start=1):
         try:
@@ -2515,12 +2568,20 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--detail-lookup",
-        choices=["budget", "none"],
+        choices=["budget", "all", "none"],
         default="budget",
         help="Fetch the listing page (full description and 'Kenmerken') for complete road "
         "bikes that fit the frame size and the budget from mijn_fiets.md — at most 10 per "
         "run, each listing only once, and only with the database (it remembers what was "
-        "fetched). 'none' skips it",
+        "fetched). 'all': every complete road bike the crawl saw, whatever its price or "
+        f"size, most expensive first, at most {DETAIL_LOOKUP_ALL_LIMIT} per run. 'none' skips it",
+    )
+    parser.add_argument(
+        "--detail-limit",
+        type=int,
+        default=None,
+        help="At most this many listing pages per run for --detail-lookup (default: 10 for "
+        f"'budget', {DETAIL_LOOKUP_ALL_LIMIT} for 'all'). Each one is a request plus --delay",
     )
     parser.add_argument(
         "--bids-only",
@@ -3028,7 +3089,7 @@ def run_for_query(
         if recorded:
             print(f"Recorded {recorded} price observation(s) to {args.price_history_file}")
 
-    fetched_details = lookup_listing_details(args, listings)
+    fetched_details = lookup_listing_details(args, listings, crawled_listings)
 
     score_listings(listings)
     sleepers.apply_sleeper_signals(listings)

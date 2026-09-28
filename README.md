@@ -38,7 +38,7 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
 2. writes the searches into the watchlist table (see "Watchlists" below), so
    `schedule.json` stays the one place to change them;
 3. runs `racefiets_jev.py` once for all the slot's searches, with the slot's
-   `pages`, `sort` and `bid_lookup`;
+   `pages`, `sort`, `bid_lookup` and (if set) `detail_lookup`/`detail_limit`;
 4. with `"valuation": true`, runs `valuation.py`, so the valuation history
    builds up by itself;
 5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
@@ -67,15 +67,19 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 | Slot | When | What |
 | --- | --- | --- |
 | `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 20 pages — 150-180 arrive between two runs, so 8 pages would catch every new one; 20 (≈600 listings, just over a day) makes the report show more than just today's arrivals, and every one of them goes into the price history and `koopjes.db`. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
+| `nacht-alles` | 02:15 | the newest 20 pages of racefietsen **without** price or size limits (`racefietsen-alles`), and the full listing text of up to 200 of them, most expensive first (`detail_lookup: all`). The expensive bikes are the ones whose description lists every part — year, groupset, wheels — which is what ties a listing to a model year and trim. Each listing's page is fetched once, ever |
 | `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, then `valuation.py` |
-| `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
+| `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without price or size limits and without bid lookups, plus the full text of up to 400 listings not fetched before |
 
 Change the searches' filters (a `max_price` for your budget, say) and the
 times in `schedule.json`; `python koopjes.py status` tells you straight away
 if something in it is wrong. Searches accept the same filters as a watchlist;
 slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
-`times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation` and
-`open_browser`.
+`times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation`,
+`open_browser`, and optionally `detail_lookup` (`budget`, `all`, `none`) and
+`detail_limit` — like `bid_lookup`, these decide how many requests a round
+makes, so they belong to the slot, not to a search. After adding a slot, run
+`python koopjes.py schedule` again and register the new task.
 
 ## Usage
 
@@ -147,7 +151,8 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--no-notify-better` | Skip the sound/notification when a listing beats the reference baseline | off |
 | `--bid-lookup` | Which bidding listings to fetch bid details for: `fast` (FAST_BID only), `all` (also MIN_BID), `none` | `fast` |
 | `--no-bid-lookup` | Alias for `--bid-lookup none` | off |
-| `--detail-lookup` | `budget`: fetch the listing page (full description, "Kenmerken") for complete road bikes within your size and budget — at most 10 per run, each listing once, only with `--db`. `none` skips it | `budget` |
+| `--detail-lookup` | `budget`: fetch the listing page (full description, "Kenmerken") for complete road bikes within your size and budget — at most 10 per run, each listing once, only with `--db`. `all`: every complete road bike the crawl saw, whatever its price or size, most expensive first, at most 200 per run. `none` skips it | `budget` |
+| `--detail-limit` | At most this many listing pages per run for `--detail-lookup` (each is one request plus `--delay`) | 10 / 200 |
 | `--bids-only` | Only report bidding listings | off |
 | `--min-score` | Only report listings with at least this dealscore (0-100) | none |
 | `--db` | Path to the SQLite database that mirrors the CSV/JSON files (see below) | `koopjes.db` |
@@ -733,10 +738,15 @@ The groupset is the bigger gap, and it's rarely in the first 200
 characters. So for the few listings that could be an upgrade — a complete
 road bike, not the wrong frame size, an effective price within the larger of
 your two budgets — the run fetches the listing page itself
-(`--detail-lookup budget`, the default): the full description and the
+(`--detail-lookup budget`, the default; `--detail-lookup all` does it for
+every complete road bike instead, most expensive first, up to
+`--detail-limit`): the full description and the
 "Kenmerken" list (material, brake, frame height). At most 10 per run, most
 promising first, and never the same listing twice: the text is stored in
-`koopjes.db` (`listing.full_description`) and put back on later runs. The
+`koopjes.db` (`listing.full_description`) and put back on later runs (also
+under `--detail-lookup none`, which only stops the fetching). The groupset
+read from it goes into the `spec` table as well (`groupset`,
+`groupset_tier`). The
 quality score, the upgrade finder and the valuation read the full text;
 reference matching and the slapers stay on the search snippet, since a
 slaper is about what the *search* shows. Needs the database and a budget

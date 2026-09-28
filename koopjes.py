@@ -44,6 +44,7 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_CONFIG = HERE / "schedule.json"
 
 BID_LOOKUP_CHOICES = ("fast", "all", "none")
+DETAIL_LOOKUP_CHOICES = ("budget", "all", "none")
 OPEN_BROWSER_CHOICES = ("auto", "always", "never")
 
 # Dutch day abbreviations, as the times in schedule.json are written, mapped
@@ -94,6 +95,9 @@ class Slot:
     times: tuple[SlotTime, ...]
     valuation: bool = False
     open_browser: str = "never"
+    # None: the script's own default (--detail-lookup budget, 10 pages).
+    detail_lookup: Optional[str] = None
+    detail_limit: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -196,6 +200,17 @@ def load_config(path: Path) -> Config:
             raise ConfigError(
                 f"tijdslot {name!r}: 'bid_lookup' moet een van {', '.join(BID_LOOKUP_CHOICES)} zijn"
             )
+        detail_lookup = spec.get("detail_lookup")
+        if detail_lookup is not None and detail_lookup not in DETAIL_LOOKUP_CHOICES:
+            raise ConfigError(
+                f"tijdslot {name!r}: 'detail_lookup' moet een van "
+                f"{', '.join(DETAIL_LOOKUP_CHOICES)} zijn"
+            )
+        detail_limit = spec.get("detail_limit")
+        if detail_limit is not None and (
+            not isinstance(detail_limit, int) or isinstance(detail_limit, bool) or detail_limit < 0
+        ):
+            raise ConfigError(f"tijdslot {name!r}: 'detail_limit' moet een geheel getal ≥ 0 zijn")
         open_browser = spec.get("open_browser", "never")
         if open_browser not in OPEN_BROWSER_CHOICES:
             raise ConfigError(
@@ -211,6 +226,8 @@ def load_config(path: Path) -> Config:
             times=tuple(parse_time(t) for t in spec.get("times") or []),
             valuation=bool(spec.get("valuation", False)),
             open_browser=open_browser,
+            detail_lookup=detail_lookup,
+            detail_limit=detail_limit,
         )
     if not slots:
         raise ConfigError(f"{path} heeft geen 'slots'")
@@ -286,6 +303,8 @@ def search_command(config: Config, slot: Slot) -> list[str]:
         "--db", config.db,
         "--html", config.html,
         "--summary-file", config.summary_file,
+        *(["--detail-lookup", slot.detail_lookup] if slot.detail_lookup else []),
+        *(["--detail-limit", str(slot.detail_limit)] if slot.detail_limit is not None else []),
         *config.extra_args,
     ]
 
@@ -666,7 +685,8 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
             f"<tr><td>{esc(slot.name)}</td>"
             f"<td>{esc(', '.join(t.label() for t in slot.times) or 'handmatig')}</td>"
             f"<td>{esc(', '.join(slot.searches))}</td>"
-            f"<td>{esc(depth)}, {esc(slot.sort)}{', taxatie' if slot.valuation else ''}</td></tr>"
+            f"<td>{esc(depth)}, {esc(slot.sort)}{', taxatie' if slot.valuation else ''}"
+            f"{', alle advertentieteksten' if slot.detail_lookup == 'all' else ''}</td></tr>"
         )
     parts.append("</tbody></table></div></body></html>")
     return "\n".join(parts)
