@@ -34,11 +34,11 @@
       "max_price": 600
     },
     "fietscomputer": {
-      "query": "garmin edge,wahoo elemnt,wahoo bolt,wahoo roam,hammerhead karoo,bryton rider,sigma rox,polar v650,polar m460,lezyne gps,cateye padrone,stages dash,pioneer sgx,igpsport,magene,xoss,coros dura",
+      "query": "fietscomputer",
       "category": "fietsaccessoires-fietscomputers",
       "reference_file": "reference_bike_accessories.csv",
       "report": false,
-      "note": "Alle fietscomputers: elk merk uit reference_bike_computers.csv als eigen term, zonder prijsgrens. Geen rapport per merk (report: false): alles staat samen in dashboard.html. Op merk gezocht: 'fietscomputer' levert vooral e-bike-displays en houders op."
+      "note": "De hele categorie fietscomputers: met de categorie erbij geeft 'fietscomputer' precies alles (2800 advertenties op 28-09-2026, net zoveel als zonder zoekwoord). Dat is ~95 pagina's per nacht, tegen ~360 advertenties voor de 17 merken los; het vond 87 extra computers met een bekend model (o.a. 'Garmin 830', 'Garmin 1030 incl. stuurmontage'). De e-bike-displays en houders filtert computers.py eruit. Geen rapport (report: false): alles staat in dashboard.html."
     }
   },
   "slots": {

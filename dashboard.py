@@ -203,10 +203,13 @@ def _load_market(db_path, config: dict) -> Dashboard:
         new_ids = set()
 
     pc.apply_computer_signals(listings, db_path=db_path, config=config)
+    # Alleen titels zonder bekend model; een fiets met computer ("Racefiets
+    # Cube + Garmin Edge 130 Plus") hoort hier niet bij.
+    catalog = pc._default_catalog()
     unknown = [
         Unknown(l, *pc.classify_unknown(l.title, l.description))
         for l in listings
-        if l.computer is None
+        if l.computer is None and pc.classify_title(l.title, catalog) is None
     ]
     return Dashboard(listings, unknown, newest.isoformat(timespec="minutes"), new_ids, config)
 

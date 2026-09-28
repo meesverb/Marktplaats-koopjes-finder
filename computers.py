@@ -78,7 +78,7 @@ NUMERIC = ("introductiejaar", "nieuwprijs_eur", "schermgrootte_inch", "batterijd
 # ("Hammerhead Karoo 3 houder nieuw", "Wahoo Roam I stuurhouder"). Dat
 # laatste geval is `twijfel`: de prijs beslist (apply_computer_signals()).
 
-KINDS_EXCLUDED = ("accessoire", "onderdeel", "defect", "gevraagd", "e-bike")
+KINDS_EXCLUDED = ("accessoire", "onderdeel", "defect", "gevraagd", "e-bike", "overig")
 
 # Staat een van deze woorden vóór de modelnaam, dan gaat de titel over een
 # fiets (of een trainer) die toevallig een computer noemt: "Racefiets Cube +
@@ -107,12 +107,13 @@ PART_RE = re.compile(
 )
 # Accessoires die ook los verkocht worden. \w* vooraan, want Marktplaats-
 # verkopers plakken: "fietscomputerhouder", "stuurmount", "siliconenhoes".
-# Geen "doos": "nieuw in doos" is een staat, geen los artikel; alleen
-# "doosje" en "lege doos" zijn dat.
+# Geen "doos" of "verpakking": "nieuw in doos/verpakking" is een staat, geen
+# los artikel; alleen "doosje" en "lege doos" zijn dat. "(?<!dis)cover":
+# een "Mio Cyclo Discover" is geen hoesje.
 ACCESSORY_WORD_RE = re.compile(
-    r"\b\w*(?:houders?|mounts?|beugel|steun|hoesjes?|hoes|case|cover|bumper|sleeve"
+    r"\b\w*(?:houders?|mounts?|beugel|steun|hoesjes?|hoes|case|(?<!dis)cover|bumper|sleeve"
     r"|folie|protector|tasje|oplaadkabel|kabel|oplader|lader|adapter"
-    r"|sensors?|sensoren|hartslag\w*|borstband|tickr|doosje|verpakking|handleiding)\b"
+    r"|sensors?|sensoren|hartslag\w*|borstband|tickr|doosje|handleiding)\b"
     r"|\blege\s+doos\b",
     re.I,
 )
@@ -137,8 +138,29 @@ EBIKE_RE = re.compile(
     r"|brose|panasonic|giant\s+ride\s?control|ridecontrol|e-?bike\w*|ebike\w*|elektrische\s+fiets\w*)\b",
     re.I,
 )
+# Alleen voor titels zonder bekend model (classify_unknown): van de 1188
+# "model onbekend" in de volledige categorie (28-09-2026) was het gros een
+# display van een e-bike- of fatbikemerk. Een racefietscomputer heet geen
+# "display" of "scherm"; die woorden gelden alleen zonder bekend model.
+EBIKE_UNKNOWN_RE = re.compile(
+    r"\b(?:fat\s?bike\w*|sparta|gazelle|batavus|vanmoof|stella|qwic|cortina|trek\s+ride|twist|h6c?"
+    r"|m[0-9]\s?display|display\w*|\w*scherm\w*|controller|omvormer|opvoer\w*|killswitch|ion"
+    r"|sc-?e\d{4})\b",
+    re.I,
+)
+# Wat een titel zonder bekend model tot fietscomputer maakt: het woord zelf,
+# of een merk dat fietscomputers maakt. Zonder een van beide is het iets
+# anders dat in de categorie terechtkwam (een hoortoestelmicrofoon, een fiets).
+COMPUTER_HINT_RE = re.compile(
+    r"\b(?:\w*computer\w*|gps|\w*navigatie\w*|kilometerteller\w*|\w*teller|snelheidsmeter\w*"
+    r"|garmin|wahoo|sigma|cateye|cat\s?eye|bryton|lezyne|polar|mio|teasi|igpsport|magene|xoss|coros"
+    r"|hammerhead|karoo|stages|bbb|bontrager|van\s?rysel|decathlon|elemnt|edge)\b",
+    re.I,
+)
 # Geen computer, wel in dezelfde categorie: radar en verlichting.
-NOT_A_COMPUTER_ITEM_RE = re.compile(r"\b(?:varia|radar|rtl\s?\d+|\w*lamp|\w*licht|verlichting)\b", re.I)
+NOT_A_COMPUTER_ITEM_RE = re.compile(
+    r"\b(?:varia|radar|rtl\s?\d+|\w*lamp|\w*licht|verlichting|kickr|\w*trainer|beeline|moto|motor\w*)\b", re.I
+)
 # In de beschrijving: de computer zelf zit er níet bij. "Wahoo ELEMNT ROAM GPS
 # Doos met nieuwe accessoires" (€200, 28-09-2026) is volgens de titel een
 # computer; de beschrijving zegt "accessoires zonder de fietscomputer. Mijn
@@ -288,9 +310,14 @@ def classify_unknown(title: str, description: str = "") -> tuple[str, str]:
             label = {"gevraagd": "zoekadvertentie", "e-bike": "e-bike-display of -bediening",
                      "defect": "reparatie of defect", "onderdeel": "los onderdeel"}[kind]
             return kind, f"{label} ('{found.group(0)}')"
+    found = EBIKE_UNKNOWN_RE.search(title)
+    if found:
+        return "e-bike", f"e-bike- of fatbike-display ('{found.group(0)}')"
     found = NOT_A_COMPUTER_ITEM_RE.search(title) or ACCESSORY_BRAND_RE.search(title)
     if found:
         return "accessoire", f"geen computer ('{found.group(0)}')"
+    if not COMPUTER_HINT_RE.search(title):
+        return "overig", "geen fietscomputer of -merk in de titel"
     word = ACCESSORY_WORD_RE.search(title)
     if word:
         device = DEVICE_RE.search(title[: word.start()])

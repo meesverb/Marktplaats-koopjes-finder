@@ -358,6 +358,19 @@ class ClassifyTitleTest(unittest.TestCase):
         "Bosch Kiox 300 Display, Fietscomputer": "e-bike",
         "Bosch Intuvia 100 + Bosch LED Remote": "e-bike",
         "Shimano Steps E7000 display": "e-bike",
+        "Sparta-display groot": "e-bike",
+        "H6C V2.0 Fietscomputer met USB-aansluiting": "e-bike",
+        "Fatbike Scherm 5-pins Display": "e-bike",
+        "Gazelle fietscomputer - werkend": "e-bike",
+        "Phonak Roger microfoon": "overig",
+        "Tenways damesfiets": "overig",
+        "Sigma BC 509 Fietscomputer - Nieuw in doos": "computer",
+        "Fietscomputer 15 Functies Digital Kilometerteller Waterdicht": "computer",
+        "Fietsnavigatie Garmin Oregon 700": "computer",
+        "Z.g.a.n Mio Cyclo Discover Pal GPS (Nieuwe accu & moederbord": "computer",
+        "UNION 9WN Draadloze Fietscomputer - Nieuw in verpakking": "computer",
+        "Shimano fietscomputer SC-E6100 - Zo goed als nieuw": "e-bike",
+        "Wahoo KICKR Core": "accessoire",
     }
 
     def test_real_titles_without_a_known_model(self):

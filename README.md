@@ -77,10 +77,10 @@ Change the searches' filters (a `max_price` for your budget, say) and the
 times in `schedule.json`; `python koopjes.py status` tells you straight away
 if something in it is wrong. Searches accept the same filters as a watchlist,
 plus `"report": false` for a search whose listings only need to be in the
-database — the bike computer search has it: it queries 17 brands, which gave
-17 separate reports (`racefiets_report_garmin-edge.html`, …); now they are all
-on the dashboard, and those files are no longer written (old ones can be
-deleted). Slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
+database — the bike computer search has it: it used to query 17 brands,
+which gave 17 separate reports (`racefiets_report_garmin-edge.html`, …); now
+everything is on the dashboard, and those files are no longer written (old
+ones can be deleted). Slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
 `times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation` and
 `open_browser`.
 
@@ -377,6 +377,20 @@ or without a median under 20% of the original price, or without either under
 €30 (`filter` in `computer_scoring.json`), it's an accessory. A doubtful title
 without a price stays a computer, marked "kijk op de foto" — better a holder
 that slips through (the photo shows it) than a computer that disappears.
+Titles without a known model go through the same kind of rules: e-bike and
+fatbike displays (Bosch, Sparta, Gazelle, Batavus, H6C, Shimano SC-E…,
+"display", "scherm") are `e-bike`, a holder or sensor without a computer
+before it is `accessoire`, and a title that names neither a bike computer nor
+a brand that makes them is `overig`. What's left shows as "model onbekend".
+
+The `fietscomputer` search covers the **whole category**: with the category
+set, "fietscomputer" returns everything in it (2800 listings on 28-09-2026,
+as many as no query at all). About 95 pages a night instead of ~360 listings
+for 17 brand names, but it found 87 more computers with a known model —
+titles like "Garmin 830" or "Garmin 1030 incl. stuurmontage" that "garmin
+edge" doesn't match. On that crawl 1734 listings were e-bike displays and
+went to Uitgefilterd, and no computer the brand searches had found was lost.
+
 Always excluded: repairs and defects ("scherm vervangen", "defect", "voor
 onderdelen", "batterij vervangen"), parts ("LCD", "color kit", "koord"),
 wanted ads ("ik zoek ...") and — the one rule that reads the description — a
@@ -403,7 +417,7 @@ still gets a small **Fietscomputers** tab with its flips, upgrades and what
 was filtered out; a run without any doesn't show the tab.
 
 ```bash
-python koopjes.py run nacht        # includes the "fietscomputer" search: every brand in the file, all pages
+python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
 python dashboard.py --serve        # live, with Gekocht/Verkocht buttons (Ctrl+C to stop)
 python computers.py                 # feature score per model, with the difference to your own
