@@ -2292,7 +2292,12 @@ def render_html(
         bike_panel=panels.bike_html,
         sleeper_count=sleeper_count,
         sleeper_panel=sleeper_panel,
-        computer_count=computer_count,
+        # Only when this run has bike computers: on a racefiets run the tab
+        # would always read "(0)". The full picture is dashboard.html.
+        computer_tab=(
+            f'  <button data-panel="computers">Fietscomputers ({computer_count})</button>\n'
+            if computer_count else ""
+        ),
         computer_panel=computer_panel,
     )
 

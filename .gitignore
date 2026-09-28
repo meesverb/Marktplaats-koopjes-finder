@@ -7,6 +7,7 @@ venv/
 seen_listings.json
 racefiets_report*.html
 overzicht.html
+dashboard.html
 logs/
 .koopjes.lock
 koopjes.db

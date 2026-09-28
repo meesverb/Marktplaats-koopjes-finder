@@ -80,7 +80,9 @@ class PanelTabsTest(unittest.TestCase):
     def test_every_panel_tab_has_a_section(self):
         html = render([make_listing()])
         tabs = re.findall(r'data-panel="(\w+)"', html)
-        self.assertEqual(tabs, ["listings", "sleepers", "computers", "bidpanel", "upgrade", "mybike"])
+        # No bike computers in this run, so no Fietscomputers tab (its own
+        # test is in test_computers.PanelTest).
+        self.assertEqual(tabs, ["listings", "sleepers", "bidpanel", "upgrade", "mybike"])
         for name in tabs:
             with self.subTest(panel=name):
                 self.assertIn(f'id="panel-{name}"', html)

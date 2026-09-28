@@ -26,9 +26,21 @@
     "unknown_credit": 0.0,
     "support_penalty": {"nee": 15, "beperkt": 5},
     "flip": {
-        "_toelichting": "negotiation_factor is dezelfde heuristiek als het midden van valuation.NEGOTIATION_DEFAULT: vraagprijs naar verkoopprijs, geen meting.",
+        "_toelichting": "negotiation_factor is dezelfde heuristiek als het midden van valuation.NEGOTIATION_DEFAULT: vraagprijs naar verkoopprijs, geen meting. costs_eur gaat van elke flip af: zet hier verzendkosten of benzine op als je die mee wilt rekenen.",
         "min_comps": 3,
         "negotiation_factor": 0.875,
-        "comp_window_days": 180
+        "comp_window_days": 180,
+        "costs_eur": 0
+    },
+    "filter": {
+        "_toelichting": "Voor een titel met een houder- of hoeswoord direct na de modelnaam ('Karoo 3 houder nieuw'): onder dit deel van de mediaan van hetzelfde model, of zonder mediaan onder dit deel van de nieuwprijs, of zonder beide onder floor_eur, is het een accessoire.",
+        "max_share_of_median": 0.4,
+        "max_share_of_new": 0.2,
+        "floor_eur": 30
+    },
+    "dashboard": {
+        "_toelichting": "Actief = niet verdwenen en gezien binnen active_days van de nieuwste waarneming in de categorie. new_hours: zo lang heet een advertentie nieuw.",
+        "active_days": 3,
+        "new_hours": 24
     }
 }

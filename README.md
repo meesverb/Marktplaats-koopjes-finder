@@ -28,6 +28,7 @@ python koopjes.py status            # check schedule.json, see when each search 
 python koopjes.py run overdag       # one round, exactly as the scheduler will start it
 python koopjes.py schedule          # Task Scheduler (Windows) / cron lines, paths filled in
 python koopjes.py lists             # lijsten/beste_koopjes.txt and lijsten/zonder_referentie.txt
+python koopjes.py dashboard         # rebuild dashboard.html (all bike computers) without a round
 ```
 
 Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
@@ -38,14 +39,17 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
 2. writes the searches into the watchlist table (see "Watchlists" below), so
    `schedule.json` stays the one place to change them;
 3. runs `racefiets_jev.py` once for all the slot's searches, with the slot's
-   `pages`, `sort` and `bid_lookup`;
+   `pages`, `sort` and `bid_lookup` — and once more, with `--no-html`, for
+   the searches marked `"report": false` (see below);
 4. with `"valuation": true`, runs `valuation.py`, so the valuation history
    builds up by itself;
 5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
    are new / better than your reference / top deals / cheaper than before, the
    new listings most worth a look, this run's new **slapers** with their first
    photo (see "Slapers" below), a link to each full report, the latest
-   valuation of your own bike, and the schedule.
+   valuation of your own bike, and the schedule;
+6. rebuilds **`dashboard.html`**, one page with every bike computer on
+   Marktplaats (see "Fietscomputers" below). `overzicht.html` links to it.
 
 After every round two plain-text lists are rewritten in `lijsten/`, written
 to be pasted into a conversation: `beste_koopjes.txt` (per search the upgrade
@@ -71,8 +75,12 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 
 Change the searches' filters (a `max_price` for your budget, say) and the
 times in `schedule.json`; `python koopjes.py status` tells you straight away
-if something in it is wrong. Searches accept the same filters as a watchlist;
-slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
+if something in it is wrong. Searches accept the same filters as a watchlist,
+plus `"report": false` for a search whose listings only need to be in the
+database — the bike computer search has it: it queries 17 brands, which gave
+17 separate reports (`racefiets_report_garmin-edge.html`, …); now they are all
+on the dashboard, and those files are no longer written (old ones can be
+deleted). Slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
 `times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation` and
 `open_browser`.
 
@@ -300,44 +308,74 @@ columns keep their place.
 The generic-words list is written for road bikes; on other queries (hifi, for
 instance) hardly any title passes it, so there will simply be no slapers.
 
-### Fietscomputers — upgrade and flip margin (`computers.py`)
+### Fietscomputers — the dashboard (`dashboard.py`, `computers.py`)
 
-A listing whose **title** names a known bike computer gets a place in the
-report's **Fietscomputers** tab and a `=== Fietscomputers` block in the console
-(only when a run has any). The models, one row each with a source, are in
-`reference_bike_computers.csv`; the weights in `computer_scoring.json`. A bike
-"Racefiets ... + Garmin Edge 530" is not matched (a bike word before the
-model name), nor is "Houder voor Garmin Edge 530" (an accessory before it);
-"Garmin Edge 800 fiets navigatie" is. Shown, but never an upgrade, a flip or
-a comparable price: a title with a repair or defect ("scherm vervangen",
-"defect", "voor onderdelen"), a part ("LCD", "color kit", "koord"), and a
-title with a holder or case word anywhere ("stuurhouder", "mount", "hoes")
-whose price is under 40% of the median for that model — so "Wahoo Roam I
-stuurhouder" for €15 is out, "Garmin Edge 530 + stuurmount" for €170 is in.
-Without enough other listings of the model to compare with, such a title
-stays a computer.
+**`dashboard.html`** is the one page for bike computers: everything the
+`fietscomputer` search found, across all its brands and earlier rounds, built
+from `koopjes.db`. `koopjes.py` rebuilds it after every round;
+`python dashboard.py` (or `python koopjes.py dashboard`) does it by hand.
+Active means: not disappeared, and seen within 3 days of the newest listing
+in the category (`dashboard` in `computer_scoring.json`). Tabs:
+
+| Tab | What |
+| --- | --- |
+| **Flips** | every computer below its expected selling price, biggest profit first. Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
+| **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
+| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns |
+| **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
+| **Uitgefilterd** | holders, cases, parts, broken ones and wanted ads, each with the reason, to check that no real computer ended up there |
+
+Photos come from the search results (stored since database migration 6); a
+listing from before that shows a grey square until the next round sees it.
+
+**Profit** = expected selling price − price − costs. The selling price is the
+median of what other listings for the same model ask (this and earlier rounds,
+last 180 days, sold ones included), × 0,875 for haggling (the same heuristic
+as `valuation.py`); the band uses the lower and upper quartile instead of the
+median. Only with at least 3 other listings; a running bid is never a
+comparable. `costs_eur` in `computer_scoring.json` (default €0) comes off
+every flip — put shipping or fuel there if you want it counted.
+
+**What counts as a computer.** Only the title is used, and every title with a
+known model gets one kind: `computer`, `accessoire`, `onderdeel`, `defect`
+or `gevraagd` (a bike, or a listing in a bike category, is left out
+altogether). From the full crawl of the category (28-09-2026, 361 listings):
+a real computer names the device or a connector before the holder or case
+word — "Garmin Edge 530 + stuurmount", "Garmin Edge Explore fietscomputer met
+houder en doos", "Garmin 840 Sensor Bundle" — while a loose accessory has that
+word before the model ("Hoesje voor Garmin 1000", "K-Edge ... Bolt ... mount")
+or right after it with nothing in between ("Hammerhead Karoo 3 houder nieuw").
+That last case is decided on price: under 40% of the median for the model,
+or without a median under 20% of the original price, or without either under
+€30 (`filter` in `computer_scoring.json`), it's an accessory. A doubtful title
+without a price stays a computer, marked "kijk op de foto" — better a holder
+that slips through (the photo shows it) than a computer that disappears.
+Always excluded: repairs and defects ("scherm vervangen", "defect", "voor
+onderdelen", "batterij vervangen"), parts ("LCD", "color kit", "koord") and
+wanted ads ("ik zoek ..."). On that crawl this kept 277 computers with a
+known model and put exactly the 18 accessories, parts, repairs and wanted ads
+in Uitgefilterd.
 
 Two measures, shown separately — neither is the dealscore:
 
 - **Upgrade** — the model's feature score (0-100) minus that of your own
-  computer (`baseline` in the JSON: the Wahoo ELEMNT ROAM v1), and that per
-  €100 of the price. The weights were chosen by the owner (28-09-2026):
-  navigation 35 (rerouting, routable maps, automatic Strava/Komoot sync),
-  planning on the device itself 20, training 25 (ANT+, Di2/AXS, workouts,
-  climb feature), controls 10 (buttons over touch), battery 10. A model
-  without updates any more loses 15 points, one whose maker stopped but still
-  supports it 5. An empty field was not researched and earns nothing — the tab
-  says per model which fields are unknown, so a low score can mean "unknown"
-  rather than "bad".
-- **Flipmarge** — the median of what other listings for the same model ask
-  (this run plus, with `--db`, earlier runs seen in the last 180 days), times
-  0,875 for haggling (the same heuristic as `valuation.py`), minus this
-  listing's price. Only with at least 3 other listings; a running bid is not
-  a comparable.
+  computer (`baseline` in the JSON: the Wahoo ELEMNT ROAM v1). The weights
+  were chosen by the owner (28-09-2026): navigation 35 (rerouting, routable
+  maps, automatic Strava/Komoot sync), planning on the device itself 20,
+  training 25 (ANT+, Di2/AXS, workouts, climb feature), controls 10 (buttons
+  over touch), battery 10. A model without updates any more loses 15 points,
+  one whose maker stopped but still supports it 5. An empty field was not
+  researched and earns nothing — the dashboard says per model how many fields
+  are unknown, so a low score can mean "unknown" rather than "bad".
+- **Flip profit** — see above.
+
+A regular report (`racefiets_jev.py`) of a run that contains bike computers
+still gets a small **Fietscomputers** tab with its flips, upgrades and what
+was filtered out; a run without any doesn't show the tab.
 
 ```bash
 python koopjes.py run nacht        # includes the "fietscomputer" search: every brand in the file, all pages
-python racefiets_jev.py --query "garmin edge" --pages 1
+python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo
 ```
@@ -849,8 +887,8 @@ that is out of scope, by design.
 ### Report tabs — Slapers, Fietscomputers, Biedpaneel, Upgrade, Mijn fiets
 
 Next to the listings table (which keeps its row filters and sortable columns
-as before) the HTML report has five more tabs: **Slapers** and
-**Fietscomputers** (see those sections above) and the three below
+as before) the HTML report has more tabs: **Slapers**, **Fietscomputers**
+(only when the run has any; see those sections above) and the three below
 (PLAN_FIETSWAARDE.md fase 6).
 The chosen tab is kept in the URL (`#upgrade`), so reloading the report after
 a new run lands on the same one.

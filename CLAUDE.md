@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 628 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 657 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -87,7 +87,8 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | --- | --- |
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
 | `koopjes.py` + `schedule.json` | automatische rondes: `schedule.json` beschrijft zoekopdrachten en tijdsloten, `koopjes.py run <slot>` draait er één (lock, log, `overzicht.html`), `koopjes.py schedule` geeft de inplan-commando's |
-| `computers.py` + `computer_scoring.json` | fietscomputers: herkent het model in de titel tegen `reference_bike_computers.csv`, functiescore met de gewichten die de eigenaar koos, upgrade t.o.v. de eigen Roam v1 en flipmarge. Eigen tab in het rapport; los van dealscore en waardescore. `python computers.py` toont de score per model |
+| `computers.py` + `computer_scoring.json` | fietscomputers: herkent het model in de titel tegen `reference_bike_computers.csv`, functiescore met de gewichten die de eigenaar koos, upgrade t.o.v. de eigen Roam v1 en flipmarge. `classify_title()` deelt elke titel in (computer, accessoire, onderdeel, defect, gevraagd); los van dealscore en waardescore. `python computers.py` toont de score per model |
+| `dashboard.py` | het fietscomputer-dashboard: `dashboard.html` uit `koopjes.db`, tabs Flips / Upgrades / Alle computers / Marktprijzen / Uitgefilterd. `koopjes.py` bouwt het na elke ronde; de zoekopdracht `fietscomputer` heeft `"report": false`, dus geen rapport per merk meer. Alleen lezen uit de database |
 | `sleepers.py` | slapers: advertenties waarvan titel en tekst niets over de fiets zeggen (geen merk, weinig tekst, haast, bieden zonder bod). Alleen uit de zoekresultaten; eigen tab in het rapport, los van dealscore en waardescore |
 | `report.py` | rapportpanelen (fase 6): Biedpaneel, Upgrade, Mijn fiets, plus de waardescore-kolom; alleen lezen uit `koopjes.db` |
 | `report_template.html` | HTML-sjabloon van het rapport (`string.Template`), wordt runtime ingelezen |

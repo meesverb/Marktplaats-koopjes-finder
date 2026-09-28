@@ -106,6 +106,48 @@ class ConfigTest(TempDirTest):
             self.assertIn(part, joined)
 
 
+class ReportSettingTest(TempDirTest):
+    """"report": false — the bike computers searched 17 brands and got 17
+    loose HTML reports; they now go to the dashboard only."""
+
+    def config(self, report):
+        searches = {
+            "racefietsen": {"query": "racefiets"},
+            "fietscomputer": {"query": "wahoo elemnt,garmin edge", "report": report},
+        }
+        slots = {"nacht": {"searches": ["racefietsen", "fietscomputer"], "pages": 0, "times": ["03:00"]}}
+        return write_config(self.dir, searches=searches, slots=slots)
+
+    def test_searches_without_a_report_run_with_no_html(self):
+        config = koopjes.load_config(self.config(False))
+        commands = koopjes.search_commands(config, config.slots["nacht"])
+        self.assertEqual(len(commands), 2)
+        with_report, without = (" ".join(c) for c in commands)
+        self.assertIn("--watchlist racefietsen", with_report)
+        self.assertNotIn("--no-html", with_report)
+        self.assertIn("--watchlist fietscomputer", without)
+        self.assertIn("--no-html", without)
+
+    def test_report_is_not_a_watchlist_filter(self):
+        config = koopjes.load_config(self.config(False))
+        self.assertNotIn("report", config.searches["fietscomputer"]["filters"])
+        self.assertFalse(config.searches["fietscomputer"]["report"])
+
+    def test_default_is_one_command_with_reports(self):
+        config = koopjes.load_config(self.config(True))
+        commands = koopjes.search_commands(config, config.slots["nacht"])
+        self.assertEqual(len(commands), 1)
+        self.assertNotIn("--no-html", commands[0])
+
+    def test_report_must_be_true_or_false(self):
+        with self.assertRaisesRegex(koopjes.ConfigError, "'report'"):
+            koopjes.load_config(self.config("nee"))
+
+    def test_the_shipped_schedule_sends_the_computers_to_the_dashboard(self):
+        config = koopjes.load_config(Path(repo_file("schedule.json")))
+        self.assertFalse(config.searches["fietscomputer"]["report"])
+
+
 class RunSlotTest(TempDirTest):
     def run_slot(self, slot, codes=None):
         config = koopjes.load_config(write_config(self.dir))
@@ -133,6 +175,14 @@ class RunSlotTest(TempDirTest):
         self.assertTrue((self.dir / "overzicht.html").exists())
         log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
         self.assertIn("ronde 'nacht'", log)
+
+    def test_a_round_writes_the_dashboard_and_the_overview_links_to_it(self):
+        self.run_slot("nacht")
+        self.assertTrue((self.dir / "dashboard.html").exists())
+        overview = (self.dir / "overzicht.html").read_text(encoding="utf-8")
+        self.assertIn("href='dashboard.html'", overview)
+        log = (self.dir / "logs" / "koopjes.log").read_text(encoding="utf-8")
+        self.assertIn("Dashboard bijgewerkt", log)
 
     def test_too_few_comps_is_not_a_failed_round(self):
         code, _, _ = self.run_slot("nacht", {"valuation.py": koopjes.VALUATION_NO_COMPS})

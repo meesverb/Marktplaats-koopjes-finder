@@ -104,6 +104,7 @@ class Config:
     db: str = "koopjes.db"
     summary_file: str = "logs/runs.jsonl"
     overview: str = "overzicht.html"
+    dashboard: str = "dashboard.html"
     log_file: str = "logs/koopjes.log"
     html: str = "racefiets_report.html"
     extra_args: tuple[str, ...] = field(default_factory=tuple)
@@ -150,12 +151,19 @@ def validate_search(name: str, spec) -> dict:
     query = spec.get("query")
     if not isinstance(query, str) or not query.strip():
         raise ConfigError(f"zoekopdracht {name!r} heeft geen 'query'")
-    filters = {k: v for k, v in spec.items() if k not in ("query", "note")}
+    # "report": false — geen rapport per zoekterm. De fietscomputers zoeken op
+    # 17 merken en gaven 17 losse HTML-bestanden; die staan nu samen in het
+    # dashboard (dashboard.py). Geen watchlist-filter: het gaat over wat er
+    # na het zoeken gebeurt, niet over wat er gezocht wordt.
+    report = spec.get("report", True)
+    if not isinstance(report, bool):
+        raise ConfigError(f"zoekopdracht {name!r}: 'report' moet true of false zijn")
+    filters = {k: v for k, v in spec.items() if k not in ("query", "note", "report")}
     try:
         mp.args_for_watchlist(mp.parse_args([]), {"name": name, "query": query, "filters": filters})
     except ValueError as exc:
         raise ConfigError(str(exc)) from None
-    return {"query": query.strip(), "filters": filters}
+    return {"query": query.strip(), "filters": filters, "report": report}
 
 
 def load_config(path: Path) -> Config:
@@ -226,6 +234,7 @@ def load_config(path: Path) -> Config:
         db=files.get("db", "koopjes.db"),
         summary_file=files.get("summary", "logs/runs.jsonl"),
         overview=files.get("overview", "overzicht.html"),
+        dashboard=files.get("dashboard", "dashboard.html"),
         log_file=files.get("log", "logs/koopjes.log"),
         html=files.get("report", "racefiets_report.html"),
         extra_args=tuple(extra_args),
@@ -274,11 +283,12 @@ def lock_path(config: Config) -> Path:
     return config.base_dir / ".koopjes.lock"
 
 
-def search_command(config: Config, slot: Slot) -> list[str]:
-    return [
+def search_command(config: Config, slot: Slot, searches: Optional[tuple] = None,
+                   html: bool = True) -> list[str]:
+    command = [
         sys.executable,
         str(HERE / "racefiets_jev.py"),
-        "--watchlist", ",".join(slot.searches),
+        "--watchlist", ",".join(searches or slot.searches),
         "--pages", str(slot.pages),
         "--sort", slot.sort,
         "--bid-lookup", slot.bid_lookup,
@@ -288,6 +298,22 @@ def search_command(config: Config, slot: Slot) -> list[str]:
         "--summary-file", config.summary_file,
         *config.extra_args,
     ]
+    if not html:
+        command.append("--no-html")
+    return command
+
+
+def search_commands(config: Config, slot: Slot) -> list[list[str]]:
+    """Eén racefiets_jev-aanroep voor de zoekopdrachten met een eigen rapport,
+    één met --no-html voor die zonder (zie validate_search: "report")."""
+    with_report = tuple(s for s in slot.searches if config.searches[s].get("report", True))
+    without = tuple(s for s in slot.searches if s not in with_report)
+    commands = []
+    if with_report:
+        commands.append(search_command(config, slot, with_report))
+    if without:
+        commands.append(search_command(config, slot, without, html=False))
+    return commands
 
 
 def valuation_command(config: Config) -> list[str]:
@@ -395,10 +421,11 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
     sync_searches(config)
     failed = False
 
-    code = runner(search_command(config, slot), log, config.base_dir)
-    if code != 0:
-        failed = True
-        log.line(f"FOUT: het zoeken stopte met code {code}")
+    for command in search_commands(config, slot):
+        code = runner(command, log, config.base_dir)
+        if code != 0:
+            failed = True
+            log.line(f"FOUT: het zoeken stopte met code {code}")
 
     if slot.valuation:
         code = runner(valuation_command(config), log, config.base_dir)
@@ -410,6 +437,12 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner) -> int:
 
     overview = write_overview(config)
     log.line(f"Overzicht bijgewerkt: {overview}")
+    try:
+        dashboard = write_dashboard(config)
+        log.line(f"Dashboard bijgewerkt: {dashboard}")
+    except Exception as exc:  # het dashboard mag een ronde niet laten mislukken
+        failed = True
+        log.line(f"FOUT: het dashboard kon niet gebouwd worden: {exc}")
     unmatched, deals = write_lists(config)
     log.line(f"Lijsten bijgewerkt: {unmatched} en {deals}")
 
@@ -482,6 +515,7 @@ def euro(value) -> str:
 
 
 OVERVIEW_CSS = """
+.dashlink { font-size: 1.05rem; margin: 8px 0 18px; }
 :root { color-scheme: light dark; --bg:#fff; --fg:#1d1d1f; --muted:#6b6b70; --line:#e3e3e6;
         --accent:#0a66c2; --good:#1a7f37; --warn:#b35900; }
 @media (prefers-color-scheme: dark) { :root { --bg:#161618; --fg:#ececef; --muted:#a0a0a8;
@@ -511,6 +545,8 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         f"<style>{OVERVIEW_CSS}</style></head><body>",
         "<h1>Koopjes-overzicht</h1>",
         f"<p class='muted'>Bijgewerkt {esc(now_local())} · schema: {esc(config.path.name)}</p>",
+        f"<p class='dashlink'><a href='{esc(config.dashboard, quote=True)}'><strong>Fietscomputers-dashboard</strong></a>"
+        " — alle fietscomputers op één pagina: flips met winst, upgrades, marktprijzen.</p>",
     ]
 
     parts.append("<h2>Mijn fiets</h2>")
@@ -545,7 +581,12 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
             continue
         for summary in found:
             report = summary.get("report")
-            link = f"<a href='{esc(report)}'>openen</a>" if report else "<span class='muted'>—</span>"
+            if report:
+                link = f"<a href='{esc(report)}'>openen</a>"
+            elif not search.get("report", True):
+                link = f"<a href='{esc(config.dashboard, quote=True)}'>dashboard</a>"
+            else:
+                link = "<span class='muted'>—</span>"
             parts.append(
                 f"<tr><td>{esc(summary['name'])}<div class='muted'>{esc(summary.get('query', ''))}</div></td>"
                 f"<td>{esc(local_time(summary.get('finished_at', '')))}</td>"
@@ -670,6 +711,15 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         )
     parts.append("</tbody></table></div></body></html>")
     return "\n".join(parts)
+
+
+def write_dashboard(config: Config) -> Path:
+    """dashboard.html: alle fietscomputers uit de database op één pagina."""
+    import dashboard
+
+    path = config.base_dir / config.dashboard
+    dashboard.write_dashboard(config.base_dir / config.db, path, overview_link=config.overview)
+    return path
 
 
 def write_overview(config: Config) -> Path:
@@ -942,6 +992,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="show the schedule and when each search last ran")
     sub.add_parser("schedule", help="print Task Scheduler (Windows) and cron commands")
     sub.add_parser("overview", help="rebuild the overview page")
+    sub.add_parser("dashboard", help="rebuild dashboard.html (all bike computers, from the database)")
     sub.add_parser(
         "lists",
         help="write lijsten/zonder_referentie.txt and lijsten/beste_koopjes.txt "
@@ -978,6 +1029,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 0
         if args.command == "schedule":
             print_schedule(config)
+            return 0
+        if args.command == "dashboard":
+            print(f"Dashboard bijgewerkt: {write_dashboard(config)}")
             return 0
         if args.command == "lists":
             unmatched, deals = write_lists(config)

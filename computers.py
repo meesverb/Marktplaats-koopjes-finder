@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Sequence
+from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 CATALOG_PATH = HERE / "reference_bike_computers.csv"
@@ -58,58 +59,80 @@ VOCABULARY = {
 }
 NUMERIC = ("introductiejaar", "nieuwprijs_eur", "schermgrootte_inch", "batterijduur_uur", "gewicht_g")
 
+# --- Wat staat er te koop? ---------------------------------------------------
+#
+# Een titel met een modelnaam is nog geen computer. In de volledige crawl van
+# de categorie (28-09-2026, 361 advertenties) stonden er ook houders, hoesjes,
+# losse schermen, reparatiediensten en zoekadvertenties tussen, allemaal met
+# "Garmin Edge 1030" of "Wahoo Roam" in de titel. classify_title() deelt elke
+# titel in één soort in, met de reden erbij; alleen `computer` telt mee voor
+# flips, upgrades en vergelijkingsprijzen. De rest is zichtbaar in de tab
+# Uitgefilterd, zodat je kunt nakijken dat er geen echte computer bij zit.
+#
+# Het patroon uit die crawl: een echte computer noemt een apparaatwoord
+# ("fietscomputer", "GPS", "navigatie") of een koppelwoord ("met", "incl.",
+# "+", "&") vóór de houder of hoes — "Garmin Edge 530 + stuurmount",
+# "Garmin Edge Explore fietscomputer met houder en doos". Een los accessoire
+# heeft het accessoirewoord vóór de modelnaam ("Hoesje voor Garmin 1000",
+# "K-Edge ... Bolt ... mount") of er direct achter zonder koppelwoord
+# ("Hammerhead Karoo 3 houder nieuw", "Wahoo Roam I stuurhouder"). Dat
+# laatste geval is `twijfel`: de prijs beslist (apply_computer_signals()).
+
+KINDS_EXCLUDED = ("accessoire", "onderdeel", "defect", "gevraagd")
+
 # Staat een van deze woorden vóór de modelnaam, dan gaat de titel over een
 # fiets (of een trainer) die toevallig een computer noemt: "Racefiets Cube +
 # Garmin Edge 130 Plus". Erna is het een omschrijving van de computer zelf:
-# "Garmin Edge 800 fiets Navigatie", "Garmin Edge 130 MTB fietscomputer" —
-# die vielen in de volledige crawl van 28-09-2026 eerst ten onrechte weg.
+# "Garmin Edge 800 fiets Navigatie", "Garmin Edge 130 MTB fietscomputer".
 # \b houdt "fietscomputer" erbuiten.
 NOT_A_COMPUTER_RE = re.compile(
     r"\b(?:racefiets\w*|fiets|fietsen|mountainbike|mtb|gravel\s?bike|gravelfiets|e-?bike"
     r"|tijdritfiets|kickr|trainer|fietstrainer)\b",
     re.I,
 )
-# Een accessoire vóór de modelnaam ("Houder voor Garmin Edge 530") is een
-# accessoire; erna ("Garmin Edge 530 met houder") is een computer met extra's.
-ACCESSORY_RE = re.compile(
-    r"\b(?:houder|houders|mount|stuurhouder|hoes|hoesje|case|cover|folie|screen\s?protector"
-    r"|protector|beschermfolie|beugel|adapter|kabel|oplader|lader|siliconen)\b",
-    re.I,
-)
-
-
-# Een reparatiedienst ("Garmin Edge 830 scherm vervangen" — twee keer in de
-# eerste echte crawl, 28-09-2026) of een defect toestel. Wordt wel getoond,
-# maar is geen upgrade, geen flip en geen vergelijkingsprijs: de prijs zegt
-# niets over wat een werkend exemplaar opbrengt.
+# "ik zoek een kapotte garmin edge 1030" (zelfde crawl): iemand die koopt.
+WANTED_RE = re.compile(r"\b(?:zoek|zoeke|gezocht|gevraagd|wanted|wie\s+heeft)\b", re.I)
+# Een reparatiedienst ("Garmin Edge 830 scherm vervangen") of een defect
+# toestel: de prijs zegt niets over wat een werkend exemplaar opbrengt.
 REPAIR_RE = re.compile(
     r"\b(?:scherm\s?vervang\w*|reparatie\w*|repar(?:eer|eren)\w*|defect\w*|kapot\w*"
-    r"|voor\s+onderdelen|werkt\s+niet|accu\s?vervang\w*)\b",
+    r"|voor\s+onderdelen|werkt\s+niet|(?:accu|batterij)\s?vervang\w*)\b",
     re.I,
 )
-
-
-# Losse onderdelen met een modelnaam in de titel ("Garmin LCD scherm Edge
-# 830", "Hammerhead Karoo 2 custom color kit", "veiligheidskoord voor Roam")
-# — gezien in de volledige crawl van de categorie, 28-09-2026. Waar ook in de
-# titel: dit zijn nooit hele computers.
+# Losse onderdelen ("Garmin LCD scherm Edge 830", "Karoo 2 custom color kit",
+# "veiligheidskoord voor Roam"). Waar ook in de titel: nooit een hele computer.
 PART_RE = re.compile(
-    r"\b(?:lcd|colou?r\s?kit|kleur\s?kit|\w*koord|tether|onderdel\w*|reserveonderdel\w*)\b",
+    r"\b(?:lcd|colou?r\s?kit|kleur\s?kit|\w*koor[dt]|tether|onderdel\w*|reserveonderdel\w*)\b",
     re.I,
 )
-# Een houder of hoes kan ook ná de modelnaam staan ("Wahoo Roam I
-# stuurhouder", "Bolt 2.0 aero race mount"), maar "Garmin Edge 530 +
-# stuurmount" voor €170 is gewoon een computer. Zo'n woord ergens in de titel
-# maakt een advertentie alleen verdacht; de prijs beslist (ACCESSORY_MAX_SHARE).
-# Geen \b vooraan: "fietscomputerhouder" en "stuurmount" moeten ook meetellen.
-ACCESSORY_ANYWHERE_RE = re.compile(
-    r"(?:houders?|mount|hoes|hoesje|beugel|cover|folie|protector|steun)\b", re.I
+# Accessoires die ook los verkocht worden. \w* vooraan, want Marktplaats-
+# verkopers plakken: "fietscomputerhouder", "stuurmount", "siliconenhoes".
+# Geen "doos": "nieuw in doos" is een staat, geen los artikel; alleen
+# "doosje" en "lege doos" zijn dat.
+ACCESSORY_WORD_RE = re.compile(
+    r"\b\w*(?:houders?|mounts?|beugel|steun|hoesjes?|hoes|case|cover|bumper|sleeve"
+    r"|folie|protector|tasje|oplaadkabel|kabel|oplader|lader|adapter"
+    r"|sensors?|sensoren|hartslag\w*|borstband|tickr|doosje|verpakking|handleiding)\b"
+    r"|\blege\s+doos\b",
+    re.I,
 )
-# Onder dit deel van de mediaan van hetzelfde model is een verdachte titel een
-# accessoire. Een werkende Edge 530 voor 40% van de mediaan zou een koopje
-# zijn dat je mist; dat risico is kleiner dan een houder van €15 bovenaan de
-# flipmarge.
-ACCESSORY_MAX_SHARE = 0.4
+# Merken die alleen houders maken. Vóór de modelnaam is het dus een houder.
+ACCESSORY_BRAND_RE = re.compile(r"\b(?:k-?edge|rec-?mounts?|barfly|quad\s?lock|sp\s?connect)\b", re.I)
+# Tussen modelnaam en accessoire: dit maakt er een bundel van.
+BUNDLE_RE = re.compile(
+    r"\bmet\b|\bincl\w*|\binclusief\b|\binc\b|\+|&|\ben\b|\bplus\b|\bwith\b|\band\b|,",
+    re.I,
+)
+# Of: het apparaat wordt zelf genoemd, of de titel zegt dat het een set is.
+DEVICE_RE = re.compile(
+    r"\b(?:fiets)?computer\b|\bgps\b|\b(?:fiets)?navigatie\b|\bbundel\b|\bbundle\b|\bset\b"
+    r"|\bcompleet\b|\bcombo\b|\bpakket\b",
+    re.I,
+)
+# Geen computer, wel in dezelfde categorie: radar en verlichting.
+NOT_A_COMPUTER_ITEM_RE = re.compile(r"\b(?:varia|radar|rtl\s?\d+|\w*lamp|\w*licht|verlichting)\b", re.I)
+# "Houder voor ...": een accessoire, ook als er een koppelwoord tussen staat.
+FOR_RE = re.compile(r"\b(?:voor|for|geschikt|past|fits|compatible)\b", re.I)
 
 
 class CatalogError(ValueError):
@@ -185,19 +208,84 @@ def default_config() -> dict:
     return json.loads(_default_config())
 
 
-def match_model(title: str, catalog: Sequence[ComputerModel]) -> Optional[ComputerModel]:
-    """Het eerste model waarvan het patroon in de titel staat, of None als er
-    een fiets- of accessoirewoord vóór de modelnaam staat."""
+@dataclass(frozen=True)
+class TitleVerdict:
+    model: ComputerModel
+    kind: str  # computer | twijfel | accessoire | onderdeel | defect | gevraagd | fiets
+    reason: str
+
+
+def classify_title(title: str, catalog: Sequence[ComputerModel]) -> Optional[TitleVerdict]:
+    """Welk model de titel noemt en wat voor advertentie het is, of None als
+    er geen bekend model in staat. Zie het blok boven NOT_A_COMPUTER_RE."""
     title = title or ""
     for model in catalog:
         match = model.pattern.search(title)
         if match:
-            for other in (NOT_A_COMPUTER_RE, ACCESSORY_RE):
-                found = other.search(title)
-                if found and found.start() < match.start():
-                    return None
-            return model
-    return None
+            break
+    else:
+        return None
+    before, after = title[: match.start()], title[match.end():]
+
+    def verdict(kind: str, reason: str = "") -> TitleVerdict:
+        return TitleVerdict(model, kind, reason)
+
+    if WANTED_RE.search(title):
+        return verdict("gevraagd", f"zoekadvertentie ('{WANTED_RE.search(title).group(0)}')")
+    if NOT_A_COMPUTER_RE.search(before):
+        return verdict("fiets", f"'{NOT_A_COMPUTER_RE.search(before).group(0)}' vóór de modelnaam")
+    if REPAIR_RE.search(title):
+        return verdict("defect", f"reparatie of defect ('{REPAIR_RE.search(title).group(0)}')")
+    if PART_RE.search(title):
+        return verdict("onderdeel", f"los onderdeel ('{PART_RE.search(title).group(0)}')")
+
+    brand = ACCESSORY_BRAND_RE.search(before)
+    if brand:
+        return verdict("accessoire", f"houdermerk '{brand.group(0)}' vóór de modelnaam")
+    word = ACCESSORY_WORD_RE.search(before)
+    if word:
+        between = before[word.end():]
+        if BUNDLE_RE.search(between) and not FOR_RE.search(between):
+            return verdict("twijfel", f"'{word.group(0)}' vóór de modelnaam, met '+'/'en' ertussen")
+        return verdict("accessoire", f"'{word.group(0)}' vóór de modelnaam")
+
+    word = ACCESSORY_WORD_RE.search(after)
+    if word:
+        between = after[: word.start()]
+        if BUNDLE_RE.search(between) or DEVICE_RE.search(between) or DEVICE_RE.search(after):
+            return verdict("computer", f"met accessoires ('{word.group(0)}')")
+        return verdict("twijfel", f"'{word.group(0)}' direct na de modelnaam")
+    return verdict("computer")
+
+
+def classify_unknown(title: str) -> tuple[str, str]:
+    """(soort, reden) voor een titel zonder bekend model. "computer" betekent
+    hier: model onbekend, maar het lijkt een computer (Van Rysel GPS 500,
+    Sigma BC 509, "Wahoo zeer complete set!" — zelfde crawl). Die blijven
+    zichtbaar, zonder score of winst; de eigenaar wilde geen computer kwijt."""
+    title = title or ""
+    for kind, regex in (("gevraagd", WANTED_RE), ("defect", REPAIR_RE), ("onderdeel", PART_RE)):
+        found = regex.search(title)
+        if found:
+            label = {"gevraagd": "zoekadvertentie", "defect": "reparatie of defect", "onderdeel": "los onderdeel"}[kind]
+            return kind, f"{label} ('{found.group(0)}')"
+    found = NOT_A_COMPUTER_ITEM_RE.search(title) or ACCESSORY_BRAND_RE.search(title)
+    if found:
+        return "accessoire", f"geen computer ('{found.group(0)}')"
+    word = ACCESSORY_WORD_RE.search(title)
+    if word:
+        device = DEVICE_RE.search(title[: word.start()])
+        if device and BUNDLE_RE.search(title[device.end(): word.start()]):
+            return "computer", f"model onbekend, met accessoires ('{word.group(0)}')"
+        return "accessoire", f"'{word.group(0)}' zonder bekend model"
+    return "computer", "model onbekend"
+
+
+def match_model(title: str, catalog: Sequence[ComputerModel]) -> Optional[ComputerModel]:
+    """Het model als de titel over een computer lijkt te gaan (ook bij twijfel,
+    dan beslist de prijs later), anders None."""
+    found = classify_title(title, catalog)
+    return found.model if found and found.kind in ("computer", "twijfel") else None
 
 
 # --- Functiescore -----------------------------------------------------------
@@ -293,24 +381,91 @@ def find_model(catalog: Sequence[ComputerModel], merk: str, model: str) -> Optio
 # --- Per advertentie --------------------------------------------------------
 
 
+def listing_category(url: str) -> Optional[str]:
+    """De categorie uit een Marktplaats-URL (/v/<hoofdcategorie>/<categorie>/
+    <id>-...), of None als de URL die vorm niet heeft."""
+    parts = urlsplit(url or "").path.strip("/").split("/")
+    if len(parts) >= 4 and parts[0] == "v":
+        return parts[2]
+    return None
+
+
+def in_bike_category(url: str) -> bool:
+    """Een advertentie in een fietscategorie ("fietsen-racefietsen", ...) is
+    een fiets, ook als de titel een computer noemt: "Giant Defy met Garmin
+    Edge 530" heeft geen fietswoord vóór de modelnaam maar is geen losse
+    computer, en zou anders als vergelijkingsprijs van €900 meetellen."""
+    category = listing_category(url)
+    return bool(category and category.startswith("fietsen-"))
+
+
 @dataclass
 class ComputerSignal:
     model: ComputerModel
     features: FeatureScore
-    upgrade_delta: Optional[float]  # punten t.o.v. de eigen computer
-    upgrade_per_100: Optional[float]  # punten per €100 van de prijs
-    resale_eur: Optional[float]  # verwachte verkoopprijs, na onderhandeling
-    flip_margin_eur: Optional[float]
-    comp_count: int
-    comp_note: str
-    # Waarom deze advertentie geen upgrade, flip of vergelijkingsprijs is,
-    # of "" als hij gewoon meetelt: reparatie/defect, onderdeel, of een
-    # houder/hoes die te goedkoop is om een computer te zijn.
-    excluded: str = ""
+    kind: str  # computer | accessoire | onderdeel | defect | gevraagd
+    reason: str  # waarom deze soort; bij een computer een opmerking of ""
+    price_eur: Optional[float]
+    upgrade_delta: Optional[float] = None  # punten t.o.v. de eigen computer
+    upgrade_per_100: Optional[float] = None  # punten per €100 van de prijs
+    comp_count: int = 0
+    comp_note: str = ""
+    # Verwachte verkoopprijs (mediaan) en de band eromheen (kwartielen), alle
+    # drie al na onderhandelingsruimte.
+    resale_eur: Optional[float] = None
+    resale_low_eur: Optional[float] = None
+    resale_high_eur: Optional[float] = None
+    costs_eur: float = 0.0
+    own_resale_eur: Optional[float] = None  # wat de eigen computer zou opbrengen
+
+    @property
+    def is_computer(self) -> bool:
+        return self.kind == "computer"
+
+    @property
+    def excluded(self) -> str:
+        """De reden waarom dit geen upgrade, flip of vergelijkingsprijs is, of
+        "" als het gewoon een computer is."""
+        return "" if self.is_computer else self.reason
+
+    def _profit(self, resale: Optional[float]) -> Optional[float]:
+        if not self.is_computer or resale is None or self.price_eur is None:
+            return None
+        return round(resale - self.price_eur - self.costs_eur, 2)
+
+    @property
+    def profit_eur(self) -> Optional[float]:
+        return self._profit(self.resale_eur)
+
+    @property
+    def profit_low_eur(self) -> Optional[float]:
+        return self._profit(self.resale_low_eur)
+
+    @property
+    def profit_high_eur(self) -> Optional[float]:
+        return self._profit(self.resale_high_eur)
+
+    # Oude naam, van vóór de kosten en de band; zelfde getal als profit_eur.
+    flip_margin_eur = profit_eur
+
+    @property
+    def max_bid_eur(self) -> Optional[float]:
+        """Het hoogste bedrag waarbij je bij de lage verkoopschatting nog
+        quitte speelt — voor een advertentie zonder prijs."""
+        if not self.is_computer or self.resale_low_eur is None:
+            return None
+        return round(self.resale_low_eur - self.costs_eur, 2)
 
     @property
     def is_upgrade(self) -> bool:
-        return not self.excluded and self.upgrade_delta is not None and self.upgrade_delta > 0
+        return self.is_computer and self.upgrade_delta is not None and self.upgrade_delta > 0
+
+    @property
+    def net_upgrade_cost_eur(self) -> Optional[float]:
+        """Wat de upgrade echt kost: de prijs min wat de eigen computer oplevert."""
+        if self.price_eur is None or self.own_resale_eur is None:
+            return None
+        return round(self.price_eur - self.own_resale_eur, 2)
 
 
 def _comparable_price(listing) -> Optional[float]:
@@ -324,9 +479,11 @@ def _comparable_price(listing) -> Optional[float]:
 def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) -> dict[str, dict[str, float]]:
     """{modellabel: {item_id: prijs}} uit eerdere runs in koopjes.db. Alleen
     vraagprijzen (`price_is_asking`, migratie 3; bij oudere rijen waar die
-    NULL is beslist `is_bid`, zoals db.py dat ook doet), en alleen
-    advertenties die de afgelopen `window_days` nog gezien zijn. Opent de
-    database alleen-lezen; een ontbrekende database is geen fout."""
+    NULL is beslist `is_bid`, zoals db.py dat ook doet), alleen titels die
+    zonder twijfel een computer zijn, niet uit een fietscategorie, en alleen
+    advertenties die de afgelopen `window_days` nog gezien zijn — verkochte
+    (verdwenen) tellen dus mee. Opent de database alleen-lezen; een
+    ontbrekende database is geen fout."""
     if not db_path or not Path(db_path).exists():
         return {}
     since = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat(timespec="seconds")
@@ -334,7 +491,7 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
     conn = sqlite3.connect(uri, uri=True)
     try:
         rows = conn.execute(
-            "SELECT item_id, title, price_eur FROM listing "
+            "SELECT item_id, title, price_eur, url FROM listing "
             "WHERE price_eur IS NOT NULL "
             "AND COALESCE(price_is_asking, is_bid = 0) = 1 "
             "AND (last_seen IS NULL OR last_seen >= ?)",
@@ -345,20 +502,48 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int) 
     finally:
         conn.close()
     found: dict[str, dict[str, float]] = {}
-    for item_id, title, price in rows:
-        model = match_model(title, catalog)
-        if model and not _title_exclusion(title) and not ACCESSORY_ANYWHERE_RE.search(title or ""):
-            found.setdefault(model.label, {})[item_id] = price
+    for item_id, title, price, url in rows:
+        if in_bike_category(url):
+            continue
+        verdict = classify_title(title, catalog)
+        if verdict and verdict.kind == "computer":
+            found.setdefault(verdict.model.label, {})[item_id] = price
     return found
 
 
-def _title_exclusion(title: str) -> str:
-    """De reden als de titel alleen al zegt dat dit geen werkende computer is."""
-    if REPAIR_RE.search(title or ""):
-        return "reparatie of defect in de titel"
-    if PART_RE.search(title or ""):
-        return "los onderdeel of accessoire"
-    return ""
+def _resolve_doubt(listing, model: ComputerModel, clean: list, reason: str, config: dict) -> tuple[str, str]:
+    """Een titel met een houder- of hoeswoord direct na de modelnaam: is het
+    een computer of een accessoire? De prijs beslist, tegen (1) de mediaan van
+    hetzelfde model, anders (2) de nieuwprijs, anders (3) een vaste ondergrens.
+    Liever een houder die als computer doorglipt (die zie je aan de foto) dan
+    een echte computer die in Uitgefilterd verdwijnt."""
+    rules = config["filter"]
+    price = listing.price_eur
+    if price is None:
+        return "computer", f"{reason}; geen prijs — kijk op de foto"
+    if len(clean) >= config["flip"]["min_comps"]:
+        median = statistics.median(clean)
+        if price < rules["max_share_of_median"] * median:
+            return "accessoire", (f"{reason}, en €{price:.0f} is {price / median:.0%} van de mediaan "
+                                  f"(€{median:.0f}) — vermoedelijk accessoire")
+        return "computer", f"{reason}, maar €{price:.0f} past bij een computer (mediaan €{median:.0f})"
+    new = model.number("nieuwprijs_eur")
+    if new:
+        if price < rules["max_share_of_new"] * new:
+            return "accessoire", (f"{reason}, en €{price:.0f} is {price / new:.0%} van de nieuwprijs "
+                                  f"(€{new:.0f}) — vermoedelijk accessoire")
+        return "computer", f"{reason}, maar €{price:.0f} past bij een computer (nieuwprijs €{new:.0f})"
+    if price < rules["floor_eur"]:
+        return "accessoire", f"{reason}, en €{price:.0f} is minder dan €{rules['floor_eur']:.0f} — vermoedelijk accessoire"
+    return "computer", f"{reason}, maar €{price:.0f} past bij een computer"
+
+
+def _resale_band(prices: list, factor: float) -> tuple[float, float, float]:
+    """(laag, midden, hoog): kwartielen en mediaan van de vraagprijzen, maal de
+    onderhandelingsfactor."""
+    median = statistics.median(prices)
+    low, _, high = statistics.quantiles(prices, n=4, method="inclusive")
+    return round(low * factor, 2), round(median * factor, 2), round(high * factor, 2)
 
 
 def apply_computer_signals(
@@ -369,78 +554,137 @@ def apply_computer_signals(
     config: Optional[dict] = None,
 ) -> int:
     """Zet `listing.computer` voor elke advertentie waarvan de titel een
-    bekend model noemt. Geeft het aantal terug. De rest blijft None."""
+    bekend model noemt en die geen fiets is — ook voor accessoires, onderdelen
+    en dergelijke, met de reden, zodat ze in Uitgefilterd te zien zijn. Geeft
+    het aantal echte computers terug. De rest blijft None."""
     catalog = catalog if catalog is not None else _default_catalog()
     config = config or default_config()
     base = config["baseline"]
     baseline = find_model(catalog, base["merk"], base["model"])
     baseline_score = feature_score(baseline, config).score if baseline else None
     flip = config["flip"]
+    factor = flip["negotiation_factor"]
 
-    matched = []
+    found = []  # [listing, model, kind, reason]
     for listing in listings:
         listing.computer = None
-        model = match_model(listing.title, catalog)
-        if model:
-            matched.append((listing, model))
-    if not matched:
+        if in_bike_category(listing.url):
+            continue
+        verdict = classify_title(listing.title, catalog)
+        if verdict is None or verdict.kind == "fiets":
+            continue
+        found.append([listing, verdict.model, verdict.kind, verdict.reason])
+    if not found:
         return 0
 
-    excluded = {listing.item_id: _title_exclusion(listing.title) for listing, _ in matched}
-
-    # Eerst de schone prijzen (geen houder- of hoeswoord), om te zien wat
-    # een model normaal kost; daarmee valt een verdachte titel met een
-    # lage prijs af als accessoire.
+    # Eerst de zekere computers als vergelijkingsprijs; daartegen worden de
+    # twijfelgevallen beslist, en wat dan een computer blijkt telt ook mee.
     comps = db_comparables(db_path, catalog, flip["comp_window_days"])
-    suspect = []
-    for listing, model in matched:
-        if excluded[listing.item_id]:
-            continue
-        price = _comparable_price(listing)
-        if ACCESSORY_ANYWHERE_RE.search(listing.title or ""):
-            suspect.append((listing, model, price))
-        elif price is not None:
+    for listing, model, kind, _ in found:
+        price = _comparable_price(listing) if kind == "computer" else None
+        if price is not None:
             comps.setdefault(model.label, {})[listing.item_id] = price
-    for listing, model, price in suspect:
-        clean = list(comps.get(model.label, {}).values())
-        if listing.price_eur is not None and len(clean) >= flip["min_comps"]:
-            median = statistics.median(clean)
-            if listing.price_eur < ACCESSORY_MAX_SHARE * median:
-                excluded[listing.item_id] = (
-                    f"houder/hoes in de titel en €{listing.price_eur:.0f} is "
-                    f"{listing.price_eur / median:.0%} van de mediaan (€{median:.0f}) — vermoedelijk accessoire"
-                )
-                continue
+    for item in found:
+        listing, model, kind, reason = item
+        if kind != "twijfel":
+            continue
+        clean = [p for i, p in comps.get(model.label, {}).items() if i != listing.item_id]
+        item[2], item[3] = _resolve_doubt(listing, model, clean, reason, config)
+        price = _comparable_price(listing) if item[2] == "computer" else None
         if price is not None:
             comps.setdefault(model.label, {})[listing.item_id] = price
 
-    for listing, model in matched:
-        features = feature_score(model, config)
-        delta = per_100 = None
-        if baseline_score is not None:
-            delta = round(features.score - baseline_score, 1)
-            if listing.price_eur and listing.price_eur > 0:
-                per_100 = round(delta / listing.price_eur * 100, 1)
+    own = list(comps.get(baseline.label, {}).values()) if baseline else []
+    own_resale = _resale_band(own, factor)[1] if len(own) >= flip["min_comps"] else None
 
+    count = 0
+    for listing, model, kind, reason in found:
+        features = feature_score(model, config)
+        signal = ComputerSignal(model, features, kind, reason, listing.price_eur,
+                                costs_eur=flip.get("costs_eur", 0.0), own_resale_eur=own_resale)
+        listing.computer = signal
+        if not signal.is_computer:
+            signal.comp_note = f"{reason} — geen flip"
+            continue
+        count += 1
+        if baseline_score is not None:
+            signal.upgrade_delta = round(features.score - baseline_score, 1)
+            if listing.price_eur and listing.price_eur > 0:
+                signal.upgrade_per_100 = round(signal.upgrade_delta / listing.price_eur * 100, 1)
         others = [p for item_id, p in comps.get(model.label, {}).items() if item_id != listing.item_id]
-        reason = excluded[listing.item_id]
-        resale = margin = None
-        if reason:
-            note = f"{reason} — geen flipmarge"
-        elif len(others) >= flip["min_comps"]:
-            resale = round(statistics.median(others) * flip["negotiation_factor"], 2)
-            note = (f"mediaan van {len(others)} andere advertenties × "
-                    f"{flip['negotiation_factor']:g} (onderhandelingsruimte, heuristiek)")
-            if listing.price_eur is not None:
-                margin = round(resale - listing.price_eur, 2)
+        signal.comp_count = len(others)
+        if len(others) >= flip["min_comps"]:
+            signal.resale_low_eur, signal.resale_eur, signal.resale_high_eur = _resale_band(others, factor)
+            signal.comp_note = (f"mediaan van {len(others)} andere advertenties × {factor:g} "
+                                "(onderhandelingsruimte, heuristiek); de band is het middelste kwart-tot-driekwart")
         else:
-            note = f"te weinig vergelijkingsmateriaal ({len(others)} andere, minimaal {flip['min_comps']})"
-        listing.computer = ComputerSignal(model, features, delta, per_100, resale, margin, len(others), note, reason)
-    return len(matched)
+            signal.comp_note = f"te weinig vergelijkingsmateriaal ({len(others)} andere, minimaal {flip['min_comps']})"
+    return count
 
 
 def computer_listings(listings) -> list:
+    """Alles met een signaal, ook de uitgefilterde."""
     return [l for l in listings if getattr(l, "computer", None) is not None]
+
+
+def active_computers(listings) -> list:
+    """Alleen de echte computers."""
+    return [l for l in computer_listings(listings) if l.computer.is_computer]
+
+
+def filtered_out(listings) -> list:
+    return [l for l in computer_listings(listings) if not l.computer.is_computer]
+
+
+# --- Wat je erbij krijgt ----------------------------------------------------
+
+# Volgorde van slecht naar goed per veld; een onbekende waarde aan een van
+# beide kanten zegt niets en wordt overgeslagen.
+_RANKS = {
+    "rerouting": ["nee", "via_telefoon", "ja"],
+    "kaarten": ["nee", "basiskaart", "los_te_koop", "routeerbaar"],
+    "planning_op_apparaat": ["nee", "beperkt", "volledig"],
+    "route_sync": ["nee", "ja"],
+    "schakel_integratie": ["nee", "ja"],
+    "workouts": ["nee", "ja"],
+    "klimfunctie": ["nee", "ja"],
+    "ant_plus": ["nee", "ja"],
+    "ondersteund": ["nee", "beperkt", "ja"],
+}
+_LABELS = {
+    "rerouting": "rerouting", "kaarten": "kaarten", "planning_op_apparaat": "plannen op het apparaat",
+    "route_sync": "route-sync", "schakel_integratie": "Di2/AXS", "workouts": "workouts",
+    "klimfunctie": "klimfunctie", "ant_plus": "ANT+", "ondersteund": "updates",
+}
+
+
+def feature_changes(model: ComputerModel, baseline: Optional[ComputerModel], config: Optional[dict] = None) -> tuple[list, list]:
+    """(wat je erbij krijgt, wat je inlevert) t.o.v. de eigen computer, als
+    korte Nederlandse zinnetjes."""
+    if baseline is None:
+        return [], []
+    config = config or default_config()
+    gains, losses = [], []
+    for key, order in _RANKS.items():
+        new, old = model.get(key), baseline.get(key)
+        if not new or not old or new == old:
+            continue
+        text = f"{_LABELS[key]}: {new.replace('_', ' ')} i.p.v. {old.replace('_', ' ')}"
+        (gains if order.index(new) > order.index(old) else losses).append(text)
+    new, old = model.get("bediening"), baseline.get("bediening")
+    if new and old and new != old:
+        values = config["bediening"]
+        (gains if values[new] > values[old] else losses).append(f"{new} i.p.v. {old}")
+    new, old = model.number("batterijduur_uur"), baseline.number("batterijduur_uur")
+    if new is not None and old is not None and abs(new - old) >= 3:
+        (gains if new > old else losses).append(f"{new:g} u accu i.p.v. {old:g} u")
+    return gains, losses
+
+
+def baseline_model(catalog: Optional[Sequence[ComputerModel]] = None, config: Optional[dict] = None) -> Optional[ComputerModel]:
+    catalog = catalog if catalog is not None else _default_catalog()
+    base = (config or default_config())["baseline"]
+    return find_model(catalog, base["merk"], base["model"])
 
 
 # --- Uitvoer ----------------------------------------------------------------
@@ -456,27 +700,56 @@ def _signed(value: Optional[float], suffix: str = "") -> str:
     return f"{value:+.0f}{suffix}"
 
 
+def price_kind(listing) -> str:
+    """Wat voor prijs er staat — dat bepaalt hoe hard de winst is."""
+    if listing.price_eur is None:
+        return "bieden, geen prijs" if listing.price_is_bid else "geen prijs genoemd"
+    if listing.price_type == "MIN_BID":
+        return "vraagprijs, bieden kan"
+    if listing.price_is_bid and not listing.price_is_asking:
+        return "huidig bod, loopt nog op"
+    if listing.price_type == "FAST_BID":
+        return "minimumbod"
+    return "vaste prijs"
+
+
 def upgrades(listings) -> list:
     """Advertenties die meer kunnen dan de eigen computer, meeste punten per
     euro eerst."""
-    found = [l for l in computer_listings(listings) if l.computer.is_upgrade and l.price_eur]
+    found = [l for l in active_computers(listings) if l.computer.is_upgrade and l.price_eur]
     return sorted(found, key=lambda l: (-(l.computer.upgrade_per_100 or 0), -l.computer.upgrade_delta))
 
 
 def flips(listings) -> list:
-    """Advertenties met een bekende flipmarge, grootste marge eerst."""
-    found = [l for l in computer_listings(listings) if l.computer.flip_margin_eur is not None]
-    return sorted(found, key=lambda l: -l.computer.flip_margin_eur)
+    """Computers met een bekende winst, grootste winst eerst (ook negatief)."""
+    found = [l for l in active_computers(listings) if l.computer.profit_eur is not None]
+    return sorted(found, key=lambda l: -l.computer.profit_eur)
+
+
+def open_bids(listings) -> list:
+    """Computers zonder prijs waarvoor wel een maximaal bod te geven is."""
+    found = [l for l in active_computers(listings)
+             if l.price_eur is None and l.computer.max_bid_eur is not None]
+    return sorted(found, key=lambda l: -l.computer.max_bid_eur)
 
 
 def print_computers(listings, limit: int = 10) -> None:
     """Na de slapers: alleen als deze run fietscomputers bevat."""
-    found = computer_listings(listings)
+    found = active_computers(listings)
     if not found:
         return
     import sleepers  # price_text(); hier geïmporteerd zodat dit bestand los te draaien is
 
-    print(f"\n=== Fietscomputers: {len(found)} herkend ===")
+    skipped = len(filtered_out(listings))
+    print(f"\n=== Fietscomputers: {len(found)} herkend"
+          f"{f', {skipped} uitgefilterd (houders, onderdelen, defect)' if skipped else ''} ===")
+    fl = [l for l in flips(listings) if l.computer.profit_eur > 0][:limit]
+    if fl:
+        print("Flips (winst = verwachte verkoopprijs − prijs − kosten):")
+        for l in fl:
+            c = l.computer
+            print(f"  {_signed(c.profit_eur):>5} ({_euro(c.profit_low_eur)} tot {_euro(c.profit_high_eur)}) "
+                  f"{sleepers.price_text(l)[:22]:<22} {c.model.label[:26]:<26} (n={c.comp_count}) {l.url}")
     ups = upgrades(listings)[:limit]
     if ups:
         print("Upgrade t.o.v. eigen computer (punten per €100):")
@@ -484,35 +757,28 @@ def print_computers(listings, limit: int = 10) -> None:
             c = l.computer
             print(f"  {_signed(c.upgrade_delta):>4} ({c.upgrade_per_100:+.1f}/€100) "
                   f"{sleepers.price_text(l)[:22]:<22} {c.model.label[:26]:<26} {l.url}")
-    fl = flips(listings)[:limit]
-    if fl:
-        print("Flipmarge (verwachte verkoopprijs − prijs):")
-        for l in fl:
-            c = l.computer
-            print(f"  {_signed(c.flip_margin_eur):>5} {sleepers.price_text(l)[:22]:<22} "
-                  f"{c.model.label[:26]:<26} (n={c.comp_count}) {l.url}")
     if not ups and not fl:
-        print("Geen upgrade en geen bekende flipmarge in deze run.")
+        print("Geen upgrade en geen flip met winst in deze run.")
 
 
 def render_panel(listings, config: Optional[dict] = None) -> tuple[int, str]:
-    """(aantal, html) voor de tab Fietscomputers."""
+    """(aantal, html) voor de tab Fietscomputers in het gewone rapport. Het
+    volledige overzicht staat in dashboard.html (dashboard.py)."""
     import sleepers
 
     config = config or default_config()
-    found = computer_listings(listings)
+    found = active_computers(listings)
     esc = html_lib.escape
     base = config["baseline"]
     parts = [
         "<h2>Fietscomputers</h2>",
-        "<p class='muted'>Herkend op de titel tegen <code>reference_bike_computers.csv</code>. "
-        f"<strong>Upgrade</strong> = functiescore min die van de eigen {esc(base['merk'])} "
-        f"{esc(base['model'])} (rerouting, plannen op het apparaat en training wegen het zwaarst, "
-        "knoppen gaan voor touch, geen updates kost punten). <strong>Flipmarge</strong> = wat andere "
-        "advertenties voor hetzelfde model vragen, na onderhandelingsruimte, min de prijs. Twee aparte "
-        "maten, en geen van beide is de dealscore.</p>",
+        "<p class='muted'>Het complete overzicht, over alle zoekopdrachten heen, staat in "
+        "<code>dashboard.html</code> (<code>python dashboard.py</code>). "
+        f"<strong>Winst</strong> = wat andere advertenties voor hetzelfde model vragen, na "
+        f"onderhandelingsruimte, min prijs en kosten. <strong>Upgrade</strong> = functiescore min die "
+        f"van de eigen {esc(base['merk'])} {esc(base['model'])}. Geen van beide is de dealscore.</p>",
     ]
-    if not found:
+    if not found and not filtered_out(listings):
         parts.append("<p class='muted'>Geen fietscomputers herkend in deze run.</p>")
         return 0, "\n".join(parts)
 
@@ -522,47 +788,38 @@ def render_panel(listings, config: Optional[dict] = None) -> tuple[int, str]:
             "<tr>"
             f"<td class='num'><strong>{first}</strong></td>"
             f"<td class='num'>{esc(sleepers.price_text(l))}</td>"
-            f"<td class='num' title='{esc(c.features.summary, quote=True)}'>{c.features.score:.0f}"
-            f"{'<div class=muted>' + str(len(c.features.unknown)) + ' onbekend</div>' if c.features.unknown else ''}</td>"
-            f"<td>{esc(c.model.label)}<div class='muted'>{esc(c.features.summary)}</div>"
-            f"{'<div class=muted><strong>' + esc(c.comp_note) + '</strong></div>' if c.excluded else ''}</td>"
+            f"<td>{esc(c.model.label)}<div class='muted'>{esc(c.reason or c.features.summary)}</div></td>"
             f"<td><a href='{esc(l.url, quote=True)}' target='_blank' rel='noopener'>{esc(l.title)}</a></td>"
             "</tr>"
         )
 
-    head = ("<div class='table-wrap'><table><thead><tr><th>{}</th><th>Prijs</th><th>Functiescore</th>"
+    head = ("<div class='table-wrap'><table><thead><tr><th>{}</th><th>Prijs</th>"
             "<th>Model</th><th>Titel</th></tr></thead><tbody>{}</tbody></table></div>")
+
+    fl = [l for l in flips(listings) if l.computer.profit_eur > 0]
+    parts.append(f"<h3>Flips met winst ({len(fl)})</h3>")
+    if fl:
+        parts.append(head.format("Winst", "".join(
+            row(l, f"{_signed(l.computer.profit_eur)} <span class='muted' title='{esc(l.computer.comp_note, quote=True)}'>"
+                   f"({_euro(l.computer.profit_low_eur)} tot {_euro(l.computer.profit_high_eur)}, n={l.computer.comp_count})</span>")
+            for l in fl)))
+    else:
+        parts.append("<p class='muted'>Geen computer die onder de verwachte verkoopprijs staat.</p>")
 
     ups = upgrades(listings)
     parts.append(f"<h3>Upgrade voor mij ({len(ups)})</h3>")
     if ups:
-        body = "".join(
+        parts.append(head.format("Upgrade", "".join(
             row(l, f"{_signed(l.computer.upgrade_delta)} <span class='muted'>"
                    f"({l.computer.upgrade_per_100:+.1f}/€100)</span>")
-            for l in ups
-        )
-        parts.append(head.format("Upgrade", body))
+            for l in ups)))
     else:
         parts.append("<p class='muted'>Geen herkende computer die meer kan dan de eigen.</p>")
 
-    fl = flips(listings)
-    parts.append(f"<h3>Doorverkopen ({len(fl)})</h3>")
-    if fl:
-        body = "".join(
-            row(l, f"{_signed(l.computer.flip_margin_eur)} <span class='muted' title='{esc(l.computer.comp_note, quote=True)}'>"
-                   f"(n={l.computer.comp_count}, verkoop ±{_euro(l.computer.resale_eur)})</span>")
-            for l in fl
-        )
-        parts.append(head.format("Flipmarge", body))
-    else:
-        parts.append(f"<p class='muted'>Voor geen enkel model genoeg vergelijkingsmateriaal "
-                     f"(minimaal {config['flip']['min_comps']} andere advertenties).</p>")
-
-    rest = [l for l in found if l not in ups and l not in fl]
-    if rest:
-        parts.append(f"<h3>Overige herkende computers ({len(rest)})</h3>")
-        body = "".join(row(l, _signed(l.computer.upgrade_delta)) for l in rest)
-        parts.append(head.format("Upgrade", body))
+    out = filtered_out(listings)
+    if out:
+        parts.append(f"<h3>Uitgefilterd ({len(out)})</h3>")
+        parts.append(head.format("Soort", "".join(row(l, esc(l.computer.kind)) for l in out)))
     return len(found), "\n".join(parts)
 
 

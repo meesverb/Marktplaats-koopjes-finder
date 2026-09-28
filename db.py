@@ -218,6 +218,13 @@ MIGRATIONS: list[str] = [
     ALTER TABLE listing ADD COLUMN full_description TEXT;
     ALTER TABLE listing ADD COLUMN details_fetched_at TEXT;
     """,
+    # 6: the photo URLs from the search results (Listing.image_urls,
+    # space-separated). The dashboard (dashboard.py) is built from the
+    # database, not from a run, and a thumbnail is how you tell a Garmin
+    # from a Garmin holder at a glance.
+    """
+    ALTER TABLE listing ADD COLUMN image_urls TEXT;
+    """,
 ]
 
 
@@ -575,10 +582,10 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
             """
             INSERT INTO listing (item_id, title, description, price_eur, price_type, is_bid,
                                   price_is_asking, city, posted_date, condition,
-                                  frame_height, url, query, first_seen, last_seen)
+                                  frame_height, url, query, first_seen, last_seen, image_urls)
             VALUES (:item_id, :title, :description, :price_eur, :price_type, :is_bid,
                     :price_is_asking, :city, :posted_date, :condition,
-                    :frame_height, :url, :query, :first_seen, :last_seen)
+                    :frame_height, :url, :query, :first_seen, :last_seen, :image_urls)
             ON CONFLICT(item_id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
@@ -594,6 +601,7 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 frame_height = COALESCE(NULLIF(excluded.frame_height, ''), listing.frame_height),
                 url = excluded.url,
                 query = excluded.query,
+                image_urls = COALESCE(NULLIF(excluded.image_urls, ''), listing.image_urls),
                 last_seen = excluded.last_seen,
                 disappeared_at = NULL,
                 days_online = NULL,
@@ -615,6 +623,7 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "query": query,
                 "first_seen": listing.first_seen or observed_at,
                 "last_seen": observed_at,
+                "image_urls": getattr(listing, "image_urls", "") or "",
             },
         )
         conn.execute(
