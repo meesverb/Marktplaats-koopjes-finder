@@ -501,6 +501,39 @@ towards "2e-hands gem. (n=…)" for that line, plus a `listing_model` row in
 `koopjes.db`. A row in `reference_bikes.csv` still wins the report's
 columns — a Defy Composite stays "Giant Defy Composite" — and the line is
 recorded next to it. The speaker and accessory files don't switch lines on.
+The line is also read from the full description when `--detail-lookup` has
+fetched it.
+
+### Trims and model years — `catalog_match.py`
+
+A Giant TCR from 2010 and one from 2020 are different bikes, and so are a TCR
+Advanced 2 and a TCR Advanced Pro 1. So after the line, each listing is
+matched against the catalogue rows of that line, using only what the listing
+itself says:
+
+- **Trim**: the longest run of words from a catalogue name that appears
+  together in the title or the (full) description: "TCR Advanced 2 Disc",
+  "Émonda SL 6" (also written "SL6"), "Aeroad CF SLX 8.0 Di2" (also "8").
+  The title wins; the description only when it names the same trim more
+  precisely. The line alone is not a trim.
+- **Year**: a labelled year in the text ("bouwjaar 2016", the `model_year`
+  spec), otherwise a bare year in the title ("Domane SL5 disk 2019"). Is
+  that trim in the catalogue for that year, the match is exact and the
+  Specs column shows that catalogue row: groupset, material, brake and the
+  new price **with its market** (most of the catalogue is a Spanish source,
+  and a Spanish catalogue price is not a Dutch new price — it is shown, never
+  fed into the dealscore). No year in the listing: nothing is guessed, the
+  column says which years the catalogue knows the trim from.
+
+A listing labelled by its line gets the trim as its label. Its price is
+logged under the trim *and* the line, and until the trim has enough
+sightings of its own the report uses the line's 2e-hands average and says so
+("2e-hands gem. lijn Giant TCR"). A row from `reference_bikes.csv` keeps its
+label and never falls back to its line: the Defy line also holds aluminium
+Defys. In `koopjes.db` each trim is a `model` row (with the years the
+catalogue knows it from), linked through `listing_model` with what it matched
+on and how sure that is (0.9 with the year, 0.7 without), plus `spec` rows
+with source `catalogus` (`catalog_model`, `catalog_year`, `catalog_market`).
 
 ### Bike catalogue — `reference_bike_catalog.csv`
 
@@ -563,8 +596,9 @@ state.
 
 ### Your own market price history — `--price-history-file`
 
-Every time a listing matching a reference model (or a model line, see above)
-is seen for the first time, its price gets logged to `reference_price_history.csv` (created
+Every time a listing matching a reference model (or a model line or trim,
+see above — then under both the trim and its line) is seen for the first
+time, its price gets logged to `reference_price_history.csv` (created
 automatically). This covers everything the crawl saw, including listings
 the price and frame-size filters keep out of the report: a €1500 bike in
 the wrong size is still a price for its model. From the second time a model shows up, the report also

@@ -753,6 +753,84 @@ def upsert_line_models(conn: sqlite3.Connection, lines) -> int:
     return len(lines)
 
 
+CATALOG_MODEL_NOTE = "uitvoering uit reference_bike_catalog.csv (catalog_match.py)"
+CATALOG_SPEC_SOURCE = "catalogus"
+
+
+def sync_catalog_matches(conn: sqlite3.Connection, matches: dict, crawled_ids=()) -> int:
+    """catalog_match.CatalogMatch per listing -> a `model` row per trim
+    (kind 'bike', with the years the catalogue knows it from), a
+    `listing_model` link saying on what it matched and how sure that is, and
+    `spec` rows (source 'catalogus') with the trim and, for an exact match,
+    the year and the market of the catalogue row.
+
+    A listing's previous trim link and catalogus specs are removed first:
+    once its full description is in, a listing can turn out to be another
+    trim than its title suggested, and the old link would then stay behind
+    as a second answer. That goes for every crawled listing, also one that
+    no longer matches at all (`matches` holds None for it, `crawled_ids`
+    names it). Returns how many listings got a link."""
+    stale = set(matches) | set(crawled_ids)
+    for item_id in stale:
+        conn.execute(
+            "DELETE FROM listing_model WHERE listing_id = ? AND model_id IN "
+            "(SELECT id FROM model WHERE notes = ?)",
+            (item_id, CATALOG_MODEL_NOTE),
+        )
+        conn.execute(
+            "DELETE FROM spec WHERE listing_id = ? AND source = ?", (item_id, CATALOG_SPEC_SOURCE)
+        )
+    specs_json = json.dumps({"specs": "", "better_than_baseline": False})
+    linked = 0
+    for item_id, match in matches.items():
+        if match is None:
+            continue
+        variant = match.variant
+        years = variant.years
+        conn.execute(
+            """
+            INSERT INTO model (kind, brand, model, year_from, year_to, pattern, specs_json, notes)
+            VALUES ('bike', ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(kind, pattern) DO UPDATE SET
+                brand = excluded.brand,
+                model = excluded.model,
+                year_from = excluded.year_from,
+                year_to = excluded.year_to,
+                notes = excluded.notes
+            """,
+            (
+                variant.brand, variant.label, years[0] if years else None,
+                years[-1] if years else None, variant.pattern, specs_json, CATALOG_MODEL_NOTE,
+            ),
+        )
+        model_id = conn.execute(
+            "SELECT id FROM model WHERE kind = 'bike' AND pattern = ?", (variant.pattern,)
+        ).fetchone()["id"]
+        conn.execute(
+            """
+            INSERT INTO listing_model (listing_id, model_id, matched_on, confidence)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(listing_id, model_id) DO UPDATE SET
+                matched_on = excluded.matched_on,
+                confidence = excluded.confidence
+            """,
+            (item_id, model_id, match.matched_on, match.confidence),
+        )
+        specs = {"catalog_model": variant.label}
+        row = match.best_row
+        if row is not None:
+            specs["catalog_year"] = str(row.year)
+            specs["catalog_market"] = row.market
+        for key, value in specs.items():
+            conn.execute(
+                "INSERT INTO spec (listing_id, key, value, source, confidence) VALUES (?, ?, ?, ?, ?)",
+                (item_id, key, value, CATALOG_SPEC_SOURCE, match.confidence),
+            )
+        linked += 1
+    conn.commit()
+    return linked
+
+
 def save_listing_details(conn: sqlite3.Connection, details: dict, fetched_at: str) -> None:
     """{item_id: full description} from the listing pages fetched this run.
     Call after sync_listings(), which creates the rows."""

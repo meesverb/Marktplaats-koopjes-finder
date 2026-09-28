@@ -16,6 +16,20 @@ zodat een nieuwe sessie niet bij nul hoeft te beginnen.
   gerepareerd: `near_complete` ging verloren zodra er een filter aan stond.
 - `schedule.json`: overdag 20 pagina's i.p.v. 8. Het zoekwoord "racefiets"
   binnen de categorie beperkt niets (12744 met, 12744 zonder, 28-09-2026).
+- `catalog_match.py`: na de lijn de uitvoering (langste catalogusnaam die
+  aaneengesloten in titel/omschrijving staat) en het jaar (met label in de
+  tekst, of los in de titel). Exact = uitvoering + jaar in de catalogus.
+  Proef (4 pagina's, 30 volledige teksten): 22 van 120 met uitvoering, 3
+  exact — de catalogus is vooral Spaans en t/m ~2022, dus recente jaren
+  ontbreken vaak. Uitbreiden van de catalogus (catalog_tools/) is datawerk.
+- `--detail-lookup all` + ronde `nacht-alles` (02:15) en de weekronde halen
+  de volledige tekst van alle racefietsen op, duurste eerst, ook boven €900.
+  Moet op de eigen computer opnieuw ingepland worden (`koopjes.py schedule`).
+- Bekende beperking: `reference_price_history.csv` logt alleen bij de eerste
+  keer zien. Wordt de uitvoering pas in een latere run bekend (tekst later
+  opgehaald), dan telt die advertentie niet mee voor het gemiddelde van die
+  uitvoering; in `koopjes.db` staat de koppeling wel goed. Volgende stap:
+  2e-hands gemiddelden uit `listing_model` + `listing_price` halen.
 - Blijft liggen: (1) "Beter dan referentie" hangt nog aan de handmatige vlag
   `better_than_baseline` (één rij); afleiden uit catalogus/groepset is een
   eigen stap. (2) Upgraden vanaf een andere fiets dan de Defy Composite:

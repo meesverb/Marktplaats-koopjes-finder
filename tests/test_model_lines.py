@@ -173,13 +173,19 @@ class RunKeepsEverythingTest(unittest.TestCase):
             "SELECT m.model FROM listing_model lm JOIN model m ON m.id = lm.model_id "
             "WHERE lm.listing_id = 'duur'"
         ).fetchall()
-        self.assertEqual([r["model"] for r in linked], ["Trek Émonda"])
+        # De lijn, en de uitvoering uit de catalogus (catalog_match.py).
+        self.assertEqual(sorted(r["model"] for r in linked), ["Trek Émonda", "Trek Émonda SL 6"])
 
     def test_a_listing_above_max_price_still_counts_for_its_line(self):
         self.run_query(self.listings(), ["--max-price", "900"])
         with open(self.path("price_history.csv"), encoding="utf-8") as f:
-            rows = {r["item_id"]: r["ref_label"] for r in csv.DictReader(f)}
-        self.assertEqual(rows, {"goedkoop": "Giant TCR", "duur": "Trek Émonda"})
+            rows = sorted((r["item_id"], r["ref_label"]) for r in csv.DictReader(f))
+        # Onder de uitvoering én onder de lijn: de lijn is waar een uitvoering
+        # met te weinig waarnemingen op terugvalt.
+        self.assertEqual(
+            rows,
+            [("duur", "Trek Émonda"), ("duur", "Trek Émonda SL 6"), ("goedkoop", "Giant TCR")],
+        )
 
     def test_the_report_still_sticks_to_the_filters(self):
         self.run_query(self.listings(), ["--max-price", "900", "--output", self.path("out.csv")])

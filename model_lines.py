@@ -212,9 +212,13 @@ def apply_lines(listings, matcher: LineMatcher, matches: dict[str, list[str]]) -
     aantal advertenties terug dat hierdoor pas een label kreeg."""
     labelled = 0
     for listing in listings:
-        line = matcher.match(listing.title or "", listing.description or "")
+        # De volledige omschrijving als die opgehaald is (--detail-lookup):
+        # daar noemt een verkoper het model vaak pas.
+        text = getattr(listing, "detail_text", "") or listing.description or ""
+        line = matcher.match(listing.title or "", text)
         if line is None:
             continue
+        listing.model_line = line.label
         patterns = matches.setdefault(listing.item_id, [])
         if line.pattern not in patterns:
             patterns.append(line.pattern)

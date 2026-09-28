@@ -31,6 +31,7 @@ from urllib.parse import quote_plus, urlencode
 import requests
 
 import db
+import catalog_match
 import model_lines
 import sleepers
 
@@ -102,6 +103,18 @@ class Listing:
     # --detail-lookup fetched (see lookup_listing_details()). Empty otherwise;
     # `description` stays the search snippet either way.
     detail_text: str = field(default="", metadata={"csv": False})
+    # model_lines.py / catalog_match.py: the brand + line ("Giant TCR") and,
+    # where the text names it, the catalogue trim and year. Not CSV columns
+    # for the same reason as site_specs; ref_label carries the most precise
+    # of them.
+    model_line: str = field(default="", metadata={"csv": False})
+    # The trim's label only: the match itself (with its catalogue rows) stays
+    # in apply_catalog_variants()' return value, since asdict() in the CSV
+    # writers would otherwise copy every catalogue row of it for every listing.
+    catalog_label: str = field(default="", metadata={"csv": False})
+    # Set when the 2e-hands average is the line's rather than ref_label's own
+    # (see apply_reference_market_stats()).
+    ref_market_label: str = field(default="", metadata={"csv": False})
 
     @property
     def price_is_asking(self) -> bool:
@@ -1452,12 +1465,35 @@ def load_reference_market_stats(path: str) -> dict:
     return stats
 
 
+def market_label_suffix(listing: Listing) -> str:
+    """" lijn Giant TCR" when the 2e-hands average is the line's, not the
+    trim's own — otherwise the report would present a TCR from 2010 and one
+    from 2020 as the same price point without saying so."""
+    return f" lijn {listing.ref_market_label}" if listing.ref_market_label else ""
+
+
 def apply_reference_market_stats(listings: list[Listing], stats: dict) -> None:
+    """The observed 2e-hands average for each listing's ref_label. A trim
+    ("Giant TCR Advanced 2") has few sightings of its own for a long time;
+    until it has enough to score on, its line's average stands in, and the
+    report says it's the line's. Not for a row from the reference file: its
+    line can hold other materials (an aluminium Defy next to a carbon Defy
+    Composite), and that row's own average is the point of having it."""
     for listing in listings:
-        if listing.ref_label and listing.ref_label in stats:
-            s = stats[listing.ref_label]
-            listing.ref_market_avg = s["mean"]
-            listing.ref_market_count = s["count"]
+        own = stats.get(listing.ref_label) if listing.ref_label else None
+        line = None
+        derived = listing.ref_label in (listing.model_line, listing.catalog_label)
+        if derived and listing.model_line and listing.model_line != listing.ref_label:
+            line = stats.get(listing.model_line)
+        use, label = own, ""
+        if line and (own is None or own["count"] < SCORE_MARKET_MIN_OBSERVATIONS) and (
+            own is None or line["count"] > own["count"]
+        ):
+            use, label = line, listing.model_line
+        if use:
+            listing.ref_market_avg = use["mean"]
+            listing.ref_market_count = use["count"]
+            listing.ref_market_label = label
 
 
 PRICE_HISTORY_FIELDS = ["date", "ref_label", "item_id", "price_eur", "title"]
@@ -1504,7 +1540,11 @@ def append_reference_price_observations(path: str, listings: list[Listing]) -> i
         if existing_fields is None:
             writer.writerow(PRICE_HISTORY_FIELDS)
         for listing in observations:
-            writer.writerow([logged_at, listing.ref_label, listing.item_id, listing.price_eur, listing.title])
+            # Under the line too when the label is more precise than that: the
+            # line's average is what a trim with too few sightings falls back
+            # on (apply_reference_market_stats()).
+            for label in dict.fromkeys(l for l in (listing.ref_label, listing.model_line) if l):
+                writer.writerow([logged_at, label, listing.item_id, listing.price_eur, listing.title])
     return len(observations)
 
 
@@ -1683,6 +1723,29 @@ def apply_reference_data(listings: list[Listing], reference: list[dict]) -> dict
     return matches
 
 
+def apply_catalog_variants(listings: list[Listing], matcher) -> dict:
+    """catalog_match.VariantMatcher on every listing with a model line: the
+    trim and, where the listing states it, the model year. A listing whose
+    label came from the line gets the trim as its label and what the
+    catalogue says about it in the Specs column; one recognised by a row of
+    the reference file keeps both — that row was researched by hand. Returns
+    {item_id: CatalogMatch} for every listing with a line, None where no trim
+    was found, so sync_catalog_matches() also clears a stale link."""
+    found = {}
+    for listing in listings:
+        if not listing.model_line:
+            continue
+        text = listing.detail_text or listing.description
+        year = extract_specs(spec_text(listing)).get("model_year")
+        match = matcher.match(listing.model_line, listing.title, text, year)
+        listing.catalog_label = match.label if match is not None else ""
+        found[listing.item_id] = match
+        if match is not None and listing.ref_label == listing.model_line:
+            listing.ref_label = match.label
+            listing.ref_specs = match.describe()
+    return found
+
+
 def apply_bid_flags(listings: list[Listing]) -> None:
     """Mark bidding listings nobody has bid on yet — for those the seller's
     minimum bid is still the whole asking price, so they're the ones where
@@ -1827,7 +1890,8 @@ def score_listing(listing: Listing) -> None:
             (
                 ratio_score(ratio, best, worst),
                 weight,
-                f"{ratio * 100:.0f}% van 2e-hands gem. (n={listing.ref_market_count})",
+                f"{ratio * 100:.0f}% van 2e-hands gem.{market_label_suffix(listing)} "
+                f"(n={listing.ref_market_count})",
             )
         )
 
@@ -1947,7 +2011,9 @@ def print_table(listings: list[Listing], stats: Optional[dict] = None) -> None:
             if l.ref_pct_of_original is not None:
                 bits.append(f"nu {l.ref_pct_of_original:.0f}% daarvan")
             if l.ref_market_count > 0:
-                bits.append(f"tweedehands gem. €{l.ref_market_avg:.0f} (n={l.ref_market_count})")
+                bits.append(
+                    f"tweedehands gem.{market_label_suffix(l)} €{l.ref_market_avg:.0f} (n={l.ref_market_count})"
+                )
             if l.ref_specs:
                 bits.append(f"specs: {l.ref_specs}")
             if l.ref_score:
@@ -2043,7 +2109,7 @@ def print_bid_overview(
         if l.ref_label:
             ref = l.ref_label
             if l.ref_market_count > 0:
-                ref += f" (2e-hands gem. €{l.ref_market_avg:.0f})"
+                ref += f" (2e-hands gem.{market_label_suffix(l)} €{l.ref_market_avg:.0f})"
             elif l.ref_original_price is not None:
                 ref += f" (nieuw €{l.ref_original_price:.0f})"
         else:
@@ -2191,7 +2257,10 @@ def render_html(
         else:
             ref_price_str = "—" if not l.ref_label else "onbekend"
         if l.ref_market_count > 0:
-            ref_price_str += f" · 2e-hands gem. €{l.ref_market_avg:.0f} (n={l.ref_market_count})"
+            ref_price_str += (
+                f" · 2e-hands gem.{html_lib.escape(market_label_suffix(l))} "
+                f"€{l.ref_market_avg:.0f} (n={l.ref_market_count})"
+            )
         ref_specs_str = html_lib.escape(l.ref_score) if l.ref_score else (
             html_lib.escape(l.ref_specs) if l.ref_specs else "—"
         )
@@ -2918,6 +2987,7 @@ def sync_database(
     crawl_near_complete: bool = False,
     fetched_details: Optional[dict] = None,
     line_models: Sequence = (),
+    catalog_matches: Optional[dict] = None,
 ) -> None:
     """Mirror this run into koopjes.db, alongside the CSV/JSON files that
     stay the ones actually read elsewhere (reference_overview.py etc.) —
@@ -2953,6 +3023,8 @@ def sync_database(
             db.upsert_line_models(conn, line_models)
         if reference_matches:
             db.sync_listing_models(conn, reference_matches)
+        if catalog_matches is not None:
+            db.sync_catalog_matches(conn, catalog_matches, [l.item_id for l in listings])
         db.record_crawl_run(
             conn,
             query=query,
@@ -3065,14 +3137,21 @@ def run_for_query(
     # --max-price 150.
     listings = filter_by_price(listings, args.min_price, args.max_price)
 
+    # Before the matching below: the full description is where a seller names
+    # the trim and the year ("TCR Advanced 2, bouwjaar 2016"), and the
+    # catalogue match needs both. Reference rows still match on the snippet.
+    fetched_details = lookup_listing_details(args, listings, crawled_listings)
+
     reference = load_reference_data(args.reference_file)
     reference_matches = apply_reference_data(crawled_listings, reference)
     line_models: list = []
+    # None rather than {}: a search that isn't about bikes (a powermeter
+    # watchlist) must leave the trim links an earlier bike search made alone.
+    catalog_matches: Optional[dict] = None
     if model_lines.is_bike_reference(reference):
-        line_models = model_lines.load_lines()
-        model_lines.apply_lines(
-            crawled_listings, model_lines.LineMatcher(line_models), reference_matches
-        )
+        line_models, line_matcher, variant_matcher = catalog_match.default_matchers()
+        model_lines.apply_lines(crawled_listings, line_matcher, reference_matches)
+        catalog_matches = apply_catalog_variants(crawled_listings, variant_matcher)
 
     if not args.no_price_history:
         market_stats = load_reference_market_stats(args.price_history_file)
@@ -3088,8 +3167,6 @@ def run_for_query(
         recorded = append_reference_price_observations(args.price_history_file, crawled_listings)
         if recorded:
             print(f"Recorded {recorded} price observation(s) to {args.price_history_file}")
-
-    fetched_details = lookup_listing_details(args, listings, crawled_listings)
 
     score_listings(listings)
     sleepers.apply_sleeper_signals(listings)
@@ -3117,6 +3194,7 @@ def run_for_query(
             crawl_near_complete=crawl_near_complete,
             fetched_details=fetched_details,
             line_models=line_models,
+            catalog_matches=catalog_matches,
         )
 
     # Captured before --bids-only/--min-score filter the list for the
