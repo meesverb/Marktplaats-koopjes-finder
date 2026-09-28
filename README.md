@@ -737,6 +737,43 @@ sh /path/to/repo/catalog_tools/run_all.sh
 market and a basis, and that no model year appears that the source didn't
 state.
 
+### Sport watches — `reference_sport_watches.csv`
+
+A first step towards a second market next to bike computers: Garmin GPS
+sport watches (Fenix 5 to 8 Pro, Epix Gen 2 and Pro, Forerunner 45 to 970).
+One row per model, same shape as `reference_bike_computers.csv` — a regex
+`pattern`, and the file order is the match order, so "Fenix 7 Pro" comes
+before "Fenix 7" — and it loads with `computers.load_catalog(path)`. Nothing
+reads it yet: there is no search in `schedule.json`, no flip margin and no
+dashboard tab for watches. It is the reference data those need.
+
+Columns: `merk`, `model`, `pattern`, `introductiejaar`, `nieuwprijs_eur`,
+`prijs_bron`, `nieuwprijs_usd`, `kaarten_op_horloge` (`ja`/`nee`/empty),
+`extra_opmerkingen`, `bron_url`.
+
+- **A euro price only where a source gives euros**: Garmin's Benelux press
+  releases (garmin.prezly.com, "adviesprijs") or a DC Rainmaker comparison
+  table that states EUR. `nieuwprijs_usd` is DC Rainmaker's US price, from
+  `bron_url`, and is never converted. Where neither exists the field is
+  empty (Fenix 7 Pro, Epix Pro and Fenix 8 have no euro price yet).
+- **`kaarten_op_horloge` only where the source says so.** It is not the
+  `kaarten` column of the bike computer file (`routeerbaar`, `basiskaart`,
+  ...); that vocabulary says something the sources for watches don't.
+- **Variants share a row** where the price tier is the same (5/5S, 265/265S,
+  Music editions, Solar/Sapphire). Where the tier differs, they have their own
+  row (Fenix 5X, Fenix 6 Pro, Fenix 7 Pro, Epix Pro). A "Fenix 6S Sapphire"
+  without "Pro" lands on Fenix 6; whether every Sapphire edition was a Pro is
+  not checked.
+- **Two-digit Forerunners need the name**: "Forerunner 55" or "FR55", never
+  "Garmin 55" — too easily a size in mm.
+
+On 450 real titles (searches "garmin fenix", "garmin forerunner" and
+"garmin epix", 28-09-2026) it recognises 348. Most of the rest are Garmin
+watches that are not in the file yet (Fenix 3, Fenix E, Fenix 9, Instinct,
+Venu, Vivoactive, Forerunner 35/235/630) or not watches at all (cables, marine
+electronics, handheld GPS). `tests/test_sport_watches.py` checks sources,
+fixed words, shadowing, and a set of those real titles.
+
 ### Your own market price history — `--price-history-file`
 
 Every time a listing matching a reference model is seen for the first time,
