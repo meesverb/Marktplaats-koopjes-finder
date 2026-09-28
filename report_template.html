@@ -84,6 +84,7 @@
 <nav class="tabs">
   <button data-panel="listings" class="active">Advertenties (${total})</button>
   <button data-panel="sleepers">Slapers (${sleeper_count})</button>
+  <button data-panel="computers">Fietscomputers (${computer_count})</button>
   <button data-panel="bidpanel">Biedpaneel (${bidpanel_count})</button>
   <button data-panel="upgrade">Upgrade (${upgrade_count})</button>
   <button data-panel="mybike">Mijn fiets</button>
@@ -127,6 +128,9 @@ ${rows}
 </section>
 <section class="panel" id="panel-sleepers" hidden>
 ${sleeper_panel}
+</section>
+<section class="panel" id="panel-computers" hidden>
+${computer_panel}
 </section>
 <section class="panel" id="panel-bidpanel" hidden>
 ${bid_panel}

@@ -300,6 +300,49 @@ columns keep their place.
 The generic-words list is written for road bikes; on other queries (hifi, for
 instance) hardly any title passes it, so there will simply be no slapers.
 
+### Fietscomputers — upgrade and flip margin (`computers.py`)
+
+A listing whose **title** names a known bike computer gets a place in the
+report's **Fietscomputers** tab and a `=== Fietscomputers` block in the console
+(only when a run has any). The models, one row each with a source, are in
+`reference_bike_computers.csv`; the weights in `computer_scoring.json`. A bike
+"met Garmin Edge 530" is not matched (the title is about a bike), nor is
+"Houder voor Garmin Edge 530" (an accessory before the model name). A title
+that mentions a repair or a defect ("scherm vervangen", "defect", "werkt
+niet") is shown, but is never an upgrade, a flip or a comparable price.
+
+Two measures, shown separately — neither is the dealscore:
+
+- **Upgrade** — the model's feature score (0-100) minus that of your own
+  computer (`baseline` in the JSON: the Wahoo ELEMNT ROAM v1), and that per
+  €100 of the price. The weights were chosen by the owner (28-09-2026):
+  navigation 35 (rerouting, routable maps, automatic Strava/Komoot sync),
+  planning on the device itself 20, training 25 (ANT+, Di2/AXS, workouts,
+  climb feature), controls 10 (buttons over touch), battery 10. A model
+  without updates any more loses 15 points, one whose maker stopped but still
+  supports it 5. An empty field was not researched and earns nothing — the tab
+  says per model which fields are unknown, so a low score can mean "unknown"
+  rather than "bad".
+- **Flipmarge** — the median of what other listings for the same model ask
+  (this run plus, with `--db`, earlier runs seen in the last 180 days), times
+  0,875 for haggling (the same heuristic as `valuation.py`), minus this
+  listing's price. Only with at least 3 other listings; a running bid is not
+  a comparable.
+
+```bash
+python racefiets_jev.py --query "garmin edge" --pages 1
+python computers.py                 # feature score per model, with the difference to your own
+python computers.py --merk wahoo
+```
+
+The CSV uses fixed words so the score can read it: `rerouting` is `ja`,
+`via_telefoon` or `nee`; `kaarten` `routeerbaar`, `los_te_koop`, `basiskaart`
+or `nee`; `planning_op_apparaat` `volledig`, `beperkt` or `nee`; `bediening`
+`knoppen`, `touch+knoppen` or `touch`; `ondersteund` `ja`, `beperkt` or `nee`.
+Anything else stops the load with the row number. Numbers use a dot. The file
+order is the match order, so "Edge 1030 Plus" comes before "Edge 1030". Like
+the other reference files it is added with `git add -f`.
+
 ### Bidding listings (FAST_BID / MIN_BID)
 
 Some listings ("Bieden") don't have a fixed price. Marktplaats' search
@@ -796,11 +839,12 @@ wheelset sells for, so the two budgets come out equal and the output says so
 rather than guessing a number. It also bids on nothing and contacts no seller:
 that is out of scope, by design.
 
-### Report tabs — Slapers, Biedpaneel, Upgrade, Mijn fiets
+### Report tabs — Slapers, Fietscomputers, Biedpaneel, Upgrade, Mijn fiets
 
 Next to the listings table (which keeps its row filters and sortable columns
-as before) the HTML report has four more tabs: **Slapers** (see "Slapers"
-above) and the three below (PLAN_FIETSWAARDE.md fase 6).
+as before) the HTML report has five more tabs: **Slapers** and
+**Fietscomputers** (see those sections above) and the three below
+(PLAN_FIETSWAARDE.md fase 6).
 The chosen tab is kept in the URL (`#upgrade`), so reloading the report after
 a new run lands on the same one.
 

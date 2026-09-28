@@ -1,0 +1,34 @@
+{
+    "_toelichting": "Gewichten voor computers.py. Gekozen door de eigenaar op 28-09-2026: route erop + rerouting, planning op het apparaat en training/sensoren wegen het zwaarst; knoppen gaan voor touch; merken zonder updates krijgen aftrek. Batterijduur telde niet mee in zijn keuze en weegt daarom licht.",
+    "baseline": {"merk": "Wahoo", "model": "ELEMNT ROAM v1"},
+    "weights": {
+        "navigatie": 35,
+        "planning": 20,
+        "training": 25,
+        "bediening": 10,
+        "batterij": 10
+    },
+    "navigatie": {
+        "rerouting": {"share": 0.6, "values": {"ja": 1.0, "via_telefoon": 0.5, "nee": 0.0}},
+        "kaarten": {"share": 0.25, "values": {"routeerbaar": 1.0, "los_te_koop": 0.6, "basiskaart": 0.3, "nee": 0.0}},
+        "route_sync": {"share": 0.15, "values": {"ja": 1.0, "nee": 0.0}}
+    },
+    "planning_op_apparaat": {"volledig": 1.0, "beperkt": 0.5, "nee": 0.0},
+    "training": {
+        "ant_plus": 0.35,
+        "schakel_integratie": 0.20,
+        "workouts": 0.25,
+        "klimfunctie": 0.20
+    },
+    "bediening": {"knoppen": 1.0, "touch+knoppen": 0.7, "touch": 0.3},
+    "batterij": {"min_uur": 10, "max_uur": 30},
+    "_unknown_credit": "Een leeg veld is niet nagezocht. Het telt als dit deel van de punten, zodat een onbekend model niet boven een bekend goed model uitkomt; het rapport zegt per model hoeveel velden onbekend zijn.",
+    "unknown_credit": 0.0,
+    "support_penalty": {"nee": 15, "beperkt": 5},
+    "flip": {
+        "_toelichting": "negotiation_factor is dezelfde heuristiek als het midden van valuation.NEGOTIATION_DEFAULT: vraagprijs naar verkoopprijs, geen meting.",
+        "min_comps": 3,
+        "negotiation_factor": 0.875,
+        "comp_window_days": 180
+    }
+}

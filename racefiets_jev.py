@@ -31,6 +31,7 @@ from urllib.parse import quote_plus, urlencode
 import requests
 
 import db
+import computers
 import sleepers
 
 BASE_URL = "https://www.marktplaats.nl"
@@ -101,6 +102,9 @@ class Listing:
     # --detail-lookup fetched (see lookup_listing_details()). Empty otherwise;
     # `description` stays the search snippet either way.
     detail_text: str = field(default="", metadata={"csv": False})
+    # computers.ComputerSignal when the title names a known bike computer
+    # (computers.py). Not a CSV column, same reason as site_specs.
+    computer: Optional[object] = field(default=None, metadata={"csv": False})
 
     @property
     def price_is_asking(self) -> bool:
@@ -2262,6 +2266,7 @@ def render_html(
         )
 
     sleeper_count, sleeper_panel = sleepers.render_panel(listings)
+    computer_count, computer_panel = computers.render_panel(listings)
 
     # substitute(), not safe_substitute(): a placeholder in the template that
     # nobody fills in should fail here, not end up as literal text in the page.
@@ -2287,6 +2292,8 @@ def render_html(
         bike_panel=panels.bike_html,
         sleeper_count=sleeper_count,
         sleeper_panel=sleeper_panel,
+        computer_count=computer_count,
+        computer_panel=computer_panel,
     )
 
 
@@ -3009,6 +3016,10 @@ def run_for_query(
 
     score_listings(listings)
     sleepers.apply_sleeper_signals(listings)
+    # Before sync_database(), so the comparables from earlier runs don't
+    # already contain this run twice; this run's own listings are added in
+    # apply_computer_signals() itself.
+    computers.apply_computer_signals(listings, db_path=None if args.no_db else args.db)
 
     if not args.no_notify_better:
         notify_better_matches(listings)
@@ -3050,6 +3061,7 @@ def run_for_query(
     print_table(listings, stats=all_stats)
     print_bid_overview(listings, headroom=bid_headroom_by_id(listings, all_stats.get("median")))
     print_sleepers(listings)
+    computers.print_computers(listings)
 
     if args.output:
         output_path = report_path(args.output, query, multi, report_name)
