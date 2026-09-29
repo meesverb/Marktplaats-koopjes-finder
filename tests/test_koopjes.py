@@ -52,10 +52,24 @@ class ShippedConfigTest(unittest.TestCase):
         config = koopjes.load_config(Path(repo_file("schedule.json")))
         self.assertIn("overdag", config.slots)
         # Een slot zonder tijden draait nooit vanzelf; dat mag alleen met
-        # opzet: "horloges" is om met de hand alles op te halen.
-        manual = {"horloges"}
+        # opzet: "horloges" en "defy" zijn om met de hand alles op te halen.
+        manual = {"horloges", "defy"}
         for slot in config.slots.values():
             self.assertEqual(not slot.times, slot.name in manual, slot.name)
+
+    def test_the_manual_defy_slot_fetches_every_defy_search_completely(self):
+        config = koopjes.load_config(Path(repo_file("schedule.json")))
+        slot = config.slots["defy"]
+        defy_searches = {name for name, search in config.searches.items() if "defy" in search["query"]}
+        self.assertEqual(set(slot.searches), defy_searches)
+        self.assertEqual((slot.pages, slot.bid_lookup, slot.valuation), (0, "fast", True))
+        # Alle categorieën: anders valt wat verkopers onder sportfietsen of
+        # omafietsen zetten weg (29-09-2026).
+        for name in defy_searches:
+            self.assertEqual(config.searches[name]["filters"].get("category"), "alle", name)
+        schedule = "\n".join(koopjes.windows_commands(config, "python", "koopjes.py")
+                             + koopjes.cron_lines(config, "python", "koopjes.py"))
+        self.assertNotIn("run defy", schedule)
 
     def test_the_manual_watch_slot_fetches_every_watch_search_completely(self):
         config = koopjes.load_config(Path(repo_file("schedule.json")))
