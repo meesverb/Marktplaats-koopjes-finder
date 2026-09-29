@@ -2876,6 +2876,8 @@ ul.files { list-style: none; margin: 0; padding: 0; background: var(--card); bor
 ul.files li { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between;
   gap: 12px; flex-wrap: wrap; }
 ul.files li:last-child { border-bottom: 0; }
+pre.log { max-height: 320px; overflow: auto; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; font-size: .8rem; white-space: pre-wrap; }
 """
 
 # Wat /bestanden/ laat zien: alleen wat de rondes voor jou schrijven, nooit
@@ -2957,7 +2959,82 @@ def load_recent_rounds(files_dir, limit: int = 5) -> list:
     return koopjes.load_rounds(path, limit=limit)
 
 
-def render_start(db_path, files_dir, message: str = "") -> str:
+def load_schedule(files_dir):
+    """schedule.json naast de rapporten, of None (dan geen knoppen)."""
+    import koopjes
+
+    try:
+        return koopjes.load_config(Path(files_dir) / "schedule.json")
+    except Exception:  # ontbreekt of kapot: de pagina werkt dan zonder knoppen
+        return None
+
+
+def rounds_panel(files_dir, running: str = "") -> str:
+    """Per tijdslot een knop starten, met wat hij doet en wanneer hij het
+    laatst draaide. `running`: het slot dat de server net startte, of
+    "ja" als een andere ronde (de taakplanner) bezig is."""
+    import launcher
+
+    config = load_schedule(files_dir)
+    if config is None:
+        return "<p class='empty'>Geen schedule.json gevonden; zonder die zijn er geen rondes om te starten.</p>"
+    rows = []
+    for info in launcher.slots(config):
+        last = info.last
+        when = (f"{esc(local_time(last.get('started_at', '')))}"
+                f"<div class='sub'>{esc(str(last.get('status', '?')))}, {int(last.get('new', 0) or 0)} nieuw</div>"
+                if last else "<span class='muted'>nog nooit</span>")
+        depth = "alles" if info.full else f"{info.pages} pagina's"
+        if running:
+            button = "<span class='muted'>er draait een ronde</span>"
+        elif info.ready_at is not None:
+            button = (f"<span class='muted'>weer vanaf {esc(info.ready_at.astimezone().strftime('%H:%M'))}</span>")
+        else:
+            warn = (" data-confirm='Deze ronde haalt alles op en duurt lang (vaak meer dan een uur). Starten?'"
+                    if info.full else "")
+            button = act("/start/ronde", info.name, f"<button name='doe' value='start'{warn}>starten</button>")
+        rows.append(
+            f"<tr><td><div class='model'>{esc(info.name)}</div><div class='sub'>{esc(info.times)}</div></td>"
+            f"<td>{esc(', '.join(info.searches))}<div class='sub'>{esc(depth)}</div></td>"
+            f"<td>{when}</td><td>{button}</td></tr>")
+    table_html = ("<div class='table-wrap'><table><thead><tr><th>Ronde</th><th>Zoekt</th><th>Laatst</th><th></th>"
+                  f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>")
+    status = ""
+    if running:
+        tail = launcher.log_tail(config)
+        label = f"Ronde '{running}' draait" if running != "ja" else "Er draait een ronde"
+        status = (f"<div class='banner' id='round-running' role='status'><strong>{esc(label)}.</strong> "
+                  "Deze pagina ververst vanzelf als hij klaar is. Je kunt intussen gewoon verder op de andere "
+                  f"pagina's.</div><pre class='log' id='round-log'>{esc(tail)}</pre>")
+    explain = ("<p class='explain'>Zelfde als de taakplanner: <code>python koopjes.py run &lt;ronde&gt;</code>, op de "
+               "achtergrond. Nooit twee tegelijk, en per ronde een wachttijd sinds de vorige (een half uur, zes uur "
+               "voor een ronde die alles ophaalt), zodat Marktplaats niet vaker bevraagd wordt dan nodig. Hij "
+               "loopt door als je de server stopt.</p>")
+    return status + table_html + explain
+
+
+START_JS = """
+// Een lange ronde niet per ongeluk (vóór LIVE_JS, dat de klik anders verstuurt).
+document.addEventListener('click', e => {
+  const button = e.target.closest('.act button[data-confirm]');
+  if (button && !confirm(button.dataset.confirm)) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+// Terwijl een ronde draait: het logboek bijwerken, en herladen als hij klaar is.
+if (document.getElementById('round-running')) {
+  const poll = () => fetch('/start/status').then(r => r.json()).then(data => {
+    const log = document.getElementById('round-log');
+    if (log && data.log !== undefined) { log.textContent = data.log; log.scrollTop = log.scrollHeight; }
+    if (!data.running) location.replace('/start?melding=' + encodeURIComponent('De ronde is klaar.'));
+    else setTimeout(poll, 4000);
+  }).catch(() => setTimeout(poll, 8000));
+  setTimeout(poll, 4000);
+  const log = document.getElementById('round-log');
+  if (log) log.scrollTop = log.scrollHeight;
+}
+"""
+
+
+def render_start(db_path, files_dir, message: str = "", token: str = "", running: str = "") -> str:
     rounds = load_recent_rounds(files_dir)
     book = fl.load_book(db_path, with_market_check=False) if Path(db_path).exists() else None
     last = rounds[0] if rounds else None
@@ -2998,14 +3075,16 @@ def render_start(db_path, files_dir, message: str = "") -> str:
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>Koopjes</title><style>{CSS}{SITE_CSS}</style></head><body><main>"
+        f"<title>Koopjes</title><style>{CSS}{SITE_CSS}</style></head><body>"
+        f"<main data-token='{esc(token, quote=True)}'>"
         f"{site_nav(START_PATH)}<h1>Koopjes</h1>"
         "<div class='meta'>Alles op één plek. Deze pagina draait op je eigen computer "
         "(<code>python dashboard.py --serve</code>); stoppen met Ctrl+C in dat venster.</div>"
         f"{notice}{tiles(tile_list)}<h3>Live</h3><div class='cards'>{cards}</div>"
+        f"<h3>Rondes</h3>{rounds_panel(files_dir, running)}"
         f"<h3>Rapporten en lijsten</h3>{file_list}"
         + (f"<h3>Laatste rondes</h3><ul class='files'>{round_rows}</ul>" if rounds else "")
-        + "</main></body></html>"
+        + f"</main><div id='toast' role='status' hidden></div><script>{LIVE_JS}{START_JS}</script></body></html>"
     )
 
 
@@ -3230,6 +3309,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     token = ""
     intake_path = str(INTAKE_PATH)
     photo_dir = fl.PHOTO_DIR
+    launched: dict = {}  # de ronde die deze server startte: {"proc": Popen, "slot": naam}
+    launch_lock = threading.Lock()
     files_dir = HERE  # waar koopjes.py het overzicht en de rapporten schrijft
     sheets_config = str(HERE / "sheets.json")
     cache: LiveCache = LiveCache()
@@ -3274,7 +3355,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         market = next((m for m in mk.MARKETS.values() if m.serve_path == path), None)
         is_photo = path.startswith(FLIPS_PHOTO_PATH + "/")
         is_file = path.startswith(FILES_PATH + "/")
-        if market is None and path not in (BIKE_PATH, FLIPS_PATH, START_PATH) and not (is_photo or is_file):
+        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status")
+        if market is None and path not in pages and not (is_photo or is_file):
             return self._send(404, "Niet gevonden")
         if not self._host_ok():
             return self._send(403, "Alleen via 127.0.0.1")
@@ -3284,7 +3366,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if is_file:
             return self._send_file(unquote(path[len(FILES_PATH) + 1:]))
         if path == START_PATH:
-            return self._send(200, render_start(self.db_path, self.files_dir, message), "text/html; charset=utf-8")
+            return self._send(200, render_start(self.db_path, self.files_dir, message, self.token,
+                                                self._running_round()), "text/html; charset=utf-8")
+        if path == START_PATH + "/status":
+            import launcher
+
+            config = load_schedule(self.files_dir)
+            return self._json({"running": bool(self._running_round()),
+                               "log": launcher.log_tail(config) if config else ""})
         if path == FLIPS_PATH:
             import flips_sheets as fs
             book = fl.load_book(self.db_path)
@@ -3300,6 +3389,37 @@ class DashboardHandler(BaseHTTPRequestHandler):
         d.other_links = []  # de balk bovenaan (site_nav) heeft ze allemaal
         d.message = message
         self._send(200, render(d), "text/html; charset=utf-8")
+
+    def _running_round(self) -> str:
+        """Het slot dat deze server startte en nog loopt, "ja" voor een
+        andere ronde (de taakplanner), of "" als er niets draait."""
+        import launcher
+
+        proc, slot = self.launched.get("proc"), self.launched.get("slot", "")
+        if proc is not None and proc.poll() is None:
+            return slot
+        config = load_schedule(self.files_dir)
+        return "ja" if config is not None and launcher.is_running(config) else ""
+
+    def _start_round(self, form: dict) -> None:
+        import launcher
+
+        if not hmac.compare_digest(form.get("token", ""), self.token):
+            return self._back("De pagina was verouderd; er is niets gestart. Probeer het opnieuw.", tab="",
+                              path=START_PATH)
+        slot = form.get("item_id", "")
+        config = load_schedule(self.files_dir)
+        with self.launch_lock:
+            try:
+                if config is None:
+                    raise launcher.LaunchError("Geen schedule.json gevonden.")
+                if self._running_round():
+                    raise launcher.LaunchError("Er draait al een ronde; wacht tot die klaar is.")
+                self.launched.update(proc=launcher.start(config, slot), slot=slot)
+                message = f"Ronde '{slot}' gestart."
+            except launcher.LaunchError as exc:
+                message = f"Niet gestart: {exc}"
+        self._back(message, tab="", path=START_PATH)
 
     def _send_file(self, name: str) -> None:
         if name in LIVE_INSTEAD:
@@ -3401,6 +3521,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = url.path
         if path == FLIPS_PHOTO_PATH:
             return self._upload_photo(url)
+        if path == START_PATH + "/ronde":
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_FORM_BYTES:
+                return self._send(413, "Te groot")
+            raw = self.rfile.read(length).decode("utf-8", errors="replace")
+            return self._start_round({k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()})
         if path in FLIP_ACTIONS:
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_FORM_BYTES:
@@ -3459,7 +3585,7 @@ def make_server(db_path, port: int = 8765, intake_path=INTAKE_PATH, photo_dir=No
     `comp_choice` bestaan."""
     db.connect(str(db_path)).close()
     attrs = {"db_path": str(db_path), "token": secrets.token_urlsafe(24), "intake_path": str(intake_path),
-             "cache": LiveCache()}
+             "cache": LiveCache(), "launched": {}, "launch_lock": threading.Lock()}
     if photo_dir is not None:
         attrs["photo_dir"] = Path(photo_dir)
     if sheets_config is not None:
