@@ -112,6 +112,16 @@
       "open_browser": "auto",
       "note": "Handmatig, niet ingepland: 'python koopjes.py run horloges' haalt alle sporthorloges in één keer op (Garmin, Polar, Suunto, Coros; ~71 pagina's plus een biedopvraging per bieden-advertentie zonder prijs, ~400, samen ~15-20 minuten) en bouwt daarna dashboard_horloges.html. De nachtronde doet hetzelfde elke nacht; dit is voor als je nu wilt kijken."
     },
+    "defy": {
+      "searches": ["giant-defy", "giant-defy-composite"],
+      "pages": 0,
+      "sort": "newest",
+      "bid_lookup": "fast",
+      "times": [],
+      "valuation": true,
+      "open_browser": "never",
+      "note": "Handmatig, niet ingepland: 'python koopjes.py run defy' haalt alle Giant Defy's in één keer op (giant-defy en giant-defy-composite, alle categorieën, compleet; op 29-09-2026 ~165 + 22 resultaten, 7 pagina's plus een biedopvraging per bieden-advertentie zonder prijs, samen een paar minuten) en taxeert daarna. Bekijk ze op /fiets van 'python dashboard.py --serve'. De nachtronde doet hetzelfde elke nacht; dit is voor als je nu wilt kijken."
+    },
     "week": {
       "searches": ["racefietsen"],
       "pages": 0,
