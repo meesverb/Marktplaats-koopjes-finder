@@ -83,7 +83,7 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 | Slot | When | What |
 | --- | --- | --- |
 | `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
-| `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, all Garmin, Polar, Suunto and Coros watches (`sporthorloges`, `polar`, `suunto`, `coros`: ~71 pages, plus a bid lookup for each of the ~370 "bieden" listings without a price), then `valuation.py` |
+| `nacht` | 03:00 | complete crawls of "giant defy", "giant defy composite" (both in every category, see `/fiets` below) and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, all Garmin, Polar, Suunto and Coros watches (`sporthorloges`, `polar`, `suunto`, `coros`: ~71 pages, plus a bid lookup for each of the ~370 "bieden" listings without a price), then `valuation.py` |
 | `computers` | 10:00, 14:00, 18:00, 22:00 | the newest bike computers and Garmin watches only, 2 pages each (3 requests per search, 6 a round), so a cheap flip doesn't wait for the night. Polar, Suunto and Coros only run at night: with ~5 new listings a day, 2 pages would fetch the same listings and bids every round. Watches: ~115 new on a Monday until 20:45 (28-09-2026), so 2 pages every 4 hours is enough there too. The whole category gets about 100-120 new listings a day, roughly a quarter of them a computer with a known model (measured 28-09-2026: at 18:40 "Vandaag" filled 3-4 pages newest first, "Gisteren" about 4), so 2 pages every 4 hours leaves room — also for the ~7 paid "Dagtoppers" Marktplaats puts on top of page 1 whatever the sort. For the bike computers `bid_lookup` `fast` cost 17 bid lookups a round on top of that, so the slot has `none`: a bidding bike computer shows under "Zonder prijs — bied maximaal" by day, and the night round fills in the running bid. The Garmin watches override that with their own `"bid_lookup": "fast"` (~15 lookups a round). A looked-up bid stays in the database until the next lookup (migration 11), so a round without lookups no longer wipes it. Being shallow, it never marks anything as gone: that stays with the night round |
 | `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
 | `horloges` | by hand (`python koopjes.py run horloges`) | all sport watches at once — the `sporthorloges`, `polar`, `suunto` and `coros` searches, complete, with bid lookups (~71 pages plus ~400 lookups, 15-20 minutes) — then both dashboards; `dashboard_horloges.html` opens if there's a new flip. The night round does the same every night; this slot is for looking now. `koopjes.py schedule` leaves it out, `status` shows it as "handmatig" |
@@ -169,7 +169,7 @@ growing, so you end up with a history of every bargain ever spotted.
 | `--min-frame-height` / `--max-frame-height` | Filter by frame size in cm; bikes without a stated size are kept (see below) | none |
 | `--strict-frame-height` | With the frame size filter, also drop bikes that don't state a size | off |
 | `--sort` | `optimized` (Marktplaats' own "Standaard" order) or `newest` (newest first — use this for scheduled runs, see below) | `optimized` |
-| `--category` | Only search these Marktplaats categories (comma-separated key or number, e.g. `fietsonderdelen`), filtered by Marktplaats itself (see below) | none |
+| `--category` | Only search these Marktplaats categories (comma-separated key or number, e.g. `fietsonderdelen`), filtered by Marktplaats itself, or `alle` for every category (see below) | none |
 | `--bargain-ratio` | Fraction of the median price at/below which a listing is flagged | `0.6` |
 | `--delay` | Seconds between page requests | `1.5` |
 | `--output` | Write results to a CSV file | none |
@@ -258,6 +258,16 @@ search; only when none of them has results is it an error. Several categories mu
 (e.g. `fietsonderdelen,fietsen-racefietsen`, both under *fietsen-en-brommers*).
 Common ones for bikes: `fietsen-racefietsen`, `fietsonderdelen`,
 `fietsaccessoires-fietscomputers`.
+
+`--category alle` is the other way round: every category, with no filter
+and no dominant-category guess — everything Marktplaats finds for the query,
+the same as searching on the site without a category. For a query that is
+its own filter. "giant defy" is dominant in racefietsen, but on 29-09-2026
+23 of its 165 results were Defys a seller had put under
+*heren-sportfietsen-en-toerfietsen*, *dames-omafietsen* and the like, and the
+guess dropped every one of them. The price: loose parts and the odd fuzzy
+match come along too (in that search's own report). `alle` can't be combined
+with other categories.
 
 ### Dealscore
 
@@ -1157,14 +1167,24 @@ those apart as well as you do by looking, so you decide per listing.
 python dashboard.py --serve        # then open http://127.0.0.1:8765/fiets
 ```
 
-The page lists every listing from the racefietsen category of the last 180
-days with the model family from `mijn_fiets.md` ("defy") in its text,
-including the ones that have disappeared (sold or withdrawn — "weg sinds 12
-sep, 9 dagen online"). Whatever is certainly not your frame material is left
-out: aluminium is recognised from the reference model (`reference_bikes.csv`:
-Defy 0-5 and Aluxx), or from the text and the seller's own attributes. A
-listing that says nothing about its material is in, marked *materiaal
-onbekend*. Per listing: **✓ meenemen** or **✗ niet**; clicking the chosen
+The page lists every listing of the last 180 days with the model family
+from `mijn_fiets.md` ("defy") in its text, or found by a search with that word
+in it ("giant defy", "giant defy composite"), including the ones that have
+disappeared (sold or withdrawn — "weg sinds 12 sep, 9 dagen online"). The
+search counts because the search results only carry the first 200
+characters of a description, and Marktplaats finds Defys that never say
+"defy" ("Giant racefiets maat L"); such a row says *gevonden door de
+zoekopdracht*. Every category is in except parts and accessories
+(`fietsonderdelen`, `fietsaccessoires-*`): a Defy under *heren
+sportfietsen* or *omafietsen* says so ("in dames omafietsen"). Every frame
+material is in too, since 29-09-2026: the material is shown, not used to
+filter — from the reference model (`reference_bikes.csv`: Defy 0-5 and Aluxx
+are aluminium, Composite and Advanced carbon), from the text, or *volgens de
+verkoper* when only the seller's attributes say it (those can be wrong: a
+Defy with "COMPOSITE" on its chainstay was listed as aluminium). A listing
+that says nothing about its material is marked *materiaal onbekend*. Both
+nightly Defy searches run with `category: alle` for this (see
+`--category`). Per listing: **✓ meenemen** or **✗ niet**; clicking the chosen
 button again puts it back to "te beoordelen". The page opens on **Te
 beoordelen** (new or not looked at yet), so a chosen listing drops out of
 view and you work down the list; the filter shows the others.
@@ -1418,7 +1438,8 @@ catch the rare listing a seller mis-categorized themselves (e.g. cycling
 shoes listed under "Racefietsen") — use `--exclude` for those if it becomes
 annoying (not yet implemented — ask if you want it). When Marktplaats flags
 more than one category as dominant, the script keeps the biggest and names
-the others in its output; `--category` (above) chooses instead.
+the others in its output; `--category` (above) chooses instead, and
+`--category alle` switches this filter off.
 
 "Wanted" ads — someone looking to buy, posted in the same category — are
 skipped too, and counted in the output. Nothing in the listing data marks

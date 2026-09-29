@@ -1,7 +1,7 @@
 {
   "_uitleg": [
     "Dit bestand beschrijft alle automatische zoekrondes. Pas het hier aan; koopjes.py zet het bij elke ronde door naar de watchlists in koopjes.db.",
-    "searches: per zoekopdracht een 'query' plus filters. Toegestaan: min_price, max_price, min_frame_height, max_frame_height, strict_frame_height, bargain_ratio, reference_file, category, bids_only, min_score. Verder 'report' (false: geen rapport, alleen het dashboard) en 'bid_lookup' (fast, all, none: gaat vóór die van het tijdslot). Een 'note' mag ook, als geheugensteun.",
+    "searches: per zoekopdracht een 'query' plus filters. Toegestaan: min_price, max_price, min_frame_height, max_frame_height, strict_frame_height, bargain_ratio, reference_file, category (een of meer categorieën met een komma, of 'alle': elke categorie), bids_only, min_score. Verder 'report' (false: geen rapport, alleen het dashboard) en 'bid_lookup' (fast, all, none: gaat vóór die van het tijdslot). Een 'note' mag ook, als geheugensteun.",
     "slots: per ronde welke zoekopdrachten, hoe diep (pages, 0 = alles tot ~5000), sortering (newest of optimized), bid_lookup (fast, all, none), tijden ('HH:MM' of 'zo HH:MM'), of er getaxeerd wordt (valuation) en of het overzicht opent (open_browser: auto, always, never). Bij auto opent het overzicht als er nieuwe advertenties zijn in een zoekopdracht met rapport, en het dashboard als er een nieuwe flip is.",
     "Na een wijziging: 'python koopjes.py status' controleert het bestand, 'python koopjes.py schedule' geeft de inplan-commando's opnieuw."
   ],
@@ -17,8 +17,16 @@
     },
     "giant-defy": {
       "query": "giant defy",
+      "category": "alle",
       "reference_file": "reference_bikes.csv",
-      "note": "Vergelijkingsmateriaal voor de taxatie van de eigen fiets (trede 1-2). Klein genoeg voor een complete crawl, dus verkochte fietsen worden gemeten."
+      "note": "Vergelijkingsmateriaal voor de taxatie van de eigen fiets: alles wat deze zoekopdracht vindt, behalve losse onderdelen en accessoires, komt op /fiets van 'python dashboard.py --serve', waar je meeneemt of niet. Klein genoeg voor een complete crawl, dus verkochte fietsen worden gemeten. Categorie alle: zonder categorie hield de crawler alleen racefietsen over, en op 29-09-2026 stonden 23 van de 165 Defy's elders (heren-sportfietsen, dames-omafietsen, ...), waaronder twee Defy Composites. Daardoor staan er ook een paar losse onderdelen in het rapport van deze zoekopdracht; /fiets laat die weg."
+    },
+    "giant-defy-composite": {
+      "query": "giant defy composite",
+      "category": "alle",
+      "reference_file": "reference_bikes.csv",
+      "report": false,
+      "note": "Aanvulling op giant-defy voor /fiets: Marktplaats zoekt niet strikt, en gaf op 29-09-2026 bij 'giant defy composite' een fiets ('Giant racefiets 60cm', 22 resultaten, 1 pagina) die 'giant defy' niet gaf. Wat een zoekopdracht met 'defy' erin vindt, staat op /fiets, ook zonder het woord in de tekst. Geen eigen rapport: wat hij vindt staat op /fiets."
     },
     "ultegra-6700": {
       "query": "ultegra 6700",
@@ -79,7 +87,7 @@
       "open_browser": "auto"
     },
     "nacht": {
-      "searches": ["giant-defy", "ultegra-6700", "powermeter", "fietscomputer", "sporthorloges", "polar", "suunto", "coros"],
+      "searches": ["giant-defy", "giant-defy-composite", "ultegra-6700", "powermeter", "fietscomputer", "sporthorloges", "polar", "suunto", "coros"],
       "pages": 0,
       "sort": "newest",
       "bid_lookup": "fast",

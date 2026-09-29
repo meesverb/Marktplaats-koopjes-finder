@@ -1042,6 +1042,13 @@ def parse_listing(raw: dict) -> Listing:
 # "Defy Composite frame" in the parts category is no comp for a complete
 # Defy Composite.
 ROAD_BIKE_CATEGORY = "fietsen-racefietsen"
+# --category alle: everything the query finds, in every category — no
+# server-side filter and no dominant-category guess. For a query that is
+# its own filter: "giant defy" is dominant in racefietsen, but on 29-09-2026
+# 23 of its 165 results were Defys a seller put under heren-sportfietsen,
+# dames-omafietsen and the like, including two Defy Composites, and the
+# guess dropped every one of them.
+ALL_CATEGORIES = "alle"
 LISTING_URL_CATEGORY_RE = re.compile(r"/v/[^/]+/([^/]+)/")
 
 
@@ -1174,13 +1181,21 @@ def collect_listings(
     always has. With categories, the first request is an unrestricted one
     to resolve them (see resolve_categories()), and Marktplaats does the
     category filtering from there — instead of the dominant-category guess
-    below, which keeps only one category."""
+    below, which keeps only one category. categories ["alle"]
+    (ALL_CATEGORIES) does neither: every result, whatever its category."""
     session = session or requests.Session()
     session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
 
     print(f"Zoeken naar '{query}' op Marktplaats...", file=sys.stderr)
     category_filter: Optional[tuple[int, list[int]]] = None
-    if categories:
+    all_categories = any(c.strip().lower() == ALL_CATEGORIES for c in categories or ())
+    if all_categories and len(categories) > 1:
+        # "alle,fietsonderdelen" asks for two different things; guessing
+        # which one was meant runs a wider or narrower search than asked.
+        note = f"--category: {ALL_CATEGORIES!r} gaat niet samen met andere categorieën"
+        print(f"error: {note}", file=sys.stderr)
+        return CrawlResult([], complete=False, note=note)
+    if categories and not all_categories:
         try:
             first = _fetch_with_retry(lambda p: fetch_api_page(session, query, p, sort), 1, delay)
             category_filter = resolve_categories(first, categories)
@@ -1222,7 +1237,7 @@ def collect_listings(
 
         if total_results is None:
             total_results = as_number(data.get("totalResultCount"))
-        if dominant_category is None and category_filter is None:
+        if dominant_category is None and category_filter is None and not all_categories:
             dominant_category = extract_dominant_category(data)
             others = other_dominant_categories(data, dominant_category)
             if dominant_category is not None and others:
@@ -2586,7 +2601,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Only search in these Marktplaats categories (comma-separated key or number, e.g. "
         "'fietsonderdelen' or 'fietsaccessoires-fietscomputers'), filtered by Marktplaats "
         "itself. Replaces the automatic main-category guess, which keeps only one category. "
-        "An unknown category lists the ones that do have results",
+        "An unknown category lists the ones that do have results. 'alle': every category, "
+        "no filter and no guess — everything Marktplaats finds for the query",
     )
     parser.add_argument(
         "--bargain-ratio",

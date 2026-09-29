@@ -596,7 +596,11 @@ class BikePageTest(unittest.TestCase):
                                   url=BIKE_URL.format(f"d{i}")) for i, p in enumerate((500.0, 600.0, 700.0))]
             bikes.append(make_listing(item_id="alu", title="Giant Defy 1 aluminium", price_eur=300.0,
                                       url=BIKE_URL.format("alu")))
+            bikes.append(make_listing(
+                item_id="sport", title="Giant Defy racefiets", price_eur=450.0,
+                url="https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-heren-sportfietsen-en-toerfietsen/sport-x"))
             db.sync_listings(conn, "giant defy", bikes, datetime.now(timezone.utc).isoformat())
+            db.sync_listing_specs(conn, {"sport": {"frame_material": "aluminium"}}, source=db.SITE_SPEC_SOURCE)
         finally:
             conn.close()
         self.httpd = dashboard.make_server(self.db, 0, intake_path=repo_file("mijn_fiets.md"))
@@ -632,13 +636,15 @@ class BikePageTest(unittest.TestCase):
         self.assertEqual(status, 200)
         return json.loads(text)
 
-    def test_the_list_has_the_carbon_defys_and_not_the_aluminium_one(self):
+    def test_the_list_has_every_defy_with_its_material_and_category(self):
         status, _, page = self.request("GET", "/fiets")
         self.assertEqual(status, 200)
-        for item_id in ("d0", "d1", "d2"):
+        for item_id in ("d0", "d1", "d2", "alu", "sport"):
             self.assertIn(f"data-item='{item_id}' data-choice='open'", page)
-        self.assertNotIn("data-item='alu'", page)
-        self.assertIn("Te beoordelen (3)", page)
+        self.assertIn("Te beoordelen (5)", page)
+        # Het materiaal staat erbij, en of alleen de verkoper het zegt.
+        self.assertIn("Giant Defy 1 aluminium</a><div class='note'>aluminium", page)
+        self.assertIn("aluminium volgens de verkoper · in heren sportfietsen en toerfietsen", page)
         self.assertIn("nog niets meegenomen", page)
         # Vanaf de andere live pagina's is hij te vinden.
         _, _, computers = self.request("GET", "/")
