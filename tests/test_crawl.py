@@ -364,6 +364,38 @@ class CategoryTest(unittest.TestCase):
         self.assertFalse(result.complete)
         self.assertIn("bestaat-niet", err)
 
+    def test_alle_keeps_every_category_without_a_resolving_request(self):
+        # "giant defy" (29-09-2026): dominant in racefietsen, but Defys under
+        # sportfietsen and omafietsen too — the guess dropped them all.
+        def route(path, params):
+            self.assertNotIn("l1CategoryId", params)
+            return json.dumps(response(
+                [raw_listing(itemId="race", categoryId=464), raw_listing(itemId="sport", categoryId=454)],
+                total=2, facets=category_facet(PARTS, BIKES),
+            ))
+
+        session = RoutingSession(route)
+        result, err = collect(session, sort="newest", categories=["Alle"])
+        self.assertEqual({l.item_id for l in result}, {"race", "sport"})
+        self.assertEqual(len(session.requested), 1)
+        self.assertTrue(result.complete)
+        self.assertNotIn("overgeslagen", err)
+
+    def test_alle_also_works_through_the_search_page(self):
+        page = html(response([raw_listing(itemId="fiets", categoryId=464),
+                              raw_listing(itemId="onderdeel", categoryId=462)],
+                             total=2, facets=category_facet(PARTS, BIKES)))
+        result, _ = collect(FakeSession({mp.BASE_URL + "/q/test/": page}), categories=["alle"])
+        self.assertEqual({l.item_id for l in result}, {"fiets", "onderdeel"})
+
+    def test_alle_with_another_category_is_refused(self):
+        session = RoutingSession(lambda p, q: self.fail("no request expected"))
+        result, err = collect(session, categories=["alle", "fietsonderdelen"])
+        self.assertEqual(session.requested, [])
+        self.assertEqual(list(result), [])
+        self.assertFalse(result.complete)
+        self.assertIn("alle", err)
+
     def test_newest_goes_through_the_api(self):
         session = RoutingSession(lambda p, q: json.dumps(response([raw_listing(itemId="a")], total=1)))
         result, _ = collect(session, sort="newest")

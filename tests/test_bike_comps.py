@@ -17,6 +17,10 @@ import valuation as val
 
 BIKE_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/{}-x"
 PARTS_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsonderdelen-racefietsen/{}-x"
+SPORT_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-heren-sportfietsen-en-toerfietsen/{}-x"
+OMA_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-dames-omafietsen/{}-x"
+ACCESSORY_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsaccessoires-fietscomputers/{}-x"
+CYCLING_URL = "https://www.marktplaats.nl/v/sport-en-fitness/wielrennen/{}-x"
 
 
 def bike(item_id, title, price=600.0, **kw):
@@ -34,8 +38,8 @@ class ListTest(unittest.TestCase):
         bike_text = Path(repo_file("mijn_fiets.md")).read_text(encoding="utf-8")
         self.subject = val.subject_from_owner_bike(val.parse_owner_bike(bike_text))
 
-    def sync(self, listings, when=None):
-        db.sync_listings(self.conn, "giant defy", listings, (when or self.now).isoformat())
+    def sync(self, listings, when=None, query="giant defy"):
+        db.sync_listings(self.conn, query, listings, (when or self.now).isoformat())
 
     def rows(self):
         return {r.item_id: r for r in bc.load_rows(self.conn, self.subject)}
@@ -48,27 +52,73 @@ class ListTest(unittest.TestCase):
         self.conn.execute("INSERT INTO listing_model (listing_id, model_id) VALUES (?, ?)", (item_id, model_id))
         self.conn.commit()
 
-    def test_carbon_and_unknown_are_in_aluminium_is_not(self):
+    def test_every_material_is_in_with_where_it_comes_from(self):
+        # De eigenaar kiest zelf (29-09-2026): ook aluminium staat erin.
         self.sync([
             bike("adv", "Giant Defy Advanced 2"),
             bike("kaal", "Giant Defy 2016"),
             bike("tekst", "Giant Defy 1 aluminium"),  # nog geen specs: de tekst beslist
             bike("aluxx", "Giant Defy Aluxx"),
             bike("kenmerk", "Giant Defy racefiets"),
-            bike("frame", "Giant Defy Composite frame", url=PARTS_URL.format("frame")),
-            bike("trek", "Trek Domane carbon"),
         ])
+        self.sync([bike("trek", "Trek Domane carbon")], query="racefiets")
         db.sync_listing_specs(self.conn, {"kenmerk": {"frame_material": "aluminium"}}, source="marktplaats")
         self.link_model("adv", "Giant Defy Advanced", "carbon")
         self.link_model("adv", "Giant Defy (overig)")
         self.link_model("aluxx", "Giant Defy 0-5 (aluminium)", "aluminium")
 
         rows = self.rows()
-        self.assertEqual(set(rows), {"adv", "kaal"})
-        self.assertEqual(rows["adv"].material, "carbon")
+        self.assertEqual(set(rows), {"adv", "kaal", "tekst", "aluxx", "kenmerk"})  # zonder "defy" niet
+        self.assertEqual((rows["adv"].material, rows["adv"].material_source), ("carbon", bc.FROM_MODEL))
         self.assertEqual(rows["adv"].model_label, "Giant Defy Advanced")  # het specifiekste
+        self.assertEqual((rows["aluxx"].material, rows["aluxx"].material_source), ("aluminium", bc.FROM_MODEL))
+        self.assertEqual((rows["tekst"].material, rows["tekst"].material_source), ("aluminium", bc.FROM_TEXT))
+        # Alleen de kenmerken zeggen aluminium; die klopten niet altijd
+        # (een Defy met "COMPOSITE" op de achterbrug, 29-09-2026).
+        self.assertEqual((rows["kenmerk"].material, rows["kenmerk"].material_source),
+                         ("aluminium", bc.FROM_SELLER))
         self.assertIsNone(rows["kaal"].material)  # materiaal onbekend: de eigenaar beslist
+        self.assertEqual(rows["kaal"].material_source, "")
         self.assertEqual(rows["kaal"].year, 2016)
+
+    def test_the_text_wins_over_the_seller_for_the_source(self):
+        self.sync([bike("beide", "Giant Defy carbon")])
+        db.sync_listing_specs(self.conn, {"beide": {"frame_material": "aluminium"}}, source="marktplaats")
+        db.sync_listing_specs(self.conn, {"beide": {"frame_material": "carbon"}})
+        row = self.rows()["beide"]
+        self.assertEqual((row.material, row.material_source), ("carbon", bc.FROM_TEXT))
+
+    def test_what_the_defy_search_found_is_in_without_the_word(self):
+        # Marktplaats gaf voor "giant defy" ook "Giant racefiets maat L" (geen
+        # "defy" in titel of omschrijving) en een advertentie waarvan "Carbon
+        # Defy frame" na de 200 tekens van de zoekresultaten stond.
+        self.sync([bike("zoek", "Giant racefiets maat L")])
+        self.sync([bike("tekst", "Giant Defy racefiets")], query="racefiets")
+        self.sync([bike("ander", "Giant racefiets maat M")], query="racefiets")
+        rows = self.rows()
+        self.assertEqual(set(rows), {"zoek", "tekst"})
+        self.assertFalse(rows["zoek"].family_in_text)
+        self.assertTrue(rows["tekst"].family_in_text)
+
+    def test_every_category_but_parts_and_accessories(self):
+        # Een Defy onder sportfietsen of omafietsen is nog steeds een Defy
+        # (29-09-2026: een Defy Composite 1 onder heren-sportfietsen).
+        self.sync([
+            bike("race", "Giant Defy Composite"),
+            bike("sport", "Giant Defy Composite 1 Carbon Racefiets", url=SPORT_URL.format("sport")),
+            bike("oma", "Giant Defy composite", url=OMA_URL.format("oma")),
+            bike("wielren", "Giant defy advanced 1", url=CYCLING_URL.format("wielren")),
+            bike("vreemd", "Giant Defy", url="https://example.com/defy"),
+            bike("frame", "Giant Defy Composite frame", url=PARTS_URL.format("frame")),
+            bike("computer", "Garmin Edge van mijn Giant Defy", url=ACCESSORY_URL.format("computer")),
+        ])
+        rows = self.rows()
+        self.assertEqual(set(rows), {"race", "sport", "oma", "wielren", "vreemd"})
+        self.assertEqual(rows["race"].category_label, "")
+        self.assertEqual(rows["sport"].category_label, "heren sportfietsen en toerfietsen")
+        self.assertEqual(rows["oma"].category_label, "dames omafietsen")
+        self.assertEqual(rows["wielren"].category_label, "wielrennen")
+        self.assertEqual(rows["vreemd"].category, "")
 
     def test_gone_listings_stay_for_the_window(self):
         self.sync([bike("weg", "Giant Defy carbon"), bike("online", "Giant Defy carbon")])

@@ -10,15 +10,18 @@ segment) liet daardoor Advanced Pro's en andere merken meetellen. De eigenaar
 kijkt zelf, per advertentie: meenemen of niet (tabel `comp_choice`, migratie
 16), op de live pagina /fiets van `python dashboard.py --serve`.
 
-Wat er in de lijst staat: elke advertentie uit de categorie racefietsen van
-de laatste 180 dagen (ook verdwenen: dat zijn de fietsen die weggingen) met
-de modelfamilie ("defy") in de tekst, behalve als het materiaal bekend is en
-niet dat van de eigen fiets. Het materiaal komt van het referentiemodel
-(reference_bikes.csv: Defy 0-5 en Aluxx zijn aluminium, Composite en
-Advanced carbon) en anders van de tekst of de kenmerken van de verkoper
-(tabel `spec`; heeft een advertentie daar niets, dan de tekst hier) —
-dezelfde volgorde als valuation.candidate_material(). Zegt niets iets, dan
-staat hij erin als "materiaal onbekend": dan beslist de eigenaar.
+Wat er in de lijst staat: elke advertentie van de laatste 180 dagen (ook
+verdwenen: dat zijn de fietsen die weggingen) met de modelfamilie ("defy") in
+de tekst of gevonden door een zoekopdracht met de familie erin ("giant
+defy"), uit elke categorie behalve onderdelen en accessoires, en van elk
+materiaal. Sinds 29-09-2026 wil de eigenaar ze allemaal zien en zelf kiezen:
+verkopers zetten een Defy ook onder sportfietsen of omafietsen, en vullen bij
+de kenmerken soms aluminium in bij een carbon frame (op 29-09-2026 een Defy
+met "COMPOSITE" op de achterbrug). Het materiaal staat er alleen bij, met
+waar het vandaan komt: het referentiemodel (reference_bikes.csv: Defy 0-5 en
+Aluxx zijn aluminium, Composite en Advanced carbon), de tekst, of de
+kenmerken van de verkoper (tabel `spec`; heeft een advertentie daar niets,
+dan de tekst hier) — dezelfde volgorde als valuation.candidate_material().
 
 Wat meetelt: alleen wat hij meenam, en alleen met een vraagprijs. Een
 bied-advertentie waarop al geboden is staat in de lijst, maar haar prijs is
@@ -42,6 +45,16 @@ MEE = val.COMP_TAKEN
 NIET = "niet"
 CHOICES = (MEE, NIET)
 
+# Wat geen fiets is: een los "Defy Composite frame" of een wielset "van mijn
+# Defy". Elke andere categorie mag erin, ook buiten fietsen (wielrennen,
+# overige): daar staan ook complete Defy's.
+PARTS_CATEGORY_PREFIXES = ("fietsonderdelen", "fietsaccessoires")
+
+# Waar het materiaal van een rij vandaan komt (Row.material_source).
+FROM_MODEL = "model"
+FROM_TEXT = "tekst"
+FROM_SELLER = "verkoper"
+
 
 @dataclass
 class Row:
@@ -60,18 +73,34 @@ class Row:
     reserved: bool
     bid_count: Optional[int]
     bid_high: Optional[float]
-    # "carbon" (of wat de eigen fiets is), of None: niet bekend.
+    # "carbon", "aluminium", ..., of None: niet bekend.
     material: Optional[str]
+    # FROM_MODEL, FROM_TEXT of FROM_SELLER; leeg als het materiaal onbekend is.
+    material_source: str
+    # De subcategorie uit de URL ("fietsen-racefietsen"), leeg als die er
+    # niet in staat.
+    category: str
     year: Optional[int]
     # Waarmee reference_bikes.csv hem herkende ("Giant Defy Advanced").
     model_label: str
     # Telt mee in de taxatie als hij meegenomen is: een vraagprijs.
     counts: bool
     choice: Optional[str] = None
+    # False: de familie ("defy") staat niet in de tekst die wij hebben; de
+    # zoekopdracht vond hem.
+    family_in_text: bool = True
 
     @property
     def gone(self) -> bool:
         return self.disappeared_at is not None
+
+    @property
+    def category_label(self) -> str:
+        """De categorie als hij niet racefietsen is, leesbaar: "heren
+        sportfietsen en toerfietsen". Leeg voor racefietsen."""
+        if not self.category or self.category == mp.ROAD_BIKE_CATEGORY:
+            return ""
+        return self.category.removeprefix("fietsen-").replace("-", " ")
 
     @property
     def why_not(self) -> str:
@@ -108,10 +137,15 @@ def _bike_labels(conn: sqlite3.Connection, item_ids: list[str]) -> dict[str, str
     }
 
 
+def is_parts_category(category: Optional[str]) -> bool:
+    return bool(category) and category.startswith(PARTS_CATEGORY_PREFIXES)
+
+
 def load_rows(conn: sqlite3.Connection, subject: val.Subject, *,
               window_days: int = val.DEFAULT_COMP_WINDOW_DAYS,
               as_of: Optional[datetime] = None) -> list[Row]:
-    """De lijst voor /fiets, met de keuze van de eigenaar erbij."""
+    """De lijst voor /fiets, met de keuze van de eigenaar erbij. Het
+    framemateriaal van de eigen fiets filtert niet: de eigenaar kiest."""
     words = [w.lower() for w in subject.family_patterns if w]
     if not words:
         return []
@@ -129,6 +163,16 @@ def load_rows(conn: sqlite3.Connection, subject: val.Subject, *,
         f"title LIKE ? OR description LIKE ? OR {full} LIKE ?" for _ in words
     )
     params: list = [p for w in words for p in (f"%{w}%",) * 3]
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "listing_query" in tables:
+        # En wat Marktplaats zelf teruggaf voor een zoekopdracht met de
+        # familie erin ("giant defy"), ook zonder het woord in onze tekst: de
+        # zoekresultaten geven maar 200 tekens omschrijving mee ("Carbon Defy
+        # frame" stond op 29-09-2026 op teken 221), en Marktplaats vindt ook
+        # "Giant racefiets maat L" zonder "defy" in titel of omschrijving.
+        text_match += " OR item_id IN (SELECT listing_id FROM listing_query WHERE " + " OR ".join(
+            "query LIKE ?" for _ in words) + ")"
+        params += [f"%{w}%" for w in words]
     sql = (
         "SELECT item_id, title, description, price_eur, price_type, is_bid, city, frame_height, url, "
         f"image_urls, first_seen, last_seen, disappeared_at, days_online, {full} AS full_description, "
@@ -141,12 +185,11 @@ def load_rows(conn: sqlite3.Connection, subject: val.Subject, *,
         params.append((as_of - timedelta(days=window_days)).isoformat(timespec="seconds"))
     rows = [
         r for r in conn.execute(sql, params).fetchall()
-        # Een los frame of een onderdeel is geen vergelijking voor een
-        # complete fiets (zelfde regel als valuation._is_complete_bike).
-        if mp.category_from_url(r["url"] or "") in (None, mp.ROAD_BIKE_CATEGORY)
+        if not is_parts_category(mp.category_from_url(r["url"] or ""))
     ]
     ids = [r["item_id"] for r in rows]
     specs = db.read_listing_specs(conn)
+    text_specs = db.read_listing_specs(conn, "regex")
     materials = val.reference_materials(conn)
     labels = _bike_labels(conn, ids)
     choices = db.list_comp_choices(conn)
@@ -154,14 +197,24 @@ def load_rows(conn: sqlite3.Connection, subject: val.Subject, *,
     found = []
     for r in rows:
         spec = specs.get(r["item_id"], {})
+        from_text = text_specs.get(r["item_id"], {})
         if not spec:
             # Nog nooit specs vastgelegd (een rij van vóór fase 2, of een
             # ronde zonder): dan dezelfde lezing van de tekst hier.
-            spec = mp.extract_specs(f"{r['title'] or ''} {r['full_description'] or r['description'] or ''}")
+            spec = from_text = mp.extract_specs(
+                f"{r['title'] or ''} {r['full_description'] or r['description'] or ''}")
         material = materials.get(r["item_id"]) or spec.get("frame_material") or None
-        if subject.frame_material and material and material != subject.frame_material:
-            continue
+        if not material:
+            source = ""
+        elif materials.get(r["item_id"]):
+            source = FROM_MODEL
+        elif from_text.get("frame_material"):
+            source = FROM_TEXT
+        else:
+            # Alleen de kenmerken zeggen het: wat de verkoper aanklikte.
+            source = FROM_SELLER
         year = spec.get("model_year")
+        text = f"{r['title'] or ''} {r['description'] or ''} {r['full_description'] or ''}".lower()
         price = r["price_eur"]
         asking = r["price_is_asking"]
         counts = bool(price and price > 0 and (asking == 1 or (asking is None and not r["is_bid"])))
@@ -185,10 +238,13 @@ def load_rows(conn: sqlite3.Connection, subject: val.Subject, *,
             bid_count=r["bid_count"],
             bid_high=r["bid_high"],
             material=material,
+            material_source=source,
+            category=mp.category_from_url(r["url"] or "") or "",
             year=int(year) if year and str(year).isdigit() else val.title_year(r["title"] or ""),
             model_label=labels.get(r["item_id"], ""),
             counts=counts,
             choice=choices.get(r["item_id"]),
+            family_in_text=any(w in text for w in words),
         ))
     return found
 

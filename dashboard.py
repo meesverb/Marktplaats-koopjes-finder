@@ -1848,6 +1848,14 @@ def bike_price_kind(r: bc.Row) -> str:
     return {"FIXED": "vaste prijs", "MIN_BID": "vraagprijs, bieden kan"}.get(r.price_type, "vraagprijs")
 
 
+def bike_material(r: bc.Row) -> str:
+    if not r.material:
+        return "materiaal onbekend"
+    # Wat de verkoper bij de kenmerken aanklikte klopt niet altijd; het
+    # model of de tekst zegt meer.
+    return f"{r.material} volgens de verkoper" if r.material_source == bc.FROM_SELLER else r.material
+
+
 def bike_row(r: bc.Row) -> str:
     choice = r.choice or "open"
     badges = ""
@@ -1861,7 +1869,9 @@ def bike_row(r: bc.Row) -> str:
     facts = [r.model_label,
              str(r.year) if r.year else "",
              f"maat {r.frame_height}" if r.frame_height else "",
-             r.material or "materiaal onbekend",
+             bike_material(r),
+             f"in {r.category_label}" if r.category_label else "",
+             "" if r.family_in_text else "gevonden door de zoekopdracht, de modelnaam staat niet in de tekst",
              r.city,
              f"sinds {nl_date(r.first_seen)}" if r.first_seen and not r.gone else ""]
     bids = ""
@@ -1944,11 +1954,13 @@ def render_bike(view: BikeView, token: str = "", message: str = "", other_links:
         rows = [bike_row(r) for r in view.rows]
         body = (
             f"<div id='bike-summary'>{bike_summary(view)}</div>"
-            "<p class='explain'>Alle advertenties uit de categorie racefietsen van de laatste "
-            f"{val.DEFAULT_COMP_WINDOW_DAYS} dagen met <strong>{esc(family)}</strong> in de tekst, ook die al "
-            f"weg zijn (verkocht of ingetrokken). Wat zeker niet {esc(subject.frame_material or '')} is, staat "
-            "er niet in: aluminium herkent hij aan het model (Defy 0-5, Aluxx) of aan de tekst en kenmerken; "
-            "zegt de advertentie niets, dan staat hij er als <em>materiaal onbekend</em>. "
+            "<p class='explain'>Alle advertenties van de laatste "
+            f"{val.DEFAULT_COMP_WINDOW_DAYS} dagen met <strong>{esc(family)}</strong> in de tekst of gevonden "
+            "door een zoekopdracht met dat woord erin, ook die al weg zijn (verkocht of ingetrokken), uit elke "
+            "categorie behalve onderdelen en accessoires, en van "
+            "elk materiaal. Het materiaal staat erbij: van het model (Defy 0-5 en Aluxx zijn aluminium, "
+            "Composite en Advanced carbon), uit de tekst, of <em>volgens de verkoper</em> (wat bij de kenmerken "
+            "is aangeklikt, en dat klopt niet altijd: kijk dan naar de foto's). "
             "<strong>Alleen wat je meeneemt telt mee</strong> in de taxatie, met zijn vraagprijs; een "
             "biedadvertentie waarop al geboden is telt niet mee (de prijs loopt nog op). Nog eens op de "
             "gekozen knop zet hem terug naar te beoordelen.</p>"
