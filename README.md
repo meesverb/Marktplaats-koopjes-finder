@@ -350,7 +350,7 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 | **Favorieten** | the listings you marked ★ favoriet (below), with your note and the price when you marked them if it has changed since; below that, favourites that are no longer online ("verdwenen" or "laatst gezien") |
 | **Mijn flips** | what you bought and sold yourself: realised profit, what's in stock and what it should bring now, average days to sell, how far the dashboard's estimate was off, and profit per month. Entered in the live version (below) |
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
-| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns. **Toon** hides the listings you put away (the default); set it to *favorieten*, *weggezet* (to put one back) or *alles* |
+| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box (also searches your notes), brand filter, "alleen nieuw", sortable columns. **Toon** hides the listings you put away (the default); set it to *favorieten*, *weggezet* (to put one back), *met notitie* or *alles* |
 | **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
 | **Vinted** | once you've read in a Vinted export (below; until then the tab says how, and which database it reads): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
 | **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. Gone listings that were reserved when a round last saw them are counted apart ("eerst gereserveerd"): those were almost certainly sold. Only reservations a round actually saw count, so it's a lower bound. The hour of posting isn't available: Marktplaats only says "Vandaag"/"Gisteren" |
@@ -387,18 +387,21 @@ put away. It stays in Alle computers behind the **Toon** filter, where
 moment is stored,
 and once a round sees the listing cheaper it is back on Flips with a line
 "Weer terug: de prijs zakte van €90 naar €70" — put it away again and the new
-price counts. A marked listing can also carry a **notitie** of your own
-("gevraagd of €120 kan", "gereserveerd tot zaterdag"): click "notitie
-toevoegen" under it. The note shows under the listing everywhere it appears,
-the search box in Alle computers searches it too, it stays when you change
-favourite into put-away, and goes when you remove the mark. One line, at most
-500 characters; an empty note clears it. After a click the page comes back on
-the same tab, at the same place, with the same search. Marks go into
-`koopjes.db`, table `listing_mark` (migration 12, `marks.py`; the note is
-column `note`, migration 13), one per listing; they are your judgement, not a
-market observation, so a listing you put away still counts as a comparable.
-The written `dashboard.html` shows the marks and notes but has no buttons.
-Vinted listings can't be marked (yet).
+price counts. Every listing can also carry a **notitie** of your own
+("gevraagd of €120 kan", "mail gestuurd, wacht op antwoord"), marked or not:
+click "notitie toevoegen" under it. The note shows under the listing
+everywhere it appears, also under a favourite that went offline; the search
+box in Alle computers searches it too, and **Toon: met notitie** shows all
+listings that have one. A note is about the listing, not your mark: removing
+the mark leaves it. One line, at most 500 characters; an empty note clears
+it. After a click the page comes back on the same tab, at the same place,
+with the same search. Marks go into `koopjes.db`, table `listing_mark`
+(migration 12, `marks.py`), one per listing; notes into table `listing_note`
+(migration 14, which moves over the notes migration 13 kept on marks). Both
+are your judgement, not a market observation, so a listing you put away
+still counts as a comparable. The written `dashboard.html` shows the marks
+and notes but has no buttons. Vinted listings and the Uitgefilterd tab have
+no marks or notes (yet).
 
 **Your own computer's value.** "Netto" in Upgrades is the price minus what
 your own computer sells for: `eigen_verkoopprijs_eur` under `baseline` in

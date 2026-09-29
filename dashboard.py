@@ -7,7 +7,7 @@ zo'n pagina voor de sporthorloges (markets.py beschrijft de markten).
     python dashboard.py --markt sporthorloges   # dashboard_horloges.html
     python dashboard.py --markt alle    # beide
     python dashboard.py --serve         # live in de browser, met Gekocht/Verkocht-knoppen
-                                        # en favoriet/weg per advertentie
+                                        # en favoriet/weg/notitie per advertentie
                                         # (fietscomputers op /, sporthorloges op /horloges)
 
 Gebouwd uit de database, niet uit één run: de zoekopdracht "fietscomputer"
@@ -27,9 +27,10 @@ computers.py en computer_scoring.json; dit bestand toont alleen.
 Het geschreven dashboard.html leest alleen. `--serve` start een klein
 programma op je eigen computer (alleen bereikbaar via 127.0.0.1) dat dezelfde
 pagina live toont, met knoppen om je eigen aan- en verkopen vast te leggen in
-koopjes.db (tabel `trade`, zie trades.py) en om advertenties als favoriet te
-bewaren of weg te zetten (tabel `listing_mark`, zie marks.py). Dat is het
-enige dat hier schrijft.
+koopjes.db (tabel `trade`, zie trades.py), om advertenties als favoriet te
+bewaren of weg te zetten (tabel `listing_mark`, zie marks.py) en om er een
+notitie bij te zetten (tabel `listing_note`). Dat is het enige dat hier
+schrijft.
 """
 from __future__ import annotations
 
@@ -84,6 +85,7 @@ class Dashboard:
     patterns: Optional[pt.Patterns] = None  # Patronen
     bought: dict = field(default_factory=dict)  # item_id -> Trade
     marks: dict = field(default_factory=dict)  # item_id -> marks.Mark
+    notes: dict = field(default_factory=dict)  # item_id -> eigen notitie
     vinted: Optional[vn.VintedView] = None  # tab Vinted; None = nog geen export ingelezen
     db_path: str = ""
     # Alleen in de live versie (--serve): formulieren, met het geheim dat
@@ -191,6 +193,7 @@ def load_dashboard(db_path, config: Optional[dict] = None, market: mk.Market = m
     config = config or pc.default_config()
     d = _with_trades(_load_market(db_path, config, market), db_path)
     d.marks = mr.load_marks(db_path)
+    d.notes = mr.load_notes(db_path)
     d.patterns = pt.load_patterns(db_path, config, market)
     d.vinted = vn.load_view(db_path, config) if market.has_vinted else None
     d.db_path = str(Path(db_path).resolve())
@@ -422,7 +425,8 @@ def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str
     return (
         f"<td class='what'><div class='model'>{new}{esc(model_label)}</div>"
         f"<a href='{esc(listing.url, quote=True)}' target='_blank' rel='noopener'>{esc(listing.title)}</a>"
-        f"<span class='muted'>{place}</span>{note_html}{mark_control(listing, d)}{buy_control(listing, d)}</td>"
+        f"<span class='muted'>{place}</span>{note_html}{mark_control(listing, d)}"
+        f"{note_control(listing.item_id, d)}{buy_control(listing, d)}</td>"
     )
 
 
@@ -459,7 +463,7 @@ def mark_control(listing, d: Dashboard) -> str:
             f"{euro(listing.price_eur)} sinds je hem wegzette ({esc(mark.reason or 'weg')}).</div>"
             if back else "")
     if not d.editable:
-        return note + note_control(mark, d)
+        return note
 
     def button(value: str, label: str) -> str:
         return f"<button class='quiet' name='soort' value='{esc(value, quote=True)}'>{esc(label)}</button>"
@@ -472,25 +476,22 @@ def mark_control(listing, d: Dashboard) -> str:
     else:
         buttons = button(mr.FAVORITE, "☆ favoriet") + away + (button("geen", "wissen") if back else "")
     return (f"{note}<form class='inline mark' method='post' action='/markeer'>"
-            f"{hidden(d, item_id=listing.item_id, tab='')}{buttons}</form>{note_control(mark, d)}")
+            f"{hidden(d, item_id=listing.item_id, tab='')}{buttons}</form>")
 
 
-def note_control(mark: Optional[mr.Mark], d: Dashboard) -> str:
-    """Je eigen notitie bij een gemarkeerde advertentie, en (live) een veld
-    om hem te zetten. Ingeklapt tot je erop klikt: de meeste rijen hebben er
-    geen, en een invulveld per rij maakt Flips onleesbaar. Zonder markering
-    geen notitie: die hoort bij de markering en gaat mee weg als je die
-    weghaalt."""
-    if mark is None:
-        return ""
-    shown = f"<div class='mynote'>{esc(mark.note)}</div>" if mark.note else ""
+def note_control(item_id: str, d: Dashboard) -> str:
+    """Je eigen notitie bij een advertentie, en (live) een veld om hem te
+    zetten. Ingeklapt tot je erop klikt: de meeste rijen hebben er geen, en
+    een invulveld per rij maakt Flips onleesbaar."""
+    note = d.notes.get(item_id)
+    shown = f"<div class='mynote'>{esc(note)}</div>" if note else ""
     if not d.editable:
         return shown
     return (
-        f"{shown}<details class='note-edit'><summary>{'notitie wijzigen' if mark.note else 'notitie toevoegen'}"
+        f"{shown}<details class='note-edit'><summary>{'notitie wijzigen' if note else 'notitie toevoegen'}"
         "</summary><form class='inline mark' method='post' action='/notitie'>"
-        f"{hidden(d, item_id=mark.item_id, tab='')}"
-        f"<input name='notitie' value='{esc(mark.note or '', quote=True)}' maxlength='{mr.NOTE_MAX_CHARS}' "
+        f"{hidden(d, item_id=item_id, tab='')}"
+        f"<input name='notitie' value='{esc(note or '', quote=True)}' maxlength='{mr.NOTE_MAX_CHARS}' "
         "size='36' aria-label='Notitie' placeholder='bv. gevraagd of €120 kan'>"
         "<button class='quiet'>opslaan</button></form></details>"
     )
@@ -662,8 +663,7 @@ def upgrades_panel(d: Dashboard) -> str:
 def search_text(listing, d: Dashboard, label: str) -> str:
     """Waarin het zoekvak van Alle computers zoekt: model, titel en je eigen
     notitie ("120" vindt de advertentie waar je een bod van 120 noteerde)."""
-    mark = d.marks.get(listing.item_id)
-    note = mark.note if mark is not None and mark.note else ""
+    note = d.notes.get(listing.item_id, "")
     return " ".join(x for x in (label, listing.title, note) if x).lower()
 
 
@@ -688,6 +688,7 @@ def all_panel(d: Dashboard) -> str:
         "<select id='all-mark' aria-label='Toon'><option value=''>Toon: zonder weggezette</option>"
         f"<option value='{mr.FAVORITE}'>Toon: favorieten ({len(d.favorites)})</option>"
         f"<option value='{mr.DISMISSED}'>Toon: weggezet ({away})</option>"
+        f"<option value='notitie'>Toon: met notitie ({sum(1 for l, _, _ in items if l.item_id in d.notes)})</option>"
         "<option value='alles'>Toon: alles</option></select>"
         "<label><input type='checkbox' id='all-new'> alleen nieuw</label>"
         "<span class='muted' id='all-count'></span></div>"
@@ -701,7 +702,8 @@ def all_panel(d: Dashboard) -> str:
         note = c.reason if c else next(u.reason for u in d.unknown if u.listing is l)
         rows.append(
             f"<tr data-brand='{esc(brand, quote=True)}' data-new='{int(l.item_id in d.new_ids)}' "
-            f"data-mark='{mark_state(l, d)}' data-text='{esc(search_text(l, d, label), quote=True)}'>"
+            f"data-mark='{mark_state(l, d)}' data-note='{int(l.item_id in d.notes)}' "
+            f"data-text='{esc(search_text(l, d, label), quote=True)}'>"
             f"<td class='pic'>{thumb(l)}</td>"
             f"{price_cell(l)}"
             f"<td class='num' data-sort='{profit if profit is not None else ''}'>{signed_euro(profit)}</td>"
@@ -724,8 +726,9 @@ def favorites_panel(d: Dashboard) -> str:
     how = ("Klik bij een advertentie op <em>☆ favoriet</em> om hem hier te bewaren, of zet hem weg met "
            "<em>niet waard</em> of <em>gereserveerd</em>: dan verdwijnt hij uit Flips"
            + (" en Upgrades" if d.market.has_upgrades else "")
-           + " tot de prijs zakt. Bij een gemarkeerde advertentie kun je een <em>notitie</em> kwijt "
-           f"(wat de verkoper zei, wat je bood); het zoekvak in Alle {esc(d.market.items)} zoekt er ook in.")
+           + " tot de prijs zakt. Bij elke advertentie kun je een <em>notitie</em> kwijt (wat de verkoper "
+           f"zei, wat je bood); het zoekvak in Alle {esc(d.market.items)} zoekt er ook in, en "
+           "<em>Toon: met notitie</em> laat ze allemaal zien.")
     if not d.editable:
         how = ("Bewaren en wegzetten doe je in de live versie: <code>python dashboard.py --serve</code>. " + how)
     parts = [f"<p class='explain'>{how} Een markering is alleen voor jou: een weggezette advertentie telt "
@@ -769,7 +772,7 @@ def favorites_panel(d: Dashboard) -> str:
                 "<tr>"
                 f"<td class='num' data-sort='{m.current_price_eur if m.current_price_eur is not None else ''}'>"
                 f"{euro(m.current_price_eur)}</td>"
-                f"<td class='what'>{link}<div class='note'>{esc(when)}</div>{remove}{note_control(m, d)}</td>"
+                f"<td class='what'>{link}<div class='note'>{esc(when)}</div>{remove}{note_control(m.item_id, d)}</td>"
                 "</tr>"
             )
         parts.append(table([("Laatste prijs", "num"), ("Advertentie", "text")], rows))
@@ -1354,8 +1357,9 @@ function filterAll() {
   const which = markFilter.value;
   let shown = 0;
   document.querySelectorAll('#all-table tbody tr').forEach(r => {
-    // Standaard zonder weggezette; 'alles' toont ze erbij.
-    const markOk = which === 'alles' || (which ? r.dataset.mark === which : r.dataset.mark !== 'weg');
+    // Standaard zonder weggezette; 'alles' toont ze erbij, 'notitie' alles met een notitie.
+    const markOk = which === 'alles' || (which === 'notitie' ? r.dataset.note === '1'
+      : which ? r.dataset.mark === which : r.dataset.mark !== 'weg');
     const ok = (!q || r.dataset.text.includes(q)) && (!brand.value || r.dataset.brand === brand.value)
       && (!onlyNew.checked || r.dataset.new === '1') && markOk;
     r.classList.toggle('hidden', !ok);
@@ -1538,17 +1542,20 @@ def action_mark(db_path, form: dict) -> str:
 
 
 def action_note(db_path, form: dict) -> str:
+    """Een notitie bij een advertentie die de crawl kent, ook een die niet
+    meer online is (een verdwenen favoriet). Leeg wist hem."""
+    item_id = form.get("item_id", "")
     # Eén regel: een Enter uit een geplakte chat wordt een spatie.
     note = " ".join((form.get("notitie") or "").split())
     if len(note) > mr.NOTE_MAX_CHARS:
         raise FormError(f"De notitie is te lang ({len(note)} tekens, hooguit {mr.NOTE_MAX_CHARS}).")
     conn = db.connect(str(db_path))
     try:
-        marked = db.set_mark_note(conn, form.get("item_id", ""), note)
+        if note and conn.execute("SELECT 1 FROM listing WHERE item_id = ?", (item_id,)).fetchone() is None:
+            raise FormError("Onbekende advertentie.")
+        db.set_note(conn, item_id, note)
     finally:
         conn.close()
-    if not marked:
-        raise FormError("Een notitie hoort bij een favoriet of een weggezette advertentie; markeer hem eerst.")
     return "Notitie opgeslagen." if note else "Notitie gewist."
 
 
@@ -1721,7 +1728,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 def make_server(db_path, port: int = 8765) -> ThreadingHTTPServer:
     """De server, klaar om te draaien (serve_forever). Migreert de database
-    eerst, zodat de tabellen `trade` en `listing_mark` bestaan."""
+    eerst, zodat de tabellen `trade`, `listing_mark` en `listing_note`
+    bestaan."""
     db.connect(str(db_path)).close()
     handler = type("Handler", (DashboardHandler,), {"db_path": str(db_path), "token": secrets.token_urlsafe(24)})
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
