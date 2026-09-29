@@ -175,6 +175,15 @@ class UnknownWatchTest(unittest.TestCase):
             "Smartwatch": "overig",
             "ik zoek een garmin horloge": "gevraagd",
             "Garmin horloge defect": "defect",
+            # Polar, Suunto en Coros zijn sinds 29-09-2026 ook gevolgde merken.
+            "Polar M400 GPS sporthorloge - Gebruikt": "horloge",
+            "Suunto Core All Black Outdoor Horloge": "horloge",
+            "Suunto Traverse GPS-horloge + hartslagband": "horloge",
+            "Suunto Traverse Graphite (met nieuw bandje)": "horloge",
+            "Polsband voor Polar V2 zwart horlogeband siliconen": "accessoire",
+            "Polar USB Oplaadkabel": "accessoire",
+            "Polar CS300 Fietscomputer met Hartslagmeter en Cadanssensor": "overig",
+            "Omega x Swatch Moonswatch Polar Lights": "overig",
         }
         for title, kind in cases.items():
             with self.subTest(title=title):

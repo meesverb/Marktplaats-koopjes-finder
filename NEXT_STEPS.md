@@ -148,11 +148,13 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    twee exports dezelfde zoekopdracht volledig dekken.
 8. **Sporthorloges als tweede markt** (sinds 28-09-2026, compleet zoals de
    fietscomputers): zoekopdracht `sporthorloges` ("garmin" in sporthorloges,
-   smartwatches en activity-trackers) in de nacht- en overdagronde,
+   smartwatches en activity-trackers) in de nacht- en overdagronde, sinds
+   29-09-2026 ook `polar`, `suunto` en `coros` (alleen 's nachts),
    `dashboard_horloges.html` (Flips, Mijn flips, Alle horloges,
    Marktprijzen, Patronen, Uitgefilterd), live op `/horloges` met
    `dashboard.py --serve`, eigen aankopen per markt (migratie 10). 81
-   Garmin-modellen, 1263 van 1707 titels herkend. Waar je na een paar weken
+   Garmin-modellen (1263 van 1707 titels herkend) en 50 van Polar, Suunto en
+   Coros (192 van 327). Waar je na een paar weken
    naar kijkt, en wat nog open ligt:
    - **De afdingfactor.** 0,875 is voor horloges niet gemeten; de tab
      Patronen van het horlogedashboard meet hem vanaf 20 snel verdwenen
@@ -164,10 +166,20 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
    - **Geen bron gevonden** voor Tactix (7, 8, Delta), Quatix, Approach
      S12/S42/S70, Descent Mk3/G1 en Vivomove HR/Style: die staan als
      "horloge, model onbekend" in Alle horloges.
-   - **Geen biedopvragingen** voor horloges (`"bid_lookup": "none"`, ~300
-     per nacht bespaard): een bieden-advertentie zonder prijs staat onder
-     "Zonder prijs — bied maximaal", ook als er al geboden is. Wil je het
-     lopende bod zien, open de advertentie.
-   - Andere merken (Polar, Coros, Suunto) zijn niet meegenomen; de
-     zoekopdracht is "garmin". Een merk erbij = rijen met bron in
-     `reference_sport_watches.csv` plus de zoekterm.
+   - **Biedopvragingen voor alle horloges** (`"bid_lookup": "fast"`, op
+     verzoek van de eigenaar: biedadvertenties zijn belangrijk): 's nachts
+     ~370 extra verzoeken, overdag ~15 per ronde. Het bod blijft staan tot
+     de volgende opvraging (migratie 11). Loopt de nachtronde daardoor te
+     lang uit, dan is de volgende stap een bod dat minder dan N uur oud is
+     niet opnieuw op te halen (`bids_checked_at` staat er al voor).
+   - **Geen bron opgezocht** voor oudere Polar (M400, V800, M600, A360,
+     RC3), Suunto (Core, Traverse, Ambit 1/2) en de Coros Apex Pro; de
+     Polar Loop staat er bewust niet in (de Loop van 2025 en de Loop 2 van
+     2015 heten op Marktplaats allebei "Loop gen 2"). Die staan als
+     "horloge, model onbekend".
+   - **Smartwatches** (Apple, Samsung, Fitbit, Huawei) zijn een andere markt
+     en worden niet gevolgd (de eigenaar, 29-09-2026: eerst alleen de
+     sporthorloges). Gemeten op 28-09-2026 in dezelfde drie categorieën:
+     Apple Watch ~4875 advertenties (net onder de grens van ~5000 per
+     zoekopdracht, dus per categorie splitsen), Samsung Galaxy Watch ~2750,
+     Fitbit ~445, Huawei ~295. Wahoo Rival (10) en TomTom (29) zijn te klein.

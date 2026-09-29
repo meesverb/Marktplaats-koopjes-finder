@@ -17,6 +17,7 @@ from helpers import make_listing, mp, repo_file
 
 import db
 import koopjes
+import markets
 
 
 def write_config(directory: Path, **overrides) -> Path:
@@ -303,6 +304,21 @@ class ComputersRoundTest(TempDirTest):
         watches = config.searches["sporthorloges"]
         self.assertFalse(watches["report"])
         self.assertEqual(watches["filters"]["category"], "sporthorloges,smartwatches,activity-trackers")
+
+    def test_polar_suunto_and_coros_run_at_night_only(self):
+        # Samen ~330 advertenties met ~5 nieuwe per dag: overdag zouden 2
+        # pagina's steeds dezelfde biedingen opnieuw ophalen.
+        config = koopjes.load_config(Path(repo_file("schedule.json")))
+        for name in ("polar", "suunto", "coros"):
+            with self.subTest(name=name):
+                search = config.searches[name]
+                self.assertEqual(search["query"], name)
+                self.assertEqual(search["filters"]["category"], "sporthorloges,smartwatches,activity-trackers")
+                self.assertFalse(search["report"])
+                self.assertEqual(search["bid_lookup"], "fast")
+                self.assertIs(markets.for_search(search["filters"]), markets.WATCHES)
+                self.assertIn(name, config.slots["nacht"].searches)
+                self.assertNotIn(name, config.slots["computers"].searches)
 
     def run_round(self, new_listings):
         from datetime import datetime, timedelta, timezone

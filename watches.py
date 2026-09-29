@@ -1,11 +1,13 @@
 """Sporthorloges: de tweede markt naast de fietscomputers, met dezelfde
-flipberekening op de Garmin-horloges uit reference_sport_watches.csv.
+flipberekening op de horloges uit reference_sport_watches.csv (Garmin, Polar,
+Suunto en Coros).
 
     python watches.py                    # per model de markt, dan de flips (console)
     python dashboard.py --markt sporthorloges --open    # het dashboard
 
-Gevuld door de zoekopdracht `sporthorloges` in schedule.json: "garmin" in de
-categorieën sporthorloges, smartwatches en activity-trackers. Daar staan de
+Gevuld door de zoekopdrachten `sporthorloges` ("garmin"), `polar`, `suunto` en
+`coros` in schedule.json, elk in de categorieën sporthorloges, smartwatches en
+activity-trackers. Daar staan de
 horloges zelf; bandjes en kabels staan grotendeels in telefoon- en
 wearable-categorieën ("garmin", 28-09-2026: 991 in sporthorloges, 620 in
 smartwatches, 129 in activity-trackers, 614 in autonavigatie, ...). In
@@ -61,33 +63,60 @@ WATCH_ACCESSORY_RE = re.compile(
     r"|clip|mount|houder\w*|lege\s+doos)\b",
     re.I,
 )
-# Andere merken. Staat er geen "Garmin" in de titel, dan is het ook geen
-# Garmin-horloge met een onbekend model.
+# De merken met rijen in reference_sport_watches.csv, elk met een eigen
+# zoekopdracht in schedule.json. Een titel met een van deze merken en een
+# horlogewoord maar zonder bekend model is een horloge met onbekend model.
+BRAND_RE = re.compile(r"\b(?:garmin|polar|suunto|coros)\b", re.I)
+# Andere merken. Smartwatches (Apple, Samsung, Fitbit, Huawei, ...) zijn een
+# andere markt en worden (nog) niet gevolgd; ze belanden via een Garmin-titel
+# in de resultaten ("Apple watch 10 ... ivm aanschaf garmin").
 OTHER_BRAND_RE = re.compile(
-    r"\b(?:apple|iwatch|samsung|galaxy|fitbit|oura|huawei|amazfit|xiaomi|mi\s?band|polar|suunto|coros"
+    r"\b(?:apple|iwatch|samsung|galaxy|fitbit|oura|huawei|amazfit|xiaomi|mi\s?band"
     r"|withings|fossil|pebble|gard\s?pro|festina|tomtom|casio|g-?shock|honor|oneplus|pixel\s?watch"
-    r"|whoop|wahoo|circular|tag\s?heuer|seiko|swatch)\b",
+    r"|whoop|wahoo|circular|tag\s?heuer|seiko|swatch|lifetec|crivit|kiprun|maserati|motorola)\b",
     re.I,
 )
-# Garmin-producten die geen horloge zijn maar in deze categorieën belanden.
+# Producten van deze merken die geen horloge zijn maar in deze categorieën
+# belanden: Garmin-navigatie en -sensoren, Polar-fietscomputers en de losse
+# hartslagsensoren (Verity Sense, OH1, Movesense), Suunto-pods.
 NOT_A_WATCH_RE = re.compile(
     r"\b(?:index|slaapmonitor|sleep\s?monitor|hrm[-\s]?\w*|hartslagband|edge|varia|inreach|foretrex"
     r"|etrex|gpsmap|dash\s?cam|zumo|dezl|nuvi|drive\w*|echomap|livescope|approach\s?z\d+|fietshouder"
-    r"|stuurhouder|bike\s?mount|weegschaal)\b",
+    r"|stuurhouder|stuurbeugel|bike\s?mount|weegschaal|fietscomputer\w*|verity\s?sense|oh1|movesense"
+    r"|bike\s?pod|cadence\s?pod)\b",
     re.I,
 )
 WATCH_WORD_RE = re.compile(r"\b(?:\w*horloge\w*|smartwatch\w*|watch|tracker|activity\s?tracker)\b", re.I)
-GARMIN_RE = re.compile(r"\bgarmin\b", re.I)
-# "Horlogebandje voor GARMIN (22mm)", "nieuw voor garmin": gemaakt vóór een
-# Garmin, dus geen Garmin.
-FOR_GARMIN_RE = re.compile(r"\b(?:voor|for|geschikt\s+voor|compatible\s+with|past\s+op)\s+(?:een\s+)?garmin\b", re.I)
+# "Horlogebandje voor GARMIN (22mm)", "nieuw voor garmin", "Polsband voor
+# Polar V2": gemaakt vóór een horloge van dat merk, dus zelf geen horloge.
+FOR_BRAND_RE = re.compile(
+    r"\b(?:voor|for|geschikt\s+voor|compatible\s+with|past\s+op)\s+(?:een\s+)?(?:garmin|polar|suunto|coros)\b",
+    re.I,
+)
+# "Suunto Traverse Graphite (met nieuw bandje)", "Polar Loop mét 3 sets
+# bandjes": het horloge zelf, met iets erbij. Na alleen een merknaam telt
+# alleen een echt "met"-woord; een komma of "en" kan daar ook een opsomming
+# van losse spullen zijn.
+WITH_RE = re.compile(r"\bm[eé]t\b|\bincl\w*|\binclusief\b|\+|\bwith\b", re.I)
+
+
+def _with_extra(title: str, word: re.Match) -> bool:
+    """Staat `word` (een accessoire of iets dat geen horloge is) achter een
+    horloge of merk, met een "met"-woord ertussen? Dan is het een horloge met
+    iets erbij: "Suunto Traverse GPS-horloge + hartslagband"."""
+    before = title[: word.start()]
+    device = WATCH_WORD_RE.search(before)
+    if device and pc.BUNDLE_RE.search(title[device.end(): word.start()]):
+        return True
+    brand = BRAND_RE.search(before)
+    return bool(brand and WITH_RE.search(title[brand.end(): word.start()]))
 
 
 def classify_unknown(title: str, description: str = "") -> tuple[str, str]:
     """(soort, reden) voor een titel zonder bekend model. "horloge" betekent:
-    een Garmin-horloge waarvan het model niet in het referentiebestand staat
-    (of niet in de titel), zichtbaar in Alle horloges zonder winst; al het
-    andere is uitgefilterd, met de reden."""
+    een horloge van een gevolgd merk (BRAND_RE) waarvan het model niet in het
+    referentiebestand staat (of niet in de titel), zichtbaar in Alle horloges
+    zonder winst; al het andere is uitgefilterd, met de reden."""
     title = title or ""
     for kind, regex, label in (("gevraagd", pc.WANTED_RE, "zoekadvertentie"),
                                ("defect", pc.REPAIR_RE, "reparatie of defect"),
@@ -95,25 +124,23 @@ def classify_unknown(title: str, description: str = "") -> tuple[str, str]:
         found = regex.search(title)
         if found:
             return kind, f"{label} ('{found.group(0)}')"
-    aimed = FOR_GARMIN_RE.search(title)
+    aimed = FOR_BRAND_RE.search(title)
     if aimed:
         return "accessoire", f"'{aimed.group(0)}'"
     other = OTHER_BRAND_RE.search(title)
-    if other and not GARMIN_RE.search(title[: other.start()]):
+    if other and not BRAND_RE.search(title[: other.start()]):
         return "overig", f"ander merk ('{other.group(0)}')"
     not_watch = NOT_A_WATCH_RE.search(title)
-    if not_watch:
+    if not_watch and not _with_extra(title, not_watch):
         return "overig", f"geen horloge ('{not_watch.group(0)}')"
     word = WATCH_ACCESSORY_RE.search(title) or pc.ACCESSORY_WORD_RE.search(title)
-    if word:
-        device = WATCH_WORD_RE.search(title[: word.start()])
-        if not (device and pc.BUNDLE_RE.search(title[device.end(): word.start()])):
-            return "accessoire", f"'{word.group(0)}' zonder bekend model"
-    if GARMIN_RE.search(title) or WATCH_WORD_RE.search(title):
-        if not GARMIN_RE.search(title):
+    if word and not _with_extra(title, word):
+        return "accessoire", f"'{word.group(0)}' zonder bekend model"
+    if BRAND_RE.search(title) or WATCH_WORD_RE.search(title):
+        if not BRAND_RE.search(title):
             return "overig", "horloge zonder merk of model in de titel"
         return "horloge", "model onbekend"
-    return "overig", "geen Garmin-horloge in de titel"
+    return "overig", "geen horloge van Garmin, Polar, Suunto of Coros in de titel"
 
 
 # --- Console ------------------------------------------------------------------
@@ -125,7 +152,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     import sleepers  # price_text()
 
     parser = argparse.ArgumentParser(
-        description="Sporthorloges (Garmin) uit koopjes.db: markt per model en flips, "
+        description="Sporthorloges (Garmin, Polar, Suunto, Coros) uit koopjes.db: markt per model en flips, "
                     "met dezelfde berekening als de fietscomputers."
     )
     parser.add_argument("--db", default="koopjes.db")
@@ -134,7 +161,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not Path(args.db).exists():
         print(f"{args.db} bestaat niet. Draai eerst de nachtronde (python koopjes.py run nacht) "
-              "of de zoekopdracht sporthorloges.", file=sys.stderr)
+              "of de zoekopdrachten sporthorloges, polar, suunto en coros.", file=sys.stderr)
         return 1
     try:
         d = dashboard.load_dashboard(args.db, market=markets.WATCHES)
@@ -143,7 +170,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     if not d.listings:
         print(f"Geen advertenties uit {', '.join(CATEGORIES)} in {args.db}. "
-              "Staat de zoekopdracht sporthorloges in schedule.json en heeft de nachtronde gedraaid?")
+              "Staan de zoekopdrachten sporthorloges, polar, suunto en coros in schedule.json en heeft de "
+              "nachtronde gedraaid?")
         return 0
 
     print(f"Sporthorloges in {args.db}, laatste ronde {dashboard.local_time(d.newest_seen)}: "

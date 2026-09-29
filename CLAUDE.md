@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 753 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 761 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -106,7 +106,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `reference_bikes.csv`, `reference_bike_accessories.csv` | fase 7: fietsen resp. fietscomputers/powermeters, met `kind`/`brand`/`source_url`. Ook met `git add -f` toegevoegd. Accessoires niet in het fietsbestand zetten — zie README |
 | `reference_bike_computers.csv` | één rij per fietscomputermodel: specs, navigatie (rerouting, kaarten, planning op het apparaat), training, ondersteuning, met bron. Vaste woorden per kolom (zie README); leeg = niet nagezocht. De volgorde is de matchvolgorde. Ook met `git add -f` toegevoegd |
 | `reference_bike_catalog.csv` | catalogus: één rij per merk/model/modeljaar met specs, nieuwprijs, `market` (NL of ES) en bron-URL. Geen patronen — wordt niet tegen titels gematcht. Ook met `git add -f` toegevoegd |
-| `reference_sport_watches.csv` | Garmin-sporthorloges (Fenix, Epix, Forerunner): één rij per model, zelfde vorm als `reference_bike_computers.csv` (patroon, matchvolgorde), te lezen met `computers.load_catalog(pad)`. Europrijs alleen uit een bron met euro's, dollarprijs apart en nooit omgerekend. 81 Garmin-modellen; zonder bron geen rij (Tactix, Quatix, Approach S12/S42/S70 staan er daarom niet in). Ook met `git add -f` toegevoegd |
-| `watches.py` | sporthorloges: de categorieën (sporthorloges, smartwatches, activity-trackers) en `classify_unknown()` voor titels zonder bekend model (horloge met onbekend model, bandje, ander merk, geen horloge). `python watches.py` toont de markt en de flips in de console. Zoekopdracht `sporthorloges` ("garmin") in de nacht- en overdagronde, zonder biedopvragingen |
+| `reference_sport_watches.csv` | sporthorloges: 81 Garmin-, 18 Polar-, 19 Suunto- en 13 Coros-modellen, één rij per model, zelfde vorm als `reference_bike_computers.csv` (patroon, matchvolgorde), te lezen met `computers.load_catalog(pad)`. Europrijs alleen uit een bron met euro's, dollarprijs apart en nooit omgerekend. Zonder bron geen rij (Tactix, Quatix, Approach S12/S42/S70, Polar M400/V800 staan er daarom niet in). Smartwatches (Apple, Samsung, ...) horen er niet in: andere markt. Ook met `git add -f` toegevoegd |
+| `watches.py` | sporthorloges: de categorieën (sporthorloges, smartwatches, activity-trackers), de gevolgde merken (`BRAND_RE`: Garmin, Polar, Suunto, Coros) en `classify_unknown()` voor titels zonder bekend model (horloge met onbekend model, bandje, ander merk, geen horloge). `python watches.py` toont de markt en de flips in de console. Zoekopdracht `sporthorloges` ("garmin") in de nacht- en overdagronde, `polar`/`suunto`/`coros` alleen 's nachts, alle met biedopvragingen (`bid_lookup` fast; het bod blijft bewaard, migratie 11) |
 | `catalog_tools/` | de scripts die `reference_bike_catalog.csv` opbouwen (Wayback, merksites, bikezona). Draai ze vanuit een lege scratch-map, niet vanuit de repo — ze schrijven een cache in de werkmap |
 | `check_hifi_brand.py`, `check_reference_overlaps.py`, `reference_overview.py` | hulpscripts bij het onderhouden van die database |

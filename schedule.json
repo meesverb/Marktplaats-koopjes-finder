@@ -46,6 +46,27 @@
       "report": false,
       "bid_lookup": "fast",
       "note": "Alle Garmin-horloges voor het horlogedashboard (dashboard_horloges.html, markets.py). Alleen de categorieën sporthorloges, smartwatches en activity-trackers: daar staan de horloges zelf; bandjes en kabels staan grotendeels in telefoon- en wearable-categorieën. In activity-trackers staan ook Fenixen en Forerunners die de verkoper daar neerzette. Op 28-09-2026 1707 advertenties, 58 pagina's (de nachtronde); ~115 nieuwe op een maandag tot 20:45, dus 2 pagina's per 4 uur overdag is genoeg. Geen rapport: alles staat in het dashboard. Biedopvragingen ook overdag (bid_lookup fast gaat vóór de none van het slot computers): biedadvertenties zijn belangrijk (de eigenaar, 28-09-2026). ~300 van de 1707 zijn bieden zonder prijs, dus 's nachts ~300 extra verzoeken; overdag alleen die op de 2 nieuwste pagina's. Het opgehaalde bod blijft in de database staan tot de volgende opvraging (migratie 11)."
+    },
+    "polar": {
+      "query": "polar",
+      "category": "sporthorloges,smartwatches,activity-trackers",
+      "report": false,
+      "bid_lookup": "fast",
+      "note": "Polar-horloges voor het horlogedashboard, net als sporthorloges (Garmin). Op 28-09-2026 214 advertenties in deze categorieën (8 pagina's), ~47 bieden zonder prijs. Alleen 's nachts: met ~5 nieuwe per dag zouden 2 pagina's overdag steeds dezelfde advertenties en biedingen opnieuw ophalen."
+    },
+    "suunto": {
+      "query": "suunto",
+      "category": "sporthorloges,smartwatches,activity-trackers",
+      "report": false,
+      "bid_lookup": "fast",
+      "note": "Suunto-horloges, zie polar. 84 advertenties op 28-09-2026 (3 pagina's); de duikcomputers staan grotendeels in de categorie duiken en blijven buiten beeld."
+    },
+    "coros": {
+      "query": "coros",
+      "category": "sporthorloges,smartwatches,activity-trackers",
+      "report": false,
+      "bid_lookup": "fast",
+      "note": "Coros-horloges, zie polar. 36 advertenties op 28-09-2026 (2 pagina's)."
     }
   },
   "slots": {
@@ -58,7 +79,7 @@
       "open_browser": "auto"
     },
     "nacht": {
-      "searches": ["giant-defy", "ultegra-6700", "powermeter", "fietscomputer", "sporthorloges"],
+      "searches": ["giant-defy", "ultegra-6700", "powermeter", "fietscomputer", "sporthorloges", "polar", "suunto", "coros"],
       "pages": 0,
       "sort": "newest",
       "bid_lookup": "fast",
@@ -72,7 +93,7 @@
       "bid_lookup": "none",
       "times": ["10:00", "14:00", "18:00", "22:00"],
       "open_browser": "auto",
-      "note": "Alleen de nieuwste fietscomputers en Garmin-horloges (2 pagina's elk), zodat een goedkope flip niet tot de nachtronde blijft liggen. Horloges: ~115 nieuwe per dag (28-09-2026), zie de zoekopdracht sporthorloges. Gemeten op 28-09-2026 (18:40): de hele categorie krijgt ~100-120 nieuwe per dag, ongeveer een kwart een bekend computermodel; 2 pagina's (60) per 4 uur is dus ruim, ook met de ~7 Dagtoppers die Marktplaats bovenaan pagina 1 zet. 3 verzoeken per zoekopdracht, 6 per ronde. Geen biedopvragingen (bid_lookup none): met fast waren dat er 17 op 60 advertenties, per ronde opnieuw; een bieden-advertentie staat overdag dus onder 'Zonder prijs — bied maximaal', en de nachtronde vult het lopende bod in. zegt het log 'let op: de onderste 5 advertenties ... waren allemaal nieuw', zet pages dan hoger. Weg-detectie blijft bij de nachtronde (alleen pages 0 doet de sweep). Het dashboard opent alleen bij een nieuwe flip."
+      "note": "Alleen de nieuwste fietscomputers en Garmin-horloges (2 pagina's elk), zodat een goedkope flip niet tot de nachtronde blijft liggen. Horloges: ~115 nieuwe per dag (28-09-2026), zie de zoekopdracht sporthorloges. Gemeten op 28-09-2026 (18:40): de hele categorie krijgt ~100-120 nieuwe per dag, ongeveer een kwart een bekend computermodel; 2 pagina's (60) per 4 uur is dus ruim, ook met de ~7 Dagtoppers die Marktplaats bovenaan pagina 1 zet. 3 verzoeken per zoekopdracht, 6 per ronde. Het slot haalt geen biedingen op (bid_lookup none: bij de fietscomputers waren dat er 17 op 60 advertenties, per ronde opnieuw); de zoekopdracht sporthorloges zet het voor de Garmin-horloges wel aan (bid_lookup fast), omdat biedadvertenties daar belangrijk zijn. Polar, Suunto en Coros alleen 's nachts (zie de zoekopdracht polar). Zegt het log 'let op: de onderste 5 advertenties ... waren allemaal nieuw', zet pages dan hoger. Weg-detectie blijft bij de nachtronde (alleen pages 0 doet de sweep). Het dashboard opent alleen bij een nieuwe flip."
     },
     "week": {
       "searches": ["racefietsen"],

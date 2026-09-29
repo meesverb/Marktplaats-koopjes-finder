@@ -110,6 +110,49 @@ class RealTitlesTest(unittest.TestCase):
             with self.subTest(title=title):
                 self.assert_model(title, None)
 
+    def test_polar_suunto_and_coros(self):
+        # Uit de crawl van 'polar', 'suunto' en 'coros' in de drie
+        # horlogecategorieën, 28-09-2026.
+        cases = {
+            "Polar Grit X Pro Titan M/L Sporthorloge": "Grit X Pro",
+            "Polar grit x2": "Grit X2",
+            "Polar Grit X2 PRO sporthorloge (zgan)": "Grit X2 Pro",
+            "Polar grit X Zwart GPS sporthorloge met oplader": "Grit X",
+            "Polar ignite 1": "Ignite",
+            "Polar Ignite 3 Purple Dusk complete set": "Ignite 3",
+            "Polar Vantage V Pro Multisport Horloge Zwart M/L": "Vantage V",
+            "Polar Vantage M2 sporthorloge - Blauw": "Vantage M2",
+            "Polar Pacer Pro te koop, met 2 extra horlogebandjes": "Pacer Pro",
+            "Polar Pacer - Wit": "Pacer",
+            "Polar M430 GPS Hardloophorloge - Wit": "M430",
+            "Suunto 9 Peak Pro All Black - NEW": "9 Peak Pro",
+            "Suunto 9 Baro TITANIUM (app store Apple en Android)": "9 (Baro)",
+            "Suunto 9 Gen1 Black GPS sporthorloge": "9 (Baro)",
+            "Suunto 5 Peak Zwart - Gebruikt met lichte krasjes": "5 Peak",
+            "SUUNTO  RACE sporthorloge": "Race",
+            "Suunto Race 2 All Black sporthorloge - Zo goed als nieuw": "Race 2",
+            "Suunto Vertical 2 Titanium Limited Edition met titanium band": "Vertical 2",
+            "Suunto Ambit3 Peak Nepal Edition + HR-borstband Compleet": "Ambit3 Peak",
+            "Suunto Spartan Sport Wrist HR Baro Amber + Hartslagband": "Spartan Sport (Wrist HR)",
+            "Coros Apex 46mm": "Apex",
+            "coros apex 2 voor onderdelen, display, batterij": "Apex 2",
+            "COROS PACE 3 GPS Sport Watch – NIEUW & VERZEGELD": "Pace 3",
+            "COROS PACE Pro GPS Sporthorloge met AMOLED-scherm": "Pace Pro",
+            "Coros nomad  met GPS en hartslagmeter - Zo goed als nieuw": "Nomad",
+        }
+        for title, expected in cases.items():
+            with self.subTest(title=title):
+                self.assert_model(title, expected)
+
+    def test_other_brands_without_a_source_stay_unrecognised(self):
+        # Oudere modellen zonder opgezochte bron, en de Polar Loop: de nieuwe
+        # (2025) en de oude Loop 2 heten op Marktplaats allebei "Loop gen 2".
+        for title in ("Polar M400 GPS sporthorloge", "Polar Loop gen 2 beige", "Polar V800 sporthorloge",
+                      "COROS APEX Pro + Extra Accessoires", "Suunto Core All Black Outdoor Horloge",
+                      "Suunto Traverse GPS-horloge + hartslagband"):
+            with self.subTest(title=title):
+                self.assert_model(title, None)
+
     def test_short_numbers_need_the_forerunner_name(self):
         # "Garmin 55" of "45 mm" zegt niets; alleen met Forerunner/FR ervoor.
         self.assert_model("Garmin horloge 45 mm", None)
