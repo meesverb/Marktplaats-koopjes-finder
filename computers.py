@@ -1010,6 +1010,11 @@ def price_kind(listing) -> str:
     if listing.price_eur is None:
         return "bieden, geen prijs" if listing.price_is_bid else "geen prijs genoemd"
     if listing.price_type == "MIN_BID":
+        # Een bod boven de vraagprijs vervangt de prijs (apply_bid_info());
+        # dan is het geen vraagprijs meer maar een bod dat nog kan oplopen.
+        high = getattr(listing, "bid_high", None)
+        if listing.bid_count and high is not None and listing.price_eur == high:
+            return "huidig bod, loopt nog op"
         return "vraagprijs, bieden kan"
     if listing.price_is_bid and not listing.price_is_asking:
         return "huidig bod, loopt nog op"

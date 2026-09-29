@@ -105,6 +105,11 @@ class Listing:
     # computers.ComputerSignal when the title names a known bike computer
     # (computers.py). Not a CSV column, same reason as site_specs.
     computer: Optional[object] = field(default=None, metadata={"csv": False})
+    # The highest usable bid the last bid lookup found (apply_bid_info()).
+    # A MIN_BID whose price is a bid above the asking price reads the same as
+    # one still at its asking price without it. Not a CSV column, same
+    # reason as site_specs.
+    bid_high: Optional[float] = field(default=None, metadata={"csv": False})
 
     @property
     def price_is_asking(self) -> bool:
@@ -337,22 +342,38 @@ def fetch_bid_info(session: requests.Session, vip_url: str) -> Optional[dict]:
     just looks like a run where nobody happened to be bidding."""
     resp = session.get(vip_url, timeout=15)
     resp.raise_for_status()
+    try:
+        listing = listing_page_data(resp.text)
+    except ListingPageError as exc:
+        warn_bid_structure_changed(str(exc))
+        return None
+    return (listing or {}).get("bidsInfo")
 
-    marker_pos = resp.text.find(CONFIG_MARKER)
+
+class ListingPageError(ValueError):
+    """A listing page without the window.__CONFIG__ blob it used to have:
+    Marktplaats changed its page structure (or showed something else)."""
+
+
+def listing_page_data(page: str) -> Optional[dict]:
+    """The `listing` object from a listing page's window.__CONFIG__: price,
+    bidsInfo, isReserved, ... None when the blob is there but holds no
+    listing. Raises ListingPageError when the blob itself is missing or
+    unreadable, so a caller can tell a changed page apart from a listing
+    that simply has no bid data."""
+    marker_pos = page.find(CONFIG_MARKER)
     if marker_pos == -1:
-        warn_bid_structure_changed(f"{CONFIG_MARKER.strip()} niet gevonden")
-        return None
-    brace_pos = resp.text.find("{", marker_pos)
+        raise ListingPageError(f"{CONFIG_MARKER.strip()} niet gevonden")
+    brace_pos = page.find("{", marker_pos)
     if brace_pos == -1:
-        warn_bid_structure_changed("geen JSON-object achter de marker")
-        return None
-    config = extract_balanced_json(resp.text, brace_pos)
+        raise ListingPageError("geen JSON-object achter de marker")
+    config = extract_balanced_json(page, brace_pos)
     if config is None:
-        warn_bid_structure_changed("JSON achter de marker niet te lezen")
-        return None
+        raise ListingPageError("JSON achter de marker niet te lezen")
     # "listing" can be present and null — .get()'s default only covers a
     # missing key, not a null value.
-    return (config.get("listing") or {}).get("bidsInfo")
+    listing = config.get("listing")
+    return listing if isinstance(listing, dict) else None
 
 
 def usable_bid_values(bids_info: dict) -> list[float]:
@@ -391,6 +412,35 @@ def real_minimum_bid(bids_info: dict) -> Optional[float]:
     return minimum / 100
 
 
+def apply_bid_info(listing: Listing, bids_info: dict) -> None:
+    """What a listing page's bidsInfo says, onto the listing: how many bids,
+    the minimum, the highest bid, and the price that follows from them. The
+    crawl's bid lookup and the live dashboard's controleer button
+    (recheck.py) both go through here, so they reach the same price."""
+    # bid_count counts usable bids, not raw entries — a bid without
+    # a parseable value doesn't move resolve_bid_price() either, so
+    # the two must count the same thing (see usable_bid_values()).
+    values = usable_bid_values(bids_info)
+    listing.bid_count = len(values)
+    listing.bid_minimum = real_minimum_bid(bids_info)
+    listing.bid_high = max(values) / 100 if values else None
+    price = resolve_bid_price(bids_info)
+    # A MIN_BID listing already has a price from the search results
+    # (what the seller is asking) and Marktplaats will accept a
+    # *lower* minimum bid than that — seen in the wild: asking €47.50,
+    # minimum bid €35. Those are two different numbers, so the asking
+    # price stays the price (otherwise these listings would look
+    # cheaper than fixed-price ones purely for being biddable) and the
+    # minimum lands in bid_minimum. Only a real bid above the asking
+    # price replaces it: below that bid the listing can't be had.
+    raw_bids = bids_info.get("bids") or []
+    if price is not None and (
+        listing.price_eur is None or (raw_bids and price > listing.price_eur)
+    ):
+        listing.price_eur = price
+        listing.price_is_bid = True
+
+
 def enrich_bid_listings(
     listings: list[Listing],
     delay: float,
@@ -426,26 +476,7 @@ def enrich_bid_listings(
             continue
 
         if bids_info:
-            # bid_count counts usable bids, not raw entries — a bid without
-            # a parseable value doesn't move resolve_bid_price() either, so
-            # the two must count the same thing (see usable_bid_values()).
-            listing.bid_count = len(usable_bid_values(bids_info))
-            listing.bid_minimum = real_minimum_bid(bids_info)
-            price = resolve_bid_price(bids_info)
-            # A MIN_BID listing already has a price from the search results
-            # (what the seller is asking) and Marktplaats will accept a
-            # *lower* minimum bid than that — seen in the wild: asking €47.50,
-            # minimum bid €35. Those are two different numbers, so the asking
-            # price stays the price (otherwise these listings would look
-            # cheaper than fixed-price ones purely for being biddable) and the
-            # minimum lands in bid_minimum. Only a real bid above the asking
-            # price replaces it: below that bid the listing can't be had.
-            raw_bids = bids_info.get("bids") or []
-            if price is not None and (
-                listing.price_eur is None or (raw_bids and price > listing.price_eur)
-            ):
-                listing.price_eur = price
-                listing.price_is_bid = True
+            apply_bid_info(listing, bids_info)
 
         print(f"  {i}/{len(targets)} verwerkt", file=sys.stderr)
         if i < len(targets):
@@ -952,15 +983,25 @@ def search_image_urls(raw: dict) -> str:
     return " ".join(urls[:SEARCH_IMAGES])
 
 
-def parse_listing(raw: dict) -> Listing:
-    price_info = raw.get("priceInfo") or {}
+# The price types that take bids. Their price is the asking price (MIN_BID)
+# or nothing at all (FAST_BID) until a bid lookup has read the listing page.
+BID_PRICE_TYPES = ("MIN_BID", "FAST_BID")
+
+
+def price_from_info(price_info: dict) -> tuple[Optional[float], str]:
+    """(price in euros or None, priceType) from a priceInfo object — the
+    search results and the listing page use the same one."""
     price_cents = as_number(price_info.get("priceCents"))
     price_type = text_value(price_info.get("priceType"))
     # priceCents is 0 for listings with no real price shown (e.g. an
     # unstarted bid or "see description") except when priceType is FREE,
     # where 0 genuinely means the item is free.
     has_real_price = price_cents is not None and (price_cents > 0 or price_type == "FREE")
-    price_eur = price_cents / 100 if has_real_price else None
+    return (price_cents / 100 if has_real_price else None), price_type
+
+
+def parse_listing(raw: dict) -> Listing:
+    price_eur, price_type = price_from_info(raw.get("priceInfo") or {})
 
     vip_url = text_value(raw.get("vipUrl"))
     url = BASE_URL + vip_url if vip_url.startswith("/") else vip_url
@@ -987,7 +1028,7 @@ def parse_listing(raw: dict) -> Listing:
         # and the number of bids placed are only on the listing page itself,
         # so bid_minimum/bid_count stay empty until --bid-lookup all fills
         # them in.
-        price_is_bid=price_type in ("MIN_BID", "FAST_BID"),
+        price_is_bid=price_type in BID_PRICE_TYPES,
         thin_content=raw.get("thinContent") is True,
         reserved=raw.get("reserved") is True,
         image_urls=search_image_urls(raw),

@@ -96,11 +96,13 @@ def raw_listing(**overrides) -> dict:
 
 
 class FakeResponse:
-    def __init__(self, text: str):
+    def __init__(self, text: str, status_code: int = 200):
         self.text = text
+        self.status_code = status_code
 
     def raise_for_status(self) -> None:
-        pass
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code} voor deze pagina")
 
 
 class FakeSession:
@@ -113,7 +115,10 @@ class FakeSession:
 
     def get(self, url: str, timeout: int = 0) -> FakeResponse:
         self.requested.append(url)
-        return FakeResponse(self.pages.get(url, ""))
+        page = self.pages.get(url, "")
+        # A FakeResponse as the page: for a status other than 200 (410 for a
+        # listing that is gone).
+        return page if isinstance(page, FakeResponse) else FakeResponse(page)
 
 
 def search_page(listings: list[dict], max_page: int = 1, facets: list | None = None) -> str:

@@ -100,6 +100,19 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
 - Soms zet Marktplaats het minimumbod één cent onder de vraagprijs (€174,99
   op een advertentie van €175). Dat is geen korting, dus die wordt niet als
   zodanig getoond (`MEANINGFUL_MINIMUM_BID_RATIO`).
+- Op een `MIN_BID`-advertentie kan al **boven de vraagprijs** geboden zijn
+  (29-09-2026: Suunto Vertical 2, vraagprijs €290, vier biedingen tot €350).
+  Dat staat alleen op de advertentiepagina; de zoekresultaten zeggen €290.
+- Of een advertentie **gereserveerd** is, staat in de zoekresultaten
+  (`reserved`) én op de advertentiepagina (`isReserved`). Een **verdwenen**
+  advertentie geeft op zijn eigen URL 410 (29-09-2026).
+- Het dashboard is zo oud als de laatste ronde die de advertentie zag;
+  overdag is dat voor alles buiten de nieuwste 2 pagina's de nachtronde. De
+  knop **controleer** in `dashboard.py --serve` (`recheck.py`, sinds
+  29-09-2026) haalt één advertentie op verzoek opnieuw op. Bewust niet
+  automatisch per ronde: met ~190 horlogeflips zou dat ~190 verzoeken per
+  ronde extra zijn. Blijkt de knop te vaak nodig, dan is een tussenweg alleen
+  de nieuwe flips natrekken voordat het dashboard erover opent.
 
 ## Mogelijke vervolgstappen
 

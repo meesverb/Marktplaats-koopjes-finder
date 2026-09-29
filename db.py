@@ -340,6 +340,18 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE listing_mark ADD COLUMN note TEXT;
     """,
+    # 14: two things the live dashboard's "controleer" button (recheck.py)
+    # needs. bid_high: the highest bid a lookup found. Without it a MIN_BID
+    # whose price a bid above the asking price had replaced looked like one
+    # still at its asking price, and a Suunto asking €290 with €350 bid on it
+    # was shown as "vraagprijs, bieden kan". Kept like bid_count: until the
+    # next lookup. checked_at: when that button last read the listing's own
+    # page. Not last_seen, which is when a crawl saw it — the dashboard dates
+    # its rounds and its "nieuw" by that.
+    """
+    ALTER TABLE listing ADD COLUMN bid_high REAL;
+    ALTER TABLE listing ADD COLUMN checked_at TEXT;
+    """,
 ]
 
 
@@ -694,8 +706,8 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
     back. reserved_at keeps the first sighting of a reservation, and goes
     back to NULL once a crawl sees the listing unreserved (migration 9).
 
-    Bids (migration 11): a listing looked up this run (bid_count set) stores
-    what the lookup found. One that wasn't keeps the last lookup — and, if
+    Bids (migrations 11 and 14): a listing looked up this run (bid_count
+    set) stores what the lookup found. One that wasn't keeps the last lookup — and, if
     the search results give no price of their own (a FAST_BID), the price
     that lookup gave, instead of NULL. A later lookup replaces both."""
     for listing in listings:
@@ -705,11 +717,11 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
             INSERT INTO listing (item_id, title, description, price_eur, price_type, is_bid,
                                   price_is_asking, city, posted_date, condition,
                                   frame_height, url, query, first_seen, last_seen, image_urls,
-                                  reserved_at, bid_count, bid_minimum, bids_checked_at)
+                                  reserved_at, bid_count, bid_minimum, bid_high, bids_checked_at)
             VALUES (:item_id, :title, :description, :price_eur, :price_type, :is_bid,
                     :price_is_asking, :city, :posted_date, :condition,
                     :frame_height, :url, :query, :first_seen, :last_seen, :image_urls,
-                    :reserved_at, :bid_count, :bid_minimum, :bids_checked_at)
+                    :reserved_at, :bid_count, :bid_minimum, :bid_high, :bids_checked_at)
             ON CONFLICT(item_id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
@@ -729,6 +741,8 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                                  THEN listing.bid_count ELSE excluded.bid_count END,
                 bid_minimum = CASE WHEN excluded.bids_checked_at IS NULL
                                    THEN listing.bid_minimum ELSE excluded.bid_minimum END,
+                bid_high = CASE WHEN excluded.bids_checked_at IS NULL
+                                THEN listing.bid_high ELSE excluded.bid_high END,
                 bids_checked_at = COALESCE(excluded.bids_checked_at, listing.bids_checked_at),
                 city = excluded.city,
                 posted_date = excluded.posted_date,
@@ -766,6 +780,7 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "reserved_at": observed_at if getattr(listing, "reserved", False) else None,
                 "bid_count": getattr(listing, "bid_count", None),
                 "bid_minimum": getattr(listing, "bid_minimum", None),
+                "bid_high": getattr(listing, "bid_high", None),
                 "bids_checked_at": observed_at if looked_up else None,
             },
         )
@@ -947,22 +962,92 @@ def sweep_disappeared(
             missed += 1
             continue
         gone_at = row["missed_at"] or observed_at
-        days_online = None
-        first_seen = row["first_seen"]
-        if first_seen:
-            try:
-                delta = _parse_iso(gone_at) - _parse_iso(first_seen)
-                days_online = delta.days
-            except ValueError:
-                days_online = None
         conn.execute(
             "UPDATE listing SET disappeared_at = ?, days_online = ?, missed_at = NULL "
             "WHERE item_id = ?",
-            (gone_at, days_online, row["item_id"]),
+            (gone_at, _days_online(row["first_seen"], gone_at), row["item_id"]),
         )
         count += 1
     conn.commit()
     return (missed, count) if report_missed else count
+
+
+def _days_online(first_seen: Optional[str], gone_at: str) -> Optional[int]:
+    if not first_seen:
+        return None
+    try:
+        return (_parse_iso(gone_at) - _parse_iso(first_seen)).days
+    except ValueError:
+        return None
+
+
+def record_listing_check(conn: sqlite3.Connection, listing, checked_at: str) -> None:
+    """What the live dashboard's controleer button (recheck.py) read on a
+    listing's own page: its price, whether it is reserved and, for a bid
+    listing (bid_count set), the bids. The page proves the listing is online,
+    so a disappeared mark goes, as in sync_listings().
+
+    Unlike sync_listings() this leaves last_seen alone: that is when a crawl
+    last saw the listing, and the dashboard dates its rounds ("laatste
+    ronde"), its "nieuw" and what counts as active by it. One click would
+    otherwise move all of that to the time of the click."""
+    looked_up = getattr(listing, "bid_count", None) is not None
+    conn.execute(
+        """
+        UPDATE listing SET
+            price_eur = :price_eur,
+            price_type = :price_type,
+            is_bid = :is_bid,
+            price_is_asking = :price_is_asking,
+            reserved_at = CASE WHEN :reserved THEN COALESCE(reserved_at, :checked_at) ELSE NULL END,
+            bid_count = CASE WHEN :looked_up THEN :bid_count ELSE bid_count END,
+            bid_minimum = CASE WHEN :looked_up THEN :bid_minimum ELSE bid_minimum END,
+            bid_high = CASE WHEN :looked_up THEN :bid_high ELSE bid_high END,
+            bids_checked_at = CASE WHEN :looked_up THEN :checked_at ELSE bids_checked_at END,
+            checked_at = :checked_at,
+            disappeared_at = NULL,
+            days_online = NULL,
+            missed_at = NULL
+        WHERE item_id = :item_id
+        """,
+        {
+            "item_id": listing.item_id,
+            "price_eur": listing.price_eur,
+            "price_type": listing.price_type,
+            "is_bid": 1 if listing.price_is_bid else 0,
+            "price_is_asking": 1 if listing.price_is_asking else 0,
+            "reserved": 1 if getattr(listing, "reserved", False) else 0,
+            "looked_up": 1 if looked_up else 0,
+            "bid_count": getattr(listing, "bid_count", None),
+            "bid_minimum": getattr(listing, "bid_minimum", None),
+            "bid_high": getattr(listing, "bid_high", None),
+            "checked_at": checked_at,
+        },
+    )
+    if listing.price_eur is not None:
+        conn.execute(
+            "INSERT OR IGNORE INTO listing_price (item_id, observed_at, price_eur) VALUES (?, ?, ?)",
+            (listing.item_id, checked_at, listing.price_eur),
+        )
+    conn.commit()
+
+
+def record_listing_gone(conn: sqlite3.Connection, item_id: str, checked_at: str) -> None:
+    """The controleer button found the listing page gone (Marktplaats answers
+    410): marked disappeared now, as the nightly sweep would have done, dated
+    from an earlier miss if a crawl already had one."""
+    row = conn.execute(
+        "SELECT first_seen, missed_at, disappeared_at FROM listing WHERE item_id = ?", (item_id,)
+    ).fetchone()
+    if row is None:
+        return
+    gone_at = row["disappeared_at"] or row["missed_at"] or checked_at
+    conn.execute(
+        "UPDATE listing SET disappeared_at = ?, days_online = ?, missed_at = NULL, checked_at = ? "
+        "WHERE item_id = ?",
+        (gone_at, _days_online(row["first_seen"], gone_at), checked_at, item_id),
+    )
+    conn.commit()
 
 
 def save_watchlist(

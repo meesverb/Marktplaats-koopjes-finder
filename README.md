@@ -398,6 +398,34 @@ the same tab, at the same place, with the same search. Marks go into
 column `note`, migration 13), one per listing; they are your judgement, not a
 market observation, so a listing you put away still counts as a comparable.
 The written `dashboard.html` shows the marks and notes but has no buttons.
+
+**Checking a listing now — controleer.** The dashboard shows what the last
+round saw, and that can be hours old: by day the `computers` slot only looks
+at the newest 2 pages, so a listing from last week only comes by again in
+the night round. A listing reserved at 11:00 stays on Flips until then. And
+the bids on a listing with an asking price (`MIN_BID`, "vraagprijs, bieden
+kan") are only on the listing page itself, which the watch searches don't
+fetch (`bid_lookup` `fast`): a Suunto asking €290 with €350 already bid on it
+counted as a flip at €290. So every listing in the live version has a
+**controleer** button next to favoriet/weg. It fetches that one listing page
+from Marktplaats — one request per click, never two at once, and at least
+1.5 s apart like a round's `--delay` — and stores what it says (`recheck.py`):
+reserved or not (a reserved one leaves Flips; one no longer reserved comes
+back), the bids (count, highest, minimum — the same rules as the round's bid
+lookup, so a bid above the asking price becomes the price and reads "huidig
+bod, loopt nog op"), the current price, and whether the listing still exists
+(Marktplaats answers 410 for one that's gone; it's then marked gone, as the
+night round would have done). The message at the top says what it found, e.g.
+"4 biedingen, hoogste €350, boven de vraagprijs van €290; prijs €290 → €350",
+and the listing shows "gecontroleerd dd-mm-yyyy HH:MM". It never bids or
+replies. If the page can't be read (no connection, or Marktplaats changed its
+page structure) the message says so and nothing is stored. The check leaves
+`last_seen` alone — that stays the last round, which is what "laatste ronde"
+and "nieuw" go by — and stores the highest bid and the time of the check in
+`listing.bid_high` and `listing.checked_at` (migration 14). The round's own
+bid lookup fills `bid_high` too, and a bid above the asking price counts until
+the next lookup, even when a round without lookups sees the asking price
+again.
 Vinted listings can't be marked (yet).
 
 **Your own computer's value.** "Netto" in Upgrades is the price minus what
@@ -550,7 +578,7 @@ selling price.
 python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
 python koopjes.py run computers    # by day: only the newest 2 pages; opens the dashboard on a new flip
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
-python dashboard.py --serve        # live, with Gekocht/Verkocht and favoriet/weg buttons (Ctrl+C to stop); watches at /horloges
+python dashboard.py --serve        # live, with Gekocht/Verkocht, favoriet/weg and controleer buttons (Ctrl+C to stop); watches at /horloges
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo
 ```
@@ -592,7 +620,9 @@ pages too (one extra request per `MIN_BID` listing) and fills in both the real
 minimum bid and how many bids have been placed. The asking price stays the
 price used for filters and the score, because that's what compares fairly
 against fixed-price listings — the minimum bid is shown separately, in its own
-`Bod` column, as what it would cost to open the bidding.
+`Bod` column, as what it would cost to open the bidding. Unless someone has
+already bid more than the asking price: then that bid is the price, since
+below it the listing can't be had.
 
 **Still free to bid on.** Bidding listings nobody has bid on yet get a
 `VRIJ TE BIEDEN` badge and their own filter tab in the HTML report. Every run
@@ -838,8 +868,8 @@ different market and not followed (yet); they land in Uitgefilterd as
   compare with), Vinted and the feature score. `koopjes.py` writes it after
   every round; `python dashboard.py --markt sporthorloges` (or `--markt alle`)
   by hand. `python dashboard.py --serve` shows it live at
-  `http://127.0.0.1:8765/horloges`, with the same Gekocht/Verkocht and
-  favoriet/weg buttons;
+  `http://127.0.0.1:8765/horloges`, with the same Gekocht/Verkocht,
+  favoriet/weg and controleer buttons;
   a buy remembers its market (database migration 10, `trade.market`), so each
   dashboard's Mijn flips shows its own. Buys from before that have no market
   and belong to the bike computers, unless their model is a watch.
