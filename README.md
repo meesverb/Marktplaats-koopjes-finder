@@ -380,9 +380,9 @@ so you can see how good its estimates are. Your own buys and sales are never
 used as comparables for other listings, and your own buy doesn't count
 towards the estimate of what it will sell for. Something you bought
 disappears from Flips and Upgrades and gets a ✓ in Alle computers. Every form
-carries a secret chosen at start-up, and the program checks where a request
-comes from, so another website can't write into your database through your
-browser.
+and button sends a secret chosen at start-up, and the program checks where a
+request comes from, so another website can't write into your database
+through your browser.
 
 **Favourites and putting listings away.** So you don't keep going through
 the same listings, every listing in the live version also has
@@ -401,14 +401,29 @@ everywhere it appears, also under a favourite that went offline; the search
 box in Alle computers searches it too, and **Toon: met notitie** shows all
 listings that have one. A note is about the listing, not your mark: removing
 the mark leaves it. One line, at most 500 characters; an empty note clears
-it. After a click the page comes back on the same tab, at the same place,
-with the same search. Marks go into `koopjes.db`, table `listing_mark`
+it. Favoriet, weg and the note work **without reloading the page**: the
+listing's badges and buttons change where you clicked, a listing you put away
+leaves Flips and Upgrades, and the counts on the tabs follow (a message at
+the bottom says what was saved). Only **terugzetten** of a flip rebuilds the
+Flips tab, since that row wasn't on the page. Gekocht and controleer still
+reload, and come back on the same tab, at the same place, with the same
+search. Marks go into `koopjes.db`, table `listing_mark`
 (migration 12, `marks.py`), one per listing; notes into table `listing_note`
 (migration 15, which moves over the notes migration 13 kept on marks). Both
 are your judgement, not a market observation, so a listing you put away
 still counts as a comparable. The written `dashboard.html` shows the marks
 and notes but has no buttons. Vinted listings and the Uitgefilterd tab have
 no marks or notes (yet).
+
+**Why it's fast.** The live server remembers the heavy part of each page
+(comparable prices, flips, patterns) between two clicks, and only computes it
+again once a round, controleer, a buy or sale or a Vinted import has changed
+the database. And the buttons are plain buttons, not a form per listing: with
+~2800 bike computers the page used to hold ~8000 forms, and a browser took
+tens of seconds to load that — on every click, since every click reloaded
+the page (measured in Chromium on 29-09-2026 on a database of that size:
+29 s for the bike computer page and 13 s for the watch page, now 2.2 s and
+1.4 s).
 
 **Checking a listing now — controleer.** The dashboard shows what the last
 round saw, and that can be hours old: by day the `computers` slot only looks
@@ -588,7 +603,7 @@ selling price.
 python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
 python koopjes.py run computers    # by day: only the newest 2 pages; opens the dashboard on a new flip
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
-python dashboard.py --serve        # live, with Gekocht/Verkocht, favoriet/weg and controleer buttons (Ctrl+C to stop); watches at /horloges
+python dashboard.py --serve        # live, with Gekocht/Verkocht, favoriet/weg and controleer buttons (Ctrl+C to stop); watches at /horloges, your own bike at /fiets
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo
 ```
@@ -1086,7 +1101,11 @@ python valuation.py --db koopjes.db
 
 Three estimators, mixed into one band:
 
-- **E1 — comparable listings.** A ladder with decreasing confidence: same
+- **E1 — comparable listings.** For your own bike: exactly the listings you
+  took along on the page `/fiets` (see below), with their asking price; five
+  or more is a hard number, fewer is `indicatief`. Nothing taken along is no
+  valuation. For anything else (and in the tests), a ladder with decreasing
+  confidence: same
   model + model year ±2 + same groupset tier (high), same model family +
   year ±3 (medium), same segment — frame material, brake type, gearing,
   year range (low). The highest rung with at least 5 comps wins; below that
@@ -1120,10 +1139,48 @@ default both), `--query` to restrict the comps to one crawl query,
 print without writing to the database.
 
 What it does **not** do: invent numbers. No comparable listings means no
-valuation, not a guess — crawl the model first. The 10-15% negotiation
+valuation, not a guess — take some along on `/fiets` first (exit code 2, and
+the nightly round logs it as an outcome, not an error). The 10-15% negotiation
 margin, the bundle factor and the share of an upgrade that a buyer of a
 complete bike pays for are heuristics, not measurements, and each is printed
 as its own line so it is clear what it contributed.
+
+### Which listings your bike is compared with — `/fiets` (`bike_comps.py`)
+
+"Giant Defy" is a model line, not a model: since 2009 Giant has sold
+aluminium (Aluxx, Defy 0-5), entry-level carbon (Composite), Advanced,
+Advanced Pro, Advanced SL and, from 2015, disc-brake bikes under that name,
+and most sellers just write "Giant Defy carbon". No rule on title words tells
+those apart as well as you do by looking, so you decide per listing.
+
+```bash
+python dashboard.py --serve        # then open http://127.0.0.1:8765/fiets
+```
+
+The page lists every listing from the racefietsen category of the last 180
+days with the model family from `mijn_fiets.md` ("defy") in its text,
+including the ones that have disappeared (sold or withdrawn — "weg sinds 12
+sep, 9 dagen online"). Whatever is certainly not your frame material is left
+out: aluminium is recognised from the reference model (`reference_bikes.csv`:
+Defy 0-5 and Aluxx), or from the text and the seller's own attributes. A
+listing that says nothing about its material is in, marked *materiaal
+onbekend*. Per listing: **✓ meenemen** or **✗ niet**; clicking the chosen
+button again puts it back to "te beoordelen". The page opens on **Te
+beoordelen** (new or not looked at yet), so a chosen listing drops out of
+view and you work down the list; the filter shows the others.
+
+Only what you take along counts, with its asking price. A bid listing that
+already has bids is shown with its highest bid but doesn't count (its price
+is still going up); a "bieden vanaf" (MIN_BID) price does. At the top the
+valuation of your bike with its original wheels (scenario B, as the report's
+Mijn fiets tab computes it), n and confidence, updated with every click
+without reloading; "Hoe dit bedrag ontstaat" shows the evidence lines. Until
+you have taken along at least one listing with an asking price there is no
+valuation, and the upgrade-finder uses `verkoopprijs_handmatig` from
+`mijn_fiets.md`; below five it is `indicatief` and that manual price still
+wins. The choices go into `koopjes.db`, table `comp_choice` (migration 16);
+`valuation.py`, `upgrade.py`, the report's Mijn fiets and Upgrade tabs and
+the overview all use them.
 
 ### `scoring.py` — how good is a bike, regardless of price?
 
@@ -1266,9 +1323,9 @@ a new run lands on the same one.
 
 The last two read `mijn_fiets.md` (`--mijn-fiets`) and value the bike on the
 comps in `koopjes.db` — read-only, nothing is saved; `valuation.py` stays the
-one that writes valuations. With `--no-db`, a missing intake file, or no
-comparable listings in the database yet, those tabs say why instead of
-showing a number.
+one that writes valuations. The comps are the listings you took along on
+`/fiets`. With `--no-db`, a missing intake file, or nothing taken along yet,
+those tabs say why instead of showing a number.
 
 **Waardescore.** The Upgrade and Biedpaneel tabs have a `Waardescore` column:
 estimated value divided by effective price, where 1,00× means the price is

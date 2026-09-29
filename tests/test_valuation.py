@@ -523,6 +523,9 @@ class DatabaseTest(unittest.TestCase):
         old_first_seen = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat(timespec="seconds")
         stayers = [make_listing(item_id=f"stayer{i}", title=title, price_eur=1000.0) for i in range(20)]
         db.sync_listings(self.conn, "giant defy", stayers, old_first_seen)
+        # Alleen wat de eigenaar op /fiets meenam telt mee in de taxatie.
+        for listing in quick + stayers:
+            db.set_comp_choice(self.conn, listing.item_id, "mee")
 
         out = io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):

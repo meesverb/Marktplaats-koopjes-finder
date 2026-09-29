@@ -76,13 +76,18 @@ def load_owner_context(
     mijn_fiets_path: str,
     db_path: Optional[str],
     config_path: str | Path = SCORING_CONFIG_PATH,
+    comps: Optional[list] = None,
 ) -> tuple[Optional[OwnerContext], Optional[str]]:
     """De eigen fiets uit `mijn_fiets.md`, gescoord en — als er een database
     is — getaxeerd. Geeft (context, None) of (None, reden).
 
     `db_path` None betekent: geen database (--no-db). Een pad dat niet bestaat
     wordt niet aangemaakt; db.connect() zou dat wel doen, en een lege database
-    als bijwerking van een rapport is verwarrend."""
+    als bijwerking van een rapport is verwarrend.
+
+    `comps`: valuation.fetch_comp_candidates() van deze database, als de
+    aanroeper die al heeft (de live pagina /fiets onthoudt ze tussen twee
+    klikken); anders worden ze hier opgehaald."""
     try:
         with open(mijn_fiets_path, encoding="utf-8") as f:
             intake = f.read()
@@ -116,16 +121,20 @@ def load_owner_context(
     # verkoopprijs_handmatig still gives a budget — so carry on with none
     # instead of stopping here. Not connected: db.connect() would create it.
     missing = not Path(db_path).exists()
-    comps = []
-    if not missing:
+    chosen: frozenset = frozenset()
+    if missing:
+        comps = []
+    else:
         conn = db.connect(db_path)
         try:
-            comps = val.fetch_comp_candidates(conn)
+            if comps is None:
+                comps = val.fetch_comp_candidates(conn)
+            chosen = val.chosen_comp_ids(conn)
         finally:
             conn.close()
 
     subject = val.subject_from_owner_bike(bike)
-    comp_set = val.select_comps(subject, comps)
+    comp_set = val.select_comps(subject, comps, chosen)
     negotiation = val.empirical_negotiation_factor(comps)
     valuations: dict[str, val.Valuation] = {}
     for key in SCENARIO_KEYS:
@@ -136,6 +145,7 @@ def load_owner_context(
             scenario=val.SCENARIOS[key],
             extras=(context.wheelset,) if key == "a" else (),
             negotiation=negotiation,
+            chosen=chosen,
         )
         if valuation is not None:
             valuations[key] = valuation
@@ -145,8 +155,7 @@ def load_owner_context(
         problem = (
             f"{db_path} bestaat nog niet, dus geen comps om op te taxeren."
             if missing
-            else f"geen vergelijkbare advertenties in {db_path} ({len(comps)} advertenties met "
-            "een vraagprijs in het meetvenster). Crawl eerst met --query op dit model."
+            else f"geen taxatie: {val.no_comps_reason(chosen, db_path)}"
         )
         if manual is None:
             return _without_valuation(
