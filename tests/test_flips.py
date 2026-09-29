@@ -355,3 +355,70 @@ class SheetsTest(FlipTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StartTest(unittest.TestCase):
+    """/start en /bestanden: één adres voor alles, en alleen de bestanden
+    die de rondes voor de eigenaar schrijven."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.db = str(self.dir / "koopjes.db")
+        db.connect(self.db).close()
+        (self.dir / "overzicht.html").write_text("<html><body><h1>Overzicht</h1>"
+                                                 "<a href='racefiets_report_giant-defy.html'>r</a></body></html>")
+        (self.dir / "racefiets_report_giant-defy.html").write_text("<html><body>Rapport</body></html>")
+        (self.dir / "lijsten").mkdir()
+        (self.dir / "lijsten" / "beste_koopjes.txt").write_text("1. Giant")
+        (self.dir / "sheets.json").write_text('{"secret": "geheim"}')
+        (self.dir / "logs").mkdir()
+        (self.dir / "logs" / "rondes.jsonl").write_text(json.dumps(
+            {"slot": "nacht", "started_at": "2026-09-29T01:00:00+00:00", "finished_at": "2026-09-29T02:00:00+00:00",
+             "status": "ok", "new": 7}) + "\n")
+        self.httpd = dashboard.make_server(self.db, 0, files_dir=self.dir, photo_dir=self.dir / "fotos",
+                                           sheets_config=self.dir / "sheets.json")
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
+        self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
+
+    def get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", path, headers={"Host": f"127.0.0.1:{self.port}"})
+        r = conn.getresponse()
+        body = r.read().decode("utf-8", errors="replace")
+        conn.close()
+        return r.status, r.getheader("Location"), body
+
+    def test_the_start_page_links_everything(self):
+        status, _, page = self.get("/start")
+        self.assertEqual(status, 200)
+        for href in ("/", "/horloges", "/fiets", "/flips", "/bestanden/overzicht.html",
+                     "/bestanden/racefiets_report_giant-defy.html", "/bestanden/lijsten/beste_koopjes.txt"):
+            self.assertIn(f"href='{href}'", page)
+        self.assertIn("nacht — ok, 7 nieuw", page)
+
+    def test_every_live_page_has_the_bar(self):
+        for path in ("/", "/horloges", "/fiets", "/flips"):
+            _, _, page = self.get(path)
+            self.assertIn("<nav class='site'>", page, path)
+            self.assertIn("href='/start'", page, path)
+
+    def test_files_are_served_with_the_bar_and_relative_links_still_work(self):
+        status, _, page = self.get("/bestanden/overzicht.html")
+        self.assertEqual(status, 200)
+        self.assertIn("href='/start'", page)
+        self.assertIn("href='racefiets_report_giant-defy.html'", page)  # -> /bestanden/racefiets_report_...
+        self.assertEqual(self.get("/bestanden/racefiets_report_giant-defy.html")[0], 200)
+        self.assertEqual(self.get("/bestanden/lijsten/beste_koopjes.txt")[2], "1. Giant")
+
+    def test_the_written_dashboards_go_to_the_live_ones(self):
+        self.assertEqual(self.get("/bestanden/dashboard.html")[:2], (302, "/"))
+        self.assertEqual(self.get("/bestanden/dashboard_horloges.html")[:2], (302, "/horloges"))
+
+    def test_nothing_else_is_served(self):
+        for path in ("/bestanden/koopjes.db", "/bestanden/sheets.json", "/bestanden/../koopjes.db",
+                     "/bestanden/..%2Fkoopjes.db", "/bestanden/lijsten/../sheets.json", "/bestanden/dashboard.py",
+                     "/bestanden/logs/rondes.jsonl", "/bestanden/", "/bestanden/%2Fetc%2Fpasswd"):
+            self.assertEqual(self.get(path)[0], 404, path)

@@ -52,7 +52,7 @@ from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional, Sequence
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 import bike_comps as bc
 import computers as pc
@@ -1748,9 +1748,9 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>{esc(m.short)}</title><style>{CSS}</style></head><body>"
+        f"<title>{esc(m.short)}</title><style>{CSS}{SITE_CSS if d.editable else ''}</style></head><body>"
         f"<main data-token='{esc(d.token, quote=True)}' data-markt='{esc(m.key, quote=True)}'>"
-        f"<h1>{esc(m.title)}</h1>"
+        f"{site_nav(m.serve_path) if d.editable else ''}<h1>{esc(m.title)}</h1>"
         f"<div class='meta'>{meta}</div>{notices}"
         f"<nav class='tabs'>{nav}</nav>{panels}"
         f"</main><div id='toast' role='status' hidden></div><script>{LIVE_JS}{JS}</script></body></html>"
@@ -1981,8 +1981,8 @@ def render_bike(view: BikeView, token: str = "", message: str = "", other_links:
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>Mijn fiets</title><style>{CSS}</style></head><body>"
-        f"<main data-token='{esc(token, quote=True)}'>"
+        f"<title>Mijn fiets</title><style>{CSS}{SITE_CSS}</style></head><body>"
+        f"<main data-token='{esc(token, quote=True)}'>{site_nav(BIKE_PATH)}"
         "<h1>Mijn fiets: vergelijkbare advertenties</h1>"
         f"<div class='meta'>{about}{links} · <strong>live</strong> (keuzes gaan in koopjes.db)</div>{notice}{body}"
         f"</main><div id='toast' role='status' hidden></div><script>{LIVE_JS}{JS}{BIKE_JS}</script></body></html>"
@@ -2434,8 +2434,8 @@ def render_flips(book: fl.FlipBook, token: str = "", message: str = "", other_li
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>Flips</title><style>{CSS}{FLIPS_CSS}</style></head><body>"
-        f"<main data-token='{esc(token, quote=True)}'>"
+        f"<title>Flips</title><style>{CSS}{FLIPS_CSS}{SITE_CSS}</style></head><body>"
+        f"<main data-token='{esc(token, quote=True)}'>{site_nav(FLIPS_PATH)}"
         "<h1>Flips</h1>"
         f"<div class='meta'>Alles wat je kocht om te verkopen{links} · <strong>live</strong> (gaat in koopjes.db)</div>"
         f"{notice}{''.join(parts)}"
@@ -2838,6 +2838,177 @@ FLIP_ACTIONS = {
 FLIP_RELOAD = {"/flips/fase", "/flips/verkocht", "/flips/nieuw", "/flips/weg"}
 
 
+# --- Start: /start, en de balk bovenaan elke live pagina -------------------------
+#
+# Eén adres om te openen: de server toont de live pagina's én de bestanden
+# die de rondes schrijven (overzicht, rapporten, lijsten), zodat je niet meer
+# in de map hoeft te zoeken welk html-bestand je moet openen.
+
+START_PATH = "/start"
+FILES_PATH = "/bestanden"
+
+
+def site_pages() -> list:
+    return ([("Start", START_PATH)] + [(m.short, m.serve_path) for m in mk.MARKETS.values()]
+            + [("Mijn fiets", BIKE_PATH), ("Flips", FLIPS_PATH), ("Overzicht", f"{FILES_PATH}/overzicht.html")])
+
+
+def site_nav(current: str) -> str:
+    links = "".join(
+        f"<a href='{esc(href, quote=True)}'{' aria-current=page' if href == current else ''}>{esc(label)}</a>"
+        for label, href in site_pages())
+    return f"<nav class='site'>{links}</nav>"
+
+
+SITE_CSS = """
+nav.site { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: -6px 0 14px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line); font-size: .92rem; }
+nav.site a { text-decoration: none; color: var(--text-2); }
+nav.site a[aria-current] { color: var(--text); font-weight: 700; }
+nav.site a:hover { color: var(--accent); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; text-decoration: none; color: var(--text); }
+a.card:hover { border-color: var(--accent); }
+.card .model { font-size: 1.05rem; }
+ul.files { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; }
+ul.files li { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; }
+ul.files li:last-child { border-bottom: 0; }
+"""
+
+# Wat /bestanden/ laat zien: alleen wat de rondes voor jou schrijven, nooit
+# de database, sheets.json of de broncode. Een pad met een map erin moet in
+# een van deze mappen liggen.
+SERVED_FILES = ("overzicht.html", "racefiets_report*.html", "lijsten/*.txt", "taxatie_*.md", "logs/koopjes.log")
+# De geschreven dashboards zijn een momentopname; het overzicht linkt ernaar,
+# en dan wil je de live versie.
+LIVE_INSTEAD = {"dashboard.html": "/", **{m.dashboard_file: m.serve_path for m in mk.MARKETS.values()}}
+FILE_TYPES = {".html": "text/html; charset=utf-8", ".txt": "text/plain; charset=utf-8",
+              ".md": "text/plain; charset=utf-8", ".log": "text/plain; charset=utf-8"}
+
+
+def served_file(files_dir, name: str) -> Optional[Path]:
+    """Het bestand bij /bestanden/<name>, of None als het niet mag of er niet is."""
+    from fnmatch import fnmatch
+
+    if not name or "\\" in name or name.startswith("/") or ".." in name.split("/"):
+        return None
+    if not any(fnmatch(name, pattern) and name.count("/") == pattern.count("/") for pattern in SERVED_FILES):
+        return None
+    base = Path(files_dir).resolve()
+    path = (base / name).resolve()
+    if base not in path.parents or not path.is_file():
+        return None
+    return path
+
+
+def with_file_nav(data: bytes) -> bytes:
+    """Een rapport of het overzicht heeft een eigen opmaak zonder de balk van
+    de server; hier komt een smalle balk bovenaan, met eigen stijl zodat
+    die van het rapport hem niet raakt. Het bestand op schijf blijft zoals het
+    is (dat opent ook zonder server)."""
+    links = " · ".join(f"<a href='{esc(href, quote=True)}' style='color:inherit'>{esc(label)}</a>"
+                       for label, href in site_pages())
+    bar = (f"<div style='font:14px/1.6 system-ui,sans-serif;padding:6px 16px;background:#2a78d6;color:#fff'>"
+           f"{links}</div>").encode("utf-8")
+    at = data.lower().find(b"<body")
+    if at < 0:
+        return bar + data
+    end = data.find(b">", at)
+    return data[:end + 1] + bar + data[end + 1:]
+
+
+def list_files(files_dir) -> list:
+    """(naam, gewijzigd) van alles onder /bestanden, nieuwste eerst."""
+    base = Path(files_dir)
+    found = []
+    for pattern in SERVED_FILES:
+        for path in base.glob(pattern):
+            if path.is_file():
+                found.append((path.relative_to(base).as_posix(), path.stat().st_mtime))
+    return sorted(found, key=lambda f: -f[1])
+
+
+def _file_label(name: str) -> str:
+    if name == "overzicht.html":
+        return "Overzicht van alle zoekopdrachten"
+    if name.startswith("racefiets_report"):
+        rest = name[len("racefiets_report"):-len(".html")].lstrip("_")
+        return f"Rapport: {rest.replace('-', ' ')}" if rest else "Rapport"
+    if name.startswith("lijsten/"):
+        return "Lijst: " + name[len("lijsten/"):-len(".txt")].replace("_", " ")
+    if name.startswith("taxatie_"):
+        return "Taxatie " + name[len("taxatie_"):-len(".md")]
+    if name == "logs/koopjes.log":
+        return "Logboek van de rondes"
+    return name
+
+
+def load_recent_rounds(files_dir, limit: int = 5) -> list:
+    import koopjes
+
+    try:
+        config = koopjes.load_config(Path(files_dir) / "schedule.json")
+        path = config.base_dir / config.rounds_file
+    except Exception:  # geen of een kapotte schedule.json: dan het standaardpad
+        path = Path(files_dir) / "logs" / "rondes.jsonl"
+    return koopjes.load_rounds(path, limit=limit)
+
+
+def render_start(db_path, files_dir, message: str = "") -> str:
+    rounds = load_recent_rounds(files_dir)
+    book = fl.load_book(db_path, with_market_check=False) if Path(db_path).exists() else None
+    last = rounds[0] if rounds else None
+    t = book.totals if book else None
+    tile_list = [
+        ("Laatste ronde", esc(local_time(last.get("finished_at") or last.get("started_at", ""))) if last else "—",
+         f"{last.get('slot', '?')}: {last.get('status', '?')}, {last.get('new', 0)} nieuw" if last
+         else "nog geen ronde gedraaid (python koopjes.py run nacht)"),
+    ]
+    if t is not None:
+        tile_list += [
+            ("Verdiend met flips", flip_signed(t.realized_eur) if t.sold else "—",
+             f"netto na investeringen {flip_signed(t.net_eur)}"),
+            ("Lopende flips", str(t.stock), f"{flip_money(t.stock_spent_eur)} erin, verwacht "
+                                            f"{flip_signed(t.stock_expected_eur)}"),
+        ]
+    live = [
+        *[(m.serve_path, m.short, f"alle {m.items} te koop, flips, favorieten, marktprijzen")
+          for m in mk.MARKETS.values()],
+        (BIKE_PATH, "Mijn fiets", "vergelijkbare advertenties voor de taxatie van je eigen fiets"),
+        (FLIPS_PATH, "Flips", "je eigen flips: klussenlijst, kosten, winst, investeringen, Google Sheet"),
+    ]
+    cards = "".join(f"<a class='card' href='{esc(href, quote=True)}'><div class='model'>{esc(label)}</div>"
+                    f"<div class='sub'>{esc(sub)}</div></a>" for href, label, sub in live)
+    files = list_files(files_dir)
+    if files:
+        rows = "".join(
+            f"<li><a href='{FILES_PATH}/{quote(name)}'>{esc(_file_label(name))}</a>"
+            f"<span class='muted'>{esc(datetime.fromtimestamp(mtime).strftime('%d-%m-%Y %H:%M'))}</span></li>"
+            for name, mtime in files)
+        file_list = f"<ul class='files'>{rows}</ul>"
+    else:
+        file_list = "<p class='empty'>Nog geen rapporten. Die schrijft een ronde: <code>python koopjes.py run nacht</code>.</p>"
+    round_rows = "".join(
+        f"<li><span>{esc(r.get('slot', '?'))} — {esc(str(r.get('status', '?')))}, {int(r.get('new', 0) or 0)} nieuw"
+        f"</span><span class='muted'>{esc(local_time(r.get('started_at', '')))}</span></li>" for r in rounds)
+    notice = f"<div class='banner' role='status'>{esc(message)}</div>" if message else ""
+    return (
+        "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>Koopjes</title><style>{CSS}{SITE_CSS}</style></head><body><main>"
+        f"{site_nav(START_PATH)}<h1>Koopjes</h1>"
+        "<div class='meta'>Alles op één plek. Deze pagina draait op je eigen computer "
+        "(<code>python dashboard.py --serve</code>); stoppen met Ctrl+C in dat venster.</div>"
+        f"{notice}{tiles(tile_list)}<h3>Live</h3><div class='cards'>{cards}</div>"
+        f"<h3>Rapporten en lijsten</h3>{file_list}"
+        + (f"<h3>Laatste rondes</h3><ul class='files'>{round_rows}</ul>" if rounds else "")
+        + "</main></body></html>"
+    )
+
+
 # --- Live: --serve --------------------------------------------------------------
 
 
@@ -3059,6 +3230,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     token = ""
     intake_path = str(INTAKE_PATH)
     photo_dir = fl.PHOTO_DIR
+    files_dir = HERE  # waar koopjes.py het overzicht en de rapporten schrijft
     sheets_config = str(HERE / "sheets.json")
     cache: LiveCache = LiveCache()
     server_version = "koopjes-dashboard"
@@ -3096,39 +3268,60 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _links(self, current: str) -> list:
-        """Naar de andere live pagina's: de markten en Mijn fiets."""
-        pages = ([(m.short, m.serve_path) for m in mk.MARKETS.values()]
-                 + [("Mijn fiets", BIKE_PATH), ("Flips", FLIPS_PATH)])
-        return [(label, href) for label, href in pages if href != current]
-
     def do_GET(self) -> None:
         url = urlsplit(self.path)
         path = "/" if url.path == "/index.html" else url.path.rstrip("/") or "/"
         market = next((m for m in mk.MARKETS.values() if m.serve_path == path), None)
         is_photo = path.startswith(FLIPS_PHOTO_PATH + "/")
-        if market is None and path not in (BIKE_PATH, FLIPS_PATH) and not is_photo:
+        is_file = path.startswith(FILES_PATH + "/")
+        if market is None and path not in (BIKE_PATH, FLIPS_PATH, START_PATH) and not (is_photo or is_file):
             return self._send(404, "Niet gevonden")
         if not self._host_ok():
             return self._send(403, "Alleen via 127.0.0.1")
         message = parse_qs(url.query).get("melding", [""])[0][:300]
         if is_photo:
             return self._send_photo(path[len(FLIPS_PHOTO_PATH) + 1:])
+        if is_file:
+            return self._send_file(unquote(path[len(FILES_PATH) + 1:]))
+        if path == START_PATH:
+            return self._send(200, render_start(self.db_path, self.files_dir, message), "text/html; charset=utf-8")
         if path == FLIPS_PATH:
             import flips_sheets as fs
             book = fl.load_book(self.db_path)
-            return self._send(200, render_flips(book, self.token, message, self._links(FLIPS_PATH),
-                                                fs.panel(self.sheets_config)),
+            return self._send(200, render_flips(book, self.token, message,
+                                                sheets=fs.panel(self.sheets_config)),
                               "text/html; charset=utf-8")
         if market is None:
             view = load_bike_view(self.db_path, self.intake_path, self.cache)
-            return self._send(200, render_bike(view, self.token, message, self._links(BIKE_PATH)),
+            return self._send(200, render_bike(view, self.token, message),
                               "text/html; charset=utf-8")
         d = self.cache.dashboard(self.db_path, market)
         d.editable, d.token = True, self.token
-        d.other_links = self._links(market.serve_path)
+        d.other_links = []  # de balk bovenaan (site_nav) heeft ze allemaal
         d.message = message
         self._send(200, render(d), "text/html; charset=utf-8")
+
+    def _send_file(self, name: str) -> None:
+        if name in LIVE_INSTEAD:
+            self.send_response(302)
+            self.send_header("Location", LIVE_INSTEAD[name])
+            self.send_header("Content-Length", "0")
+            return self.end_headers()
+        path = served_file(self.files_dir, name)
+        if path is None:
+            return self._send(404, "Niet gevonden")
+        data = path.read_bytes()
+        if path.suffix.lower() == ".html":
+            data = with_file_nav(data)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", FILE_TYPES.get(path.suffix.lower(), "text/plain; charset=utf-8"))
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            self.close_connection = True
 
     def _send_photo(self, ident: str) -> None:
         try:
@@ -3260,7 +3453,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 
 def make_server(db_path, port: int = 8765, intake_path=INTAKE_PATH, photo_dir=None,
-                sheets_config=None) -> ThreadingHTTPServer:
+                sheets_config=None, files_dir=None) -> ThreadingHTTPServer:
     """De server, klaar om te draaien (serve_forever). Migreert de database
     eerst, zodat de tabellen `trade`, `listing_mark`, `listing_note` en
     `comp_choice` bestaan."""
@@ -3271,6 +3464,8 @@ def make_server(db_path, port: int = 8765, intake_path=INTAKE_PATH, photo_dir=No
         attrs["photo_dir"] = Path(photo_dir)
     if sheets_config is not None:
         attrs["sheets_config"] = str(sheets_config)
+    if files_dir is not None:
+        attrs["files_dir"] = Path(files_dir)
     handler = type("Handler", (DashboardHandler,), attrs)
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
@@ -3281,11 +3476,11 @@ def serve(db_path, port: int, open_browser: bool) -> int:
     except OSError as exc:
         print(f"Kan niet starten op poort {port}: {exc}. Probeer --port met een ander getal.", file=sys.stderr)
         return 1
-    url = f"http://127.0.0.1:{httpd.server_address[1]}/"
-    print(f"Dashboard live op {url} (sporthorloges: {url}horloges, mijn fiets: {url}fiets, flips: {url}flips) "
-          "— stoppen met Ctrl+C.")
+    url = f"http://127.0.0.1:{httpd.server_address[1]}"
+    print(f"Alles live op {url}{START_PATH} (fietscomputers {url}/, sporthorloges {url}/horloges, mijn fiets "
+          f"{url}/fiets, flips {url}/flips, rapporten via de startpagina) — stoppen met Ctrl+C.")
     if open_browser:
-        webbrowser.open(url)
+        webbrowser.open(url + START_PATH)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
