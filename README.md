@@ -377,6 +377,17 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 Photos come from the search results (stored since database migration 6); a
 listing from before that shows a grey square until the next round sees it.
 
+**One address for everything — `python dashboard.py --serve`.** The browser
+opens at `http://127.0.0.1:8765/start`: the latest round, what your flips
+earned, links to every live page (fietscomputers `/`, sporthorloges
+`/horloges`, your own bike `/fiets`, your flips `/flips`) and to the files the
+rounds write — the overview, every `racefiets_report*.html`, the lists in
+`lijsten/`, the `taxatie_*.md` notes and `logs/koopjes.log` — served under
+`/bestanden/` with a bar back to the start page. Nothing else in the folder is
+served (not `koopjes.db`, not `sheets.json`). A link in the overview to
+`dashboard.html` or `dashboard_horloges.html` opens the live version. Every
+live page has the same bar at the top.
+
 **Recording your own buys and sales — `python dashboard.py --serve`.** The
 written `dashboard.html` only reads. `--serve` starts a small program on your
 own computer (only reachable at `http://127.0.0.1:8765/`, `--port` to change)
@@ -614,7 +625,7 @@ selling price.
 python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
 python koopjes.py run computers    # by day: only the newest 2 pages; opens the dashboard on a new flip
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
-python dashboard.py --serve        # live, with Gekocht/Verkocht, favoriet/weg and controleer buttons (Ctrl+C to stop); watches at /horloges, your own bike at /fiets, your flips at /flips
+python dashboard.py --serve        # everything live from http://127.0.0.1:8765/start (Ctrl+C to stop): dashboards, /fiets, /flips, reports
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo
 ```
