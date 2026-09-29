@@ -759,7 +759,22 @@ python racefiets_jev.py --query "garmin edge" --reference-file reference_bike_ac
 
 - `reference_bikes.csv` — the Giant Defy family (the owner's own bike is the
   row marked "Baseline") plus common upgrade targets (Canyon Endurace,
-  Specialized Roubaix, Trek Domane).
+  Specialized Roubaix, Trek Domane), followed by one row per model family
+  that often came up unrecognised in `lijsten/zonder_referentie.txt` (Giant
+  TCR, Trek Madone, Cube Attain, Koga-Miyata, ...). Those family rows name
+  no original price — a family spans trims and years — and fill in
+  `frame_material` only where the name itself settles it (Advanced, ALR,
+  CAAD, GTC, C:62, "Carbon"); their source is a representative row of
+  `reference_bike_catalog.csv`, whose counts per material are in `specs`.
+  Below those come 226 rows, one per model line of that catalog that none of
+  the rows above recognises (brand + first word of the model name: BH Quartz,
+  Felt F75, Cervélo R5, Trek Silque, Scott Contessa, ...), plus "Giant Defy
+  (overig)" for a Defy the researched rows can't place. Those are for
+  recognition only: the brand has to come before the line in the title
+  ("Terra" and "Supreme" are bikes of several brands), and they name no
+  original price and no `frame_material`. Catalog words that are ordinary
+  Dutch or a number in a title (Pinarello "MAAT", Cannondale "700", Bianchi
+  "1885") and catalog typos of a line that already has a row got no row.
 - `reference_bike_accessories.csv` — bike computers (Wahoo, Garmin) and
   power meters. These are deliberately **not** in the bike file: the first
   matching row supplies the original price the dealscore compares against,

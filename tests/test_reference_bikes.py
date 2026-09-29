@@ -86,6 +86,123 @@ class BikeTitleMatchingTest(unittest.TestCase):
             with self.subTest(title=title):
                 self.assertEqual(first_label(reference, title), expected)
 
+    # Titles from lijsten/zonder_referentie.txt (September 2026): the families
+    # that most often went unrecognised. Mostly about the split rows, where a
+    # material rides along and the order decides which one wins.
+    FAMILY_CASES = [
+        ("Racefiets Giant TCR Advanced SL maat M/L carbon", "Giant TCR Advanced"),
+        ("Giant TCR racefiets – opknapper / projectfiets", "Giant TCR (overig)"),
+        ("Trek Emonda ALR5", "Trek Émonda ALR"),
+        ("Trek emonda Sl-6 maat 58.", "Trek Émonda (overig)"),
+        ("Trek Madone 2.1 racefiets", "Trek Madone 2.1-2.5"),
+        ("Te koop Trek Madone 5.2 SL racefiets", "Trek Madone (overig)"),
+        ("Trek 1.2 Alpha racefiets - Maat 56 - Shimano Tiagra/Sora", "Trek 1-/2-serie (Alpha)"),
+        ("Racefiets, Trek 2,1 alpha", "Trek 1-/2-serie (Alpha)"),
+        ("Trek Domane 2.3 compact", "Trek Domane"),
+        ("Cube Attain GTC SL 105", "Cube Attain GTC"),
+        ("Cube Attain SL | 105 | Maat 58", "Cube Attain (overig)"),
+        ("Cannondale Synapse Women's Carbon Shimano 105 (ZGAN)", "Cannondale Synapse Carbon"),
+        ("Nette cannondale synapse", "Cannondale Synapse (overig)"),
+        ("Cannondale CAAD 10 Ultegra - 54cm", "Cannondale CAAD / Optimo"),
+        ("Specialized S-Works Tarmac SL8 2025 | 54cm", "Specialized Tarmac"),
+        ("Sensa Terentino SL perfecte staat maat 58", "Sensa Trentino"),
+        ("Merida Sculptura 300 Racefiets Shimano Tiagra", "Merida Scultura"),
+        ("Koga Miyata Racefiets PA46140 HardLite FM2 uit 1987", "Koga-Miyata (merknaam tot 2010)"),
+        ("Vintage Koga myata Prologue", "Koga-Miyata (merknaam tot 2010)"),
+        ("Koga Kimera | Ultegra | Maat 56", "Koga Kimera"),
+        ("Gazelle Champion Mondial (55) MOET WEG !!", "Gazelle Champion Mondial"),
+        ("Fuji Roubaix One.1 racefiets", "Fuji Roubaix"),
+    ]
+
+    def test_common_families_land_on_their_row(self):
+        reference = mp.load_reference_data(BIKES)
+        for title, expected in self.FAMILY_CASES:
+            with self.subTest(title=title):
+                self.assertEqual(first_label(reference, title), expected)
+
+    def test_look_alikes_from_other_brands_stay_unmatched(self):
+        # Same model word, different bike: these must not borrow a row (and
+        # with it a frame material) from another brand.
+        reference = mp.load_reference_data(BIKES)
+        for title in (
+            "Batavus Champion racefiets - Vintage",
+            "Giant Peloton 8400 racefiets - 59 cm frame",
+            "Eddy Merckx San Remo 76 Carbon – Ultegra",
+            "Racefiets met nieuwe banden, rijdt soepel over tarmac",
+        ):
+            with self.subTest(title=title):
+                self.assertIsNone(first_label(reference, title))
+
+    def test_family_rows_carry_no_original_price(self):
+        # A family spans trims and years with very different prices; one
+        # number would feed the dealscore a made-up nieuwprijs.
+        with open(BIKES, encoding="utf-8-sig") as f:
+            rows = list(csv.DictReader(f))
+        for row in rows[10:]:
+            with self.subTest(label=row["label"]):
+                self.assertEqual(row["original_price_eur"], "")
+
+    # The model lines from reference_bike_catalog.csv (brand + first model
+    # word, from claude/nifty-hypatia-gq7ghk), below the hand-written
+    # families. The first two are real titles from one page of racefietsen
+    # (29-09-2026) that nothing recognised before.
+    CATALOG_LINE_CASES = [
+        ("GIANT TRINITY in PRACHTIGE STAAT!", "Giant Trinity"),
+        ("2x Cervélo R5-CX Cyclocross/Gravel Fietsen, Maat 58", "Cervélo R5"),
+        ("Cervelo S3 Ultegra maat 56", "Cervélo S3"),
+        ("BH Quartz 105 racefiets", "BH Quartz"),
+        ("BMC Granfondo GF01 Ultegra", "BMC GF01"),
+        ("BMC Granfondo 105 maat 54", "BMC Granfondo"),
+        ("Felt F75 aluminium racefiets", "Felt F75"),
+        ("Felt F4X carbon", "Felt F4X"),
+        ("Trek Silque SL damesracefiets", "Trek Silque"),
+        ("Pinarello FP Uno 105", "Pinarello FP Uno"),
+        ("Wilier Zero 7 Record", "Wilier Zero.7"),
+        ("S-Works Aethos frameset", "Specialized Aethos"),
+        ("B'twin Facet 7 carbon", "Btwin Facet"),
+        ("De Rosa R 838 Ultegra", "De Rosa R838"),
+        ("Stevens Vincenza dames", "Stevens Vicenza"),
+        ("Orbea Terra M30", "Orbea Terra"),
+        # A Defy the researched rows can't place (no Advanced, Composite,
+        # Aluxx or number) lands on the catch-all; one they can stays theirs.
+        ("Giant Defy racefiets maat 56", "Giant Defy (overig)"),
+        ("Giant Defy Composite 1", "Giant Defy Composite 1"),
+    ]
+
+    def test_catalog_lines_land_on_their_row(self):
+        reference = mp.load_reference_data(BIKES)
+        for title, expected in self.CATALOG_LINE_CASES:
+            with self.subTest(title=title):
+                self.assertEqual(first_label(reference, title), expected)
+
+    def test_catalog_lines_need_their_brand_and_skip_ordinary_words(self):
+        # A catalog line only counts after its brand: "Terra" and "Supreme"
+        # are bikes from several brands. And catalog words that are ordinary
+        # Dutch or a number in a title got no row at all: Pinarello "MAAT",
+        # Cannondale "700" (the wheel size), Bianchi "1885" (the year the
+        # company was founded).
+        reference = mp.load_reference_data(BIKES)
+        for title in (
+            "Gravelbike Terra 2020",
+            "Supreme racefiets zgan",
+            "Pinarello racefiets maat 56",
+            "Cannondale racefiets met 700 x 25c banden",
+            "Bianchi racefiets sinds 1885",
+        ):
+            with self.subTest(title=title):
+                self.assertIsNone(first_label(reference, title))
+
+    def test_catalog_line_rows_claim_no_price_and_no_material(self):
+        # They were derived, not researched: the valuation reads a linked
+        # row's frame_material, and a family has no single nieuwprijs.
+        with open(BIKES, encoding="utf-8-sig") as f:
+            rows = [r for r in csv.DictReader(f) if r["specs"].startswith(("Modellijn uit de catalogus",
+                                                                           "Defy zonder"))]
+        self.assertGreater(len(rows), 200)
+        for row in rows:
+            with self.subTest(label=row["label"]):
+                self.assertEqual((row["original_price_eur"], row["frame_material"]), ("", ""))
+
     def test_a_defy_advanced_is_never_read_as_a_composite(self):
         # §4 of the plan: Advanced is a higher carbon grade and pulls the
         # valuation of a Composite too high if it ends up among its comps.
