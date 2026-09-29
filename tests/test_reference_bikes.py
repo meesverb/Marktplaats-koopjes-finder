@@ -131,6 +131,67 @@ class BikeTitleMatchingTest(unittest.TestCase):
             with self.subTest(label=row["label"]):
                 self.assertEqual(row["original_price_eur"], "")
 
+    # The model lines from reference_bike_catalog.csv (brand + first model
+    # word, from claude/nifty-hypatia-gq7ghk), below the hand-written
+    # families. The first two are real titles from one page of racefietsen
+    # (29-09-2026) that nothing recognised before.
+    CATALOG_LINE_CASES = [
+        ("GIANT TRINITY in PRACHTIGE STAAT!", "Giant Trinity"),
+        ("2x Cervélo R5-CX Cyclocross/Gravel Fietsen, Maat 58", "Cervélo R5"),
+        ("Cervelo S3 Ultegra maat 56", "Cervélo S3"),
+        ("BH Quartz 105 racefiets", "BH Quartz"),
+        ("BMC Granfondo GF01 Ultegra", "BMC GF01"),
+        ("BMC Granfondo 105 maat 54", "BMC Granfondo"),
+        ("Felt F75 aluminium racefiets", "Felt F75"),
+        ("Felt F4X carbon", "Felt F4X"),
+        ("Trek Silque SL damesracefiets", "Trek Silque"),
+        ("Pinarello FP Uno 105", "Pinarello FP Uno"),
+        ("Wilier Zero 7 Record", "Wilier Zero.7"),
+        ("S-Works Aethos frameset", "Specialized Aethos"),
+        ("B'twin Facet 7 carbon", "Btwin Facet"),
+        ("De Rosa R 838 Ultegra", "De Rosa R838"),
+        ("Stevens Vincenza dames", "Stevens Vicenza"),
+        ("Orbea Terra M30", "Orbea Terra"),
+        # A Defy the researched rows can't place (no Advanced, Composite,
+        # Aluxx or number) lands on the catch-all; one they can stays theirs.
+        ("Giant Defy racefiets maat 56", "Giant Defy (overig)"),
+        ("Giant Defy Composite 1", "Giant Defy Composite 1"),
+    ]
+
+    def test_catalog_lines_land_on_their_row(self):
+        reference = mp.load_reference_data(BIKES)
+        for title, expected in self.CATALOG_LINE_CASES:
+            with self.subTest(title=title):
+                self.assertEqual(first_label(reference, title), expected)
+
+    def test_catalog_lines_need_their_brand_and_skip_ordinary_words(self):
+        # A catalog line only counts after its brand: "Terra" and "Supreme"
+        # are bikes from several brands. And catalog words that are ordinary
+        # Dutch or a number in a title got no row at all: Pinarello "MAAT",
+        # Cannondale "700" (the wheel size), Bianchi "1885" (the year the
+        # company was founded).
+        reference = mp.load_reference_data(BIKES)
+        for title in (
+            "Gravelbike Terra 2020",
+            "Supreme racefiets zgan",
+            "Pinarello racefiets maat 56",
+            "Cannondale racefiets met 700 x 25c banden",
+            "Bianchi racefiets sinds 1885",
+        ):
+            with self.subTest(title=title):
+                self.assertIsNone(first_label(reference, title))
+
+    def test_catalog_line_rows_claim_no_price_and_no_material(self):
+        # They were derived, not researched: the valuation reads a linked
+        # row's frame_material, and a family has no single nieuwprijs.
+        with open(BIKES, encoding="utf-8-sig") as f:
+            rows = [r for r in csv.DictReader(f) if r["specs"].startswith(("Modellijn uit de catalogus",
+                                                                           "Defy zonder"))]
+        self.assertGreater(len(rows), 200)
+        for row in rows:
+            with self.subTest(label=row["label"]):
+                self.assertEqual((row["original_price_eur"], row["frame_material"]), ("", ""))
+
     def test_a_defy_advanced_is_never_read_as_a_composite(self):
         # §4 of the plan: Advanced is a higher carbon grade and pulls the
         # valuation of a Composite too high if it ends up among its comps.
