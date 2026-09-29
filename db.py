@@ -333,6 +333,13 @@ MIGRATIONS: list[str] = [
         marked_at TEXT NOT NULL
     );
     """,
+    # 13: the owner's own note on a marked listing ("gevraagd of 120 kan",
+    # "gereserveerd tot zaterdag"). A separate migration rather than a column
+    # in 12, which had already shipped. It belongs to the mark: changing
+    # favourite to put-away keeps it, removing the mark removes it.
+    """
+    ALTER TABLE listing_mark ADD COLUMN note TEXT;
+    """,
 ]
 
 
@@ -1120,7 +1127,8 @@ def set_mark(
 ) -> None:
     """Mark a listing, replacing any earlier mark. Marking again also resets
     price_eur and marked_at: putting a listing away again after its price
-    dropped means "not even at this price"."""
+    dropped means "not even at this price". The note stays (migration 13):
+    what the seller said is still true after a favourite is put away."""
     conn.execute(
         """
         INSERT INTO listing_mark (item_id, mark, reason, price_eur, marked_at)
@@ -1134,6 +1142,14 @@ def set_mark(
     conn.commit()
 
 
+def set_mark_note(conn: sqlite3.Connection, item_id: str, note: Optional[str]) -> bool:
+    """Set or (with None/"") clear the note on a marked listing; returns
+    whether the listing has a mark. A note needs a mark to hang on."""
+    cur = conn.execute("UPDATE listing_mark SET note = ? WHERE item_id = ?", (note or None, item_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def clear_mark(conn: sqlite3.Connection, item_id: str) -> bool:
     cur = conn.execute("DELETE FROM listing_mark WHERE item_id = ?", (item_id,))
     conn.commit()
@@ -1143,15 +1159,15 @@ def clear_mark(conn: sqlite3.Connection, item_id: str) -> bool:
 def list_marks(conn: sqlite3.Connection) -> list[dict]:
     """All marks, with what `listing` knows of the listing now (title, url,
     price, whether it disappeared) so a favourite that went offline can still
-    be shown. Empty on a database from before migration 12 opened read-only."""
-    exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'listing_mark'"
-    ).fetchone()
-    if not exists:
+    be shown. Empty on a database from before migration 12 opened read-only
+    (the dashboard does that), and without notes on one from before 13."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(listing_mark)")}
+    if not columns:
         return []
+    note = "m.note" if "note" in columns else "NULL AS note"
     cur = conn.execute(
-        """
-        SELECT m.item_id, m.mark, m.reason, m.price_eur, m.marked_at,
+        f"""
+        SELECT m.item_id, m.mark, m.reason, m.price_eur, m.marked_at, {note},
                l.title, l.url, l.price_eur AS current_price_eur, l.last_seen, l.disappeared_at
         FROM listing_mark m LEFT JOIN listing l ON l.item_id = m.item_id
         ORDER BY m.marked_at, m.item_id

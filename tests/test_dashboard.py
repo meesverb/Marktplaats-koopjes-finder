@@ -231,12 +231,53 @@ class MarksTest(DatabaseCase):
         watches = dashboard.load_dashboard(self.db, market=dashboard.mk.WATCHES)
         self.assertEqual([l.item_id for l, _, _ in watches.favorites], ["w"])
 
+    def test_a_note_shows_with_the_listing_and_is_searchable(self):
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        self.mark("c", "favoriet", price=90.0)
+        conn = db.connect(self.db)
+        try:
+            db.set_mark_note(conn, "c", "gevraagd of €80 kan <b>")
+        finally:
+            conn.close()
+        d = dashboard.load_dashboard(self.db)
+        self.assertIn("gevraagd of €80 kan &lt;b&gt;", dashboard.flips_panel(d))  # ook in de geschreven pagina
+        self.assertIn("gevraagd of €80 kan &lt;b&gt;", dashboard.favorites_panel(d))
+        listing = next(l for l in d.listings if l.item_id == "c")
+        self.assertIn("gevraagd of €80 kan", dashboard.search_text(listing, d, "Garmin Edge 530"))
+        self.assertIn("gevraagd of €80 kan &lt;b&gt;'", dashboard.all_panel(d))  # in data-text, voor het zoekvak
+        self.assertNotIn("<form", dashboard.render(d))
+
+    def test_a_note_on_a_favorite_that_went_offline_stays_visible(self):
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        self.mark("c", "favoriet", price=90.0)
+        conn = db.connect(self.db)
+        try:
+            db.set_mark_note(conn, "c", "verkocht aan een ander")
+            db.sweep_disappeared(conn, "garmin edge", {"a0", "a1", "a2", "a3"}, self.now.isoformat())
+        finally:
+            conn.close()
+        self.assertIn("verkocht aan een ander", dashboard.favorites_panel(dashboard.load_dashboard(self.db)))
+
+    def test_a_database_from_before_migration_13_shows_marks_without_notes(self):
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        self.mark("c", "favoriet", price=90.0)
+        conn = db.connect(self.db)
+        try:
+            conn.execute("ALTER TABLE listing_mark DROP COLUMN note")
+            conn.execute("DELETE FROM schema_version WHERE version >= 13")
+            conn.commit()
+        finally:
+            conn.close()
+        d = dashboard.load_dashboard(self.db)  # alleen-lezen: migreert niet
+        self.assertEqual([l.item_id for l, _, _ in d.favorites], ["c"])
+        self.assertIsNone(d.marks["c"].note)
+
     def test_a_database_from_before_migration_12_still_loads(self):
         self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
         conn = db.connect(self.db)
         try:
             conn.execute("DROP TABLE listing_mark")
-            conn.execute("DELETE FROM schema_version WHERE version = 12")
+            conn.execute("DELETE FROM schema_version WHERE version >= 12")
             conn.commit()
         finally:
             conn.close()
@@ -373,6 +414,38 @@ class LiveServerTest(unittest.TestCase):
         _, _, page = self.request("GET")
         self.assertIn("Favorieten (1)", page)
         self.assertIn("★ uit favorieten", page)
+
+    def test_a_note_on_a_favorite(self):
+        _, location, _ = self.request("POST", "/notitie", {"token": self.token(), "item_id": "c",
+                                                           "notitie": "vraag of 80 kan", "tab": "flips"})
+        self.assertIn("markeer hem eerst", location)  # zonder markering geen notitie
+
+        self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "favoriet"})
+        _, location, _ = self.request("POST", "/notitie", {"token": self.token(), "item_id": "c",
+                                                           "notitie": "  vraag of\r\n80 kan ", "tab": "favorieten"})
+        self.assertIn("Notitie opgeslagen", location)
+        self.assertTrue(location.endswith("#favorieten"))
+        self.assertEqual(dashboard.mr.load_marks(self.db)["c"].note, "vraag of 80 kan")
+        _, _, page = self.request("GET")
+        self.assertIn("notitie wijzigen", page)
+
+        # Wegzetten houdt de notitie; weghalen van de markering neemt hem mee.
+        self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "gereserveerd"})
+        self.assertEqual(dashboard.mr.load_marks(self.db)["c"].note, "vraag of 80 kan")
+        self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "geen"})
+        self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "favoriet"})
+        self.assertIsNone(dashboard.mr.load_marks(self.db)["c"].note)
+
+    def test_an_empty_note_clears_it_and_a_long_one_is_refused(self):
+        self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "favoriet"})
+        self.request("POST", "/notitie", {"token": self.token(), "item_id": "c", "notitie": "x"})
+        _, location, _ = self.request("POST", "/notitie", {"token": self.token(), "item_id": "c", "notitie": " "})
+        self.assertIn("Notitie gewist", location)
+        self.assertIsNone(dashboard.mr.load_marks(self.db)["c"].note)
+        _, location, _ = self.request("POST", "/notitie", {"token": self.token(), "item_id": "c",
+                                                           "notitie": "x" * 501})
+        self.assertIn("te lang", location)
+        self.assertIsNone(dashboard.mr.load_marks(self.db)["c"].note)
 
     def test_marking_refuses_what_it_does_not_know(self):
         _, location, _ = self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "weg"})

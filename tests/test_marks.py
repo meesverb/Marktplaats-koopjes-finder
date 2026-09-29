@@ -37,6 +37,23 @@ class MarkStorageTest(unittest.TestCase):
         # Wat `listing` ervan weet komt mee, voor een favoriet die offline ging.
         self.assertEqual((mark.title, mark.current_price_eur), ("Garmin Edge 530", 120.0))
 
+    def test_the_note_survives_a_new_mark_but_not_clearing_it(self):
+        conn = db.connect(self.db)
+        try:
+            self.assertFalse(db.set_mark_note(conn, "a", "zonder markering"))
+            db.set_mark(conn, "a", mr.FAVORITE, price_eur=120.0)
+            self.assertTrue(db.set_mark_note(conn, "a", "gereserveerd tot zaterdag"))
+            db.set_mark(conn, "a", mr.DISMISSED, reason="gereserveerd", price_eur=120.0)
+        finally:
+            conn.close()
+        self.assertEqual(mr.load_marks(self.db)["a"].note, "gereserveerd tot zaterdag")
+        conn = db.connect(self.db)
+        try:
+            db.set_mark_note(conn, "a", "")
+        finally:
+            conn.close()
+        self.assertIsNone(mr.load_marks(self.db)["a"].note)
+
     def test_clearing(self):
         conn = db.connect(self.db)
         try:

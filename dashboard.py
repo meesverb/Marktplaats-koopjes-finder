@@ -459,7 +459,7 @@ def mark_control(listing, d: Dashboard) -> str:
             f"{euro(listing.price_eur)} sinds je hem wegzette ({esc(mark.reason or 'weg')}).</div>"
             if back else "")
     if not d.editable:
-        return note
+        return note + note_control(mark, d)
 
     def button(value: str, label: str) -> str:
         return f"<button class='quiet' name='soort' value='{esc(value, quote=True)}'>{esc(label)}</button>"
@@ -472,7 +472,28 @@ def mark_control(listing, d: Dashboard) -> str:
     else:
         buttons = button(mr.FAVORITE, "☆ favoriet") + away + (button("geen", "wissen") if back else "")
     return (f"{note}<form class='inline mark' method='post' action='/markeer'>"
-            f"{hidden(d, item_id=listing.item_id, tab='')}{buttons}</form>")
+            f"{hidden(d, item_id=listing.item_id, tab='')}{buttons}</form>{note_control(mark, d)}")
+
+
+def note_control(mark: Optional[mr.Mark], d: Dashboard) -> str:
+    """Je eigen notitie bij een gemarkeerde advertentie, en (live) een veld
+    om hem te zetten. Ingeklapt tot je erop klikt: de meeste rijen hebben er
+    geen, en een invulveld per rij maakt Flips onleesbaar. Zonder markering
+    geen notitie: die hoort bij de markering en gaat mee weg als je die
+    weghaalt."""
+    if mark is None:
+        return ""
+    shown = f"<div class='mynote'>{esc(mark.note)}</div>" if mark.note else ""
+    if not d.editable:
+        return shown
+    return (
+        f"{shown}<details class='note-edit'><summary>{'notitie wijzigen' if mark.note else 'notitie toevoegen'}"
+        "</summary><form class='inline mark' method='post' action='/notitie'>"
+        f"{hidden(d, item_id=mark.item_id, tab='')}"
+        f"<input name='notitie' value='{esc(mark.note or '', quote=True)}' maxlength='{mr.NOTE_MAX_CHARS}' "
+        "size='36' aria-label='Notitie' placeholder='bv. gevraagd of €120 kan'>"
+        "<button class='quiet'>opslaan</button></form></details>"
+    )
 
 
 def bid_note(listing) -> str:
@@ -638,6 +659,14 @@ def upgrades_panel(d: Dashboard) -> str:
     return "\n".join(parts)
 
 
+def search_text(listing, d: Dashboard, label: str) -> str:
+    """Waarin het zoekvak van Alle computers zoekt: model, titel en je eigen
+    notitie ("120" vindt de advertentie waar je een bod van 120 noteerde)."""
+    mark = d.marks.get(listing.item_id)
+    note = mark.note if mark is not None and mark.note else ""
+    return " ".join(x for x in (label, listing.title, note) if x).lower()
+
+
 def mark_state(listing, d: Dashboard) -> str:
     """Voor het filter Toon in Alle computers."""
     if d.is_favorite(listing):
@@ -672,7 +701,7 @@ def all_panel(d: Dashboard) -> str:
         note = c.reason if c else next(u.reason for u in d.unknown if u.listing is l)
         rows.append(
             f"<tr data-brand='{esc(brand, quote=True)}' data-new='{int(l.item_id in d.new_ids)}' "
-            f"data-mark='{mark_state(l, d)}' data-text='{esc((label + ' ' + l.title).lower(), quote=True)}'>"
+            f"data-mark='{mark_state(l, d)}' data-text='{esc(search_text(l, d, label), quote=True)}'>"
             f"<td class='pic'>{thumb(l)}</td>"
             f"{price_cell(l)}"
             f"<td class='num' data-sort='{profit if profit is not None else ''}'>{signed_euro(profit)}</td>"
@@ -695,7 +724,8 @@ def favorites_panel(d: Dashboard) -> str:
     how = ("Klik bij een advertentie op <em>☆ favoriet</em> om hem hier te bewaren, of zet hem weg met "
            "<em>niet waard</em> of <em>gereserveerd</em>: dan verdwijnt hij uit Flips"
            + (" en Upgrades" if d.market.has_upgrades else "")
-           + " tot de prijs zakt.")
+           + " tot de prijs zakt. Bij een gemarkeerde advertentie kun je een <em>notitie</em> kwijt "
+           f"(wat de verkoper zei, wat je bood); het zoekvak in Alle {esc(d.market.items)} zoekt er ook in.")
     if not d.editable:
         how = ("Bewaren en wegzetten doe je in de live versie: <code>python dashboard.py --serve</code>. " + how)
     parts = [f"<p class='explain'>{how} Een markering is alleen voor jou: een weggezette advertentie telt "
@@ -739,7 +769,7 @@ def favorites_panel(d: Dashboard) -> str:
                 "<tr>"
                 f"<td class='num' data-sort='{m.current_price_eur if m.current_price_eur is not None else ''}'>"
                 f"{euro(m.current_price_eur)}</td>"
-                f"<td class='what'>{link}<div class='note'>{esc(when)}</div>{remove}</td>"
+                f"<td class='what'>{link}<div class='note'>{esc(when)}</div>{remove}{note_control(m, d)}</td>"
                 "</tr>"
             )
         parts.append(table([("Laatste prijs", "num"), ("Advertentie", "text")], rows))
@@ -1213,6 +1243,9 @@ td.what { min-width: 260px; }
 .badge.fav { background: var(--fav); }
 form.mark { margin-top: 4px; gap: 4px; }
 form.mark button { font-size: .78rem; padding: 2px 8px; }
+.mynote { margin-top: 5px; padding: 2px 8px; border-left: 3px solid var(--fav); font-size: .85rem;
+  color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+details.note-edit summary { margin-top: 4px; font-size: .78rem; color: var(--text-2); cursor: pointer; }
 ul.changes { margin: 0; padding: 0; list-style: none; font-size: .82rem; }
 ul.changes li::before { display: inline-block; width: 1.1em; font-weight: 700; }
 ul.changes li.plus::before { content: "+"; color: var(--good); }
@@ -1504,6 +1537,21 @@ def action_mark(db_path, form: dict) -> str:
     return f"Weggezet ({choice}): {listing.title}.{again}"
 
 
+def action_note(db_path, form: dict) -> str:
+    # Eén regel: een Enter uit een geplakte chat wordt een spatie.
+    note = " ".join((form.get("notitie") or "").split())
+    if len(note) > mr.NOTE_MAX_CHARS:
+        raise FormError(f"De notitie is te lang ({len(note)} tekens, hooguit {mr.NOTE_MAX_CHARS}).")
+    conn = db.connect(str(db_path))
+    try:
+        marked = db.set_mark_note(conn, form.get("item_id", ""), note)
+    finally:
+        conn.close()
+    if not marked:
+        raise FormError("Een notitie hoort bij een favoriet of een weggezette advertentie; markeer hem eerst.")
+    return "Notitie opgeslagen." if note else "Notitie gewist."
+
+
 def action_add(db_path, form: dict) -> str:
     title = (form.get("titel") or "").strip()
     if not title:
@@ -1574,10 +1622,11 @@ ACTIONS = {
     "/terug": action_unsell,
     "/verwijder": action_delete,
     "/markeer": action_mark,
+    "/notitie": action_note,
 }
 # Na deze acties terug naar de tab waar je klikte (het formulier zegt welke);
 # na de rest naar Mijn flips, waar je ziet wat je vastlegde.
-STAY_ON_TAB = {"/markeer"}
+STAY_ON_TAB = {"/markeer", "/notitie"}
 MAX_FORM_BYTES = 10_000
 
 

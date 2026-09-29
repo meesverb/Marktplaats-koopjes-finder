@@ -347,7 +347,7 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 | Tab | What |
 | --- | --- |
 | **Flips** | every computer below its expected selling price, biggest profit first; reserved listings are left out (they're in Alle computers, marked "gereserveerd"), and so are listings you put away yourself (below) until their price drops. Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
-| **Favorieten** | the listings you marked ★ favoriet (below), with the price when you marked them if it has changed since; below that, favourites that are no longer online ("verdwenen" or "laatst gezien") |
+| **Favorieten** | the listings you marked ★ favoriet (below), with your note and the price when you marked them if it has changed since; below that, favourites that are no longer online ("verdwenen" or "laatst gezien") |
 | **Mijn flips** | what you bought and sold yourself: realised profit, what's in stock and what it should bring now, average days to sell, how far the dashboard's estimate was off, and profit per month. Entered in the live version (below) |
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
 | **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns. **Toon** hides the listings you put away (the default); set it to *favorieten*, *weggezet* (to put one back) or *alles* |
@@ -387,12 +387,18 @@ put away. It stays in Alle computers behind the **Toon** filter, where
 moment is stored,
 and once a round sees the listing cheaper it is back on Flips with a line
 "Weer terug: de prijs zakte van €90 naar €70" — put it away again and the new
-price counts. After a click the page comes back on the same tab, at the same
-place, with the same search. Marks go into `koopjes.db`, table `listing_mark`
-(migration 12, `marks.py`), one per listing; they are your judgement, not a
+price counts. A marked listing can also carry a **notitie** of your own
+("gevraagd of €120 kan", "gereserveerd tot zaterdag"): click "notitie
+toevoegen" under it. The note shows under the listing everywhere it appears,
+the search box in Alle computers searches it too, it stays when you change
+favourite into put-away, and goes when you remove the mark. One line, at most
+500 characters; an empty note clears it. After a click the page comes back on
+the same tab, at the same place, with the same search. Marks go into
+`koopjes.db`, table `listing_mark` (migration 12, `marks.py`; the note is
+column `note`, migration 13), one per listing; they are your judgement, not a
 market observation, so a listing you put away still counts as a comparable.
-The written `dashboard.html` shows the marks but has no buttons. Vinted
-listings can't be marked (yet).
+The written `dashboard.html` shows the marks and notes but has no buttons.
+Vinted listings can't be marked (yet).
 
 **Your own computer's value.** "Netto" in Upgrades is the price minus what
 your own computer sells for: `eigen_verkoopprijs_eur` under `baseline` in

@@ -2,9 +2,10 @@
 gereserveerd), zodat je in het dashboard niet steeds dezelfde advertenties
 langsloopt.
 
-De gegevens staan in de tabel `listing_mark` (db.py, migratie 12) en worden
-gezet via de live versie van het dashboard (`python dashboard.py --serve`).
-Het geschreven dashboard.html toont ze alleen.
+De gegevens staan in de tabel `listing_mark` (db.py, migratie 12; de
+notitie in kolom `note`, migratie 13) en worden gezet via de live versie van
+het dashboard (`python dashboard.py --serve`). Het geschreven dashboard.html
+toont ze alleen.
 
 Een markering is het oordeel van de eigenaar, geen marktwaarneming: een
 weggezette advertentie telt gewoon mee als vergelijkingsprijs, want de
@@ -31,6 +32,8 @@ DISMISSED = "weg"
 # De redenen om weg te zetten, zoals op de knoppen. Een nieuwe reden is een
 # nieuw woord hier; de tabel slaat hem als tekst op.
 REASONS = ("niet waard", "gereserveerd")
+# Een notitie is een geheugensteun, geen verslag.
+NOTE_MAX_CHARS = 500
 
 
 @dataclass
@@ -40,6 +43,7 @@ class Mark:
     marked_at: str
     reason: Optional[str] = None
     price_eur: Optional[float] = None  # de prijs toen hij gemarkeerd werd
+    note: Optional[str] = None  # eigen notitie (migratie 13)
     # Wat `listing` er nu van weet; ook voor een advertentie die niet meer
     # actief is (een verdwenen favoriet).
     title: Optional[str] = None
