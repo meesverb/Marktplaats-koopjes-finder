@@ -61,12 +61,16 @@ import flips as fl
 import markets as mk
 import marks as mr
 import racefiets_jev as mp
+import distance as dm
+import own_bids as ob
 import patterns as pt
+import racebikes as rb
 import recheck as rc
 import report
 import trades as tr
 import upgrade as up
 import valuation as val
+import views as vw
 import vinted as vn
 
 HERE = Path(__file__).resolve().parent
@@ -94,6 +98,7 @@ class Dashboard:
     config: dict = field(default_factory=dict)
     progress: Optional[tr.Progress] = None  # Mijn flips
     patterns: Optional[pt.Patterns] = None  # Patronen
+    view_patterns: Optional[vw.ViewPatterns] = None  # Patronen: weergaven en likes
     bought: dict = field(default_factory=dict)  # item_id -> Trade
     marks: dict = field(default_factory=dict)  # item_id -> marks.Mark
     notes: dict = field(default_factory=dict)  # item_id -> eigen notitie
@@ -107,6 +112,11 @@ class Dashboard:
     market: mk.Market = mk.COMPUTERS
     # Links naar de andere dashboards: (label, href).
     other_links: list = field(default_factory=list)
+    # Per klik vers, net als marks en notes (LiveCache.dashboard()):
+    bids: dict = field(default_factory=dict)  # item_id -> own_bids.BidTrail
+    stats: dict = field(default_factory=dict)  # item_id -> views.Latest
+    home: Optional[dm.Home] = None  # de eigen postcode (distance.py)
+    distances: dict = field(default_factory=dict)  # item_id -> distance.Distance
 
     # De signalen heten .computer omdat ze uit computers.py komen; bij de
     # sporthorloges zijn het horloges.
@@ -152,6 +162,12 @@ class Dashboard:
     @property
     def favorites(self) -> list:
         return [row for row in self.all_rows if self.is_favorite(row[0])]
+
+    def bid_trails(self) -> list:
+        """Eigen biedingen van deze markt: op een advertentie die hier staat,
+        of die er stond (de categorie in de URL). Lopend eerst."""
+        return [t for t in ob.ordered(self.bids)
+                if any(f"/{c}/" in (t.url or "") for c in self.market.categories)]
 
     @property
     def gone_favorites(self) -> list:
@@ -203,9 +219,16 @@ def load_dashboard(db_path, config: Optional[dict] = None, market: mk.Market = m
     niet leeg is maar de stand van de laatste ronde laat zien."""
     config = config or pc.default_config()
     d = load_base(db_path, config, market)
-    d.marks = mr.load_marks(db_path)
-    d.notes = mr.load_notes(db_path)
-    return d
+    return replace(d, **fresh_parts(db_path))
+
+
+def fresh_parts(db_path) -> dict:
+    """Wat per klik kan veranderen en goedkoop is: markeringen, notities,
+    eigen biedingen, de laatste weergaven/likes en de afstanden (een andere
+    postcode geldt meteen)."""
+    home, distances = dm.load(db_path)
+    return {"marks": mr.load_marks(db_path), "notes": mr.load_notes(db_path), "bids": ob.load(db_path),
+            "stats": vw.load_latest(db_path), "home": home, "distances": distances}
 
 
 def load_base(db_path, config: dict, market: mk.Market = mk.COMPUTERS) -> Dashboard:
@@ -214,12 +237,13 @@ def load_base(db_path, config: dict, market: mk.Market = mk.COMPUTERS) -> Dashbo
     tussen twee klikken (LiveCache)."""
     d = _with_trades(_load_market(db_path, config, market), db_path)
     d.patterns = pt.load_patterns(db_path, config, market)
+    d.view_patterns = vw.load_patterns(db_path, market.categories)
     d.vinted = vn.load_view(db_path, config) if market.has_vinted else None
     d.db_path = str(Path(db_path).resolve())
     return d
 
 
-def data_stamp(db_path) -> Optional[tuple]:
+def data_stamp(db_path, trades: bool = True) -> Optional[tuple]:
     """Wat verandert zodra een ronde, de knop controleer, een eigen aan- of
     verkoop of een Vinted-import de database raakt; een markering, notitie
     of keuze op /fiets niet. Elke ronde zet last_seen op het moment van de
@@ -233,12 +257,18 @@ def data_stamp(db_path) -> Optional[tuple]:
         parts = [tuple(conn.execute(
             "SELECT COUNT(*), MAX(last_seen), COUNT(disappeared_at), MAX(checked_at), "
             "MAX(bids_checked_at) FROM listing").fetchone())]
-        if "trade" in tables:
+        # /racefietsen rekent niet met de eigen aankopen (die komen per klik
+        # vers, racebikes.load_fresh()): een geaccepteerd bod hoeft daar niet
+        # alles opnieuw te laten rekenen.
+        if "trade" in tables and trades:
             parts.append(tuple(conn.execute(
                 "SELECT COUNT(*), MAX(id), COUNT(sold_at), TOTAL(sell_price_eur) FROM trade").fetchone()))
         if "vinted_listing" in tables:
             parts.append(tuple(conn.execute(
                 "SELECT COUNT(*), MAX(last_exported_at) FROM vinted_listing").fetchone()))
+        # Een meting van weergaven en likes (views.py) verandert Patronen.
+        if "listing_stats" in tables:
+            parts.append(tuple(conn.execute("SELECT COUNT(*), MAX(observed_at) FROM listing_stats").fetchone()))
         return tuple(parts)
     except sqlite3.Error:
         return None  # een database van vóór migratie 14 (checked_at): gewoon elke keer opnieuw
@@ -280,6 +310,22 @@ class LiveCache:
             self._comps[where] = (stamp, found)
             return found
 
+    def racebikes(self, db_path, intake_path) -> "rb.Base":
+        """Het zware deel van /racefietsen (racebikes.build_base()): flip,
+        waardescore en upgrade per fiets. Een markering of bod verandert het
+        niet, een ronde of controleer wel."""
+        stamp = data_stamp(db_path, trades=False)
+        where = (str(Path(db_path).resolve()), str(intake_path))
+        with self._lock:
+            cached = self._base.get(("racefietsen",) + where)
+        if cached is not None and stamp is not None and cached[0] == stamp:
+            return cached[1]
+        comps = self.comps(db_path)
+        base = rb.build_base(db_path, intake_path, comps)
+        with self._lock:
+            self._base[("racefietsen",) + where] = (stamp, base)
+        return base
+
     def dashboard(self, db_path, market: mk.Market) -> Dashboard:
         config = pc.default_config()
         key = (data_stamp(db_path), json.dumps(config, sort_keys=True, default=str))
@@ -291,9 +337,10 @@ class LiveCache:
             else:
                 base = load_base(db_path, config, market)
                 self._base[where] = (key, base)
-        # Markeringen en notities zijn goedkoop en veranderen per klik: die
-        # altijd vers, op een kopie, zodat twee verzoeken elkaar niet raken.
-        return replace(base, marks=mr.load_marks(db_path), notes=mr.load_notes(db_path))
+        # Markeringen, notities, biedingen, metingen en afstanden zijn goedkoop
+        # en veranderen per klik: die altijd vers, op een kopie, zodat twee
+        # verzoeken elkaar niet raken.
+        return replace(base, **fresh_parts(db_path))
 
 
 def _with_trades(d: Dashboard, db_path) -> Dashboard:
@@ -534,8 +581,28 @@ def mark_badges(listing, d: Dashboard) -> str:
 
 
 def own_controls(listing, d: Dashboard) -> str:
-    """Favoriet/weg en de notitie: wat een klik verandert (div class mine)."""
-    return mark_control(listing, d) + note_control(listing.item_id, d)
+    """Favoriet/weg, je bod en de notitie: wat een klik verandert (div class mine)."""
+    return mark_control(listing, d) + bid_control(listing.item_id, d) + note_control(listing.item_id, d)
+
+
+def stats_line(item_id: str, d: Dashboard) -> str:
+    """De laatste meting van weergaven en likes (views.py), als die er is."""
+    latest = d.stats.get(item_id)
+    if latest is None or not latest.label:
+        return ""
+    delta = (f" ({'+' if latest.fav_delta > 0 else ''}{latest.fav_delta} bewaard sinds "
+             f"{nl_date(latest.previous_at)})" if latest.fav_delta else "")
+    return f"<div class='note'>{esc(latest.label)}{esc(delta)} · gemeten {esc(nl_date(latest.observed_at))}</div>"
+
+
+def km_of(listing, d: Dashboard) -> Optional[dm.Distance]:
+    return d.distances.get(listing.item_id)
+
+
+def km_cell(listing, d: Dashboard) -> str:
+    dist = km_of(listing, d)
+    return (f"<td class='num' data-sort='{'' if dist is None else f'{dist.km:.1f}'}'>"
+            f"{'—' if dist is None else esc(dist.label)}</td>")
 
 
 def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str:
@@ -544,13 +611,17 @@ def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str
     new += "<span class='badge'>nieuw</span> " if listing.item_id in d.new_ids else ""
     if listing.reserved:
         new += "<span class='badge reserved'>gereserveerd</span> "
+    dist = km_of(listing, d)
     place = f" · {esc(listing.city)}" if listing.city else ""
+    place += f" · {esc(dist.label)}" if dist else ""
     note_html = f"<div class='note'>{esc(note)}</div>" if note else ""
+    # data-km: voor het schuifje "max. afstand" bovenaan (JS), op elke tab.
+    km = "" if dist is None else f"{dist.km:.1f}"
     return (
-        f"<td class='what'><div class='model'>{new}{esc(model_label)}</div>"
+        f"<td class='what' data-km='{km}'><div class='model'>{new}{esc(model_label)}</div>"
         f"<a href='{esc(listing.url, quote=True)}' target='_blank' rel='noopener'>{esc(listing.title)}</a>"
-        f"<span class='muted'>{place}</span>{note_html}<div class='mine' data-item='{item}'>"
-        f"{own_controls(listing, d)}</div>{buy_control(listing, d)}</td>"
+        f"<span class='muted'>{place}</span>{note_html}{stats_line(listing.item_id, d)}"
+        f"<div class='mine' data-item='{item}'>{own_controls(listing, d)}</div>{buy_control(listing, d)}</td>"
     )
 
 
@@ -622,6 +693,70 @@ def check_button(listing) -> str:
     return ("<span class='muted'>·</span><button class='quiet' data-action='/controleer' "
             "title='Haalt deze advertentie nu op bij "
             "Marktplaats: gereserveerd, biedingen, prijs, en of hij er nog staat.'>controleer</button>" + when)
+
+
+def bid_summary(trail) -> str:
+    """"jouw bod €120 (open) · eerder €100" en of er intussen hoger geboden is."""
+    last = trail.latest
+    text = f"jouw bod {euro(last.amount_eur)} ({last.status}, {nl_date(last.bid_at)})"
+    if len(trail.bids) > 1:
+        text += " · eerder " + ", ".join(euro(b.amount_eur) for b in trail.bids[:-1])
+    if trail.outbid and trail.active:
+        text += f" · er staat al {euro(trail.bid_high)} op"
+    return text
+
+
+def bid_control(item_id: str, d: Dashboard) -> str:
+    """Je eigen bod (own_bids.py): wat je bood en hoe het ervoor staat, en
+    (live) een veld om een bod vast te leggen en knoppen voor de status.
+    Ingeklapt tot je erop klikt, net als de notitie."""
+    trail = d.bids.get(item_id)
+    shown = f"<div class='mynote'>{esc(bid_summary(trail))}</div>" if trail else ""
+    if not d.editable:
+        return shown
+    status = ""
+    if trail:
+        status = "".join(
+            f"<button class='quiet' data-action='/bod/status' name='status' value='{esc(st, quote=True)}'>"
+            f"{esc(st)}</button>" for st in ob.STATUSES if st != trail.status)
+        status = act("/bod/status", item_id, "<span class='muted'>status:</span>" + status, "mark")
+    return (
+        f"{shown}<details class='note-edit'><summary>{'bod wijzigen' if trail else 'ik heb geboden'}</summary>"
+        + act("/bod", item_id,
+              "<label>€<input name='bedrag' inputmode='decimal' size='5' aria-label='Bod'></label>"
+              f"<button class='quiet'>{'nieuw bod' if trail else 'bod vastleggen'}</button>", "mark")
+        + status + "</details>"
+    )
+
+
+def bids_panel(d: Dashboard) -> str:
+    """Tab Mijn biedingen: wat je zelf op Marktplaats bood, lopend eerst."""
+    trails = d.bid_trails()
+    parts = [f"<p class='explain'>Wat je zelf op Marktplaats bood (bieden doe je daar, het script nooit). Leg een "
+             f"bod vast bij een advertentie met <em>ik heb geboden</em>; zet de status als je antwoord krijgt. "
+             f"<em>Geaccepteerd</em> zet hem meteen op <a href='{FLIPS_PATH}'>/flips</a>, met je bod als "
+             "inkoopprijs. <em>Er staat al … op</em>: volgens de laatste biedopvraging of controleer.</p>"]
+    if not trails:
+        parts.append("<p class='empty'>Nog geen biedingen vastgelegd.</p>")
+        return "\n".join(parts)
+    by_id = {l.item_id: (l, label) for l, label, _ in d.all_rows}
+    rows = []
+    for t in trails:
+        found = by_id.get(t.item_id)
+        if found:
+            l, label = found
+            rows.append(f"<tr><td class='pic'>{thumb(l)}</td>{price_cell(l)}{km_cell(l, d)}"
+                        f"{listing_cell(l, d, label)}</tr>")
+        else:
+            when = f"verdwenen {nl_date(t.disappeared_at)}" if t.gone else f"laatst gezien {nl_date(t.last_seen)}"
+            link = (f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
+                    if t.url else esc(t.title))
+            rows.append(f"<tr><td class='pic'></td><td class='num'>{euro(t.price_eur)}</td><td class='num'>—</td>"
+                        f"<td class='what'>{link}<div class='note'>{esc(when)}</div>"
+                        f"<div class='mine' data-item='{esc(t.item_id, quote=True)}'>"
+                        f"{bid_control(t.item_id, d)}</div></td></tr>")
+    parts.append(table([("", ""), ("Prijs", "num"), ("Afstand", "num"), ("Advertentie", "text")], rows))
+    return "\n".join(parts)
 
 
 def note_control(item_id: str, d: Dashboard) -> str:
@@ -758,11 +893,11 @@ def flips_panel(d: Dashboard) -> str:
                 f"{price_cell(l)}"
                 f"<td class='num' data-sort='{c.resale_eur}' title='{esc(c.comp_note, quote=True)}'>{euro(c.resale_eur)}"
                 f"<div class='sub'>{esc(comp_text(c))}</div></td>"
-                f"{listing_cell(l, d, c.model.label, c.reason)}"
+                f"{km_cell(l, d)}{listing_cell(l, d, c.model.label, c.reason)}"
                 "</tr>"
             )
         parts.append(table([("", ""), ("Winst", "num"), ("Inkoop", "num"), ("Verkoop", "num"),
-                            ("Advertentie", "text")], rows))
+                            ("Afstand", "num"), ("Advertentie", "text")], rows))
     else:
         parts.append(f"<p class='empty'>Geen {d.market.item} die onder de verwachte verkoopprijs staat.</p>")
 
@@ -897,13 +1032,13 @@ def all_panel(d: Dashboard) -> str:
                f"{'—' if delta is None else f'{delta:+.0f}'}</td>"
                f"<td class='num' data-sort='{score if score is not None else ''}'>{'—' if score is None else f'{score:.0f}'}</td>"
                if scored else "")
-            + f"{listing_cell(l, d, label, note)}"
+            + f"{km_cell(l, d)}{listing_cell(l, d, label, note)}"
             "</tr>"
         )
     head = [("", ""), ("Prijs", "num"), ("Winst", "num")]
     if scored:
         head += [("Upgrade", "num"), ("Score", "num")]
-    parts.append(table(head + [("Advertentie", "text")], rows, "all-table"))
+    parts.append(table(head + [("Afstand", "num"), ("Advertentie", "text")], rows, "all-table"))
     return "\n".join(parts)
 
 
@@ -1380,8 +1515,10 @@ def patterns_panel(d: Dashboard) -> str:
             f"<td class='num sub'>{n} dagen</td></tr>"
             for day, avg, n in p.weekday_new)
         parts.append("<h3>Nieuwe advertenties per weekdag</h3><p class='explain'>Gemiddeld per dag, gemeten aan de "
-                     "rondes (de eerste ronde telt niet mee). Het uur van plaatsen geeft Marktplaats niet.</p>"
+                     "rondes (de eerste ronde telt niet mee). Het uur van plaatsen staat niet in de zoekresultaten; "
+                     "voor de gemeten advertenties wel (hieronder, Tijd van plaatsen).</p>"
                      f"<div class='table-wrap'><table><tbody>{rows}</tbody></table></div>")
+    parts.append(vw.patterns_html(d.view_patterns or vw.ViewPatterns(), d.market.items))
     return "\n".join(parts)
 
 
@@ -1445,7 +1582,7 @@ ul.changes li.minus::before { content: "−"; color: var(--bad); }
 .filters input[type=search], .filters select { font: inherit; padding: 6px 8px; border: 1px solid var(--line);
   border-radius: 6px; background: var(--card); color: var(--text); }
 .filters input[type=search] { min-width: 240px; }
-tr.hidden { display: none; }
+tr.hidden, tr.far { display: none; }
 .empty { color: var(--muted); padding: 12px 0; }
 code { font-size: .85em; }
 .banner { background: var(--badge); border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
@@ -1517,6 +1654,33 @@ function rememberPlace() {
 STAY['/controleer'] = rememberPlace;
 LIVE['/markeer'] = applyMark;
 LIVE['/notitie'] = applyMark;
+LIVE['/bod'] = applyMark;
+LIVE['/bod/status'] = applyMark;
+
+// Max. afstand (schuifje bovenaan): verbergt op elke tab de rijen verder weg.
+// Los van de filters van Alle (class far, niet hidden), zodat ze samengaan.
+const kmMax = document.getElementById('km-max');
+const kmNone = document.getElementById('km-none');
+const kmOut = document.getElementById('km-out');
+function filterKm(root) {
+  if (!kmMax) return;
+  const max = +kmMax.value, all = max >= +kmMax.max;
+  kmOut.textContent = all ? 'alles' : 'max ' + max + ' km';
+  (root || document).querySelectorAll('td.what[data-km]').forEach(td => {
+    const km = td.dataset.km === '' ? null : parseFloat(td.dataset.km);
+    const far = !all && (km === null ? !kmNone.checked : km > max);
+    td.closest('tr').classList.toggle('far', far);
+  });
+  try { localStorage.setItem('koopjes-km', JSON.stringify({max, none: kmNone.checked})); } catch (_) {}
+}
+if (kmMax) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('koopjes-km') || 'null');
+    if (saved) { kmMax.value = saved.max; kmNone.checked = saved.none; }
+  } catch (_) {}
+  [kmMax, kmNone].forEach(el => el.addEventListener('input', () => filterKm()));
+  filterKm();
+}
 
 function initSortable(root) {
  root.querySelectorAll('table.sortable').forEach(table => {
@@ -1587,7 +1751,7 @@ if (restore) window.scrollTo(0, restore.y || 0);
 function applyMark(data) {
   Object.entries(data.panels || {}).forEach(([name, html]) => {
     const panel = document.getElementById('panel-' + name);
-    if (panel) { panel.innerHTML = html; initSortable(panel); }
+    if (panel) { panel.innerHTML = html; initSortable(panel); filterKm(panel); }
   });
   Object.entries(data.tabs || {}).forEach(([name, label]) => {
     const button = document.querySelector(`nav.tabs button[data-panel="${name}"]`);
@@ -1618,6 +1782,7 @@ function applyMark(data) {
     markFilter.value = value;
   }
   if (search) filterAll();
+  filterKm();
 }
 """
 
@@ -1696,6 +1861,11 @@ document.addEventListener('keydown', e => {
 """
 
 
+def bids_label(d: Dashboard) -> str:
+    active = sum(1 for t in d.bid_trails() if t.active)
+    return f"Mijn biedingen ({active})" if active else "Mijn biedingen"
+
+
 def tab_list(d: Dashboard) -> list:
     """(naam, label, paneel) per tab; het paneel is een functie, zodat een
     klik in de live versie alleen de tabs opnieuw opbouwt die hij raakt."""
@@ -1708,6 +1878,7 @@ def tab_list(d: Dashboard) -> list:
         tabs.append(("upgrades", f"Upgrades ({len(d.upgrades)})", upgrades_panel))
     tabs += [
         ("favorieten", f"Favorieten ({len(d.favorites)})", favorites_panel),
+        ("biedingen", bids_label(d), bids_panel),
         ("mijn", mine_label, mine_panel),
         ("alle", f"Alle {m.items} ({computers})", all_panel),
         ("markt", "Marktprijzen", market_panel),
@@ -1719,6 +1890,24 @@ def tab_list(d: Dashboard) -> list:
         ("uitgefilterd", f"Uitgefilterd ({len(d.excluded)})", excluded_panel),
     ]
     return tabs
+
+
+def distance_bar(d: Dashboard) -> str:
+    """Het schuifje "max. afstand" en (live) de postcode waar het vanaf meet."""
+    if d.home:
+        slider = ("<label>Afstand <input type='range' id='km-max' min='5' max='250' step='5' value='250'> "
+                  "<output id='km-out'></output></label>"
+                  "<label><input type='checkbox' id='km-none' checked> ook zonder plek</label>")
+        where = f"hemelsbreed vanaf {esc(d.home.postcode)}"
+    else:
+        slider, where = "", "vul je postcode in om op afstand te filteren en te sorteren (kolom Afstand)"
+    form = (act("/afstand", "postcode",
+                f"<input name='postcode' size='7' value='{esc(d.home.postcode if d.home else '', quote=True)}' "
+                "placeholder='bv. 3511AB' aria-label='Postcode'><button class='quiet'>opslaan</button>")
+            if d.editable else "")
+    if not slider and not form:
+        return ""
+    return f"<div class='filters'>{slider}<span class='muted'>{where}</span>{form}</div>"
 
 
 def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
@@ -1745,6 +1934,7 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
     live = " · <strong>live</strong> (wijzigingen gaan in koopjes.db)" if d.editable else ""
     meta = (f"Bijgewerkt {datetime.now().strftime('%d-%m-%Y %H:%M')} · {computers} {m.items} te koop{new} "
             f"· laatste ronde {local_time(d.newest_seen)}{link}{live}")
+    notices += distance_bar(d)
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -1757,7 +1947,8 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
     )
 
 
-def live_update(d: Dashboard, item_id: str, message: str, choice: Optional[str] = None) -> dict:
+def live_update(d: Dashboard, item_id: str, message: str, choice: Optional[str] = None,
+                bids_changed: bool = False) -> dict:
     """Wat de live pagina na een klik op favoriet/weg (`choice`: de knop) of
     een notitie (`choice` None) nodig heeft om bij te werken zonder te
     herladen: de badges en knoppen van die advertentie, overal waar hij
@@ -1775,6 +1966,12 @@ def live_update(d: Dashboard, item_id: str, message: str, choice: Optional[str] 
         out["tiles"]["upgrades"] = upgrades_tiles(d)
     row = next(((l, label) for l, label, _ in d.all_rows if l.item_id == item_id), None)
     wanted = {"favorieten"}
+    if bids_changed:
+        wanted.add("biedingen")
+    if row is None and item_id in d.bids:
+        # Een bod op een advertentie die niet meer online is (alleen in Mijn biedingen).
+        out["item"] = {"id": item_id, "badge": "", "mine": bid_control(item_id, d), "mark": "", "note": 0,
+                       "text": "", "available": False}
     if row is not None:
         listing, label = row
         out["item"] = {"id": item_id, "badge": mark_badges(listing, d), "mine": own_controls(listing, d),
@@ -1786,7 +1983,7 @@ def live_update(d: Dashboard, item_id: str, message: str, choice: Optional[str] 
             if any(l is listing for l in d.upgrades):
                 wanted.add("upgrades")
     for name, label, panel in tab_list(d):
-        if name in ("flips", "upgrades", "favorieten"):
+        if name in ("flips", "upgrades", "favorieten", "biedingen"):
             out["tabs"][name] = label
         if name in wanted:
             out["panels"][name] = panel(d)
@@ -2327,6 +2524,7 @@ def flip_card(f: fl.Flip) -> str:
     if f.sale_url:
         links.append(f"<a href='{esc(f.sale_url, quote=True)}' target='_blank' rel='noopener'>jouw advertentie</a>")
     meta = [esc(f.kind_label), f"gekocht {esc(nl_date(t.bought_at))}", *links]
+    views_html = flip_views(f)
     cover = next((p for p in reversed(f.photos) if p["kind"] == "na"), f.photos[0] if f.photos else None)
     img = (f"<img class='cover' src='{FLIPS_PHOTO_PATH}/{cover['id']}' alt=''>" if cover else "")
     open_list = " open" if f.stage in ("gekocht", "opknappen") else ""
@@ -2356,9 +2554,29 @@ def flip_card(f: fl.Flip) -> str:
         f"<header>{img}<div><h2>{esc(t.title)}</h2>"
         f"<div class='meta'><span class='pill'>{esc(fl.STAGE_LABELS[f.stage])}{since}</span> "
         f"{' · '.join(meta)}</div>"
-        f"{'<div class=note>' + esc(t.notes) + '</div>' if t.notes else ''}</div></header>"
+        f"{'<div class=note>' + esc(t.notes) + '</div>' if t.notes else ''}{views_html}</div></header>"
         f"{flip_money_grid(f)}{flip_progress(f)}{body}{delete}</section>"
     )
+
+
+def flip_views(f: fl.Flip) -> str:
+    """Weergaven en likes van jouw advertentie, met het verloop als lijntje
+    (views.py meet hem elke 6 uur zolang hij te koop staat)."""
+    if not f.views:
+        if f.stage == "te_koop" and f.sale_url and "marktplaats.nl" in f.sale_url:
+            return "<div class='note'>Weergaven en likes: de eerstvolgende ronde meet ze.</div>"
+        return ""
+    latest = vw.latest(f.views)
+    first = f.views[0]
+    grew = ""
+    if len(f.views) > 1 and latest.views is not None and first.get("views") is not None:
+        grew = (f" · sinds {nl_date(first['observed_at'])}: +{latest.views - first['views']} bekeken, "
+                f"+{(latest.favorites or 0) - (first.get('favorites') or 0)} bewaard")
+    lines = (vw.sparkline([o.get("views") for o in f.views], color="var(--accent)")
+             + vw.sparkline([o.get("favorites") for o in f.views], color="var(--good)"))
+    legend = "<span class='sub'>blauw bekeken, groen bewaard</span>" if lines else ""
+    return (f"<div class='note'>{esc(latest.label)} (gemeten {esc(nl_date(latest.observed_at))}){esc(grew)}</div>"
+            f"<div class='sparks'>{lines}{legend}</div>")
 
 
 def flip_stock_row(f: fl.Flip) -> str:
@@ -2444,6 +2662,7 @@ def render_flips(book: fl.FlipBook, token: str = "", message: str = "", other_li
 
 
 FLIPS_CSS = """
+.sparks { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 4px; }
 .flipcard { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
   margin: 0 0 16px; }
 .flipcard.stage-verkocht { opacity: .92; }
@@ -2849,7 +3068,7 @@ FILES_PATH = "/bestanden"
 
 
 def site_pages() -> list:
-    return ([("Start", START_PATH)] + [(m.short, m.serve_path) for m in mk.MARKETS.values()]
+    return ([("Start", START_PATH), ("Racefietsen", rb.PATH)] + [(m.short, m.serve_path) for m in mk.MARKETS.values()]
             + [("Mijn fiets", BIKE_PATH), ("Flips", FLIPS_PATH), ("Overzicht", f"{FILES_PATH}/overzicht.html")])
 
 
@@ -3051,7 +3270,15 @@ def render_start(db_path, files_dir, message: str = "", token: str = "", running
             ("Lopende flips", str(t.stock), f"{flip_money(t.stock_spent_eur)} erin, verwacht "
                                             f"{flip_signed(t.stock_expected_eur)}"),
         ]
+    trails = ob.ordered(ob.load(db_path))
+    open_bids = [x for x in trails if x.active]
+    if trails:
+        outbid = sum(1 for x in open_bids if x.outbid)
+        tile_list.append(("Lopende biedingen", str(len(open_bids)),
+                          (f"samen {flip_money(sum(x.latest.amount_eur for x in open_bids))} geboden"
+                           + (f", {outbid} al overboden" if outbid else "")) if open_bids else "geen lopende"))
     live = [
+        (rb.PATH, "Racefietsen", "alle racefietsen: snel beoordelen, wegzetten, bod vastleggen, afstand"),
         *[(m.serve_path, m.short, f"alle {m.items} te koop, flips, favorieten, marktprijzen")
           for m in mk.MARKETS.values()],
         (BIKE_PATH, "Mijn fiets", "vergelijkbare advertenties voor de taxatie van je eigen fiets"),
@@ -3163,12 +3390,15 @@ def action_mark(db_path, form: dict) -> str:
         if not known:
             raise FormError("Die advertentie had geen markering.")
         return "Markering weggehaald."
-    if choice != mr.FAVORITE and choice not in mr.REASONS:
+    if choice != mr.FAVORITE and choice not in mr.ALL_REASONS:
         raise FormError(f"Onbekende keuze '{choice}'.")
-    market = mk.by_key(form.get("markt"))
-    config = pc.default_config()
-    listings, _, _ = load_active_listings(db_path, market.categories, config["dashboard"])
-    listing = next((l for l in listings if l.item_id == item_id), None)
+    if form.get("markt") == rb.MARKET_KEY:
+        listing = rb.find_listing(db_path, item_id)
+    else:
+        market = mk.by_key(form.get("markt"))
+        config = pc.default_config()
+        listings, _, _ = load_active_listings(db_path, market.categories, config["dashboard"])
+        listing = next((l for l in listings if l.item_id == item_id), None)
     if listing is None:
         raise FormError("Die advertentie staat niet (meer) in het dashboard.")
     conn = db.connect(str(db_path))
@@ -3212,6 +3442,73 @@ def action_check(db_path, form: dict) -> str:
         return rc.recheck_listing(db_path, form.get("item_id", "")).summary()
     except rc.RecheckError as exc:
         raise FormError(str(exc)) from None
+
+
+def action_bid(db_path, form: dict) -> str:
+    """Een bod dat je zelf op Marktplaats deed, vastleggen (own_bids.py). Het
+    script biedt nooit zelf."""
+    item_id = form.get("item_id", "")
+    amount = parse_euro(form.get("bedrag"), "Bod")
+    conn = db.connect(str(db_path))
+    try:
+        ob.place(conn, item_id, amount, bid_at=None)
+        title = (conn.execute("SELECT title FROM listing WHERE item_id = ?", (item_id,)).fetchone() or [item_id])[0]
+    except ValueError as exc:
+        raise FormError(str(exc)) from None
+    finally:
+        conn.close()
+    return f"Bod van {euro(amount)} vastgelegd op {title}."
+
+
+def expected_resale(db_path, form: dict, item_id: str) -> tuple[str, Optional[float]]:
+    """(markt voor /flips, verwachte verkoopprijs) bij een geaccepteerd bod:
+    een racefiets is een fiets op /flips, met de flipschatting van
+    /racefietsen; een computer of horloge zijn eigen markt, met de
+    verkoopprijs van zijn model."""
+    if form.get("markt") == rb.MARKET_KEY:
+        return rb.FLIP_MARKET, rb.resale_for(db_path, item_id)
+    market = mk.by_key(form.get("markt"))
+    d = load_dashboard(db_path, market=market)
+    listing = next((l for l in d.listings if l.item_id == item_id), None)
+    c = listing.computer if listing is not None else None
+    return market.key, (c.resale_eur if c is not None else None)
+
+
+def action_bid_status(db_path, form: dict) -> str:
+    item_id, status = form.get("item_id", ""), form.get("status", "")
+    if status not in ob.STATUSES:
+        raise FormError(f"Onbekende status '{status}'.")
+    market, resale = expected_resale(db_path, form, item_id) if status == ob.ACCEPTED else ("", None)
+    conn = db.connect(str(db_path))
+    try:
+        bid, trade_id = ob.set_status(conn, item_id, status, market=market or rb.FLIP_MARKET,
+                                      expected_resale_eur=resale)
+    except ValueError as exc:
+        raise FormError(str(exc)) from None
+    finally:
+        conn.close()
+    if status == ob.ACCEPTED and trade_id is not None:
+        return f"Geaccepteerd voor {euro(bid.amount_eur)}: hij staat nu op /flips (fase gekocht)."
+    return f"Bod van {euro(bid.amount_eur)}: {status}."
+
+
+def action_postcode(db_path, form: dict) -> str:
+    """De eigen postcode voor de afstanden (distance.py): één zoekverzoek aan
+    Marktplaats om hem te plaatsen. Leeg wist hem."""
+    text = (form.get("postcode") or "").strip()
+    conn = db.connect(str(db_path))
+    try:
+        if not text:
+            dm.save_home(conn, None)
+            return "Postcode gewist; de pagina's tonen geen afstand meer."
+        try:
+            home = dm.locate_postcode(text)
+        except dm.LocateError as exc:
+            raise FormError(str(exc)) from None
+        dm.save_home(conn, home)
+    finally:
+        conn.close()
+    return f"Afstanden gemeten vanaf {home.postcode}."
 
 
 def action_add(db_path, form: dict) -> str:
@@ -3286,12 +3583,18 @@ ACTIONS = {
     "/markeer": action_mark,
     "/notitie": action_note,
     "/controleer": action_check,
+    "/bod": action_bid,
+    "/bod/status": action_bid_status,
+    "/afstand": action_postcode,
 }
 # Na deze acties terug naar de tab waar je klikte (het formulier zegt welke);
 # na de rest naar Mijn flips, waar je ziet wat je vastlegde.
-STAY_ON_TAB = {"/markeer", "/notitie", "/controleer"}
+STAY_ON_TAB = {"/markeer", "/notitie", "/controleer", "/bod", "/bod/status", "/afstand"}
 # Deze kunnen zonder herladen (live_update); de rest verandert te veel.
-LIVE_ACTIONS = {"/markeer", "/notitie"}
+LIVE_ACTIONS = {"/markeer", "/notitie", "/bod", "/bod/status"}
+# Op /racefietsen gaat ook controleer zonder herladen: de pagina tekent de
+# fiets zelf opnieuw (racebikes.bike_update()).
+RACE_LIVE_ACTIONS = LIVE_ACTIONS | {"/controleer"}
 MAX_FORM_BYTES = 10_000
 
 
@@ -3355,7 +3658,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         market = next((m for m in mk.MARKETS.values() if m.serve_path == path), None)
         is_photo = path.startswith(FLIPS_PHOTO_PATH + "/")
         is_file = path.startswith(FILES_PATH + "/")
-        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status")
+        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH)
         if market is None and path not in pages and not (is_photo or is_file):
             return self._send(404, "Niet gevonden")
         if not self._host_ok():
@@ -3374,6 +3677,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             config = load_schedule(self.files_dir)
             return self._json({"running": bool(self._running_round()),
                                "log": launcher.log_tail(config) if config else ""})
+        if path == rb.PATH:
+            base = self.cache.racebikes(self.db_path, self.intake_path)
+            return self._send(200, rb.render(base, rb.load_fresh(self.db_path), self.token, message),
+                              "text/html; charset=utf-8")
         if path == FLIPS_PATH:
             import flips_sheets as fs
             book = fl.load_book(self.db_path)
@@ -3542,11 +3849,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8", errors="replace")
         form = {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
         market = mk.by_key(form.get("markt"))
-        back = BIKE_PATH if path == BIKE_CHOICE_PATH else None
+        race = form.get("markt") == rb.MARKET_KEY
+        back = BIKE_PATH if path == BIKE_CHOICE_PATH else rb.PATH if race else None
         tab = form.get("tab", "") if path in STAY_ON_TAB else ("" if back else "mijn")
         # Van de pagina zelf, zonder herladen (fetch met deze kop): het
         # antwoord is JSON met de stukjes die veranderden.
-        live = self.headers.get("X-Live") == "1" and (path in LIVE_ACTIONS or back)
+        live = self.headers.get("X-Live") == "1" and (
+            path in (RACE_LIVE_ACTIONS if race else LIVE_ACTIONS) or path == BIKE_CHOICE_PATH)
         if not hmac.compare_digest(form.get("token", ""), self.token):
             # Een verouderde pagina (programma opnieuw gestart) of een
             # andere site: niets doen, alleen de verse pagina tonen.
@@ -3564,12 +3873,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         item_id = form.get("item_id", "")
         if failed:
             return self._json({"message": message})
+        if race:
+            base = self.cache.racebikes(self.db_path, self.intake_path)
+            return self._json(rb.bike_update(base, rb.load_fresh(self.db_path), item_id, message))
         if back:
             view = load_bike_view(self.db_path, self.intake_path, self.cache)
             return self._json(bike_update(view, item_id, message))
         d = self.cache.dashboard(self.db_path, market)
         d.editable, d.token = True, self.token
-        self._json(live_update(d, item_id, message, form.get("soort") if path == "/markeer" else None))
+        self._json(live_update(d, item_id, message, form.get("soort") if path == "/markeer" else None,
+                               bids_changed=path.startswith("/bod")))
 
     def _json(self, data: dict) -> None:
         self._send(200, json.dumps(data), "application/json; charset=utf-8")

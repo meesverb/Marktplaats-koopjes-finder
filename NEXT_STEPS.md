@@ -5,6 +5,29 @@ De code, `reference_prices.csv` en de git-geschiedenis (commit messages)
 bevatten de volledige context; dit bestand is alleen een korte routewijzer
 zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 
+## Racefietspagina, afstand, eigen biedingen, weergaven/likes (29/30-09-2026)
+
+Na een gesprek met de eigenaar (zijn keuzes staan in de docstrings van
+`racebikes.py`, `distance.py`, `own_bids.py` en `views.py`, en in README):
+
+- `/racefietsen` (`racebikes.py`): alle racefietsen als kaarten met
+  sneltoetsen, flip en upgrade apart, zes weg-redenen (`marks.BIKE_REASONS`;
+  "te hoge listing" van de eigenaar heet op de knop *te hoge vraagprijs*).
+- Afstand hemelsbreed op alle live pagina's (`distance.py`, migratie 18):
+  plek uit de zoekresultaten, postcode op de pagina, geplaatst met één
+  zoekverzoek. Oudere advertenties krijgen die plek pas als een ronde ze
+  weer ziet (tot die tijd *ca.*, via de plaatsnaam).
+- Eigen biedingen (`own_bids.py`): geaccepteerd gaat meteen naar /flips.
+- Weergaven/likes (`views.py`): `views_budget` per tijdslot, ~125 extra
+  verzoeken per dag. Patronen worden pas iets na een paar weken; de
+  steekproef (1 op 10) is een aanname, geen meting: blijken de groepen na
+  een maand nog te klein, dan `SAMPLE_EVERY` omlaag of het budget omhoog —
+  vraag dat eerst aan de eigenaar (extra verzoeken).
+
+Open: de pagina op de telefoon (de eigenaar: later), reiskosten per fiets
+(de eigenaar zoekt ze per fiets uit op /flips), en of de dagtopper-samenhang
+standhoudt als je voor prijs corrigeert.
+
 ## Flippagina (29-09-2026)
 
 `/flips` in `dashboard.py --serve` (flips.py, migratie 17) met klussenlijst,

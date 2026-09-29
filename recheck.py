@@ -180,6 +180,9 @@ def recheck_listing(db_path, item_id: str, session=None, now: Optional[str] = No
             if not isinstance(bids_info, dict) or not bids_info:
                 raise _structure_error("biedinformatie ontbreekt bij een biedadvertentie")
             mp.apply_bid_info(listing, bids_info)
+        stats = mp.page_stats(page)
+        if stats:
+            listing.page_stats = {**stats, "source": "controleer"}
         db.record_listing_check(conn, listing, now)
     finally:
         conn.close()

@@ -458,11 +458,67 @@ MIGRATIONS: list[str] = [
         added_at TEXT NOT NULL
     );
     """,
+    # 18: four things for the live racefiets page and the distance filter.
+    # `listing_place`: where the seller is (latitude/longitude, as the search
+    # results give it; distance.py measures from the owner's postcode), and
+    # a Dagtopper and the other paid extras from the same results
+    # (promotion/traits), so views.py can tell whether they buy views. Its
+    # own table rather than columns on `listing`, for the reason 17 gives: a
+    # test rolls a migration back with DROP TABLE. `setting`: the owner's
+    # postcode and its coordinates — personal, so in the database and not in
+    # a file in git. `own_bid`: the bids the owner placed himself on
+    # Marktplaats (own_bids.py), every one of them, with the status of the
+    # latest; an accepted one becomes a trade (trade_id). The script never
+    # bids itself. `listing_stats`: views and saves from a listing's own
+    # page, one row per look (views.py), so how they grow can be followed.
+    # Raw observations like listing_price; item_id without a foreign key,
+    # since an own ad on /flips need not be in `listing`.
+    """
+    CREATE TABLE listing_place (
+        item_id TEXT PRIMARY KEY,
+        latitude REAL,
+        longitude REAL,
+        promotion TEXT,
+        traits TEXT
+    );
+
+    CREATE TABLE setting (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE own_bid (
+        id INTEGER PRIMARY KEY,
+        item_id TEXT NOT NULL,
+        amount_eur REAL NOT NULL,
+        bid_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        status_at TEXT NOT NULL,
+        trade_id INTEGER
+    );
+    CREATE INDEX own_bid_item ON own_bid (item_id);
+
+    CREATE TABLE listing_stats (
+        id INTEGER PRIMARY KEY,
+        item_id TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        views INTEGER,
+        favorites INTEGER,
+        online_since TEXT,
+        price_eur REAL,
+        source TEXT NOT NULL,
+        UNIQUE (item_id, observed_at)
+    );
+    CREATE INDEX listing_stats_item ON listing_stats (item_id);
+    """,
 ]
 
 
 # What migration 17 creates; a test that rolls the schema back drops these.
 FLIP_TABLES = ("flip", "trade_stage", "flip_task", "flip_bid", "flip_photo")
+# And migration 18.
+PLACE_TABLES = ("listing_place", "setting", "own_bid", "listing_stats")
 
 # A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
 # the first column's name and makes every row look like it is missing that
@@ -893,6 +949,11 @@ def sync_listings(conn: sqlite3.Connection, query: str, listings, observed_at: s
                 "bids_checked_at": observed_at if looked_up else None,
             },
         )
+        _save_place(conn, listing)
+        stats = getattr(listing, "page_stats", None)
+        if stats:
+            record_stats(conn, listing.item_id, observed_at, stats, price_eur=listing.price_eur,
+                         source=stats.get("source") or "ronde", commit=False)
         conn.execute(
             """
             INSERT INTO listing_query (listing_id, query, first_seen, last_seen)
@@ -1138,6 +1199,10 @@ def record_listing_check(conn: sqlite3.Connection, listing, checked_at: str) -> 
             "INSERT OR IGNORE INTO listing_price (item_id, observed_at, price_eur) VALUES (?, ?, ?)",
             (listing.item_id, checked_at, listing.price_eur),
         )
+    stats = getattr(listing, "page_stats", None)
+    if stats:
+        record_stats(conn, listing.item_id, checked_at, stats, price_eur=listing.price_eur,
+                     source=stats.get("source") or "controleer", commit=False)
     conn.commit()
 
 
@@ -1422,6 +1487,153 @@ def list_comp_choices(conn: sqlite3.Connection) -> dict[str, str]:
         return {}
     return dict(conn.execute("SELECT item_id, choice FROM comp_choice").fetchall())
 
+
+
+# --- Settings, own bids, views and saves (migration 18) -------------------------
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
+    ).fetchone() is not None
+
+
+def _save_place(conn: sqlite3.Connection, listing) -> None:
+    """Where the listing is and whether it is promoted (listing_place). A
+    sighting that knows neither (a test's stand-in, an old caller) writes
+    nothing; a known place stays when a later one has none, and a Dagtopper
+    that ended comes back as '' and replaces it."""
+    lat, lon = getattr(listing, "latitude", None), getattr(listing, "longitude", None)
+    promotion, traits = getattr(listing, "promotion", None), getattr(listing, "traits", None)
+    if lat is None and lon is None and not promotion and not traits:
+        return
+    conn.execute(
+        """
+        INSERT INTO listing_place (item_id, latitude, longitude, promotion, traits)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(item_id) DO UPDATE SET
+            latitude = COALESCE(excluded.latitude, listing_place.latitude),
+            longitude = COALESCE(excluded.longitude, listing_place.longitude),
+            promotion = COALESCE(excluded.promotion, listing_place.promotion),
+            traits = COALESCE(excluded.traits, listing_place.traits)
+        """,
+        (listing.item_id, lat, lon, promotion, traits),
+    )
+
+
+def list_places(conn: sqlite3.Connection) -> dict[str, tuple]:
+    """{item_id: (latitude, longitude, promotion, traits)}. Empty before 18."""
+    if not _has_table(conn, "listing_place"):
+        return {}
+    return {r[0]: tuple(r[1:]) for r in conn.execute(
+        "SELECT item_id, latitude, longitude, promotion, traits FROM listing_place")}
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def get_setting(conn: sqlite3.Connection, key: str) -> Optional[str]:
+    """A stored setting, or None (also on a database from before 18 opened
+    read-only)."""
+    if not _has_table(conn, "setting"):
+        return None
+    row = conn.execute("SELECT value FROM setting WHERE key = ?", (key,)).fetchone()
+    return None if row is None else row[0]
+
+
+def set_setting(conn: sqlite3.Connection, key: str, value: Optional[str], *, commit: bool = True) -> None:
+    """None removes it."""
+    if value is None:
+        conn.execute("DELETE FROM setting WHERE key = ?", (key,))
+    else:
+        conn.execute(
+            "INSERT INTO setting (key, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            (key, value, _now()),
+        )
+    if commit:
+        conn.commit()
+
+
+def add_own_bid(conn: sqlite3.Connection, item_id: str, amount_eur: float, bid_at: Optional[str] = None,
+                status: str = "open") -> int:
+    at = bid_at or _now()
+    cur = conn.execute(
+        "INSERT INTO own_bid (item_id, amount_eur, bid_at, status, status_at) VALUES (?, ?, ?, ?, ?)",
+        (item_id, amount_eur, at, status, _now()),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def set_own_bid_status(conn: sqlite3.Connection, bid_id: int, status: str,
+                       trade_id: Optional[int] = None) -> bool:
+    cur = conn.execute(
+        "UPDATE own_bid SET status = ?, status_at = ?, trade_id = COALESCE(?, trade_id) WHERE id = ?",
+        (status, _now(), trade_id, bid_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def delete_own_bid(conn: sqlite3.Connection, bid_id: int) -> bool:
+    cur = conn.execute("DELETE FROM own_bid WHERE id = ?", (bid_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def list_own_bids(conn: sqlite3.Connection) -> list[dict]:
+    """Every own bid, oldest first per listing, with what `listing` knows of
+    the listing now. Empty before migration 18."""
+    if not _has_table(conn, "own_bid"):
+        return []
+    cur = conn.execute(
+        """
+        SELECT b.id, b.item_id, b.amount_eur, b.bid_at, b.status, b.status_at, b.trade_id,
+               l.title, l.url, l.price_eur AS current_price_eur, l.bid_high, l.bid_count,
+               l.last_seen, l.disappeared_at, l.reserved_at
+        FROM own_bid b LEFT JOIN listing l ON l.item_id = b.item_id
+        ORDER BY b.item_id, b.bid_at, b.id
+        """
+    )
+    names = [c[0] for c in cur.description]
+    return [dict(zip(names, row)) for row in cur.fetchall()]
+
+
+def record_stats(conn: sqlite3.Connection, item_id: str, observed_at: str, stats: dict, *,
+                 price_eur: Optional[float] = None, source: str = "ronde", commit: bool = True) -> None:
+    """One look at a listing's views and saves (views.page_stats()). A second
+    look at the same moment is the same observation."""
+    if not _has_table(conn, "listing_stats"):
+        return
+    conn.execute(
+        "INSERT OR IGNORE INTO listing_stats (item_id, observed_at, views, favorites, online_since, "
+        "price_eur, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (item_id, observed_at, stats.get("views"), stats.get("favorites"), stats.get("since"),
+         price_eur, source),
+    )
+    if commit:
+        conn.commit()
+
+
+def list_stats(conn: sqlite3.Connection, item_ids=None) -> dict[str, list[dict]]:
+    """{item_id: [observation, oldest first]}; all listings, or those in
+    `item_ids`. Empty before migration 18."""
+    if not _has_table(conn, "listing_stats"):
+        return {}
+    cur = conn.execute(
+        "SELECT item_id, observed_at, views, favorites, online_since, price_eur, source "
+        "FROM listing_stats ORDER BY item_id, observed_at"
+    )
+    names = [c[0] for c in cur.description]
+    wanted = None if item_ids is None else set(item_ids)
+    out: dict[str, list[dict]] = {}
+    for row in cur.fetchall():
+        if wanted is not None and row[0] not in wanted:
+            continue
+        out.setdefault(row[0], []).append(dict(zip(names, row)))
+    return out
 
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))

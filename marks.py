@@ -16,7 +16,8 @@ Flips, Upgrades en Zonder prijs (ook in `python watches.py`); in Alle
 computers staat hij nog, achter het filter Toon.
 
 Weg is niet voor altijd: zakt de prijs onder die van het moment van
-wegzetten, dan komt de advertentie terug, met een regel erbij. "Niet waard
+wegzetten, dan komt de advertentie terug, met een regel erbij. Behalve
+"geen racefiets" (PERMANENT_REASONS): dat verandert niet met de prijs. "Niet waard
 voor €150" zegt niets over €110, en een verkoper die na een afgesprongen
 reservering de prijs verlaagt, wil je ook zien.
 """
@@ -34,6 +35,14 @@ DISMISSED = "weg"
 # De redenen om weg te zetten, zoals op de knoppen. Een nieuwe reden is een
 # nieuw woord hier; de tabel slaat hem als tekst op.
 REASONS = ("niet waard", "gereserveerd")
+# Op /racefietsen meer (de eigenaar, 29-09-2026): bij een fiets is "niet
+# waard" vaak specifieker te zeggen, en dat is later terug te lezen in
+# listing_mark (welke fietsen, en waarom).
+BIKE_REASONS = REASONS + ("niet doorverkoopbaar", "te hoge vraagprijs", "slechte staat", "geen racefiets")
+ALL_REASONS = BIKE_REASONS
+# Deze komen niet terug als de prijs zakt: een frame of een e-bike wordt
+# geen racefiets door goedkoper te worden.
+PERMANENT_REASONS = frozenset({"geen racefiets"})
 # Een notitie is een geheugensteun, geen verslag.
 NOTE_MAX_CHARS = 500
 
@@ -96,7 +105,10 @@ def load_notes(db_path) -> dict[str, str]:
 def price_dropped(mark: Mark, listing) -> bool:
     """Staat de advertentie nu lager dan toen hij gemarkeerd werd? Zonder
     prijs aan een van beide kanten (bieden, of weggezet toen er nog geen
-    prijs stond) valt er niets te vergelijken."""
+    prijs stond) valt er niets te vergelijken. Bij een reden die niet van de
+    prijs afhangt (PERMANENT_REASONS) telt een lagere prijs niet."""
+    if mark.reason in PERMANENT_REASONS:
+        return False
     return (mark.price_eur is not None and listing.price_eur is not None
             and listing.price_eur < mark.price_eur)
 

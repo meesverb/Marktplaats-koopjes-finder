@@ -43,7 +43,9 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
    the searches marked `"report": false` (see below). A search can have its
    own `"bid_lookup"`, which goes before the slot's (the sport watches use
    `"fast"`, also by day, see "Sport watches"); it then runs in a call of its own;
-4. with `"valuation": true`, runs `valuation.py`, so the valuation history
+4. with a `"views_budget"`, runs `views.py meet <budget>`: at most that many
+   listing pages to measure views and saves (see "Views and saves" below);
+   with `"valuation": true`, runs `valuation.py`, so the valuation history
    builds up by itself;
 5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
    are new / better than your reference / top deals / cheaper than before, the
@@ -97,7 +99,10 @@ database — the bike computer search has it: it used to query 17 brands,
 which gave 17 separate reports (`racefiets_report_garmin-edge.html`, …); now
 everything is on the dashboard, and those files are no longer written (old
 ones can be deleted). Slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
-`times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation` and
+`times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation`,
+`views_budget` (0-200, default 0: listing pages the round may fetch to
+measure views and saves; the shipped schedule has 40 at night, 15 per
+`overdag` round and 10 per `computers` round, ~125 requests a day) and
 `open_browser` (and a `note`, which is ignored). With `open_browser` `auto`,
 `overzicht.html` opens when a search *with* a report found new listings, and
 `dashboard.html` opens when the round found a new **flip** — a bike computer
@@ -366,12 +371,13 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 | --- | --- |
 | **Flips** | every computer below its expected selling price, biggest profit first; reserved listings are left out (they're in Alle computers, marked "gereserveerd"), and so are listings you put away yourself (below) until their price drops. Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
 | **Favorieten** | the listings you marked ★ favoriet (below), with your note and the price when you marked them if it has changed since; below that, favourites that are no longer online ("verdwenen" or "laatst gezien") |
+| **Mijn biedingen** | the bids you placed yourself on Marktplaats, running ones first (see "Your own bids" below), with the listing, or "verdwenen" when it's gone |
 | **Mijn flips** | what you bought and sold yourself: realised profit, what's in stock and what it should bring now, average days to sell, how far the dashboard's estimate was off, and profit per month. Entered in the live version (below) |
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
-| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box (also searches your notes), brand filter, "alleen nieuw", sortable columns. **Toon** hides the listings you put away (the default); set it to *favorieten*, *weggezet* (to put one back), *met notitie* or *alles* |
+| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box (also searches your notes), brand filter, "alleen nieuw", sortable columns (Afstand too, see "Distance"). **Toon** hides the listings you put away (the default); set it to *favorieten*, *weggezet* (to put one back), *met notitie* or *alles* |
 | **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
 | **Vinted** | once you've read in a Vinted export (below; until then the tab says how, and which database it reads): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
-| **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. Gone listings that were reserved when a round last saw them are counted apart ("eerst gereserveerd"): those were almost certainly sold. Only reservations a round actually saw count, so it's a lower bound. The hour of posting isn't available: Marktplaats only says "Vandaag"/"Gisteren" |
+| **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. Gone listings that were reserved when a round last saw them are counted apart ("eerst gereserveerd"): those were almost certainly sold. Only reservations a round actually saw count, so it's a lower bound. The hour of posting isn't in the search results: Marktplaats only says "Vandaag"/"Gisteren". Below all that: **Weergaven en likes** (see "Views and saves") |
 | **Uitgefilterd** | holders, cases, parts, broken ones and wanted ads, each with the reason, to check that no real computer ended up there |
 
 Photos come from the search results (stored since database migration 6); a
@@ -379,8 +385,9 @@ listing from before that shows a grey square until the next round sees it.
 
 **One address for everything — `python dashboard.py --serve`.** The browser
 opens at `http://127.0.0.1:8765/start`: the latest round, what your flips
-earned, links to every live page (fietscomputers `/`, sporthorloges
-`/horloges`, your own bike `/fiets`, your flips `/flips`) and to the files the
+earned, your running bids, links to every live page (racefietsen
+`/racefietsen`, fietscomputers `/`, sporthorloges `/horloges`, your own bike
+`/fiets`, your flips `/flips`) and to the files the
 rounds write — the overview, every `racefiets_report*.html`, the lists in
 `lijsten/`, the `taxatie_*.md` notes and `logs/koopjes.log` — served under
 `/bestanden/` with a bar back to the start page. Nothing else in the folder is
@@ -1176,6 +1183,137 @@ the nightly round logs it as an outcome, not an error). The 10-15% negotiation
 margin, the bundle factor and the share of an upgrade that a buyer of a
 complete bike pays for are heuristics, not measurements, and each is printed
 as its own line so it is clear what it contributed.
+
+### Racefietsen — `/racefietsen` (`racebikes.py`)
+
+`python dashboard.py --serve` also serves **`/racefietsen`**: every road bike
+in `koopjes.db` (category racefietsen, whichever search found it:
+`racefietsen`, `giant-defy`, `ultegra-6700`) on one live page, to decide
+quickly whether a bike is worth it. The per-round report
+(`racefiets_report.html`) stays as it is; it has no buttons and only shows
+that one round. Active here means: not gone and seen within 8 days of the
+newest road bike — wider than the computers' 3 days, because by day only
+the newest pages come by and an older bike is only seen again by the Sunday
+round (`week`).
+
+Each bike is a card with three photos (all the search results give), price
+and kind of price, distance, the specs on one line (size, material,
+groupset, brakes, year, wheels, weight, condition), the seller's text
+(*beschrijving*, the full text where `--detail-lookup` fetched it) and two
+verdicts side by side:
+
+- **flip** — expected selling price minus what it costs you. The selling
+  price is `upgrade.estimate_value()`: the median asking price of comparable
+  bikes (same frame material, groupset tier and brake type) × 0,875, or
+  *grof* (the median of all bikes) when there are too few. No costs are
+  subtracted: parts and travel you work out per bike on `/flips`.
+- **upgrade** — `upgrade.find_upgrades()` against your own bike in
+  `mijn_fiets.md`, exactly as the report's Upgrade tab: better than yours by
+  more than the margin, within budget, size not wrong. Without a readable
+  `mijn_fiets.md` the page says why there is no verdict.
+
+Plus the **waardescore** (estimated value / price). Not the dealscore: that
+belongs to the report.
+
+Views: **Te beoordelen** (no mark, no bid, not bought, not reserved — mark a
+bike and it leaves this view, so you work down the list), **Favorieten**,
+**Mijn biedingen** (with bids on bikes that are gone below), **Alle**
+(without the ones you put away), **Weggezet** and **Patronen** (views and
+saves of road bikes, see below). Filters: search (title, specs, place, your
+note), order (newest, best flip, best waardescore, best upgrade, nearest,
+cheapest), frame size (default your size ± 2 cm, with *maat onbekend* on),
+maximum price, maximum distance, *gereserveerd*, *alleen nieuw*. The page
+remembers your view and filters (per browser).
+
+Keys: **j**/**↓** next, **k**/**↑** previous, **f** favourite, **w** not worth
+it, **1**-**6** put away with a reason, **u** put back, **b** enter a bid,
+**n** note, **space** description, **o** open on Marktplaats, **c**
+controleer, **Esc** out of a field. The reasons to put a bike away are *niet
+waard*, *gereserveerd*, *niet doorverkoopbaar*, *te hoge vraagprijs*,
+*slechte staat* and *geen racefiets* (`marks.BIKE_REASONS`), stored in
+`listing_mark` like the computers' marks, so you can look back later at
+which bikes you dismissed and why. As there, a bike you put away comes back
+when its price drops below the price at that moment — except *geen
+racefiets*: a frame or an e-bike doesn't become a road bike by getting
+cheaper.
+
+Fast on purpose: the heavy part (comparables, upgrade scores) is computed
+once per round and kept by the server; the page gets the bikes as JSON and
+draws 40 cards at a time, more as you scroll; a click sends back only that
+one bike. Measured on a test database with 2000 bikes (Chromium): the page
+loads in about half a second, putting a bike away takes ~150 ms.
+
+### Distance — `distance.py`
+
+Every live page (`/racefietsen`, `/`, `/horloges`) can show how far each
+listing is from your postcode, as the crow flies, filter on it (a slider,
+5-250 km, with *ook zonder plek* for listings without a place) and sort on
+it (the **Afstand** column, *Dichtstbij eerst* on `/racefietsen`). Enter the
+postcode on the page (`3511` or `3511AB`); it is stored in `koopjes.db`
+(table `setting`, migration 18), not in a file in git. Clear the field to
+remove it. Distance is not in any score.
+
+How, without an outside service: the search results give every listing's
+latitude and longitude (also without a postcode in the request; checked
+29-09-2026), stored in `listing_place` from the next round on. Marktplaats
+doesn't say where a postcode is, but a search *with* a postcode gives each
+listing's distance to it in whole km; saving the postcode sends one search
+request and finds the point those distances agree on (on 29-09-2026: 3511AB
+within 0,3 km, a Groningen postcode within 0,5 km). A `distanceMeters` of 0
+means unknown there (some shops) and is ignored. After that everything is
+computed locally, so a new postcode applies to every listing at once.
+Listings from before migration 18 get the place of other listings in the
+same town until a round sees them again (shown as *ca.*); a seller who only
+gave the country has no place.
+
+### Your own bids — `own_bids.py`
+
+Bidding happens on Marktplaats, by you; the script never bids. What you can
+do on every live page is record it: **ik heb geboden** (under each listing
+on the dashboards, the **b** key on `/racefietsen`) with the amount; the
+date fills itself in. Every bid is kept (first €250, then €280), and the
+latest one's status says where you stand: *open*, *overboden*, *afgewezen*,
+*geaccepteerd* or *ingetrokken*, one click each. **Geaccepteerd** puts the
+listing on `/flips` at once, stage *gekocht*, with your bid as the buying
+price and, for a road bike, the flip estimate as target price (a computer or
+watch goes under its own market). Accepting twice doesn't make a second
+flip; setting another status afterwards leaves the flip, remove it on
+`/flips` if the deal fell through. When the last bid lookup or controleer
+saw a higher bid than yours, the listing says *er staat al €… op*. Stored in
+`own_bid` (migration 18); the start page has a tile with your running bids.
+
+### Views and saves — `views.py`
+
+How many people looked at a listing and saved it ("bewaard", the heart) is
+only on the listing's own page (`stats`: `viewCount`, `favoritedCount`, and
+`since`, the moment it was placed), not in the search results. So every
+measurement is one request, and it is done sparingly:
+
+- **for free** where a round or controleer fetches the page anyway (bid
+  lookups, `--detail-lookup`);
+- **targeted**: your own ads on `/flips` that are *te koop* with a
+  Marktplaats link, every 6 hours; favourites and listings with a running
+  bid of yours, every 12 hours;
+- **a sample**: a fixed 1 in 10 of the new listings in the three markets
+  (road bikes, bike computers, sport watches), measured at 1, 3 and 7 days
+  old. Fixed on the listing number, so the same listing is measured each
+  time and you see how it grows.
+
+Never more per round than the slot's `views_budget`, targeted first, with
+the usual pause between requests; three failures in a row stop it. By hand:
+`python views.py plan 20` shows what the next round would measure,
+`python views.py meet 10` measures that many now. Stored in `listing_stats`
+(one row per look, migration 18); a gone listing (410) is marked gone.
+
+Where you see it: under every listing (*158× bekeken · 4× bewaard (+2
+bewaard sinds …)*), on `/flips` for your own ad with the growth as two small
+lines, and on the **Patronen** tabs: the median views and saves by age,
+likes per day in the first days against the share gone within 7 days (gone
+is not sold), and views per day by promotion (a *Dagtopper*, from the search
+results), price, day and part of day of posting, and before/after a price
+drop. Each group says its n; below 10 it is marked *te weinig*. This is
+correlation, not cause: a seller who pays for a Dagtopper may also take
+better photos.
 
 ### Which listings your bike is compared with — `/fiets` (`bike_comps.py`)
 
