@@ -114,6 +114,48 @@ class WatchFlipsTest(WatchDatabaseTest):
         self.assertNotIn(">€0<", dashboard.market_panel(d))
 
 
+class BidMemoryTest(WatchDatabaseTest):
+    """Migratie 11: het opgehaalde bod blijft staan tot de volgende opvraging."""
+
+    def bidding(self, **kw):
+        kw.setdefault("price_type", "FAST_BID")
+        return watch("b", "Garmin Fenix 6 Pro", kw.pop("price", None), **kw)
+
+    def test_a_round_without_lookup_keeps_the_last_bid(self):
+        night = datetime.now(timezone.utc) - timedelta(hours=7)
+        self.sync(fenix_market() + [self.bidding(price=120.0, price_is_bid=True, bid_count=3, bid_minimum=100.0)],
+                  when=night)
+        # Overdag: dezelfde advertentie zonder opvraging, dus zonder prijs.
+        self.sync(fenix_market() + [self.bidding()])
+        listing = {l.item_id: l for l in self.board().listings}["b"]
+        self.assertEqual((listing.price_eur, listing.bid_count, listing.bid_minimum), (120.0, 3, 100.0))
+        self.assertIn("huidig bod", pc.price_kind(listing))
+        note = dashboard.bid_note(listing)
+        self.assertIn("3 biedingen", note)
+        self.assertIn("min. €100", note)
+        self.assertIn("opgehaald", note)
+
+    def test_a_new_lookup_replaces_the_old_one(self):
+        self.sync([self.bidding(price=120.0, price_is_bid=True, bid_count=3)],
+                  when=datetime.now(timezone.utc) - timedelta(hours=7))
+        self.sync([self.bidding(price=150.0, price_is_bid=True, bid_count=5)])
+        listing = self.board().listings[0]
+        self.assertEqual((listing.price_eur, listing.bid_count), (150.0, 5))
+
+    def test_without_any_lookup_there_is_no_bid_note(self):
+        self.sync([self.bidding()])
+        listing = self.board().listings[0]
+        self.assertIsNone(listing.price_eur)
+        self.assertEqual(dashboard.bid_note(listing), "")
+
+    def test_no_bids_yet_shows_the_minimum(self):
+        self.sync(fenix_market() + [self.bidding(price=90.0, price_is_bid=True, bid_count=0, bid_minimum=90.0)])
+        listing = {l.item_id: l for l in self.board().listings}["b"]
+        self.assertIn("nog geen bod", dashboard.bid_note(listing))
+        # Een minimumbod zonder biedingen is een instapprijs: de flip rekent ermee.
+        self.assertIn("b", {l.item_id for l in self.board().flips})
+
+
 class UnknownWatchTest(unittest.TestCase):
     """Titels zonder bekend model, uit de crawl van 28-09-2026."""
 
@@ -133,6 +175,15 @@ class UnknownWatchTest(unittest.TestCase):
             "Smartwatch": "overig",
             "ik zoek een garmin horloge": "gevraagd",
             "Garmin horloge defect": "defect",
+            # Polar, Suunto en Coros zijn sinds 29-09-2026 ook gevolgde merken.
+            "Polar M400 GPS sporthorloge - Gebruikt": "horloge",
+            "Suunto Core All Black Outdoor Horloge": "horloge",
+            "Suunto Traverse GPS-horloge + hartslagband": "horloge",
+            "Suunto Traverse Graphite (met nieuw bandje)": "horloge",
+            "Polsband voor Polar V2 zwart horlogeband siliconen": "accessoire",
+            "Polar USB Oplaadkabel": "accessoire",
+            "Polar CS300 Fietscomputer met Hartslagmeter en Cadanssensor": "overig",
+            "Omega x Swatch Moonswatch Polar Lights": "overig",
         }
         for title, kind in cases.items():
             with self.subTest(title=title):

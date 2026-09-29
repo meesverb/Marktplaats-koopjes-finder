@@ -42,7 +42,7 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
    `pages`, `sort` and `bid_lookup` — and once more, with `--no-html`, for
    the searches marked `"report": false` (see below). A search can have its
    own `"bid_lookup"`, which goes before the slot's (the sport watches use
-   `"none"`, see "Sport watches"); it then runs in a call of its own;
+   `"fast"`, also by day, see "Sport watches"); it then runs in a call of its own;
 4. with `"valuation": true`, runs `valuation.py`, so the valuation history
    builds up by itself;
 5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
@@ -76,8 +76,8 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 | Slot | When | What |
 | --- | --- | --- |
 | `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
-| `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, all Garmin watches (`sporthorloges`, ~58 pages, no bid lookups), then `valuation.py` |
-| `computers` | 10:00, 14:00, 18:00, 22:00 | the newest bike computers and Garmin watches only, 2 pages each, no bid lookups (3 requests per search, 6 a round), so a cheap flip doesn't wait for the night. Watches: ~115 new on a Monday until 20:45 (28-09-2026), so 2 pages every 4 hours is enough there too. The whole category gets about 100-120 new listings a day, roughly a quarter of them a computer with a known model (measured 28-09-2026: at 18:40 "Vandaag" filled 3-4 pages newest first, "Gisteren" about 4), so 2 pages every 4 hours leaves room — also for the ~7 paid "Dagtoppers" Marktplaats puts on top of page 1 whatever the sort. With `bid_lookup` `fast` a round cost 17 bid lookups on top of that; a bidding listing therefore shows under "Zonder prijs — bied maximaal" by day, and the night round fills in the running bid. Being shallow, it never marks anything as gone: that stays with the night round |
+| `nacht` | 03:00 | complete crawls of "giant defy" and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, all Garmin, Polar, Suunto and Coros watches (`sporthorloges`, `polar`, `suunto`, `coros`: ~71 pages, plus a bid lookup for each of the ~370 "bieden" listings without a price), then `valuation.py` |
+| `computers` | 10:00, 14:00, 18:00, 22:00 | the newest bike computers and Garmin watches only, 2 pages each (3 requests per search, 6 a round), so a cheap flip doesn't wait for the night. Polar, Suunto and Coros only run at night: with ~5 new listings a day, 2 pages would fetch the same listings and bids every round. Watches: ~115 new on a Monday until 20:45 (28-09-2026), so 2 pages every 4 hours is enough there too. The whole category gets about 100-120 new listings a day, roughly a quarter of them a computer with a known model (measured 28-09-2026: at 18:40 "Vandaag" filled 3-4 pages newest first, "Gisteren" about 4), so 2 pages every 4 hours leaves room — also for the ~7 paid "Dagtoppers" Marktplaats puts on top of page 1 whatever the sort. For the bike computers `bid_lookup` `fast` cost 17 bid lookups a round on top of that, so the slot has `none`: a bidding bike computer shows under "Zonder prijs — bied maximaal" by day, and the night round fills in the running bid. The Garmin watches override that with their own `"bid_lookup": "fast"` (~15 lookups a round). A looked-up bid stays in the database until the next lookup (migration 11), so a round without lookups no longer wipes it. Being shallow, it never marks anything as gone: that stays with the night round |
 | `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
 
 Change the searches' filters (a `max_price` for your budget, say) and the
@@ -243,7 +243,10 @@ The script now says so when it happens. `--category fietsonderdelen` picks
 the category (or categories) yourself, and Marktplaats filters server-side,
 so no pages are spent on the rest. Use the category's key from the URL on
 marktplaats.nl or its number; an unknown one lists the categories that do
-have results for the query. Several categories must share a main category
+have results for the query. With several categories, one that has no results
+for the query today is skipped with a warning ("let op: categorie ... heeft
+nu geen resultaten"), so a quiet day in one category doesn't cost the whole
+search; only when none of them has results is it an error. Several categories must share a main category
 (e.g. `fietsonderdelen,fietsen-racefietsen`, both under *fietsen-en-brommers*).
 Common ones for bikes: `fietsen-racefietsen`, `fietsonderdelen`,
 `fietsaccessoires-fietscomputers`.
@@ -754,9 +757,12 @@ state.
 
 ### Sport watches — `dashboard_horloges.html` (`markets.py`, `watches.py`)
 
-A second market next to bike computers, built the same way: every Garmin
-watch on Marktplaats, its model recognised from the title, flips worked out
-against the same model's asking prices, and a dashboard of its own.
+A second market next to bike computers, built the same way: every Garmin,
+Polar, Suunto and Coros watch on Marktplaats, its model recognised from the
+title, flips worked out against the same model's asking prices, and a
+dashboard of its own. Smartwatches (Apple, Samsung, Fitbit, Huawei) are a
+different market and not followed (yet); they land in Uitgefilterd as
+"ander merk" when a search picks them up.
 
 - **The search** `sporthorloges` in `schedule.json`: "garmin" in the
   categories `sporthorloges`, `smartwatches` and `activity-trackers` — that's
@@ -764,14 +770,25 @@ against the same model's asking prices, and a dashboard of its own.
   categories, and `activity-trackers` also holds Fenixes and Forerunners that
   sellers put there. 1707 listings on 28-09-2026, 58 pages. In the night slot
   (complete, so gone listings are marked for Patronen) and in the `computers`
-  slot by day (2 pages). Its own `"bid_lookup": "none"`: about 300 of those
-  listings are "bieden" without a price, and looking each one up would be 300
-  extra requests every night. They show under "Zonder prijs — bied maximaal",
-  as the bike computers do by day.
+  slot by day (2 pages). Its own `"bid_lookup": "fast"`, night and day: about
+  300 of those listings are "bieden" without a price, and bids matter here, so
+  each is looked up (~300 extra requests a night; by day only those on the 2
+  newest pages). The price then reads "3 biedingen · min. €100 · opgehaald
+  dd-mm-yyyy HH:MM" or "nog geen bod", and it stays until the next lookup
+  (migration 11: `listing.bid_count`, `bid_minimum`, `bids_checked_at`).
+- **The searches** `polar`, `suunto` and `coros`: the same three categories,
+  night slot only, also with bid lookups. 214, 84 and 36 listings on
+  28-09-2026 (13 pages together); with ~5 new a day, a day round would fetch
+  the same listings and bids over and over. Suunto's dive computers mostly
+  sit in the `duiken` category and stay out.
 - **The models** in `reference_sport_watches.csv` (below): 81 Garmin models,
-  from the Forerunner 30 and Venu Sq to the Fenix 9 Pro and MARQ. On the full
-  crawl 1263 of 1707 titles name one; the rest are mostly straps, cables and
-  other brands.
+  from the Forerunner 30 and Venu Sq to the Fenix 9 Pro and MARQ, plus 18
+  Polar, 19 Suunto and 13 Coros models. On the full Garmin crawl 1263 of 1707
+  titles name one; the rest are mostly straps, cables and other brands. Of
+  the 327 listings from `polar`, `suunto` and `coros` (28-09-2026), 192 name a
+  Polar, Suunto or Coros model (4 more a Garmin); most of the rest are
+  older models without a source (Polar M400, V800, M600, Loop; Suunto Core,
+  Traverse) that show as "horloge, model onbekend".
 - **The dashboard** `dashboard_horloges.html`: the same page as the bike
   computers' — tabs Flips, Mijn flips, Alle horloges, Marktprijzen, Patronen
   and Uitgefilterd — without Upgrades (there is no own watch to compare with),
@@ -787,10 +804,12 @@ against the same model's asking prices, and a dashboard of its own.
   assumed 0,875 and €3 costs — with comparables from the three watch
   categories only. `watches.py` holds what is specific to watches: the
   categories, and what a title without a known model is (`classify_unknown()`:
-  a Garmin watch with an unknown model stays visible in Alle horloges —
-  "Te koop Garmin horloge" may be a sleeper —; straps, chargers, other brands
-  such as Apple, and Garmin products that aren't watches such as the Index
-  scale go to Uitgefilterd, each with the reason). `markets.py` puts the two
+  a Garmin, Polar, Suunto or Coros watch with an unknown model stays visible
+  in Alle horloges — "Te koop Garmin horloge" may be a sleeper, and "Suunto
+  Traverse GPS-horloge + hartslagband" is a watch with a strap —; straps,
+  chargers, other brands such as Apple, and products that aren't watches such
+  as the Garmin Index scale or a Polar bike computer go to Uitgefilterd, each
+  with the reason). `markets.py` puts the two
   markets side by side: categories, catalogue, file, which tabs.
 - `python watches.py` prints the same per model and the flips in the console.
 
@@ -827,7 +846,15 @@ Columns: `merk`, `model`, `pattern`, `introductiejaar`, `nieuwprijs_eur`,
   the field stays empty.
 - **No source, no row.** Tactix, Quatix, Approach S12/S42/S70 and Descent
   Mk3/G1 had no source with a year or price; they show as "horloge, model
-  onbekend".
+  onbekend". The same for older Polar (M400, V800, M600, A360, RC3), Suunto
+  (Core, Traverse, Ambit 1/2) and the Coros Apex Pro. The Polar Loop is left
+  out on purpose: sellers call both the 2025 Loop and the 2015 Loop 2 "Loop
+  gen 2".
+- **Polar, Suunto and Coros come from DC Rainmaker's reviews**: the year from
+  the review (published at launch), the price only as the review text states
+  it — "$229/229EUR" gives both, "$449USD" only the dollar price. Patterns
+  need the brand in front ("Polar Vantage V2", "Suunto Race", "Coros Pace 3"),
+  because "Race", "Pace" and "Vantage" alone say too little.
 - **`kaarten_op_horloge` only where the source says so.** It is not the
   `kaarten` column of the bike computer file (`routeerbaar`, `basiskaart`,
   ...); that vocabulary says something the sources for watches don't.

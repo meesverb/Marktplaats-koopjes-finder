@@ -1036,20 +1036,29 @@ def resolve_categories(search_response: dict, wanted: list[str]) -> tuple[int, l
         if cat.get("key"):
             by_name[str(cat["key"]).lower()] = cat
 
-    chosen = []
+    chosen, missing = [], []
     for name in wanted:
         cat = by_name.get(name.strip().lower())
         if cat is None:
-            counted = [c for c in relevant_categories(search_response) if c.get("histogramCount")]
-            counted.sort(key=lambda c: as_number(c.get("histogramCount")) or 0, reverse=True)
-            available = ", ".join(
-                f"{c.get('key')} ({c.get('histogramCount')})" for c in counted[:10]
-            )
+            missing.append(name)
+        else:
+            chosen.append(cat)
+    if missing:
+        counted = [c for c in relevant_categories(search_response) if c.get("histogramCount")]
+        counted.sort(key=lambda c: as_number(c.get("histogramCount")) or 0, reverse=True)
+        available = ", ".join(f"{c.get('key')} ({c.get('histogramCount')})" for c in counted[:10])
+        if not chosen:
             raise ValueError(
-                f"categorie {name!r} komt niet voor in de resultaten voor deze zoekterm. "
+                f"categorie {missing[0]!r} komt niet voor in de resultaten voor deze zoekterm. "
                 f"Wel: {available or 'geen'}"
             )
-        chosen.append(cat)
+        # Een deel van de categorieën heeft nu niets voor deze zoekterm
+        # ("tomtom" in activity-trackers, 28-09-2026; "epix" had er die dag
+        # 2). Dat kan elke dag anders zijn, en een zoekopdracht die daardoor
+        # helemaal niets ophaalt kost een nacht. Een tikfout valt nog steeds
+        # op als geen enkele categorie klopt, en staat hier in het log.
+        print(f"  let op: categorie {', '.join(repr(m) for m in missing)} heeft nu geen resultaten voor "
+              f"deze zoekterm; overgeslagen. Wel: {available or 'geen'}", file=sys.stderr)
 
     main_ids = {c.get("parentId") or c["id"] for c in chosen}
     if len(main_ids) > 1:

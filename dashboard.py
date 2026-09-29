@@ -185,10 +185,12 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
         images = "image_urls" if "image_urls" in columns else "'' AS image_urls"
         asking = "price_is_asking" if "price_is_asking" in columns else "NULL AS price_is_asking"
         reserved = "reserved_at" if "reserved_at" in columns else "NULL AS reserved_at"
+        bids = ("bid_count, bid_minimum, bids_checked_at" if "bids_checked_at" in columns
+                else "NULL AS bid_count, NULL AS bid_minimum, NULL AS bids_checked_at")
         where = " OR ".join("url LIKE ?" for _ in categories)
         rows = conn.execute(
             f"SELECT item_id, title, description, price_eur, price_type, is_bid, {asking}, "
-            f"city, posted_date, condition, url, first_seen, last_seen, {images}, {reserved} "
+            f"city, posted_date, condition, url, first_seen, last_seen, {images}, {reserved}, {bids} "
             f"FROM listing WHERE disappeared_at IS NULL AND ({where})",
             tuple(f"%/{category}/%" for category in categories),
         ).fetchall()
@@ -225,10 +227,15 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
             image_urls=r["image_urls"] or "",
             reserved=r["reserved_at"] is not None,
         )
-        # Het bod zelf staat niet in de database; price_is_asking = 0 zegt
-        # wel dat de prijs een lopend bod is (db.py, migratie 3). Eén bod is
-        # genoeg om Listing.price_is_asking hetzelfde te laten zeggen.
-        if r["is_bid"] and r["price_is_asking"] == 0:
+        # Wat de biedopvraging vond (migratie 11). Van vóór die migratie staat
+        # alleen price_is_asking = 0 als teken van een lopend bod (migratie
+        # 3); één bod is dan genoeg om Listing.price_is_asking hetzelfde te
+        # laten zeggen.
+        listing.bid_minimum = r["bid_minimum"]
+        listing.bids_checked_at = r["bids_checked_at"]
+        if r["bid_count"] is not None:
+            listing.bid_count = r["bid_count"]
+        elif r["is_bid"] and r["price_is_asking"] == 0:
             listing.bid_count = 1
         first = _parse_time(r["first_seen"])
         if first and first >= new_since:
@@ -369,10 +376,26 @@ def buy_control(listing, d: Dashboard) -> str:
     )
 
 
+def bid_note(listing) -> str:
+    """Wat de biedopvraging zei: aantal biedingen en minimumbod, met wanneer
+    — een bod van de nachtronde kan overdag al hoger zijn."""
+    count = getattr(listing, "bid_count", None)
+    checked = getattr(listing, "bids_checked_at", None)
+    if count is None or not checked:
+        return ""
+    parts = [f"{count} bieding{'en' if count != 1 else ''}" if count else "nog geen bod"]
+    if listing.bid_minimum:
+        parts.append(f"min. {euro(listing.bid_minimum)}")
+    parts.append(f"opgehaald {local_time(checked)}")
+    return " · ".join(parts)
+
+
 def price_cell(listing) -> str:
     kind = pc.price_kind(listing)
+    note = bid_note(listing)
     return (f"<td class='num' data-sort='{listing.price_eur if listing.price_eur is not None else ''}'>"
-            f"{euro(listing.price_eur)}<div class='sub'>{esc(kind)}</div></td>")
+            f"{euro(listing.price_eur)}<div class='sub'>{esc(kind)}</div>"
+            f"{f'<div class=sub>{esc(note)}</div>' if note else ''}</td>")
 
 
 def tiles(items: list[tuple[str, str, str]]) -> str:
