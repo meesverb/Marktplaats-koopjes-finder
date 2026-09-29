@@ -31,6 +31,7 @@ jóuw advertentie, die je zelf overtypt.
 
     python flips.py                      # het overzicht in de console
     python flips.py import lijst.json    # flips en klussen inlezen (zie flips_import/)
+    python flips.py bijwerken aanbod.json   # bestaande klussen: andere winkel, link, prijs
 """
 from __future__ import annotations
 
@@ -755,6 +756,52 @@ def import_file(conn, path) -> list[str]:
     return done
 
 
+UPDATE_KEYS = {"titel", "winkel", "url", "geschat", "bron", "notitie"}
+
+
+def update_file(conn, path) -> list[str]:
+    """Bestaande klussen bijwerken met een beter aanbod: winkel, link,
+    geschatte prijs, bron, notitie (zie flips_import/cube_bike24.json).
+    import_file() kan dat niet: die slaat een flip over die er al is.
+
+    Een regel wordt gevonden aan zijn titel, binnen de flip met de titel
+    onder "flip" (of bij "investeringen" onder de losse investeringen). Wat
+    al gekocht is (een echte prijs) blijft staan: dan is het aanbod te laat.
+    Wat niet gevonden wordt, zegt de uitvoer; er komt niets bij."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    trades = {r["title"]: r["id"] for r in db.list_trades(conn)}
+    done = []
+
+    def apply(trade_id: Optional[int], items: list, where: str) -> None:
+        rows = conn.execute("SELECT * FROM flip_task WHERE trade_id IS ? AND deleted_at IS NULL", (trade_id,))
+        tasks = {r["title"]: task_from_row(r) for r in rows}
+        for item in items:
+            unknown = set(item) - UPDATE_KEYS
+            if unknown:
+                raise ValueError(f"onbekende sleutels bij {item.get('titel')!r}: {sorted(unknown)}")
+            task = tasks.get(item.get("titel", ""))
+            if task is None:
+                done.append(f"niet gevonden in {where}: {item.get('titel')!r}")
+                continue
+            if task.price_eur is not None:
+                done.append(f"al gekocht, niet bijgewerkt: {task.title}")
+                continue
+            values = {IMPORT_TASK_KEYS[k]: v for k, v in item.items() if k != "titel"}
+            update_task(conn, task.id, **values)
+            done.append(f"bijgewerkt: {task.title}"
+                        + (f" → {values['shop']} {euro(values['est_eur'])}" if "est_eur" in values else ""))
+
+    for entry in data.get("flips", []):
+        trade_id = trades.get(entry.get("flip", ""))
+        if trade_id is None:
+            done.append(f"flip niet gevonden: {entry.get('flip')!r}")
+            continue
+        apply(trade_id, entry.get("klussen", []), entry["flip"])
+    if data.get("investeringen"):
+        apply(None, data["investeringen"], "investeringen")
+    return done
+
+
 # --- Console ---------------------------------------------------------------------
 
 
@@ -781,7 +828,23 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub = parser.add_subparsers(dest="command")
     imp = sub.add_parser("import", help="flips en klussen inlezen uit een JSON-bestand")
     imp.add_argument("file")
+    upd = sub.add_parser("bijwerken", help="bestaande klussen bijwerken (winkel, link, prijs) uit een JSON-bestand")
+    upd.add_argument("file")
     args = parser.parse_args(argv)
+    if args.command == "bijwerken":
+        if not Path(args.db).exists():
+            print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+            return 1
+        conn = db.connect(args.db)
+        try:
+            for line in update_file(conn, args.file):
+                print(line)
+        except (ValueError, KeyError) as exc:
+            print(f"Niet bijgewerkt: {exc}", file=sys.stderr)
+            return 1
+        finally:
+            conn.close()
+        return 0
     if args.command == "import":
         conn = db.connect(args.db)
         try:

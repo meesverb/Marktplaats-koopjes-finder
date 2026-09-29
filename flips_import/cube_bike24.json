@@ -1,0 +1,15 @@
+{
+  "_toelichting": "Bijwerken met: python flips.py bijwerken flips_import/cube_bike24.json. Bike24-aanbod van 29-09-2026, doorgegeven door de eigenaar (productpagina's per regel). Niet door de agent zelf gecontroleerd: bike24.nl weigerde geautomatiseerde verzoeken (HTTP 403). Verzendkosten naar NL zijn niet bevestigd: kortingssites noemen ongeveer 5-6 euro onder 100 euro en 2,49-2,99 of gratis daarboven; kijk het na bij het afrekenen. Het mandje hieronder komt op 86,19 euro, dus onder de 100.",
+  "flips": [
+    {
+      "flip": "Cube Peloton Pro, maat 62",
+      "klussen": [
+        {"titel": "2× Continental Ultra Sport III 700×25C vouwband", "winkel": "Bike24", "url": "https://www.bike24.nl/producten/359714", "geschat": 34.76, "bron": "gecontroleerd", "notitie": "Bike24 17,38 per stuk (advies 30,95), 50+ op voorraad, 3-5 werkdagen. Was FuturumShop 41,90 voor twee"},
+        {"titel": "Shimano Tiagra CS-HG500 cassette 11-32T", "winkel": "Bike24", "url": "https://www.bike24.nl/producten/125069", "geschat": 22.99, "bron": "gecontroleerd", "notitie": "CS-HG500-10 11-32T, advies 34,95, 50+ op voorraad, 3-5 werkdagen. Was FuturumShop 29,95"},
+        {"titel": "Shimano derailleurwieltjes 5700 (set)", "winkel": "Bike24", "url": "https://www.bike24.nl/producten/252059", "geschat": 5.07, "bron": "gecontroleerd", "notitie": "set van 2, advies 10,95, op voorraad. Was FuturumShop 11,95"},
+        {"titel": "Shimano R55C4 remblokken (inserts, achter)", "winkel": "Bike24", "url": "https://www.bike24.nl/producten/23208", "geschat": 6.09, "bron": "gecontroleerd", "notitie": "2 paar inserts (genoeg voor voor en achter), advies 12,95, op voorraad. Was FuturumShop 10,95"},
+        {"titel": "Ketting KMC X10", "winkel": "Bike24", "url": "https://www.bike24.nl/producten/7753", "geschat": 17.28, "bron": "gecontroleerd", "notitie": "KMC X10 zilver/zwart, advies 38,90, op voorraad. Iets duurder dan de AliExpress-schatting (13), maar zeker echt en in een paar dagen binnen"}
+      ]
+    }
+  ]
+}

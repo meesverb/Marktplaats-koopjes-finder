@@ -154,6 +154,32 @@ class ImportTest(FlipTest):
         self.assertFalse({t for t in titles if "Squirt" in t or "Kettingpons" in t})
 
 
+    def test_a_better_offer_updates_the_existing_lines(self):
+        fl.import_file(self.conn, CUBE)
+        before = next(f for f in fl.load_book(self.db).flips if f.trade.title.startswith("Cube")).planned_eur
+        lines = fl.update_file(self.conn, HERE / "flips_import" / "cube_bike24.json")
+        self.assertEqual(sum(l.startswith("bijgewerkt") for l in lines), 5)
+        cube = next(f for f in fl.load_book(self.db).flips if f.trade.title.startswith("Cube"))
+        chain = next(k for k in cube.tasks if k.title == "Ketting KMC X10")
+        self.assertEqual((chain.shop, chain.url, chain.est_eur, chain.price_source),
+                         ("Bike24", "https://www.bike24.nl/producten/7753", 17.28, "gecontroleerd"))
+        self.assertEqual(round(before - cube.planned_eur, 2), 21.56)
+
+    def test_updating_leaves_what_was_bought_and_reports_what_it_cannot_find(self):
+        t = self.bike()
+        k = fl.add_task(self.conn, t, kind="onderdeel", title="Cassette", est_eur=30.0)
+        fl.update_task(self.conn, k, price_eur=28.0)
+        path = self.dir / "aanbod.json"
+        path.write_text(json.dumps({"flips": [
+            {"flip": "Cube", "klussen": [{"titel": "Cassette", "winkel": "X", "geschat": 20},
+                                         {"titel": "Bestaat niet", "geschat": 1}]},
+            {"flip": "Andere fiets", "klussen": []}]}), encoding="utf-8")
+        lines = fl.update_file(self.conn, path)
+        self.assertEqual(lines, ["al gekocht, niet bijgewerkt: Cassette", "niet gevonden in Cube: 'Bestaat niet'",
+                                 "flip niet gevonden: 'Andere fiets'"])
+        self.assertEqual(fl.load_book(self.db).get(t).tasks[0].est_eur, 30.0)
+
+
 class ServeTest(FlipTest):
     def setUp(self):
         super().setUp()

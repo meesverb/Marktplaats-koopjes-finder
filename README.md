@@ -1267,7 +1267,11 @@ are listed apart with **flippen** (→ te koop) and don't count as running.
 **Importing a list.** `python flips.py import flips_import/cube_peloton_pro.json`
 reads flips, their checklists and loose investments from a JSON file
 (Dutch keys, see that file). Importing twice adds nothing. `python flips.py`
-prints the overview.
+prints the overview. A better offer for lines that are already there — another shop, a
+product link, a new estimate — goes in with
+`python flips.py bijwerken flips_import/cube_bike24.json`: it finds each line
+by its title within the flip, leaves lines you already bought alone, and says
+what it couldn't find.
 
 Bike and stock flips use `trade.market` = `fietsen`/`spullen`; they don't
 appear in Mijn flips of the computer or watch dashboard. Database migration 17
