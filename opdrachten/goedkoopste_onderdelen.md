@@ -13,8 +13,9 @@ erbij:
 - de **directe link naar de productpagina**, zodat de eigenaar hem kan
   openen en zelf kan zien wat het is. Geen zoekpagina, geen categoriepagina
   en geen verkorte of affiliate-link. Haal trackingcodes weg (`?_gl=`,
-  `?spm=`, `utm_...`), maar houd wat nodig is om de juiste variant te openen
-  (bij AliExpress bijvoorbeeld `sku_id`, of noem de variant erbij);
+  `?spm=`, `utm_...`), maar houd wat nodig is om de juiste variant te openen,
+  of noem de variant erbij. Voor AliExpress geldt iets anders: zie
+  hieronder;
 - de **exacte productnaam** zoals de winkel hem noemt, met de variant (maat,
   aantal tanden, speed);
 - de **prijs inclusief btw**, de **verzendkosten** naar Nederland en de grens
@@ -24,6 +25,27 @@ erbij:
 Kon je een pagina niet openen? Zeg dat dan, en zet het bedrag als
 **schatting** en niet als gecontroleerd. Verzin geen prijs (zie "Verzin geen
 marktfeiten" in `CLAUDE.md`).
+
+### Uitzondering: AliExpress
+
+**AliExpress is voor een agent niet te openen** (het blokkeert
+geautomatiseerde bezoekers en laadt prijzen pas met JavaScript), en de
+eigenaar kan uit de app geen nette link kopiëren. Daarom geldt voor
+AliExpress:
+
+- **Geen AliExpress-prijs als gecontroleerd.** Wat je via een zoekmachine of
+  een vergelijkingssite vindt, noteer je als **schatting**, met de bron waar
+  je het las.
+- **Geef wat de eigenaar nodig heeft om het zelf te vinden:**
+  - de naam van de winkel, bijvoorbeeld "KMC Official Store";
+  - de exacte zoekterm;
+  - als je hem vindt, het **itemnummer**. Dat is het lange getal in
+    `aliexpress.com/item/<nummer>.html`; zo'n link opent de eigenaar zelf
+    wel.
+- **De eigenaar vult daarna zelf de echte prijs in** met de knop uit deel B.
+  Daar is die knop juist voor.
+- Vergelijk AliExpress wel met de rest. Rekenen doe je met de schatting, en
+  je zegt erbij dat de eigenaar hem moet bevestigen.
 
 ## Achtergrond
 
@@ -112,8 +134,22 @@ De eigenaar twijfelt hieraan. Beantwoord het per onderdeel, met bronnen:
 
 De eigenaar vond op AliExpress een **"GOLDIX 110BCD kettingblad dubbel
 50-34T, 7075, 9/10/11-speed, 5 armen, 3 mm"**. De verkoper is "Stone's Store"
-en ook "Ali Cycling Store". Beoordeel of dit een goede keuze is. Vraag de
-eigenaar om de link als die er nog niet bij staat.
+en ook "Ali Cycling Store". Een link is er niet (zie *Uitzondering:
+AliExpress*). Beoordeel het op de tekst van de advertentie die hij plakte.
+Die staat hieronder, en de prijs vraag je aan de eigenaar.
+
+> GOLDIX 110BCD Fietskettingblad Dubbele Disc 50-34T voor Racefiets Crankstel
+> Compatibel 9/10/11Speed. Artikel: Power dubbele elliptische
+> kettingbladgroep. Voor 700C racefiets kettingbladset. Merk: GOLDIX.
+> Materiaal: 7075. Kleur: Zwart. Vorm: Rond. Nettogewicht: ongeveer 122g
+> (kleine plaat-30g; grote plaat-93g). Dikte: 3MM. Komt overeen met de
+> maximale snelheid: 9-11 versnellingen. Pak voor Pawl: 5 poten crank. Pak
+> voor Crank Merk: SRAM, FSA, enz. Verwerking: Volledig CNC-geïntegreerd
+> gieten. Geanodiseerd oppervlak polijsten. Vragen van kopers, zonder
+> antwoord: "Wat is de afstand van schroef tot schroef?", "Het is voor
+> Ultegra 11-speed.", "SUPER RECORD CAMPAGNE?". Verkocht door Stone's Store,
+> verkoper volgens de conformiteitsinformatie Ali Cycling Store. Tekst
+> automatisch vertaald (disclaimer op de pagina).
 
 Een paar dingen die opvallen in die advertentie. Controleer ze, trek geen
 conclusie op gevoel:
@@ -174,7 +210,12 @@ Leg dit eerst aan de eigenaar voor en pas het aan waar hij iets anders wil.
 - Een nieuwe tabel **`flip_offer`** (migratie 18) met:
   - `id`;
   - `task_id`, naar `flip_task`;
-  - `url` (verplicht);
+  - `url` (verplicht). Neem ook een deellink uit de AliExpress-app aan
+    (`a.aliexpress.com/_...`, `s.click.aliexpress.com/...`): die kopieert de
+    eigenaar uit de app, en hij opent ook. Een lange AliExpress-link maak je
+    kort tot `https://www.aliexpress.com/item/<nummer>.html`; de rest is
+    tracking. Heeft de eigenaar echt geen link, dan mag het veld leeg zijn als
+    er een notitie staat (winkel + zoekterm), met een grijs label *geen link*;
   - `shop`: uit het domein, maar aan te passen;
   - `price_eur` (verplicht);
   - `shipping_eur`;
@@ -211,7 +252,8 @@ Leg dit eerst aan de eigenaar voor en pas het aan waar hij iets anders wil.
 - Tests in `tests/test_flips.py`, in dezelfde stijl:
   - toevoegen, kiezen en weghalen van een aanbieding;
   - een verkeerde URL wordt geweigerd;
-  - trackingcodes worden weggehaald;
+  - trackingcodes worden weggehaald, en een lange AliExpress-link wordt
+    `/item/<nummer>.html`;
   - de migratie;
   - dat de kaart na "kies deze" de nieuwe geplande kosten toont.
 - Het aantal tests in `CLAUDE.md` bijwerken, en de README (sectie *Flips*)
