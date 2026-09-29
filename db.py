@@ -384,8 +384,85 @@ MIGRATIONS: list[str] = [
         chosen_at TEXT NOT NULL
     );
     """,
+    # 17: the flip page /flips (flips.py). A bike flip is more than a buy and
+    # a sale: parts bought for it, work done on it, travel to pick it up,
+    # hours, a target price, bids from buyers, photos. Those hang off
+    # `trade` (table `flip`, one row per trade that has any of it), so the
+    # totals on /flips and Mijn flips count the same buys. Own tables rather
+    # than columns on `trade`, so a test can roll this migration back with
+    # DROP TABLE (a dropped column needs SQLite 3.35). trade.market gets two
+    # keys that are no dashboard ("fietsen", "spullen"); _with_trades() in
+    # dashboard.py leaves those out. No `flip` row, or stage NULL: a
+    # computer bought off a dashboard — sold or not says enough there.
+    # trade_stage keeps when each stage began, for "staat 12 dagen te koop".
+    # flip_task.trade_id NULL is a tool bought for no bike in particular:
+    # the "investeringen" pot, which counts against the total but not
+    # against any one flip; investment = 1 does the same for a tool on a
+    # bike's list. A task is soft-deleted (deleted_at) so the Google Sheet
+    # sync (flips_sheets.py) can tell a deleted row from one it hasn't seen
+    # yet. updated_at is what "last change wins" compares against the sheet.
+    """
+    CREATE TABLE flip (
+        trade_id INTEGER PRIMARY KEY,
+        stage TEXT,
+        target_low_eur REAL,
+        target_high_eur REAL,
+        hours REAL,
+        specs_json TEXT,
+        sale_url TEXT,
+        comp_words TEXT,
+        updated_at TEXT
+    );
+
+    CREATE TABLE trade_stage (
+        id INTEGER PRIMARY KEY,
+        trade_id INTEGER NOT NULL,
+        stage TEXT NOT NULL,
+        at TEXT NOT NULL
+    );
+
+    CREATE TABLE flip_task (
+        id INTEGER PRIMARY KEY,
+        trade_id INTEGER,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        shop TEXT,
+        url TEXT,
+        est_eur REAL,
+        price_eur REAL,
+        price_source TEXT,
+        investment INTEGER NOT NULL DEFAULT 0,
+        fare_eur REAL,
+        discount TEXT,
+        bought_at TEXT,
+        done_at TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT
+    );
+
+    CREATE TABLE flip_bid (
+        id INTEGER PRIMARY KEY,
+        trade_id INTEGER NOT NULL,
+        amount_eur REAL NOT NULL,
+        at TEXT NOT NULL,
+        note TEXT
+    );
+
+    CREATE TABLE flip_photo (
+        id INTEGER PRIMARY KEY,
+        trade_id INTEGER NOT NULL,
+        file TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        added_at TEXT NOT NULL
+    );
+    """,
 ]
 
+
+# What migration 17 creates; a test that rolls the schema back drops these.
+FLIP_TABLES = ("flip", "trade_stage", "flip_task", "flip_bid", "flip_photo")
 
 # A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
 # the first column's name and makes every row look like it is missing that

@@ -5,6 +5,16 @@ De code, `reference_prices.csv` en de git-geschiedenis (commit messages)
 bevatten de volledige context; dit bestand is alleen een korte routewijzer
 zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 
+## Flippagina (29-09-2026)
+
+`/flips` in `dashboard.py --serve` (flips.py, migratie 17) met klussenlijst,
+investeringen, voorraad, foto's, biedingen en een Google Sheet in twee
+richtingen (flips_sheets.py, SHEETS.md). De Cube Peloton Pro staat in
+`flips_import/cube_peloton_pro.json`. Open: de pagina op de telefoon via de
+thuiswifi (de server luistert nu alleen op 127.0.0.1; dan is een wachtwoord
+nodig in plaats van alleen het token), de Tacx heeft nog geen aankoopprijs,
+en de tab Mijn flips kan straks helemaal naar /flips verwijzen.
+
 ## Laatste ronde (27-09-2026)
 
 Op echte data gecontroleerd en bijgewerkt; details per stap onderaan §12 van

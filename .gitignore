@@ -12,3 +12,6 @@ logs/
 .koopjes.lock
 koopjes.db
 lijsten/
+flip_fotos/
+sheets.json
+sheets.json.state.json

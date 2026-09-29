@@ -218,6 +218,8 @@ class StorageTest(unittest.TestCase):
         path = tmp / "koopjes.db"
         conn = db.connect(str(path))
         conn.execute("DROP TABLE comp_choice")
+        for table in db.FLIP_TABLES:  # migratie 17 draait daarna ook opnieuw
+            conn.execute(f"DROP TABLE {table}")
         conn.execute("DELETE FROM schema_version WHERE version >= 16")
         conn.commit()
         conn.close()
