@@ -95,6 +95,15 @@
       "open_browser": "auto",
       "note": "Alleen de nieuwste fietscomputers en Garmin-horloges (2 pagina's elk), zodat een goedkope flip niet tot de nachtronde blijft liggen. Horloges: ~115 nieuwe per dag (28-09-2026), zie de zoekopdracht sporthorloges. Gemeten op 28-09-2026 (18:40): de hele categorie krijgt ~100-120 nieuwe per dag, ongeveer een kwart een bekend computermodel; 2 pagina's (60) per 4 uur is dus ruim, ook met de ~7 Dagtoppers die Marktplaats bovenaan pagina 1 zet. 3 verzoeken per zoekopdracht, 6 per ronde. Het slot haalt geen biedingen op (bid_lookup none: bij de fietscomputers waren dat er 17 op 60 advertenties, per ronde opnieuw); de zoekopdracht sporthorloges zet het voor de Garmin-horloges wel aan (bid_lookup fast), omdat biedadvertenties daar belangrijk zijn. Polar, Suunto en Coros alleen 's nachts (zie de zoekopdracht polar). Zegt het log 'let op: de onderste 5 advertenties ... waren allemaal nieuw', zet pages dan hoger. Weg-detectie blijft bij de nachtronde (alleen pages 0 doet de sweep). Het dashboard opent alleen bij een nieuwe flip."
     },
+    "horloges": {
+      "searches": ["sporthorloges", "polar", "suunto", "coros"],
+      "pages": 0,
+      "sort": "newest",
+      "bid_lookup": "fast",
+      "times": [],
+      "open_browser": "auto",
+      "note": "Handmatig, niet ingepland: 'python koopjes.py run horloges' haalt alle sporthorloges in één keer op (Garmin, Polar, Suunto, Coros; ~71 pagina's plus een biedopvraging per bieden-advertentie zonder prijs, ~400, samen ~15-20 minuten) en bouwt daarna dashboard_horloges.html. De nachtronde doet hetzelfde elke nacht; dit is voor als je nu wilt kijken."
+    },
     "week": {
       "searches": ["racefietsen"],
       "pages": 0,

@@ -51,8 +51,23 @@ class ShippedConfigTest(unittest.TestCase):
     def test_the_schedule_in_the_repo_is_valid(self):
         config = koopjes.load_config(Path(repo_file("schedule.json")))
         self.assertIn("overdag", config.slots)
+        # Een slot zonder tijden draait nooit vanzelf; dat mag alleen met
+        # opzet: "horloges" is om met de hand alles op te halen.
+        manual = {"horloges"}
         for slot in config.slots.values():
-            self.assertTrue(slot.times, slot.name)
+            self.assertEqual(not slot.times, slot.name in manual, slot.name)
+
+    def test_the_manual_watch_slot_fetches_every_watch_search_completely(self):
+        config = koopjes.load_config(Path(repo_file("schedule.json")))
+        slot = config.slots["horloges"]
+        watch_searches = {name for name, search in config.searches.items()
+                          if markets.for_search(search["filters"]) is markets.WATCHES}
+        self.assertEqual(set(slot.searches), watch_searches)
+        self.assertEqual((slot.pages, slot.bid_lookup, slot.open_browser), (0, "fast", "auto"))
+        # Niet in de Taakplanner: de nachtronde doet dit al elke nacht.
+        schedule = "\n".join(koopjes.windows_commands(config, "python", "koopjes.py")
+                             + koopjes.cron_lines(config, "python", "koopjes.py"))
+        self.assertNotIn("run horloges", schedule)
 
     def test_every_reference_file_it_names_exists(self):
         config = koopjes.load_config(Path(repo_file("schedule.json")))
