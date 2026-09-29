@@ -352,6 +352,23 @@ MIGRATIONS: list[str] = [
     ALTER TABLE listing ADD COLUMN bid_high REAL;
     ALTER TABLE listing ADD COLUMN checked_at TEXT;
     """,
+    # 15: a note on any listing, not only a marked one. A note is about the
+    # listing (what the seller said, what was offered), a mark is a verdict
+    # on it; tied together, a note vanished with the mark and an unmarked
+    # listing couldn't have one. The notes written under 13 move over, with
+    # their mark's time as a best guess of when. 13's column stays behind,
+    # emptied: dropping a column needs SQLite 3.35, and the Python on the
+    # owner's Windows machine may bring an older one.
+    """
+    CREATE TABLE listing_note (
+        item_id TEXT PRIMARY KEY,
+        note TEXT NOT NULL,
+        noted_at TEXT NOT NULL
+    );
+    INSERT INTO listing_note (item_id, note, noted_at)
+        SELECT item_id, note, marked_at FROM listing_mark WHERE note IS NOT NULL AND note <> '';
+    UPDATE listing_mark SET note = NULL;
+    """,
 ]
 
 
@@ -1212,8 +1229,7 @@ def set_mark(
 ) -> None:
     """Mark a listing, replacing any earlier mark. Marking again also resets
     price_eur and marked_at: putting a listing away again after its price
-    dropped means "not even at this price". The note stays (migration 13):
-    what the seller said is still true after a favourite is put away."""
+    dropped means "not even at this price"."""
     conn.execute(
         """
         INSERT INTO listing_mark (item_id, mark, reason, price_eur, marked_at)
@@ -1227,14 +1243,6 @@ def set_mark(
     conn.commit()
 
 
-def set_mark_note(conn: sqlite3.Connection, item_id: str, note: Optional[str]) -> bool:
-    """Set or (with None/"") clear the note on a marked listing; returns
-    whether the listing has a mark. A note needs a mark to hang on."""
-    cur = conn.execute("UPDATE listing_mark SET note = ? WHERE item_id = ?", (note or None, item_id))
-    conn.commit()
-    return cur.rowcount > 0
-
-
 def clear_mark(conn: sqlite3.Connection, item_id: str) -> bool:
     cur = conn.execute("DELETE FROM listing_mark WHERE item_id = ?", (item_id,))
     conn.commit()
@@ -1245,14 +1253,15 @@ def list_marks(conn: sqlite3.Connection) -> list[dict]:
     """All marks, with what `listing` knows of the listing now (title, url,
     price, whether it disappeared) so a favourite that went offline can still
     be shown. Empty on a database from before migration 12 opened read-only
-    (the dashboard does that), and without notes on one from before 13."""
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(listing_mark)")}
-    if not columns:
+    (the dashboard does that)."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'listing_mark'"
+    ).fetchone()
+    if not exists:
         return []
-    note = "m.note" if "note" in columns else "NULL AS note"
     cur = conn.execute(
-        f"""
-        SELECT m.item_id, m.mark, m.reason, m.price_eur, m.marked_at, {note},
+        """
+        SELECT m.item_id, m.mark, m.reason, m.price_eur, m.marked_at,
                l.title, l.url, l.price_eur AS current_price_eur, l.last_seen, l.disappeared_at
         FROM listing_mark m LEFT JOIN listing l ON l.item_id = m.item_id
         ORDER BY m.marked_at, m.item_id
@@ -1260,6 +1269,36 @@ def list_marks(conn: sqlite3.Connection) -> list[dict]:
     )
     names = [c[0] for c in cur.description]
     return [dict(zip(names, row)) for row in cur.fetchall()]
+
+
+# --- Own notes on listings (migration 15) --------------------------------------
+
+
+def set_note(conn: sqlite3.Connection, item_id: str, note: Optional[str]) -> None:
+    """Set the owner's note on a listing; None or "" removes it."""
+    if note:
+        conn.execute(
+            """
+            INSERT INTO listing_note (item_id, note, noted_at) VALUES (?, ?, ?)
+            ON CONFLICT(item_id) DO UPDATE SET note = excluded.note, noted_at = excluded.noted_at
+            """,
+            (item_id, note, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+    else:
+        conn.execute("DELETE FROM listing_note WHERE item_id = ?", (item_id,))
+    conn.commit()
+
+
+def list_notes(conn: sqlite3.Connection) -> dict[str, str]:
+    """{item_id: note}. On a database from before migration 15 opened
+    read-only, the notes 13 kept on marks, so they don't seem lost until the
+    next round or --serve migrates; before 13, none."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "listing_note" in tables:
+        return dict(conn.execute("SELECT item_id, note FROM listing_note").fetchall())
+    if "listing_mark" in tables and any(r[1] == "note" for r in conn.execute("PRAGMA table_info(listing_mark)")):
+        return dict(conn.execute("SELECT item_id, note FROM listing_mark WHERE note IS NOT NULL AND note <> ''"))
+    return {}
 
 
 def _parse_iso(value: str) -> datetime:

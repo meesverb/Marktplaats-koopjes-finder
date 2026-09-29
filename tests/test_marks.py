@@ -37,22 +37,43 @@ class MarkStorageTest(unittest.TestCase):
         # Wat `listing` ervan weet komt mee, voor een favoriet die offline ging.
         self.assertEqual((mark.title, mark.current_price_eur), ("Garmin Edge 530", 120.0))
 
-    def test_the_note_survives_a_new_mark_but_not_clearing_it(self):
+    def test_a_note_is_independent_of_the_mark(self):
         conn = db.connect(self.db)
         try:
-            self.assertFalse(db.set_mark_note(conn, "a", "zonder markering"))
+            db.set_note(conn, "a", "zonder markering")
             db.set_mark(conn, "a", mr.FAVORITE, price_eur=120.0)
-            self.assertTrue(db.set_mark_note(conn, "a", "gereserveerd tot zaterdag"))
-            db.set_mark(conn, "a", mr.DISMISSED, reason="gereserveerd", price_eur=120.0)
+            db.set_note(conn, "a", "gereserveerd tot zaterdag")  # vervangt
+            db.clear_mark(conn, "a")
         finally:
             conn.close()
-        self.assertEqual(mr.load_marks(self.db)["a"].note, "gereserveerd tot zaterdag")
+        self.assertEqual(mr.load_notes(self.db), {"a": "gereserveerd tot zaterdag"})
         conn = db.connect(self.db)
         try:
-            db.set_mark_note(conn, "a", "")
+            db.set_note(conn, "a", "")
         finally:
             conn.close()
-        self.assertIsNone(mr.load_marks(self.db)["a"].note)
+        self.assertEqual(mr.load_notes(self.db), {})
+
+    def test_migration_15_moves_the_notes_from_13_over(self):
+        # Een database zoals migratie 13 hem achterliet: de notitie bij de markering.
+        conn = db.connect(self.db)
+        try:
+            db.set_mark(conn, "a", mr.FAVORITE, price_eur=120.0)
+            conn.execute("DROP TABLE listing_note")
+            conn.execute("DELETE FROM schema_version WHERE version >= 15")
+            conn.execute("UPDATE listing_mark SET note = 'gevraagd of 100 kan' WHERE item_id = 'a'")
+            conn.commit()
+        finally:
+            conn.close()
+        conn = db.connect(self.db)  # migreert naar 15
+        try:
+            self.assertEqual(db.list_notes(conn), {"a": "gevraagd of 100 kan"})
+            self.assertIsNone(conn.execute("SELECT note FROM listing_mark WHERE item_id = 'a'").fetchone()[0])
+            (noted_at,) = conn.execute("SELECT noted_at FROM listing_note").fetchone()
+            (marked_at,) = conn.execute("SELECT marked_at FROM listing_mark").fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(noted_at, marked_at)
 
     def test_clearing(self):
         conn = db.connect(self.db)

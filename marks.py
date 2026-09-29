@@ -1,11 +1,13 @@
 """Eigen markeringen op advertenties: favoriet, of weg (niet waard,
 gereserveerd), zodat je in het dashboard niet steeds dezelfde advertenties
-langsloopt.
+langsloopt. En een eigen notitie bij elke advertentie.
 
-De gegevens staan in de tabel `listing_mark` (db.py, migratie 12; de
-notitie in kolom `note`, migratie 13) en worden gezet via de live versie van
-het dashboard (`python dashboard.py --serve`). Het geschreven dashboard.html
-toont ze alleen.
+De markeringen staan in de tabel `listing_mark` (db.py, migratie 12), de
+notities in `listing_note` (migratie 15). Los van elkaar: een notitie gaat
+over de advertentie (wat de verkoper zei, wat je bood), een markering is je
+oordeel erover. Weghalen van de markering laat de notitie staan. Beide
+worden gezet via de live versie van het dashboard (`python dashboard.py
+--serve`); het geschreven dashboard.html toont ze alleen.
 
 Een markering is het oordeel van de eigenaar, geen marktwaarneming: een
 weggezette advertentie telt gewoon mee als vergelijkingsprijs, want de
@@ -43,7 +45,6 @@ class Mark:
     marked_at: str
     reason: Optional[str] = None
     price_eur: Optional[float] = None  # de prijs toen hij gemarkeerd werd
-    note: Optional[str] = None  # eigen notitie (migratie 13)
     # Wat `listing` er nu van weet; ook voor een advertentie die niet meer
     # actief is (een verdwenen favoriet).
     title: Optional[str] = None
@@ -78,6 +79,18 @@ def load_marks(db_path) -> dict[str, Mark]:
     finally:
         conn.close()
     return {r["item_id"]: Mark(**{k: v for k, v in r.items() if k in FIELDS}) for r in rows}
+
+
+def load_notes(db_path) -> dict[str, str]:
+    """{item_id: notitie}, alleen lezen. Geen database: geen notities."""
+    if not db_path or not Path(db_path).exists():
+        return {}
+    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        return db.list_notes(conn)
+    finally:
+        conn.close()
 
 
 def price_dropped(mark: Mark, listing) -> bool:
