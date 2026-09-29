@@ -7,7 +7,7 @@ zo'n pagina voor de sporthorloges (markets.py beschrijft de markten).
     python dashboard.py --markt sporthorloges   # dashboard_horloges.html
     python dashboard.py --markt alle    # beide
     python dashboard.py --serve         # live in de browser, met Gekocht/Verkocht-knoppen
-                                        # en favoriet/weg per advertentie
+                                        # en favoriet/weg/controleer per advertentie
                                         # (fietscomputers op /, sporthorloges op /horloges)
 
 Gebouwd uit de database, niet uit één run: de zoekopdracht "fietscomputer"
@@ -29,7 +29,9 @@ programma op je eigen computer (alleen bereikbaar via 127.0.0.1) dat dezelfde
 pagina live toont, met knoppen om je eigen aan- en verkopen vast te leggen in
 koopjes.db (tabel `trade`, zie trades.py) en om advertenties als favoriet te
 bewaren of weg te zetten (tabel `listing_mark`, zie marks.py). Dat is het
-enige dat hier schrijft.
+enige dat hier schrijft. Plus de knop controleer: die haalt één advertentie
+nu op bij Marktplaats en legt vast of hij gereserveerd is, wat erop geboden
+is en of hij er nog staat (recheck.py).
 """
 from __future__ import annotations
 
@@ -54,6 +56,7 @@ import markets as mk
 import marks as mr
 import racefiets_jev as mp
 import patterns as pt
+import recheck as rc
 import trades as tr
 import vinted as vn
 
@@ -230,10 +233,12 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
         reserved = "reserved_at" if "reserved_at" in columns else "NULL AS reserved_at"
         bids = ("bid_count, bid_minimum, bids_checked_at" if "bids_checked_at" in columns
                 else "NULL AS bid_count, NULL AS bid_minimum, NULL AS bids_checked_at")
+        checked = ("bid_high, checked_at" if "checked_at" in columns
+                   else "NULL AS bid_high, NULL AS checked_at")
         where = " OR ".join("url LIKE ?" for _ in categories)
         rows = conn.execute(
             f"SELECT item_id, title, description, price_eur, price_type, is_bid, {asking}, "
-            f"city, posted_date, condition, url, first_seen, last_seen, {images}, {reserved}, {bids} "
+            f"city, posted_date, condition, url, first_seen, last_seen, {images}, {reserved}, {bids}, {checked} "
             f"FROM listing WHERE disappeared_at IS NULL AND ({where})",
             tuple(f"%/{category}/%" for category in categories),
         ).fetchall()
@@ -275,7 +280,18 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
         # 3); één bod is dan genoeg om Listing.price_is_asking hetzelfde te
         # laten zeggen.
         listing.bid_minimum = r["bid_minimum"]
+        listing.bid_high = r["bid_high"]
+        # Een bod boven de vraagprijs geldt tot de volgende opvraging. Een
+        # ronde die MIN_BID niet opvraagt (bid_lookup fast, en overdag none)
+        # schrijft de vraagprijs uit de zoekresultaten terug, maar daaronder
+        # is de advertentie niet meer te krijgen — dezelfde regel als
+        # racefiets_jev.apply_bid_info().
+        if (listing.price_type == "MIN_BID" and listing.bid_high is not None
+                and listing.price_eur is not None and listing.bid_high > listing.price_eur):
+            listing.price_eur = listing.bid_high
         listing.bids_checked_at = r["bids_checked_at"]
+        # Wanneer de knop controleer de advertentiepagina las (migratie 14).
+        listing.checked_at = r["checked_at"]
         if r["bid_count"] is not None:
             listing.bid_count = r["bid_count"]
         elif r["is_bid"] and r["price_is_asking"] == 0:
@@ -472,7 +488,21 @@ def mark_control(listing, d: Dashboard) -> str:
     else:
         buttons = button(mr.FAVORITE, "☆ favoriet") + away + (button("geen", "wissen") if back else "")
     return (f"{note}<form class='inline mark' method='post' action='/markeer'>"
-            f"{hidden(d, item_id=listing.item_id, tab='')}{buttons}</form>{note_control(mark, d)}")
+            f"{hidden(d, item_id=listing.item_id, tab='')}{buttons}{check_button(listing)}</form>"
+            f"{note_control(mark, d)}")
+
+
+def check_button(listing) -> str:
+    """"controleer": haalt de advertentie nu op bij Marktplaats (recheck.py).
+    In het formulier van favoriet/weg, met een eigen formaction, zodat het op
+    dezelfde regel staat en na de klik op dezelfde tab en plek terugkomt."""
+    checked = getattr(listing, "checked_at", None)
+    when = f"<span class='muted'>gecontroleerd {esc(local_time(checked))}</span>" if checked else ""
+    # Het puntje scheidt hem van "weg: niet waard / gereserveerd", waar hij
+    # anders een derde reden om weg te zetten lijkt.
+    return ("<span class='muted'>·</span><button class='quiet' formaction='/controleer' "
+            "title='Haalt deze advertentie nu op bij "
+            "Marktplaats: gereserveerd, biedingen, prijs, en of hij er nog staat.'>controleer</button>" + when)
 
 
 def note_control(mark: Optional[mr.Mark], d: Dashboard) -> str:
@@ -504,6 +534,9 @@ def bid_note(listing) -> str:
     if count is None or not checked:
         return ""
     parts = [f"{count} bieding{'en' if count != 1 else ''}" if count else "nog geen bod"]
+    high = getattr(listing, "bid_high", None)
+    if count and high is not None and high != listing.price_eur:
+        parts.append(f"hoogste {euro(high)}")
     if listing.bid_minimum:
         parts.append(f"min. {euro(listing.bid_minimum)}")
     parts.append(f"opgehaald {local_time(checked)}")
@@ -564,8 +597,17 @@ def flips_panel(d: Dashboard) -> str:
         "hele model; onder de verkoopprijs staat welke van de twee. "
         f"× {str(flip['negotiation_factor']).replace('.', ',')} voor afdingen. De band eronder is de winst "
         "bij het goedkoopste en duurste kwart van die advertenties. Bij <em>huidig bod</em> loopt de prijs "
-        "nog op; bij <em>vraagprijs, bieden kan</em> kun je vaak lager uitkomen. Gereserveerde advertenties "
+        "nog op; bij <em>vraagprijs, bieden kan</em> kun je vaak lager uitkomen, maar er kan ook al hoger "
+        "geboden zijn: die biedingen staan alleen op de advertentiepagina. Gereserveerde advertenties "
         f"staan hier niet (wel in Alle {d.market.items}) en tellen niet als vergelijkingsprijs zolang ze online staan.</p>"
+    )
+    parts.append(
+        "<p class='explain'>Dit is wat de laatste ronde zag; overdag komen alleen de nieuwste advertenties "
+        "langs, de rest in de nachtronde. "
+        + ("<strong>controleer</strong> bij een advertentie haalt hem nu op bij Marktplaats: gereserveerd, "
+           "biedingen, prijs, en of hij er nog staat.</p>" if d.editable else
+           "In de live versie (<code>python dashboard.py --serve</code>) haalt <strong>controleer</strong> bij een "
+           "advertentie hem nu op bij Marktplaats: gereserveerd, biedingen, prijs, en of hij er nog staat.</p>")
     )
     away = d.dismissed_flips
     if away:
@@ -1552,6 +1594,16 @@ def action_note(db_path, form: dict) -> str:
     return "Notitie opgeslagen." if note else "Notitie gewist."
 
 
+def action_check(db_path, form: dict) -> str:
+    """Eén advertentie nu ophalen bij Marktplaats (recheck.py) en vastleggen
+    wat erop staat. Na de klik bouwt de pagina opnieuw op uit koopjes.db,
+    dus een gereserveerde flip staat er dan niet meer."""
+    try:
+        return rc.recheck_listing(db_path, form.get("item_id", "")).summary()
+    except rc.RecheckError as exc:
+        raise FormError(str(exc)) from None
+
+
 def action_add(db_path, form: dict) -> str:
     title = (form.get("titel") or "").strip()
     if not title:
@@ -1623,10 +1675,11 @@ ACTIONS = {
     "/verwijder": action_delete,
     "/markeer": action_mark,
     "/notitie": action_note,
+    "/controleer": action_check,
 }
 # Na deze acties terug naar de tab waar je klikte (het formulier zegt welke);
 # na de rest naar Mijn flips, waar je ziet wat je vastlegde.
-STAY_ON_TAB = {"/markeer", "/notitie"}
+STAY_ON_TAB = {"/markeer", "/notitie", "/controleer"}
 MAX_FORM_BYTES = 10_000
 
 
