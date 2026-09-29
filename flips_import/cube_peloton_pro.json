@@ -1,0 +1,75 @@
+{
+  "_toelichting": "In te lezen met: python flips.py import flips_import/cube_peloton_pro.json (twee keer inlezen dubbelt niets). Boodschappenlijst van 29-09-2026: FuturumShop-, bol- en Decathlon-prijzen die dag op de sites gecontroleerd (bron 'gecontroleerd'), AliExpress en Action konden niet geopend worden (bron 'schatting'). Geschrapt omdat de eigenaar het al heeft: Squirt wax (heeft wax), kettingpons (in de multitool), cassettesleutel + kettingzweep, missing-link-tang. Doelprijs 400-450 komt uit hetzelfde advies ('met gepoetst frame goed haalbaar'), geen marktmeting; de marktcheck op /flips zet de vraagprijzen van Cube Peloton-advertenties ernaast. De OV-ritten staan op vol tarief; was 11,46 de prijs vóór korting, zet de korting dan op 40% op /flips.",
+  "flips": [
+    {
+      "titel": "Cube Peloton Pro, maat 62",
+      "markt": "fietsen",
+      "gekocht_op": "2026-09-29",
+      "prijs": 70,
+      "url": "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/m2447057249-cube-racefiets-met-shimano-105-onderdelen",
+      "advertentie": "m2447057249",
+      "fase": "gekocht",
+      "doel_laag": 400,
+      "doel_hoog": 450,
+      "zoekwoorden": "cube peloton",
+      "specs": {
+        "merk": "Cube Peloton Pro",
+        "maat": "62",
+        "materiaal": "aluminium",
+        "groep": "Shimano 105 (5701, 10-speed)",
+        "wielen": "Mavic Aksium"
+      },
+      "klussen": [
+        {"soort": "reis", "titel": "OV ophalen (heen)", "tarief": 11.46, "korting": "vol", "gedaan_op": "2026-09-29"},
+        {"soort": "reis", "titel": "OV ophalen (terug)", "tarief": 11.46, "korting": "vol", "gedaan_op": "2026-09-29"},
+
+        {"soort": "onderdeel", "titel": "Shimano Tiagra CS-HG500 cassette 11-32T", "winkel": "FuturumShop", "geschat": 29.95, "bron": "gecontroleerd", "notitie": "bol: 37,99"},
+        {"soort": "onderdeel", "titel": "Shimano derailleurwieltjes 5700 (set)", "winkel": "FuturumShop", "geschat": 11.95, "bron": "gecontroleerd"},
+        {"soort": "onderdeel", "titel": "2× Continental Ultra Sport III 700×25C vouwband", "winkel": "FuturumShop", "geschat": 41.90, "bron": "gecontroleerd", "notitie": "Velondo: 14,78 per stuk, verzendkosten onbekend"},
+        {"soort": "onderdeel", "titel": "Shimano R55C4 remblokken (inserts, achter)", "winkel": "FuturumShop", "geschat": 10.95, "bron": "gecontroleerd"},
+
+        {"soort": "onderdeel", "titel": "Ketting KMC X10", "winkel": "AliExpress", "geschat": 13, "bron": "schatting", "notitie": "alleen in de officiële KMC-winkel; in NL 31-41"},
+        {"soort": "onderdeel", "titel": "Voorblad 50T 110BCD (road 2x, met pinnen)", "winkel": "AliExpress", "geschat": 12, "bron": "schatting"},
+        {"soort": "onderdeel", "titel": "Stuurlint (RockBros / West Biking)", "winkel": "AliExpress", "geschat": 5, "bron": "schatting"},
+        {"soort": "onderdeel", "titel": "Titanium boutjes M5 (stuurpen + bidonhouder)", "winkel": "AliExpress", "geschat": 8, "bron": "schatting", "notitie": "optioneel: voegt voor de verkoop niets toe"},
+        {"soort": "onderdeel", "titel": "Framebescherming (chainstay protector)", "winkel": "AliExpress", "geschat": 2, "bron": "schatting"},
+
+        {"soort": "onderdeel", "titel": "2× binnenband 700×23/32 presta", "winkel": "Decathlon", "geschat": 7.98, "bron": "gecontroleerd", "notitie": "click & collect: gratis; thuisbezorgen 3,95"},
+
+        {"soort": "onderdeel", "titel": "Magic sponzen", "winkel": "Action", "geschat": 1, "bron": "schatting"},
+        {"soort": "onderdeel", "titel": "Wit lakstiftje", "winkel": "Action", "geschat": 5, "bron": "schatting", "notitie": "anders bij Halfords"},
+        {"soort": "onderdeel", "titel": "Nagellak of modelverf, rood en blauw", "winkel": "Action", "geschat": 3, "bron": "schatting", "notitie": "krasverwijderaar + nagellak samen 5-8"},
+
+        {"soort": "klus", "titel": "Schoonmaken: sopje, wasbenzine voor de zwarte vegen, IPA of magic sponge voor de bruine vlekken", "notitie": "niet hard over de stickers wrijven"},
+        {"soort": "klus", "titel": "Krasjes wegpoetsen met krasverwijderaar, per buis, kleine rondjes"},
+        {"soort": "klus", "titel": "Lak bijwerken: wit met lakstift, rood/blauw met nagellak, alleen in de beschadiging"},
+        {"soort": "klus", "titel": "Afwerken met autowas + framefolie waar de kabels tegen het balhoofd schuren"},
+        {"soort": "klus", "titel": "Lassen controleren bij goed licht (balhoofd, zitbuis/bovenbuis) — vóór de verkoop", "notitie": "haarlijntje over een las kan een scheur in het aluminium zijn"},
+        {"soort": "klus", "titel": "Foto's maken voor de advertentie"},
+        {"soort": "klus", "titel": "Advertentie plaatsen"}
+      ]
+    },
+    {"titel": "SPD-pedalen (paar 1)", "markt": "spullen", "gekocht_op": "2026-09-29", "prijs": 0, "fase": "voorraad"},
+    {"titel": "SPD-pedalen (paar 2)", "markt": "spullen", "gekocht_op": "2026-09-29", "prijs": 0, "fase": "voorraad"},
+    {"titel": "Giant PSL wielen (2)", "markt": "spullen", "gekocht_op": "2026-09-29", "prijs": 0, "fase": "voorraad"},
+    {"titel": "Tacx fietstrainer (oud)", "markt": "spullen", "gekocht_op": "2026-09-29", "prijs": 0, "fase": "voorraad", "notitie": "aankoopprijs nog invullen"}
+  ],
+  "investeringen": [
+    {"soort": "onderdeel", "titel": "Kettingslijtagemeter", "winkel": "AliExpress", "geschat": 2, "bron": "schatting"},
+    {"soort": "onderdeel", "titel": "Schroefborg (blauw)", "winkel": "AliExpress", "geschat": 2, "bron": "schatting"},
+    {"soort": "onderdeel", "titel": "Wasbenzine", "winkel": "Action", "geschat": 2, "bron": "schatting", "notitie": "ontvet sterker dan de Cyclon-degreaser"},
+    {"soort": "onderdeel", "titel": "Isopropylalcohol", "winkel": "Action", "geschat": 3, "bron": "schatting"},
+    {"soort": "onderdeel", "titel": "Autopolish of autowas", "winkel": "Action", "geschat": 4, "bron": "schatting"},
+    {"soort": "onderdeel", "titel": "Microvezeldoeken", "winkel": "Action", "geschat": 2, "bron": "schatting"},
+    {"soort": "onderdeel", "titel": "Krasverwijderaar (Turtle Wax Scratch Repair of T-Cut)", "winkel": "Action", "geschat": 5, "bron": "schatting", "notitie": "of Kruidvat"},
+
+    {"soort": "onderdeel", "titel": "Kettingzweep", "prijs": 0, "notitie": "al in bezit"},
+    {"soort": "onderdeel", "titel": "Opzetstuk cassette-afnemer (Decathlon)", "prijs": 0, "notitie": "al in bezit"},
+    {"soort": "onderdeel", "titel": "Multitool met kettingpons", "prijs": 0, "notitie": "al in bezit"},
+    {"soort": "onderdeel", "titel": "Missing-link-tang", "prijs": 0, "notitie": "al in bezit"},
+    {"soort": "onderdeel", "titel": "Reserve quicklink", "prijs": 0, "notitie": "al in bezit"},
+    {"soort": "onderdeel", "titel": "Fietspomp", "prijs": 0, "notitie": "al in bezit"},
+    {"soort": "onderdeel", "titel": "Wax lube", "prijs": 0, "notitie": "al in bezit"},
+    {"soort": "onderdeel", "titel": "Cyclon cleaning set", "prijs": 0, "notitie": "al in bezit; degreaser werkt matig"}
+  ]
+}

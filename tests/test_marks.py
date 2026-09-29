@@ -62,6 +62,8 @@ class MarkStorageTest(unittest.TestCase):
             conn.execute("DROP TABLE listing_note")
             # En wat de migraties daarna aanmaakten: die draaien opnieuw.
             conn.execute("DROP TABLE comp_choice")
+            for table in db.FLIP_TABLES:  # migratie 17
+                conn.execute(f"DROP TABLE {table}")
             conn.execute("DELETE FROM schema_version WHERE version >= 15")
             conn.execute("UPDATE listing_mark SET note = 'gevraagd of 100 kan' WHERE item_id = 'a'")
             conn.commit()
