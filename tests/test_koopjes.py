@@ -310,6 +310,41 @@ class RunSlotTest(TempDirTest):
         self.assertIn("overdag", err.getvalue())
 
 
+
+class ViewsBudgetTest(TempDirTest):
+    """views_budget: hoeveel advertentiepagina's een ronde ophaalt om weergaven
+    en likes te meten (views.py). Standaard 0: geen extra verzoeken."""
+
+    def slots(self, budget):
+        return {"slots": {"overdag": {"searches": ["racefietsen"], "pages": 8, "times": ["08:30"],
+                                      "views_budget": budget}}}
+
+    def test_measured_after_the_searches_only_with_a_budget(self):
+        for budget, expected in ((0, ["racefiets_jev.py"]), (15, ["racefiets_jev.py", "views.py"])):
+            config = koopjes.load_config(write_config(self.dir, **self.slots(budget)))
+            calls = []
+
+            def runner(command, log, cwd):
+                calls.append(command)
+                return 0
+
+            with koopjes.working_directory(self.dir):
+                koopjes.run_slot(config, "overdag", runner=runner, echo=False)
+            self.assertEqual([Path(c[1]).name for c in calls], expected, budget)
+            if budget:
+                self.assertEqual(calls[-1][2:4], ["meet", "15"])
+
+    def test_the_budget_must_be_a_small_whole_number(self):
+        for bad in (-1, 500, "40", True):
+            with self.assertRaisesRegex(koopjes.ConfigError, "views_budget"):
+                koopjes.load_config(write_config(self.dir, **self.slots(bad)))
+
+    def test_the_shipped_schedule_measures_at_night_and_a_little_during_the_day(self):
+        config = koopjes.load_config(Path(repo_file("schedule.json")))
+        self.assertEqual(config.slots["nacht"].views_budget, 40)
+        self.assertLessEqual(config.slots["overdag"].views_budget, 15)
+        self.assertEqual(config.slots["week"].views_budget, 0)
+
 class RoundRecordTest(TempDirTest):
     """Every round leaves a line in rondes.jsonl, whatever its outcome."""
 

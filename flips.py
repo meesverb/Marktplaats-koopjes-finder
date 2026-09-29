@@ -183,6 +183,9 @@ class Flip:
     photos: list = field(default_factory=list)  # dict(id, file, kind, added_at)
     stage_since: str = ""
     market_check: Optional["MarketCheck"] = None
+    # Weergaven en likes van jouw advertentie (views.py, listing_stats), oudste
+    # eerst: dict(observed_at, views, favorites, ...). Leeg zonder advertentielink.
+    views: list = field(default_factory=list)
 
     @property
     def id(self) -> int:
@@ -333,12 +336,19 @@ def derived_stage(trade: tr.Trade, stored: Optional[str]) -> str:
     return "te_koop" if (trade.market or "") not in OWN_MARKETS else "gekocht"
 
 
+def sale_item_id(url: str) -> Optional[str]:
+    """Het advertentienummer (m1234567890) uit de link naar jouw advertentie."""
+    import re
+    found = re.search(r"/(m\d{6,})", url or "")
+    return found.group(1) if found else None
+
+
 def load_book(db_path, with_market_check: bool = True) -> FlipBook:
     """Alles voor /flips. Alleen lezen; een database van vóór migratie 17
     geeft de trades zonder klussen."""
     trades = tr.load_trades(db_path)
     conn = _open_readonly(db_path)
-    extra, tasks, bids, photos, stages = {}, [], [], [], {}
+    extra, tasks, bids, photos, stages, stats = {}, [], [], [], {}, {}
     try:
         if conn is not None and "flip" in _tables(conn):
             extra = {r["trade_id"]: dict(r) for r in conn.execute("SELECT * FROM flip")}
@@ -348,6 +358,7 @@ def load_book(db_path, with_market_check: bool = True) -> FlipBook:
             photos = [dict(r) for r in conn.execute("SELECT * FROM flip_photo ORDER BY id")]
             for r in conn.execute("SELECT trade_id, stage, at FROM trade_stage ORDER BY at, id"):
                 stages.setdefault(r["trade_id"], []).append((r["stage"], r["at"]))
+            stats = db.list_stats(conn)
     finally:
         if conn is not None:
             conn.close()
@@ -371,6 +382,7 @@ def load_book(db_path, with_market_check: bool = True) -> FlipBook:
         f.tools = [k for k in tasks if k.trade_id == t.id and k.investment]
         f.bids = [b for b in bids if b["trade_id"] == t.id]
         f.photos = [p for p in photos if p["trade_id"] == t.id]
+        f.views = stats.get(sale_item_id(f.sale_url) or "", [])
         flips.append(f)
     if with_market_check:
         own = {t.item_id for t in trades if t.item_id}

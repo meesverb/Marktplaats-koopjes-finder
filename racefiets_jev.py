@@ -110,6 +110,20 @@ class Listing:
     # one still at its asking price without it. Not a CSV column, same
     # reason as site_specs.
     bid_high: Optional[float] = field(default=None, metadata={"csv": False})
+    # Where the seller is (search_location()): for the distance filter in
+    # the dashboards (distance.py). None when Marktplaats only knows the
+    # country. Not CSV columns, same reason as site_specs.
+    latitude: Optional[float] = field(default=None, metadata={"csv": False})
+    longitude: Optional[float] = field(default=None, metadata={"csv": False})
+    # Paid promotion as the search results give it: priorityProduct
+    # ("DAGTOPPER", "" for NONE) and the traits ("DAG_TOPPER_7DAYS
+    # PACKAGE_PREMIUM ..."). For views.py: does a Dagtopper get more views?
+    promotion: str = field(default="", metadata={"csv": False})
+    traits: str = field(default="", metadata={"csv": False})
+    # Views and saves from the listing's own page (views.page_stats()), when
+    # this run fetched that page anyway (bid or detail lookup). sync_listings()
+    # stores it in listing_stats.
+    page_stats: Optional[dict] = field(default=None, metadata={"csv": False})
 
     @property
     def price_is_asking(self) -> bool:
@@ -330,7 +344,26 @@ def warn_bid_structure_changed(detail: str) -> None:
     )
 
 
-def fetch_bid_info(session: requests.Session, vip_url: str) -> Optional[dict]:
+def page_stats(listing_page: Optional[dict]) -> Optional[dict]:
+    """Views and saves from a listing page's `listing` object (listing_page_data()):
+    {"views": 158, "favorites": 4, "since": "2026-09-29T12:39:43Z"}. Only on
+    the page itself, not in the search results (checked 29-09-2026: stats =
+    viewCount, favoritedCount, since). None when the page has no stats —
+    that is no reason to fail a bid lookup."""
+    stats = (listing_page or {}).get("stats")
+    if not isinstance(stats, dict):
+        return None
+    views, favorites = as_number(stats.get("viewCount")), as_number(stats.get("favoritedCount"))
+    if views is None and favorites is None:
+        return None
+    return {
+        "views": None if views is None else int(views),
+        "favorites": None if favorites is None else int(favorites),
+        "since": text_value(stats.get("since")) or None,
+    }
+
+
+def fetch_bid_info(session: requests.Session, vip_url: str, stats_out: Optional[dict] = None) -> Optional[dict]:
     """Fetch a listing's own page and return its bidsInfo (current bids /
     minimum bid) — this isn't included in the search results for FAST_BID
     listings, only on the listing page itself (loaded client-side there via
@@ -347,6 +380,10 @@ def fetch_bid_info(session: requests.Session, vip_url: str) -> Optional[dict]:
     except ListingPageError as exc:
         warn_bid_structure_changed(str(exc))
         return None
+    # The page is here anyway: its views and saves come along for free
+    # (views.py), instead of a second request later.
+    if stats_out is not None:
+        stats_out.update(page_stats(listing) or {})
     return (listing or {}).get("bidsInfo")
 
 
@@ -469,14 +506,17 @@ def enrich_bid_listings(
 
     print(f"Biedprijzen ophalen voor {len(targets)} bied-advertenties...", file=sys.stderr)
     for i, listing in enumerate(targets, start=1):
+        stats: dict = {}
         try:
-            bids_info = fetch_bid_info(session, listing.url)
+            bids_info = fetch_bid_info(session, listing.url, stats)
         except requests.RequestException as exc:
             print(f"  warning: kon bod niet ophalen voor {listing.item_id}: {exc}", file=sys.stderr)
             continue
 
         if bids_info:
             apply_bid_info(listing, bids_info)
+        if stats:
+            listing.page_stats = {**stats, "source": "biedopvraging"}
 
         print(f"  {i}/{len(targets)} verwerkt", file=sys.stderr)
         if i < len(targets):
@@ -1000,8 +1040,32 @@ def price_from_info(price_info: dict) -> tuple[Optional[float], str]:
     return (price_cents / 100 if has_real_price else None), price_type
 
 
+def search_location(raw: dict) -> tuple[Optional[float], Optional[float]]:
+    """(latitude, longitude) of a listing from the search results. Marktplaats
+    sends them for every listing, also without a postcode in the request
+    (checked 29-09-2026). A seller who only gave the country comes with
+    onCountryLevel true and 0, 0 — that is no place, so None."""
+    location = raw.get("location") or {}
+    if not isinstance(location, dict) or location.get("onCountryLevel") is True:
+        return None, None
+    lat, lon = as_number(location.get("latitude")), as_number(location.get("longitude"))
+    if lat is None or lon is None or (lat == 0 and lon == 0) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None, None
+    return lat, lon
+
+
+def search_promotion(raw: dict) -> tuple[str, str]:
+    """(priorityProduct, traits) as text. "NONE" is no promotion, so ""."""
+    product = text_value(raw.get("priorityProduct"))
+    traits = raw.get("traits")
+    words = " ".join(t for t in traits if isinstance(t, str) and " " not in t) if isinstance(traits, list) else ""
+    return ("" if product.upper() == "NONE" else product), words
+
+
 def parse_listing(raw: dict) -> Listing:
     price_eur, price_type = price_from_info(raw.get("priceInfo") or {})
+    latitude, longitude = search_location(raw)
+    promotion, traits = search_promotion(raw)
 
     vip_url = text_value(raw.get("vipUrl"))
     url = BASE_URL + vip_url if vip_url.startswith("/") else vip_url
@@ -1033,6 +1097,10 @@ def parse_listing(raw: dict) -> Listing:
         reserved=raw.get("reserved") is True,
         image_urls=search_image_urls(raw),
         site_specs=site_specs(raw),
+        latitude=latitude,
+        longitude=longitude,
+        promotion=promotion,
+        traits=traits,
     )
 
 
@@ -2483,6 +2551,12 @@ def lookup_listing_details(args: argparse.Namespace, listings: list[Listing]) ->
         except requests.RequestException as exc:
             print(f"  warning: kon {listing.item_id} niet ophalen: {exc}", file=sys.stderr)
         else:
+            try:
+                stats = page_stats(listing_page_data(page))
+            except ListingPageError:
+                stats = None  # the description below is what this lookup is for
+            if stats:
+                listing.page_stats = {**stats, "source": "omschrijving"}
             parsed = parse_listing_page(page)
             if parsed is None:
                 warn_detail_structure_changed("omschrijving niet gevonden")

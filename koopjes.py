@@ -94,6 +94,9 @@ class Slot:
     times: tuple[SlotTime, ...]
     valuation: bool = False
     open_browser: str = "never"
+    # How many listing pages this round may fetch to measure views and saves
+    # (views.py). 0: none — every request here is one on top of the search.
+    views_budget: int = 0
 
 
 @dataclass(frozen=True)
@@ -220,6 +223,9 @@ def load_config(path: Path) -> Config:
                 f"tijdslot {name!r}: 'open_browser' moet een van "
                 f"{', '.join(OPEN_BROWSER_CHOICES)} zijn"
             )
+        views_budget = spec.get("views_budget", 0)
+        if not isinstance(views_budget, int) or isinstance(views_budget, bool) or not 0 <= views_budget <= 200:
+            raise ConfigError(f"tijdslot {name!r}: 'views_budget' moet een geheel getal van 0 tot 200 zijn")
         slots[name] = Slot(
             name=name,
             searches=tuple(names),
@@ -229,6 +235,7 @@ def load_config(path: Path) -> Config:
             times=tuple(parse_time(t) for t in spec.get("times") or []),
             valuation=bool(spec.get("valuation", False)),
             open_browser=open_browser,
+            views_budget=views_budget,
         )
     if not slots:
         raise ConfigError(f"{path} heeft geen 'slots'")
@@ -328,6 +335,10 @@ def search_commands(config: Config, slot: Slot) -> list[list[str]]:
     ordered = sorted(groups.items(), key=lambda kv: not kv[0][0])
     return [search_command(config, slot, tuple(names), html=report, bid_lookup=bid_lookup)
             for (report, bid_lookup), names in ordered]
+
+
+def views_command(config: Config, budget: int) -> list[str]:
+    return [sys.executable, str(HERE / "views.py"), "meet", str(budget), "--db", config.db]
 
 
 def valuation_command(config: Config) -> list[str]:
@@ -443,6 +454,14 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner, started: str) -> i
         if code != 0:
             failed = True
             log.line(f"FOUT: het zoeken stopte met code {code}")
+
+    # After the searches, so a listing they just found can be measured, and
+    # a separate process like they are: its lines land in the same log.
+    if slot.views_budget:
+        code = runner(views_command(config, slot.views_budget), log, config.base_dir)
+        if code != 0:
+            failed = True
+            log.line(f"FOUT: het meten van weergaven en likes stopte met code {code}")
 
     if slot.valuation:
         code = runner(valuation_command(config), log, config.base_dir)
