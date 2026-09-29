@@ -296,6 +296,50 @@ class RunSlotTest(TempDirTest):
         self.assertIn("overdag", err.getvalue())
 
 
+class RoundRecordTest(TempDirTest):
+    """Every round leaves a line in rondes.jsonl, whatever its outcome."""
+
+    def run_slot(self, slot, codes=None):
+        config = koopjes.load_config(write_config(self.dir))
+        codes = dict(codes or {})
+
+        def runner(command, log, cwd):
+            return codes.get(Path(command[1]).name, 0)
+
+        with koopjes.working_directory(self.dir):
+            return koopjes.run_slot(config, slot, runner=runner, echo=False), config
+
+    def test_each_round_is_recorded_and_shown_in_the_overview(self):
+        self.run_slot("overdag")
+        self.run_slot("nacht", codes={"racefiets_jev.py": 1})
+        rounds = koopjes.load_rounds(self.dir / "logs" / "rondes.jsonl")
+        self.assertEqual([(r["slot"], r["status"]) for r in rounds],
+                         [("nacht", "fout"), ("overdag", "ok")])
+        overview = (self.dir / "overzicht.html").read_text(encoding="utf-8")
+        self.assertIn("Laatste rondes", overview)
+        # The overview is written after the record, so it has this round too.
+        self.assertIn("fout — zie log", overview)
+
+    def test_a_skipped_round_is_recorded(self):
+        config = koopjes.load_config(write_config(self.dir))
+        with koopjes.run_lock(koopjes.lock_path(config)):
+            self.run_slot("overdag")
+        rounds = koopjes.load_rounds(self.dir / "logs" / "rondes.jsonl")
+        self.assertEqual(rounds[0]["status"], "overgeslagen")
+
+    def test_a_damaged_line_is_skipped_and_status_shows_the_last_rounds(self):
+        self.run_slot("overdag")
+        with open(self.dir / "logs" / "rondes.jsonl", "a", encoding="utf-8") as f:
+            f.write("{half weggeschreven\n")
+        self.run_slot("nacht")
+        rounds = koopjes.load_rounds(self.dir / "logs" / "rondes.jsonl")
+        self.assertEqual([r["slot"] for r in rounds], ["nacht", "overdag"])
+        config = koopjes.load_config(self.dir / "schedule.json")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            koopjes.print_status(config)
+        self.assertIn("Ronde nacht om", out.getvalue())
+
+
 class ComputersRoundTest(TempDirTest):
     """De overdagronde voor fietscomputers: ondiep, nieuwste eerst, en het
     dashboard opent alleen voor een nieuwe flip."""

@@ -69,6 +69,13 @@ Everything a round prints goes to `logs/koopjes.log`. Relative paths in
 `schedule.json` are relative to that file, so it doesn't matter which
 directory the scheduler starts the round in.
 
+Every round, whatever its outcome, also leaves one line in
+`logs/rondes.jsonl` (slot, start time, `ok`/`fout`/`overgeslagen`, number of
+new listings; another path via `"rounds"` under `files`). `overzicht.html`
+shows the last 12 under **Laatste rondes** and `python koopjes.py status` the
+last 3, so you can see whether the scheduled rounds actually ran and reached
+Marktplaats.
+
 The shipped `schedule.json` follows a measurement of Marktplaats itself
 (September 2026, category racefietsen): 400-500 new listings a day, spread
 fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
