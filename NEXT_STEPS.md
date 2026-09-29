@@ -61,15 +61,15 @@ paar weken data heeft.
 ## Taxatie: wat er nu al kan
 
 `valuation.py` taxeert de fiets uit `mijn_fiets.md` op de advertenties in
-`koopjes.db` (fase 3). Om er echt iets uit te krijgen moet die database eerst
-comps bevatten:
+`koopjes.db` (fase 3) die de eigenaar zelf meenam op `/fiets` (sinds
+29-09-2026; de nachtronde crawlt "giant defy" al):
 
 ```bash
-python racefiets_jev.py --query "giant defy" --pages 0
+python dashboard.py --serve        # http://127.0.0.1:8765/fiets: meenemen of niet
 python valuation.py --db koopjes.db
 ```
 
-Zonder vergelijkbare advertenties komt er met opzet géén bedrag uit. Wat er
+Niets meegenomen, dan komt er met opzet géén bedrag uit. Wat er
 nog ontbreekt om de taxatie compleet te maken staat bij fase 3 in §12 van het
 plan: verdwijn-historie voor de gemeten E2-factor, en componentprijzen voor E3
 en voor het verschil tussen scenario A en B.

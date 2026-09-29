@@ -6,7 +6,8 @@ Drie onafhankelijke schatters uit §6, daarna gemengd tot één band:
   `koopjes.db`, gekozen via een ladder met afnemend vertrouwen (zelfde model →
   zelfde modelfamilie → zelfde segment). Welke trede en welke n gebruikt is
   staat altijd in de bewijsregels; onder n=5 wordt het nooit als hard getal
-  gepresenteerd.
+  gepresenteerd. Voor de eigen fiets geldt de ladder niet meer: die rust op
+  wat de eigenaar zelf meenam op /fiets (`chosen`, zie bike_comps.py).
 - **E2 — vraagprijs → verkoopprijs.** Marktplaats publiceert vraagprijzen, geen
   verkoopprijzen. Advertenties die snel verdwijnen waren realistisch geprijsd,
   advertenties die maanden blijven staan niet; de verhouding tussen die twee
@@ -46,7 +47,7 @@ import racefiets_jev as mp
 
 # Staat in elke valuation-rij, zodat een latere fase kan zien met welke methode
 # een opgeslagen taxatie gemaakt is. Ophogen zodra de rekenwijze verandert.
-METHOD_VERSION = "e1e2e3-2"
+METHOD_VERSION = "e1e2e3-3"  # -3: comps voor de eigen fiets zelf gekozen op /fiets
 
 # Onder dit aantal comps is de mediaan geen hard getal meer (§6). De taxatie
 # gaat wel door — met een lager vertrouwen en een bewijsregel die het zegt.
@@ -399,10 +400,46 @@ RUNGS = [
 ]
 
 
-def select_comps(subject: Subject, candidates: Sequence[CompCandidate]) -> Optional[CompSet]:
+# De taxatie van de eigen fiets rust sinds 29-09-2026 op wat de eigenaar zelf
+# meenam op /fiets (bike_comps.py), niet op de ladder: "Defy" dekt aluminium,
+# Composite, Advanced, Pro en SL, en geen titelregel scheidt die zo goed als
+# zijn eigen blik. Trede 0 in de bewijsregels.
+CHOSEN_RUNG = 0
+CHOSEN_DESCRIPTION = "zelf meegenomen op /fiets"
+# De keuze in `comp_choice` (migratie 16) die meetelt; de andere is "niet".
+COMP_TAKEN = "mee"
+
+
+def chosen_comp_ids(conn: sqlite3.Connection) -> frozenset:
+    """De advertenties die de eigenaar meenam op /fiets. Hierop, en alleen
+    hierop, rust de taxatie van de eigen fiets."""
+    return frozenset(i for i, choice in db.list_comp_choices(conn).items() if choice == COMP_TAKEN)
+
+
+def no_comps_reason(chosen: frozenset, db_path: str) -> str:
+    """Waarom er geen taxatie is, met wat eraan te doen valt."""
+    if not chosen:
+        return ("nog geen advertenties meegenomen. Kies ze op /fiets in "
+                "'python dashboard.py --serve' (alleen wat je meeneemt telt mee).")
+    return (f"geen van de {len(chosen)} meegenomen advertenties heeft een vraagprijs in het meetvenster "
+            f"van {db_path} (bieden met al een bod, of ouder dan {DEFAULT_COMP_WINDOW_DAYS} dagen).")
+
+
+def select_comps(subject: Subject, candidates: Sequence[CompCandidate],
+                 chosen: Optional[frozenset] = None) -> Optional[CompSet]:
     """De hoogste trede die genoeg comps oplevert. Haalt geen enkele trede de
     drempel, dan wint de breedste trede die überhaupt iets vindt — met
-    'indicatief' als vertrouwen, want dat is wat het dan is."""
+    'indicatief' als vertrouwen, want dat is wat het dan is.
+
+    Met `chosen` (item_id's) geen ladder: precies die advertenties, voor
+    zover ze een vraagprijs hebben (`candidates` bevat alleen die). Leeg of
+    geen daarvan met een vraagprijs: geen comps."""
+    if chosen is not None:
+        comps = tuple(c for c in candidates if c.item_id in chosen)
+        if not comps:
+            return None
+        confidence = "hoog" if len(comps) >= MIN_COMPS_FOR_A_HARD_NUMBER else "indicatief"
+        return CompSet(CHOSEN_RUNG, CHOSEN_DESCRIPTION, confidence, comps)
     if subject.kind == "bike":
         candidates = [c for c in candidates if _is_complete_bike(c)]
     found: list[CompSet] = []
@@ -794,8 +831,11 @@ def value_subject(
     components: Sequence[Component] = (),
     extras: Sequence[Component] = (),
     negotiation: Optional[tuple[float, int, int]] = None,
+    chosen: Optional[frozenset] = None,
 ) -> Optional[Valuation]:
     """E1 + E2 + E3 gemengd tot één band met bewijsregels.
+
+    `chosen`: de comps die de eigenaar zelf meenam (zie select_comps()).
 
     `components` zijn de onderdelen voor E3 (som der delen). `extras` zijn
     posten die bovenop de comps komen omdat ze in de comps niet zitten — de
@@ -804,7 +844,7 @@ def value_subject(
 
     Geeft None als er geen comps zijn: dan is er niets om op te taxeren, en een
     getal uit de losse onderdelen zou doen alsof dat wel zo is."""
-    comp_set = select_comps(subject, candidates)
+    comp_set = select_comps(subject, candidates, chosen)
     if comp_set is None:
         return None
 
@@ -813,11 +853,13 @@ def value_subject(
     # Het gewicht op elke bewijsregel is wat die regel in de menging heeft
     # meegeteld; voor E1 hangt dat aan de trede en aan hoeveel comps er zijn.
     comps_weight = CONFIDENCE_WEIGHT[comp_set.confidence] * min(comp_set.n, 10) / 10
+    origin = (comp_set.description if comp_set.rung == CHOSEN_RUNG
+              else f"trede {comp_set.rung} ({comp_set.description})")
     evidence.append(
         Evidence(
             kind="comp",
             note=(
-                f"E1: trede {comp_set.rung} ({comp_set.description}), n={comp_set.n}, "
+                f"E1: {origin}, n={comp_set.n}, "
                 f"mediaan vraagprijs €{asking[1]:.0f} "
                 f"(20e-80e percentiel €{asking[0]:.0f}-€{asking[2]:.0f})"
             ),
@@ -1075,6 +1117,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             file=sys.stderr,
         )
         negotiation = empirical_negotiation_factor(candidates)
+        chosen = chosen_comp_ids(conn)
 
         # Zonder waarnemingen van losse wielsets in de database blijft dit een
         # post zonder bedrag — zichtbaar in de bewijsregels, niet stilzwijgend
@@ -1095,13 +1138,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                 # nooit gebruikt, en viel de CLI altijd terug op de heuristiek —
                 # terwijl upgrade.py en het rapport hem wél doorgaven.
                 negotiation=negotiation,
+                chosen=chosen,
             )
             if valuation is None:
-                print(
-                    f"Geen taxatie voor scenario {key}: geen vergelijkbare advertenties in "
-                    f"{args.db}. Crawl eerst met --query op dit model, dan opnieuw.",
-                    file=sys.stderr,
-                )
+                print(f"Geen taxatie voor scenario {key}: {no_comps_reason(chosen, args.db)}", file=sys.stderr)
                 continue
             # subject_id is de owned_item-rij; het label maakt de uitvoer leesbaar.
             print(format_valuation(valuation, label=bike.label))

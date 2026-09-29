@@ -1022,18 +1022,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         comps = val.fetch_comp_candidates(conn, window_days=args.window_days, query=args.query)
         subject = val.subject_from_owner_bike(bike)
+        chosen = val.chosen_comp_ids(conn)
         scenario_b = val.value_subject(
             subject,
             comps,
             subject_type="owned_item",
             scenario=val.SCENARIOS["b"],
             negotiation=val.empirical_negotiation_factor(comps),
+            chosen=chosen,
         )
         basis = budget_basis(scenario_b, manual_sale_price_from(bike.specs))
         if basis is None:
             print(
-                f"fout: geen vergelijkbare advertenties in {args.db}, dus geen taxatie en dus "
-                "geen budget. Crawl eerst met --query op dit model, of zet "
+                f"fout: geen taxatie, dus geen budget — {val.no_comps_reason(chosen, args.db)} Of zet "
                 f"{MANUAL_SALE_PRICE_KEY} in het scoringsblok van {args.mijn_fiets}.",
                 file=sys.stderr,
             )

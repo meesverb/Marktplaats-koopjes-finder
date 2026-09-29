@@ -369,6 +369,21 @@ MIGRATIONS: list[str] = [
         SELECT item_id, note, marked_at FROM listing_mark WHERE note IS NOT NULL AND note <> '';
     UPDATE listing_mark SET note = NULL;
     """,
+    # 16: which listings the owner took along as comparables for the
+    # valuation of his own bike ("mee") or ruled out ("niet"), on the live
+    # page /fiets (bike_comps.py). The "Defy" line covers aluminium,
+    # Composite, Advanced, Pro, SL and disc bikes from 2009 to now, and no
+    # rule on title words tells them apart as well as he does by looking.
+    # Only "mee" counts in the valuation; no row = not looked at yet. Kept
+    # apart from listing_mark: a favourite is a bike he might buy, a
+    # comparable is a bike like the one he sells.
+    """
+    CREATE TABLE comp_choice (
+        item_id TEXT PRIMARY KEY,
+        choice TEXT NOT NULL,
+        chosen_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -1299,6 +1314,36 @@ def list_notes(conn: sqlite3.Connection) -> dict[str, str]:
     if "listing_mark" in tables and any(r[1] == "note" for r in conn.execute("PRAGMA table_info(listing_mark)")):
         return dict(conn.execute("SELECT item_id, note FROM listing_mark WHERE note IS NOT NULL AND note <> ''"))
     return {}
+
+
+# --- Comparables for the own bike (migration 16) --------------------------------
+
+
+def set_comp_choice(conn: sqlite3.Connection, item_id: str, choice: Optional[str]) -> None:
+    """"mee" or "niet" for a listing on /fiets; None removes the choice, so
+    the listing is back to "not looked at yet"."""
+    if choice:
+        conn.execute(
+            """
+            INSERT INTO comp_choice (item_id, choice, chosen_at) VALUES (?, ?, ?)
+            ON CONFLICT(item_id) DO UPDATE SET choice = excluded.choice, chosen_at = excluded.chosen_at
+            """,
+            (item_id, choice, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+    else:
+        conn.execute("DELETE FROM comp_choice WHERE item_id = ?", (item_id,))
+    conn.commit()
+
+
+def list_comp_choices(conn: sqlite3.Connection) -> dict[str, str]:
+    """{item_id: choice}. Empty on a database from before migration 16
+    opened read-only."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'comp_choice'"
+    ).fetchone()
+    if not exists:
+        return {}
+    return dict(conn.execute("SELECT item_id, choice FROM comp_choice").fetchall())
 
 
 def _parse_iso(value: str) -> datetime:

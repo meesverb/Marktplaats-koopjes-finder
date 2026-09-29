@@ -322,9 +322,11 @@ class LiveServerTest(unittest.TestCase):
         self.addCleanup(self.httpd.server_close)
         self.addCleanup(self.httpd.shutdown)
 
-    def request(self, method, path="/", fields=None, host=None, origin=None):
+    def request(self, method, path="/", fields=None, host=None, origin=None, live=False):
         conn = self.http.HTTPConnection("127.0.0.1", self.port, timeout=10)
         headers = {"Host": host or f"127.0.0.1:{self.port}"}
+        if live:
+            headers["X-Live"] = "1"  # zoals de knoppen op de live pagina (fetch)
         body = None
         if fields is not None:
             body = self.urlparse.urlencode(fields)
@@ -474,6 +476,80 @@ class LiveServerTest(unittest.TestCase):
                                                            "tab": "flips"})
         self.assertTrue(location.endswith("#mijn"))
 
+    def live(self, path, fields):
+        import json
+        status, location, text = self.request("POST", path, {"token": self.token(), **fields}, live=True)
+        self.assertEqual((status, location), (200, ""))
+        return json.loads(text)
+
+    def test_marking_without_reloading(self):
+        _, _, page = self.request("GET")
+        self.assertIn("Flips (2)", page)  # c en a0
+        data = self.live("/markeer", {"item_id": "c", "soort": "niet waard", "tab": "flips"})
+        self.assertIn("Weggezet (niet waard)", data["message"])
+        item = data["item"]
+        self.assertEqual((item["id"], item["mark"], item["available"]), ("c", "weg", False))
+        self.assertIn("weggezet (niet waard)", item["badge"])
+        self.assertIn("terugzetten", item["mine"])
+        self.assertEqual(data["tabs"]["flips"], "Flips (1)")
+        self.assertIn("1 flip weggezet", data["away"])
+        # Weg is een rij verbergen; het hele tabblad komt pas mee bij terugzetten.
+        self.assertEqual(set(data["panels"]), {"favorieten"})
+        back = self.live("/markeer", {"item_id": "c", "soort": "geen"})
+        self.assertTrue(back["item"]["available"])
+        self.assertIn("flips", back["panels"])
+        self.assertEqual(back["tabs"]["flips"], "Flips (2)")
+
+    def test_a_favorite_and_a_note_without_reloading(self):
+        data = self.live("/markeer", {"item_id": "c", "soort": "favoriet"})
+        self.assertEqual(data["item"]["mark"], "favoriet")
+        self.assertEqual(data["tabs"]["favorieten"], "Favorieten (1)")
+        self.assertIn("data-item='c'", data["panels"]["favorieten"])
+        self.assertIn("favorieten (1)", data["markOptions"])
+        data = self.live("/notitie", {"item_id": "c", "notitie": "vraag of 80 kan"})
+        self.assertEqual(data["item"]["note"], 1)
+        self.assertIn("vraag of 80 kan", data["item"]["mine"])
+        self.assertIn("vraag of 80 kan", data["item"]["text"])  # het zoekvak vindt hem
+
+    def test_a_refusal_or_a_stale_page_without_reloading(self):
+        import json
+        self.assertIn("Niet opgeslagen", self.live("/markeer", {"item_id": "c", "soort": "weg"})["message"])
+        _, _, text = self.request("POST", "/markeer", {"token": "oud", "item_id": "c", "soort": "favoriet"},
+                                  live=True)
+        self.assertTrue(json.loads(text)["reload"])
+        self.assertEqual(dashboard.mr.load_marks(self.db), {})
+
+    def test_the_live_page_has_buttons_not_a_form_per_listing(self):
+        # Duizenden formulieren maakten de pagina traag; alleen Mijn flips
+        # (een handvol) heeft ze nog.
+        _, _, page = self.request("GET")
+        self.assertNotIn("method='post' action='/markeer'", page)
+        self.assertNotIn("method='post' action='/gekocht'", page)
+        self.assertIn("data-action='/markeer' data-item='c'", page)
+        self.assertIn("data-action='/gekocht' data-item='c'", page)
+        self.assertIn("data-action='/notitie' data-item='c'", page)
+
+    def test_the_heavy_part_is_remembered_until_a_round_changes_the_data(self):
+        cache = dashboard.LiveCache()
+        first = cache.dashboard(self.db, dashboard.mk.COMPUTERS)
+        conn = db.connect(self.db)
+        try:
+            db.set_mark(conn, "c", "favoriet", price_eur=90.0)
+        finally:
+            conn.close()
+        again = cache.dashboard(self.db, dashboard.mk.COMPUTERS)
+        self.assertIs(again.listings, first.listings)  # niet opnieuw gerekend
+        self.assertIn("c", again.marks)  # maar de markering is vers
+        conn = db.connect(self.db)
+        try:
+            db.sync_listings(conn, "garmin edge", [computer("n", "Garmin Edge 830", 120.0)],
+                             (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat())
+        finally:
+            conn.close()
+        after = cache.dashboard(self.db, dashboard.mk.COMPUTERS)
+        self.assertIsNot(after.listings, first.listings)
+        self.assertIn("n", {l.item_id for l in after.listings})
+
     def test_static_page_has_no_forms(self):
         html = dashboard.render(dashboard.load_dashboard(self.db))
         self.assertNotIn("<form", html)
@@ -499,3 +575,109 @@ class AbortedConnectionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BikePageTest(unittest.TestCase):
+    """/fiets: per advertentie meenemen of niet voor de taxatie van de eigen fiets."""
+
+    def setUp(self):
+        import http.client
+        import threading
+        import urllib.parse
+        from helpers import repo_file
+
+        self.http, self.urlparse = http.client, urllib.parse
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.db = str(self.dir / "koopjes.db")
+        conn = db.connect(self.db)
+        try:
+            bikes = [make_listing(item_id=f"d{i}", title=f"Giant Defy carbon Ultegra nr {i}", price_eur=p,
+                                  url=BIKE_URL.format(f"d{i}")) for i, p in enumerate((500.0, 600.0, 700.0))]
+            bikes.append(make_listing(item_id="alu", title="Giant Defy 1 aluminium", price_eur=300.0,
+                                      url=BIKE_URL.format("alu")))
+            db.sync_listings(conn, "giant defy", bikes, datetime.now(timezone.utc).isoformat())
+        finally:
+            conn.close()
+        self.httpd = dashboard.make_server(self.db, 0, intake_path=repo_file("mijn_fiets.md"))
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
+        self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
+
+    def request(self, method, path, fields=None, live=False):
+        conn = self.http.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        headers = {"Host": f"127.0.0.1:{self.port}"}
+        if live:
+            headers["X-Live"] = "1"
+        body = None
+        if fields is not None:
+            body = self.urlparse.urlencode(fields)
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        conn.request(method, path, body, headers)
+        response = conn.getresponse()
+        text = response.read().decode()
+        conn.close()
+        return response.status, self.urlparse.unquote(response.getheader("Location") or ""), text
+
+    def token(self):
+        import re
+        _, _, page = self.request("GET", "/fiets")
+        return re.search(r"data-token='([^']+)'", page).group(1)
+
+    def choose(self, item_id, choice):
+        import json
+        status, _, text = self.request("POST", "/fiets/keuze",
+                                       {"token": self.token(), "item_id": item_id, "keuze": choice}, live=True)
+        self.assertEqual(status, 200)
+        return json.loads(text)
+
+    def test_the_list_has_the_carbon_defys_and_not_the_aluminium_one(self):
+        status, _, page = self.request("GET", "/fiets")
+        self.assertEqual(status, 200)
+        for item_id in ("d0", "d1", "d2"):
+            self.assertIn(f"data-item='{item_id}' data-choice='open'", page)
+        self.assertNotIn("data-item='alu'", page)
+        self.assertIn("Te beoordelen (3)", page)
+        self.assertIn("nog niets meegenomen", page)
+        # Vanaf de andere live pagina's is hij te vinden.
+        _, _, computers = self.request("GET", "/")
+        self.assertIn("href='/fiets'", computers)
+
+    def test_taking_listings_along_values_the_bike_without_reloading(self):
+        data = self.choose("d0", "mee")
+        self.assertEqual(data["message"], "Meegenomen: Giant Defy carbon Ultegra nr 0.")
+        self.assertIn("data-choice='mee'", data["row"])
+        self.assertIn("aria-pressed='true'", data["row"])
+        self.assertIn("Meegenomen (1)", data["options"])
+        self.assertIn("n=1", data["summary"])
+        self.choose("d1", "mee")
+        data = self.choose("d2", "niet")
+        self.assertIn("n=2", data["summary"])
+        self.assertIn("Niet (1)", data["options"])
+        conn = db.connect(self.db)
+        try:
+            self.assertEqual(db.list_comp_choices(conn), {"d0": "mee", "d1": "mee", "d2": "niet"})
+        finally:
+            conn.close()
+        # Nog eens op de gekozen knop: terug naar te beoordelen.
+        data = self.choose("d0", "")
+        self.assertIn("data-choice='open'", data["row"])
+        self.assertIn("Terug naar te beoordelen", data["message"])
+
+    def test_without_javascript_it_goes_back_to_the_page(self):
+        status, location, _ = self.request("POST", "/fiets/keuze",
+                                           {"token": self.token(), "item_id": "d0", "keuze": "mee"})
+        self.assertEqual(status, 303)
+        self.assertTrue(location.startswith("/fiets?melding=Meegenomen"))
+
+    def test_nonsense_is_refused(self):
+        self.assertIn("Niet opgeslagen", self.choose("d0", "misschien")["message"])
+        self.assertIn("Onbekende advertentie", self.choose("zz", "mee")["message"])
+        status, location, _ = self.request("POST", "/fiets/keuze", {"token": "oud", "item_id": "d0", "keuze": "mee"})
+        self.assertIn("verouderd", location)
+        conn = db.connect(self.db)
+        try:
+            self.assertEqual(db.list_comp_choices(conn), {})
+        finally:
+            conn.close()

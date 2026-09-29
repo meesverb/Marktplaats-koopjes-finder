@@ -58,8 +58,8 @@ DAYS = {
     "zo": ("SUN", 0),
 }
 
-# valuation.py's exit code when there are too few comparable listings: an
-# outcome of the data, not a failure of the round.
+# valuation.py's exit code when there are no comparable listings (none taken
+# along on /fiets): an outcome of the data, not a failure of the round.
 VALUATION_NO_COMPS = 2
 
 LOG_MAX_BYTES = 2_000_000
@@ -447,7 +447,8 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner, started: str) -> i
     if slot.valuation:
         code = runner(valuation_command(config), log, config.base_dir)
         if code == VALUATION_NO_COMPS:
-            log.line("Geen taxatie: te weinig vergelijkbare advertenties (dat is een uitkomst, geen fout).")
+            log.line("Geen taxatie: geen meegenomen advertenties met een vraagprijs (kies ze op /fiets in "
+                     "'python dashboard.py --serve'; dat is een uitkomst, geen fout).")
         elif code != 0:
             failed = True
             log.line(f"FOUT: de taxatie stopte met code {code}")
@@ -667,7 +668,8 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
     else:
         parts.append(
             "<p class='muted'>Nog geen taxatie opgeslagen. Die komt uit een ronde met "
-            "\"valuation\": true, zodra er genoeg vergelijkbare advertenties zijn.</p>"
+            "\"valuation\": true, zodra je vergelijkbare advertenties hebt meegenomen op /fiets "
+            "(<code>python dashboard.py --serve</code>).</p>"
         )
 
     parts.append("<h2>Zoekopdrachten</h2><div class='table-wrap'><table><thead><tr>")

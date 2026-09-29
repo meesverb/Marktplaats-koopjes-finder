@@ -345,9 +345,9 @@ class DashboardButtonTest(RecheckCase):
     def test_only_the_live_page_has_the_button(self):
         self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
         d = dashboard.load_dashboard(self.db)
-        self.assertNotIn("formaction='/controleer'", dashboard.render(d))
+        self.assertNotIn("data-action='/controleer'", dashboard.render(d))
         d.editable, d.token = True, "geheim"
-        self.assertIn("formaction='/controleer'", dashboard.render(d))
+        self.assertIn("data-action='/controleer'", dashboard.render(d))
 
     def test_the_live_page_says_when_it_was_checked(self):
         self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])

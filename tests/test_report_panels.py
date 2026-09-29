@@ -163,6 +163,9 @@ class OwnerPanelsTest(unittest.TestCase):
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         conn = db.connect(self.db_path)
         db.sync_listings(conn, "giant defy", defy_comps(), now)
+        # Sinds 29-09-2026 telt alleen mee wat de eigenaar op /fiets meenam.
+        for comp in defy_comps():
+            db.set_comp_choice(conn, comp.item_id, "mee")
         conn.close()
 
     def tearDown(self):
@@ -188,7 +191,29 @@ class OwnerPanelsTest(unittest.TestCase):
     def test_evidence_links_to_the_comps(self):
         section = report.render_bike_panel(self.owner(), None)
         self.assertIn("href='https://www.marktplaats.nl/v/fietsen/defy0'", section)
-        self.assertIn("E1: trede", section)
+        self.assertIn("E1: zelf meegenomen op /fiets", section)
+
+    def test_only_what_the_owner_took_along_counts(self):
+        conn = db.connect(self.db_path)
+        try:
+            for i in range(3, 8):
+                db.set_comp_choice(conn, f"defy{i}", "niet")
+        finally:
+            conn.close()
+        context = self.owner()
+        self.assertEqual(context.comp_count, 3)
+        self.assertEqual(context.valuations["b"].confidence, "indicatief")
+
+    def test_nothing_taken_along_is_no_valuation(self):
+        conn = db.connect(self.db_path)
+        try:
+            conn.execute("DELETE FROM comp_choice")
+            conn.commit()
+        finally:
+            conn.close()
+        context = self.owner()
+        self.assertEqual(context.valuations, {})
+        self.assertIn("nog geen advertenties meegenomen", context.valuation_problem)
 
     def test_baseline_breakdown_per_dimension(self):
         section = report.render_bike_panel(self.owner(), None)
@@ -303,7 +328,7 @@ class ManualBudgetTest(unittest.TestCase):
         self.assertEqual(context.valuations, {})
         self.assertEqual(context.budgets.rim.amount, 450 + up.extra_budget_from(context.bike.specs))
         section = report.render_bike_panel(context, None)
-        self.assertIn("geen vergelijkbare advertenties", section)
+        self.assertIn("nog geen advertenties meegenomen", section)
         self.assertIn("zelf opgegeven", section)
         listing = make_listing(
             item_id="goed", title="Carbon racefiets Ultegra Di2 11 speed schijfrem",

@@ -136,9 +136,11 @@ verkoopprijs_handmatig = 390
 ```
 
 `verkoopprijs_handmatig` is een terugval, geen taxatie. Staat er een bedrag,
-dan rekent de upgrade-finder daarmee zolang de automatische taxatie te weinig
-vergelijkbare advertenties vindt (een Defy Composite uit 2012 staat er vaak
-nul of één keer tegelijk op). De bron is dan jijzelf, bijvoorbeeld
+dan rekent de upgrade-finder daarmee zolang de taxatie te weinig vergelijkbare
+advertenties heeft (een Defy Composite uit 2012 staat er vaak nul of één keer
+tegelijk op). Welke advertenties vergelijkbaar zijn, kies je sinds 29-09-2026
+zelf op `/fiets` in `python dashboard.py --serve`: alleen wat je meeneemt
+telt mee, en onder de vijf wint dit bedrag nog. De bron is dan jijzelf, bijvoorbeeld
 `taxatie_2026-09-22.md`, en het rapport zegt dat erbij. Leeg laten = geen
 terugval.
 
