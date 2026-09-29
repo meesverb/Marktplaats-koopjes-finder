@@ -346,10 +346,11 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 
 | Tab | What |
 | --- | --- |
-| **Flips** | every computer below its expected selling price, biggest profit first; reserved listings are left out (they're in Alle computers, marked "gereserveerd"). Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
+| **Flips** | every computer below its expected selling price, biggest profit first; reserved listings are left out (they're in Alle computers, marked "gereserveerd"), and so are listings you put away yourself (below) until their price drops. Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
+| **Favorieten** | the listings you marked ★ favoriet (below), with the price when you marked them if it has changed since; below that, favourites that are no longer online ("verdwenen" or "laatst gezien") |
 | **Mijn flips** | what you bought and sold yourself: realised profit, what's in stock and what it should bring now, average days to sell, how far the dashboard's estimate was off, and profit per month. Entered in the live version (below) |
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
-| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns |
+| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box, brand filter, "alleen nieuw", sortable columns. **Toon** hides the listings you put away (the default); set it to *favorieten*, *weggezet* (to put one back) or *alles* |
 | **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
 | **Vinted** | once you've read in a Vinted export (below; until then the tab says how, and which database it reads): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
 | **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. Gone listings that were reserved when a round last saw them are counted apart ("eerst gereserveerd"): those were almost certainly sold. Only reservations a round actually saw count, so it's a lower bound. The hour of posting isn't available: Marktplaats only says "Vandaag"/"Gisteren" |
@@ -375,6 +376,23 @@ disappears from Flips and Upgrades and gets a ✓ in Alle computers. Every form
 carries a secret chosen at start-up, and the program checks where a request
 comes from, so another website can't write into your database through your
 browser.
+
+**Favourites and putting listings away.** So you don't keep going through
+the same listings, every listing in the live version also has
+**☆ favoriet** and **weg: niet waard / gereserveerd**. A favourite gets a ★
+and its own tab, Favorieten. A listing you put away leaves Flips, Upgrades
+and "Zonder prijs" (also in `python watches.py`); Flips says how many you
+put away. It stays in Alle computers behind the **Toon** filter, where
+**terugzetten** undoes it. Putting away isn't forever: the price at that
+moment is stored,
+and once a round sees the listing cheaper it is back on Flips with a line
+"Weer terug: de prijs zakte van €90 naar €70" — put it away again and the new
+price counts. After a click the page comes back on the same tab, at the same
+place, with the same search. Marks go into `koopjes.db`, table `listing_mark`
+(migration 12, `marks.py`), one per listing; they are your judgement, not a
+market observation, so a listing you put away still counts as a comparable.
+The written `dashboard.html` shows the marks but has no buttons. Vinted
+listings can't be marked (yet).
 
 **Your own computer's value.** "Netto" in Upgrades is the price minus what
 your own computer sells for: `eigen_verkoopprijs_eur` under `baseline` in
@@ -526,7 +544,7 @@ selling price.
 python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
 python koopjes.py run computers    # by day: only the newest 2 pages; opens the dashboard on a new flip
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
-python dashboard.py --serve        # live, with Gekocht/Verkocht buttons (Ctrl+C to stop); watches at /horloges
+python dashboard.py --serve        # live, with Gekocht/Verkocht and favoriet/weg buttons (Ctrl+C to stop); watches at /horloges
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo
 ```
@@ -809,12 +827,13 @@ different market and not followed (yet); they land in Uitgefilterd as
   older models without a source (Polar M400, V800, M600, Loop; Suunto Core,
   Traverse) that show as "horloge, model onbekend".
 - **The dashboard** `dashboard_horloges.html`: the same page as the bike
-  computers' — tabs Flips, Mijn flips, Alle horloges, Marktprijzen, Patronen
-  and Uitgefilterd — without Upgrades (there is no own watch to compare with),
-  Vinted and the feature score. `koopjes.py` writes it after every round;
-  `python dashboard.py --markt sporthorloges` (or `--markt alle`) by hand.
-  `python dashboard.py --serve` shows it live at
-  `http://127.0.0.1:8765/horloges`, with the same Gekocht/Verkocht buttons;
+  computers' — tabs Flips, Favorieten, Mijn flips, Alle horloges, Marktprijzen,
+  Patronen and Uitgefilterd — without Upgrades (there is no own watch to
+  compare with), Vinted and the feature score. `koopjes.py` writes it after
+  every round; `python dashboard.py --markt sporthorloges` (or `--markt alle`)
+  by hand. `python dashboard.py --serve` shows it live at
+  `http://127.0.0.1:8765/horloges`, with the same Gekocht/Verkocht and
+  favoriet/weg buttons;
   a buy remembers its market (database migration 10, `trade.market`), so each
   dashboard's Mijn flips shows its own. Buys from before that have no market
   and belong to the bike computers, unless their model is a watch.

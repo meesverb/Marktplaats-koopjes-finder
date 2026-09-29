@@ -317,6 +317,22 @@ MIGRATIONS: list[str] = [
     ALTER TABLE listing ADD COLUMN bid_minimum REAL;
     ALTER TABLE listing ADD COLUMN bids_checked_at TEXT;
     """,
+    # 12: the owner's own marks on a listing in the live dashboard (marks.py):
+    # "favoriet", or "weg" with why ("niet waard", "gereserveerd"). His
+    # judgement, not a market observation, so kept out of `listing` like
+    # `trade` is: a listing he put away still counts as a comparable, since
+    # its asking price is as real as any other. price_eur is the price when
+    # he marked it; a put-away listing comes back once the price drops below
+    # that. One mark per listing: a favourite he puts away is no longer one.
+    """
+    CREATE TABLE listing_mark (
+        item_id TEXT PRIMARY KEY,
+        mark TEXT NOT NULL,
+        reason TEXT,
+        price_eur REAL,
+        marked_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -1087,6 +1103,60 @@ def list_trades(conn: sqlite3.Connection) -> list[dict]:
     if not exists:
         return []
     cur = conn.execute("SELECT * FROM trade ORDER BY bought_at, id")
+    names = [c[0] for c in cur.description]
+    return [dict(zip(names, row)) for row in cur.fetchall()]
+
+
+# --- Own marks on listings (migration 12) --------------------------------------
+
+
+def set_mark(
+    conn: sqlite3.Connection,
+    item_id: str,
+    mark: str,
+    *,
+    reason: Optional[str] = None,
+    price_eur: Optional[float] = None,
+) -> None:
+    """Mark a listing, replacing any earlier mark. Marking again also resets
+    price_eur and marked_at: putting a listing away again after its price
+    dropped means "not even at this price"."""
+    conn.execute(
+        """
+        INSERT INTO listing_mark (item_id, mark, reason, price_eur, marked_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(item_id) DO UPDATE SET
+            mark = excluded.mark, reason = excluded.reason,
+            price_eur = excluded.price_eur, marked_at = excluded.marked_at
+        """,
+        (item_id, mark, reason, price_eur, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+    conn.commit()
+
+
+def clear_mark(conn: sqlite3.Connection, item_id: str) -> bool:
+    cur = conn.execute("DELETE FROM listing_mark WHERE item_id = ?", (item_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def list_marks(conn: sqlite3.Connection) -> list[dict]:
+    """All marks, with what `listing` knows of the listing now (title, url,
+    price, whether it disappeared) so a favourite that went offline can still
+    be shown. Empty on a database from before migration 12 opened read-only."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'listing_mark'"
+    ).fetchone()
+    if not exists:
+        return []
+    cur = conn.execute(
+        """
+        SELECT m.item_id, m.mark, m.reason, m.price_eur, m.marked_at,
+               l.title, l.url, l.price_eur AS current_price_eur, l.last_seen, l.disappeared_at
+        FROM listing_mark m LEFT JOIN listing l ON l.item_id = m.item_id
+        ORDER BY m.marked_at, m.item_id
+        """
+    )
     names = [c[0] for c in cur.description]
     return [dict(zip(names, row)) for row in cur.fetchall()]
 

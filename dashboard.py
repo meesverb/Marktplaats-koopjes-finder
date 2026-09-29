@@ -7,6 +7,7 @@ zo'n pagina voor de sporthorloges (markets.py beschrijft de markten).
     python dashboard.py --markt sporthorloges   # dashboard_horloges.html
     python dashboard.py --markt alle    # beide
     python dashboard.py --serve         # live in de browser, met Gekocht/Verkocht-knoppen
+                                        # en favoriet/weg per advertentie
                                         # (fietscomputers op /, sporthorloges op /horloges)
 
 Gebouwd uit de database, niet uit één run: de zoekopdracht "fietscomputer"
@@ -17,7 +18,7 @@ dat ene merk. Hier staat alles bij elkaar, met de vergelijkingsprijzen over
 alle zoektermen en eerdere rondes heen.
 
 Tabs: Flips (wat je per advertentie verdient), Upgrades (t.o.v. de eigen
-computer), Alle computers, Marktprijzen per model, Vinted (alleen na `python
+computer), Favorieten, Alle computers, Marktprijzen per model, Vinted (alleen na `python
 vinted.py import`: wat je op Vinted koopt en op Marktplaats verkoopt), en
 Uitgefilterd (houders, hoesjes, onderdelen, defecte en gezochte — om na te
 kijken dat er geen echte computer tussen zit). De rekenregels staan in
@@ -26,7 +27,9 @@ computers.py en computer_scoring.json; dit bestand toont alleen.
 Het geschreven dashboard.html leest alleen. `--serve` start een klein
 programma op je eigen computer (alleen bereikbaar via 127.0.0.1) dat dezelfde
 pagina live toont, met knoppen om je eigen aan- en verkopen vast te leggen in
-koopjes.db (tabel `trade`, zie trades.py). Dat is het enige dat hier schrijft.
+koopjes.db (tabel `trade`, zie trades.py) en om advertenties als favoriet te
+bewaren of weg te zetten (tabel `listing_mark`, zie marks.py). Dat is het
+enige dat hier schrijft.
 """
 from __future__ import annotations
 
@@ -48,6 +51,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 import computers as pc
 import db
 import markets as mk
+import marks as mr
 import racefiets_jev as mp
 import patterns as pt
 import trades as tr
@@ -79,6 +83,7 @@ class Dashboard:
     progress: Optional[tr.Progress] = None  # Mijn flips
     patterns: Optional[pt.Patterns] = None  # Patronen
     bought: dict = field(default_factory=dict)  # item_id -> Trade
+    marks: dict = field(default_factory=dict)  # item_id -> marks.Mark
     vinted: Optional[vn.VintedView] = None  # tab Vinted; None = nog geen export ingelezen
     db_path: str = ""
     # Alleen in de live versie (--serve): formulieren, met het geheim dat
@@ -112,9 +117,46 @@ class Dashboard:
 
     # Wat je al gekocht hebt, is geen kans meer: weg uit Flips en Upgrades
     # (in Alle computers blijft het staan, met een vinkje). Een gereserveerde
-    # advertentie evenmin: die is al aan een ander toegezegd.
+    # advertentie evenmin: die is al aan een ander toegezegd. En wat je zelf
+    # wegzette ook niet, tot de prijs zakt (marks.py).
     def _available(self, listing) -> bool:
-        return listing.item_id not in self.bought and not listing.reserved
+        return (listing.item_id not in self.bought and not listing.reserved
+                and not self.is_dismissed(listing))
+
+    def is_dismissed(self, listing) -> bool:
+        return mr.is_dismissed(self.marks.get(listing.item_id), listing)
+
+    def is_favorite(self, listing) -> bool:
+        mark = self.marks.get(listing.item_id)
+        return mark is not None and mark.favorite
+
+    @property
+    def all_rows(self) -> list:
+        """(advertentie, modellabel, signalen) voor alles in Alle computers."""
+        rows = [(l, l.computer.model.label, l.computer) for l in self.items]
+        return rows + [(u.listing, "model onbekend", None) for u in self.unknown_items]
+
+    @property
+    def favorites(self) -> list:
+        return [row for row in self.all_rows if self.is_favorite(row[0])]
+
+    @property
+    def gone_favorites(self) -> list:
+        """Favorieten van deze markt die niet meer actief zijn: verdwenen, of
+        te lang niet gezien. Uit `listing_mark` met wat `listing` er nog van
+        weet, zodat je ziet dat hij weg is in plaats van dat hij stil
+        verdwijnt."""
+        active = {l.item_id for l in self.listings}
+        return [m for m in self.marks.values()
+                if m.favorite and m.item_id not in active
+                and any(f"/{c}/" in (m.url or "") for c in self.market.categories)]
+
+    @property
+    def dismissed_flips(self) -> list:
+        """Flips die er zonder jouw wegzetten wel hadden gestaan."""
+        return [l for l in pc.flips(self.listings)
+                if l.computer.profit_eur > 0 and self.is_dismissed(l)
+                and l.item_id not in self.bought and not l.reserved]
 
     @property
     def flips(self) -> list:
@@ -148,6 +190,7 @@ def load_dashboard(db_path, config: Optional[dict] = None, market: mk.Market = m
     niet leeg is maar de stand van de laatste ronde laat zien."""
     config = config or pc.default_config()
     d = _with_trades(_load_market(db_path, config, market), db_path)
+    d.marks = mr.load_marks(db_path)
     d.patterns = pt.load_patterns(db_path, config, market)
     d.vinted = vn.load_view(db_path, config) if market.has_vinted else None
     d.db_path = str(Path(db_path).resolve())
@@ -368,15 +411,18 @@ def variant_summary(items: list) -> str:
 
 
 def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str:
-    new = "<span class='badge'>nieuw</span> " if listing.item_id in d.new_ids else ""
+    new = "<span class='badge fav'>★ favoriet</span> " if d.is_favorite(listing) else ""
+    new += "<span class='badge'>nieuw</span> " if listing.item_id in d.new_ids else ""
     if listing.reserved:
         new += "<span class='badge reserved'>gereserveerd</span> "
+    if d.is_dismissed(listing):
+        new += f"<span class='badge reserved'>{esc(d.marks[listing.item_id].label)}</span> "
     place = f" · {esc(listing.city)}" if listing.city else ""
     note_html = f"<div class='note'>{esc(note)}</div>" if note else ""
     return (
         f"<td class='what'><div class='model'>{new}{esc(model_label)}</div>"
         f"<a href='{esc(listing.url, quote=True)}' target='_blank' rel='noopener'>{esc(listing.title)}</a>"
-        f"<span class='muted'>{place}</span>{note_html}{buy_control(listing, d)}</td>"
+        f"<span class='muted'>{place}</span>{note_html}{mark_control(listing, d)}{buy_control(listing, d)}</td>"
     )
 
 
@@ -403,6 +449,32 @@ def buy_control(listing, d: Dashboard) -> str:
     )
 
 
+def mark_control(listing, d: Dashboard) -> str:
+    """Favoriet of weg bij een advertentie (alleen live), en de regel dat een
+    weggezette advertentie terug is omdat de prijs zakte (ook in de
+    geschreven pagina). Eén formulier; de knop die je indrukt, zegt wat."""
+    mark = d.marks.get(listing.item_id)
+    back = mark is not None and mark.mark == mr.DISMISSED and mr.price_dropped(mark, listing)
+    note = (f"<div class='note'>Weer terug: de prijs zakte van {euro(mark.price_eur)} naar "
+            f"{euro(listing.price_eur)} sinds je hem wegzette ({esc(mark.reason or 'weg')}).</div>"
+            if back else "")
+    if not d.editable:
+        return note
+
+    def button(value: str, label: str) -> str:
+        return f"<button class='quiet' name='soort' value='{esc(value, quote=True)}'>{esc(label)}</button>"
+
+    away = "<span class='muted'>weg:</span>" + "".join(button(r, r) for r in mr.REASONS)
+    if d.is_dismissed(listing):
+        buttons = button("geen", "terugzetten") + button(mr.FAVORITE, "☆ favoriet")
+    elif mark is not None and mark.favorite:
+        buttons = button("geen", "★ uit favorieten") + away
+    else:
+        buttons = button(mr.FAVORITE, "☆ favoriet") + away + (button("geen", "wissen") if back else "")
+    return (f"{note}<form class='inline mark' method='post' action='/markeer'>"
+            f"{hidden(d, item_id=listing.item_id, tab='')}{buttons}</form>")
+
+
 def bid_note(listing) -> str:
     """Wat de biedopvraging zei: aantal biedingen en minimumbod, met wanneer
     — een bod van de nachtronde kan overdag al hoger zijn."""
@@ -417,12 +489,13 @@ def bid_note(listing) -> str:
     return " · ".join(parts)
 
 
-def price_cell(listing) -> str:
+def price_cell(listing, extra: str = "") -> str:
     kind = pc.price_kind(listing)
     note = bid_note(listing)
     return (f"<td class='num' data-sort='{listing.price_eur if listing.price_eur is not None else ''}'>"
             f"{euro(listing.price_eur)}<div class='sub'>{esc(kind)}</div>"
-            f"{f'<div class=sub>{esc(note)}</div>' if note else ''}</td>")
+            f"{f'<div class=sub>{esc(note)}</div>' if note else ''}"
+            f"{f'<div class=sub>{esc(extra)}</div>' if extra else ''}</td>")
 
 
 def tiles(items: list[tuple[str, str, str]]) -> str:
@@ -473,6 +546,12 @@ def flips_panel(d: Dashboard) -> str:
         "nog op; bij <em>vraagprijs, bieden kan</em> kun je vaak lager uitkomen. Gereserveerde advertenties "
         f"staan hier niet (wel in Alle {d.market.items}) en tellen niet als vergelijkingsprijs zolang ze online staan.</p>"
     )
+    away = d.dismissed_flips
+    if away:
+        parts.append(
+            f"<p class='explain'>{len(away)} flip{'s' if len(away) != 1 else ''} weggezet (niet waard of "
+            f"gereserveerd): terug te vinden in Alle {esc(d.market.items)} met <em>Toon: weggezet</em>. Zakt de "
+            "prijs onder die van toen je hem wegzette, dan staat hij hier weer.</p>")
     if flips:
         rows = []
         for l in flips:
@@ -559,17 +638,28 @@ def upgrades_panel(d: Dashboard) -> str:
     return "\n".join(parts)
 
 
+def mark_state(listing, d: Dashboard) -> str:
+    """Voor het filter Toon in Alle computers."""
+    if d.is_favorite(listing):
+        return mr.FAVORITE
+    return mr.DISMISSED if d.is_dismissed(listing) else ""
+
+
 def all_panel(d: Dashboard) -> str:
     scored = d.market.has_score
-    items = [(l, l.computer.model.label, l.computer) for l in d.items]
-    items += [(u.listing, "model onbekend", None) for u in d.unknown_items]
+    items = d.all_rows
     brands = sorted({label.split(" ")[0] for _, label, c in items if c is not None})
     options = "".join(f"<option value='{esc(b)}'>{esc(b)}</option>" for b in brands)
+    away = sum(1 for l, _, _ in items if d.is_dismissed(l))
     parts = [
         "<div class='filters'>"
         "<input type='search' id='all-search' placeholder='Zoek in titel of model' aria-label='Zoeken'>"
         f"<select id='all-brand' aria-label='Merk'><option value=''>Alle merken</option>{options}"
         "<option value='model onbekend'>Model onbekend</option></select>"
+        "<select id='all-mark' aria-label='Toon'><option value=''>Toon: zonder weggezette</option>"
+        f"<option value='{mr.FAVORITE}'>Toon: favorieten ({len(d.favorites)})</option>"
+        f"<option value='{mr.DISMISSED}'>Toon: weggezet ({away})</option>"
+        "<option value='alles'>Toon: alles</option></select>"
         "<label><input type='checkbox' id='all-new'> alleen nieuw</label>"
         "<span class='muted' id='all-count'></span></div>"
     ]
@@ -582,7 +672,7 @@ def all_panel(d: Dashboard) -> str:
         note = c.reason if c else next(u.reason for u in d.unknown if u.listing is l)
         rows.append(
             f"<tr data-brand='{esc(brand, quote=True)}' data-new='{int(l.item_id in d.new_ids)}' "
-            f"data-text='{esc((label + ' ' + l.title).lower(), quote=True)}'>"
+            f"data-mark='{mark_state(l, d)}' data-text='{esc((label + ' ' + l.title).lower(), quote=True)}'>"
             f"<td class='pic'>{thumb(l)}</td>"
             f"{price_cell(l)}"
             f"<td class='num' data-sort='{profit if profit is not None else ''}'>{signed_euro(profit)}</td>"
@@ -597,6 +687,62 @@ def all_panel(d: Dashboard) -> str:
     if scored:
         head += [("Upgrade", "num"), ("Score", "num")]
     parts.append(table(head + [("Advertentie", "text")], rows, "all-table"))
+    return "\n".join(parts)
+
+
+def favorites_panel(d: Dashboard) -> str:
+    favs = d.favorites
+    how = ("Klik bij een advertentie op <em>☆ favoriet</em> om hem hier te bewaren, of zet hem weg met "
+           "<em>niet waard</em> of <em>gereserveerd</em>: dan verdwijnt hij uit Flips"
+           + (" en Upgrades" if d.market.has_upgrades else "")
+           + " tot de prijs zakt.")
+    if not d.editable:
+        how = ("Bewaren en wegzetten doe je in de live versie: <code>python dashboard.py --serve</code>. " + how)
+    parts = [f"<p class='explain'>{how} Een markering is alleen voor jou: een weggezette advertentie telt "
+             "gewoon mee als vergelijkingsprijs.</p>"]
+    if favs:
+        rows = []
+        for l, label, c in favs:
+            mark = d.marks[l.item_id]
+            then = (f"bij bewaren {euro(mark.price_eur)}"
+                    if mark.price_eur is not None and mark.price_eur != l.price_eur else "")
+            note = c.reason if c else next(u.reason for u in d.unknown if u.listing is l)
+            profit = c.profit_eur if c else None
+            rows.append(
+                "<tr>"
+                f"<td class='pic'>{thumb(l)}</td>"
+                f"{price_cell(l, then)}"
+                f"<td class='num' data-sort='{profit if profit is not None else ''}'>{signed_euro(profit)}</td>"
+                f"{listing_cell(l, d, label, note)}"
+                "</tr>"
+            )
+        parts.append(table([("", ""), ("Prijs", "num"), ("Winst", "num"), ("Advertentie", "text")], rows))
+    else:
+        parts.append("<p class='empty'>Nog geen favorieten.</p>")
+
+    gone = d.gone_favorites
+    if gone:
+        parts.append(f"<h3>Niet meer online ({len(gone)})</h3><p class='explain'>Verdwenen of al een paar "
+                     "dagen niet meer gezien. Verdwenen is niet per se verkocht: een advertentie kan ook "
+                     "ingetrokken zijn.</p>")
+        rows = []
+        for m in gone:
+            link = (f"<a href='{esc(m.url, quote=True)}' target='_blank' rel='noopener'>{esc(m.title or m.item_id)}</a>"
+                    if m.url else esc(m.title or m.item_id))
+            when = (f"verdwenen {nl_date(m.disappeared_at)}" if m.disappeared_at
+                    else f"laatst gezien {nl_date(m.last_seen)}")
+            remove = (f"<form class='inline mark' method='post' action='/markeer'>"
+                      f"{hidden(d, item_id=m.item_id, tab='')}"
+                      "<button class='quiet' name='soort' value='geen'>weghalen</button></form>"
+                      if d.editable else "")
+            rows.append(
+                "<tr>"
+                f"<td class='num' data-sort='{m.current_price_eur if m.current_price_eur is not None else ''}'>"
+                f"{euro(m.current_price_eur)}</td>"
+                f"<td class='what'>{link}<div class='note'>{esc(when)}</div>{remove}</td>"
+                "</tr>"
+            )
+        parts.append(table([("Laatste prijs", "num"), ("Advertentie", "text")], rows))
     return "\n".join(parts)
 
 
@@ -1021,10 +1167,10 @@ def patterns_panel(d: Dashboard) -> str:
 CSS = """
 :root { color-scheme: light; --surface: #fcfcfb; --card: #ffffff; --line: #e4e3df;
   --text: #0b0b0b; --text-2: #52514e; --muted: #6b6a66; --accent: #2a78d6; --good: #0ca30c;
-  --bad: #d03b3b; --badge: #e8f0fb; }
+  --bad: #d03b3b; --badge: #e8f0fb; --fav: #fbeec2; }
 @media (prefers-color-scheme: dark) { :root { color-scheme: dark; --surface: #1a1a19; --card: #222221;
   --line: #3a3a38; --text: #ffffff; --text-2: #c3c2b7; --muted: #a3a29a; --accent: #3987e5;
-  --good: #0ca30c; --bad: #e06666; --badge: #23344a; } }
+  --good: #0ca30c; --bad: #e06666; --badge: #23344a; --fav: #4a3c10; } }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 20px 16px 48px; background: var(--surface); color: var(--text);
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -1064,6 +1210,9 @@ td.what { min-width: 260px; }
 .badge { display: inline-block; font-size: .7rem; font-weight: 700; padding: 1px 6px; border-radius: 8px;
   background: var(--badge); color: var(--text); vertical-align: 1px; }
 .badge.reserved { background: var(--line); color: var(--text-2); }
+.badge.fav { background: var(--fav); }
+form.mark { margin-top: 4px; gap: 4px; }
+form.mark button { font-size: .78rem; padding: 2px 8px; }
 ul.changes { margin: 0; padding: 0; list-style: none; font-size: .82rem; }
 ul.changes li::before { display: inline-block; width: 1.1em; font-weight: 700; }
 ul.changes li.plus::before { content: "+"; color: var(--good); }
@@ -1111,6 +1260,30 @@ buttons.forEach(b => b.addEventListener('click', () => {
 if (location.hash) show(location.hash.slice(1));
 window.addEventListener('hashchange', () => show(location.hash.slice(1)));
 
+// Favoriet/weg laadt de pagina opnieuw. Daarna wil je terug waar je was:
+// dezelfde tab (de server stuurt terug naar de tab uit het formulier), en
+// dezelfde plek en filters (die gaan via sessionStorage naar de nieuwe pagina).
+const RESTORE = 'koopjes-terug';
+let restore = null;
+try {
+  restore = JSON.parse(sessionStorage.getItem(RESTORE) || 'null');
+  sessionStorage.removeItem(RESTORE);
+  if (restore && restore.path !== location.pathname) restore = null;
+} catch (_) { restore = null; }
+document.addEventListener('submit', e => {
+  const form = e.target;
+  if (!form.classList.contains('mark')) return;
+  const active = document.querySelector('nav.tabs button.active');
+  form.querySelector("input[name='tab']").value = active ? active.dataset.panel : '';
+  const filters = {};
+  document.querySelectorAll('.filters [id]').forEach(el => {
+    if (el.matches('input, select')) filters[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+  try {
+    sessionStorage.setItem(RESTORE, JSON.stringify({path: location.pathname, y: window.scrollY, filters}));
+  } catch (_) {}
+});
+
 document.querySelectorAll('table.sortable').forEach(table => {
   const tbody = table.querySelector('tbody');
   table.querySelectorAll('th[data-type]').forEach((th, index) => {
@@ -1140,20 +1313,36 @@ document.querySelectorAll('table.sortable').forEach(table => {
 
 const search = document.getElementById('all-search');
 const brand = document.getElementById('all-brand');
+const markFilter = document.getElementById('all-mark');
 const onlyNew = document.getElementById('all-new');
 const count = document.getElementById('all-count');
 function filterAll() {
   const q = search.value.trim().toLowerCase();
+  const which = markFilter.value;
   let shown = 0;
   document.querySelectorAll('#all-table tbody tr').forEach(r => {
+    // Standaard zonder weggezette; 'alles' toont ze erbij.
+    const markOk = which === 'alles' || (which ? r.dataset.mark === which : r.dataset.mark !== 'weg');
     const ok = (!q || r.dataset.text.includes(q)) && (!brand.value || r.dataset.brand === brand.value)
-      && (!onlyNew.checked || r.dataset.new === '1');
+      && (!onlyNew.checked || r.dataset.new === '1') && markOk;
     r.classList.toggle('hidden', !ok);
     if (ok) shown++;
   });
   count.textContent = shown + ' getoond';
 }
-if (search) { [search, brand, onlyNew].forEach(el => el.addEventListener('input', filterAll)); filterAll(); }
+if (restore) {
+  Object.entries(restore.filters || {}).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!value;
+    else if (el.tagName !== 'SELECT' || Array.from(el.options).some(o => o.value === value)) el.value = value;
+  });
+}
+if (search) {
+  [search, brand, markFilter, onlyNew].forEach(el => el.addEventListener('input', filterAll));
+  filterAll();
+}
+if (restore) window.scrollTo(0, restore.y || 0);
 """
 
 
@@ -1166,6 +1355,7 @@ def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
     if m.has_upgrades:
         tabs.append(("upgrades", f"Upgrades ({len(d.upgrades)})", upgrades_panel(d)))
     tabs += [
+        ("favorieten", f"Favorieten ({len(d.favorites)})", favorites_panel(d)),
         ("mijn", mine_label, mine_panel(d)),
         ("alle", f"Alle {m.items} ({computers})", all_panel(d)),
         ("markt", "Marktprijzen", market_panel(d)),
@@ -1275,6 +1465,45 @@ def action_bought(db_path, form: dict) -> str:
     return f"Gekocht: {listing.title} voor {euro(price)}. Hij staat nu onder Mijn flips."
 
 
+def action_mark(db_path, form: dict) -> str:
+    """Favoriet, weg (met reden) of terug naar geen markering. Zetten kan
+    alleen bij een advertentie die in het dashboard staat: de prijs van nu
+    gaat mee, zodat een weggezette advertentie terugkomt als die zakt.
+    Weghalen kan altijd, ook bij een favoriet die niet meer online is."""
+    item_id = form.get("item_id", "")
+    choice = form.get("soort", "")
+    if choice == "geen":
+        conn = db.connect(str(db_path))
+        try:
+            known = db.clear_mark(conn, item_id)
+        finally:
+            conn.close()
+        if not known:
+            raise FormError("Die advertentie had geen markering.")
+        return "Markering weggehaald."
+    if choice != mr.FAVORITE and choice not in mr.REASONS:
+        raise FormError(f"Onbekende keuze '{choice}'.")
+    market = mk.by_key(form.get("markt"))
+    config = pc.default_config()
+    listings, _, _ = load_active_listings(db_path, market.categories, config["dashboard"])
+    listing = next((l for l in listings if l.item_id == item_id), None)
+    if listing is None:
+        raise FormError("Die advertentie staat niet (meer) in het dashboard.")
+    conn = db.connect(str(db_path))
+    try:
+        if choice == mr.FAVORITE:
+            db.set_mark(conn, item_id, mr.FAVORITE, price_eur=listing.price_eur)
+        else:
+            db.set_mark(conn, item_id, mr.DISMISSED, reason=choice, price_eur=listing.price_eur)
+    finally:
+        conn.close()
+    if choice == mr.FAVORITE:
+        return f"Favoriet: {listing.title}."
+    again = (f" Hij komt terug als de prijs onder {euro(listing.price_eur)} zakt."
+             if listing.price_eur is not None else "")
+    return f"Weggezet ({choice}): {listing.title}.{again}"
+
+
 def action_add(db_path, form: dict) -> str:
     title = (form.get("titel") or "").strip()
     if not title:
@@ -1344,13 +1573,18 @@ ACTIONS = {
     "/verkocht": action_sold,
     "/terug": action_unsell,
     "/verwijder": action_delete,
+    "/markeer": action_mark,
 }
+# Na deze acties terug naar de tab waar je klikte (het formulier zegt welke);
+# na de rest naar Mijn flips, waar je ziet wat je vastlegde.
+STAY_ON_TAB = {"/markeer"}
 MAX_FORM_BYTES = 10_000
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
     """GET / toont het dashboard live; POST naar een van ACTIONS schrijft en
-    stuurt terug naar de pagina (tab Mijn flips) met een melding.
+    stuurt terug naar de pagina (tab Mijn flips, of bij favoriet/weg de tab
+    waar je klikte) met een melding.
 
     Alleen bereikbaar via 127.0.0.1. Een andere website kan je browser toch
     een formulier naar localhost laten sturen; daarom draagt elk formulier
@@ -1384,9 +1618,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # mis is: de volgende aanvraag werkt gewoon.
             self.close_connection = True
 
-    def _back(self, message: str, market: mk.Market = mk.COMPUTERS) -> None:
+    def _back(self, message: str, market: mk.Market = mk.COMPUTERS, tab: str = "mijn") -> None:
+        # Alleen een tabnaam; iets anders (leeg, of wat een andere site
+        # meestuurt) opent de eerste tab.
+        anchor = f"#{tab}" if tab.isascii() and tab.isalpha() and tab.islower() else ""
         self.send_response(303)
-        self.send_header("Location", market.serve_path + "?melding=" + quote(message) + "#mijn")
+        self.send_header("Location", market.serve_path + "?melding=" + quote(message) + anchor)
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -1408,7 +1645,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if not self._host_ok() or (origin and urlsplit(origin).netloc not in self._origins()):
             return self._send(403, "Alleen via 127.0.0.1")
-        action = ACTIONS.get(urlsplit(self.path).path)
+        path = urlsplit(self.path).path
+        action = ACTIONS.get(path)
         if action is None:
             return self._send(404, "Niet gevonden")
         length = int(self.headers.get("Content-Length") or 0)
@@ -1417,15 +1655,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8", errors="replace")
         form = {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
         market = mk.by_key(form.get("markt"))
+        tab = form.get("tab", "") if path in STAY_ON_TAB else "mijn"
         if not hmac.compare_digest(form.get("token", ""), self.token):
             # Een verouderde pagina (programma opnieuw gestart) of een
             # andere site: niets doen, alleen de verse pagina tonen.
-            return self._back("De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.", market)
+            return self._back("De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.", market, tab)
         try:
             message = action(self.db_path, form)
         except FormError as exc:
             message = f"Niet opgeslagen: {exc}"
-        self._back(message, market)
+        self._back(message, market, tab)
 
     def log_message(self, format: str, *args) -> None:
         pass  # geen regel per verzoek in de terminal
@@ -1433,7 +1672,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 def make_server(db_path, port: int = 8765) -> ThreadingHTTPServer:
     """De server, klaar om te draaien (serve_forever). Migreert de database
-    eerst, zodat de tabel `trade` bestaat."""
+    eerst, zodat de tabellen `trade` en `listing_mark` bestaan."""
     db.connect(str(db_path)).close()
     handler = type("Handler", (DashboardHandler,), {"db_path": str(db_path), "token": secrets.token_urlsafe(24)})
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
@@ -1468,7 +1707,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                                       "alleen bij één markt")
     parser.add_argument("--open", action="store_true", help="open het dashboard in de browser")
     parser.add_argument("--serve", action="store_true",
-                        help="toon het dashboard live, met knoppen om aan- en verkopen vast te leggen")
+                        help="toon het dashboard live, met knoppen om aan- en verkopen vast te leggen "
+                             "en advertenties als favoriet te bewaren of weg te zetten")
     parser.add_argument("--port", type=int, default=8765, help="poort voor --serve (standaard 8765)")
     parser.add_argument("--no-browser", action="store_true", help="bij --serve de browser niet openen")
     args = parser.parse_args(argv)

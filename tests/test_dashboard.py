@@ -22,7 +22,7 @@ def computer(item_id, title, price, **kw):
     return make_listing(item_id=item_id, title=title, price_eur=price, **kw)
 
 
-class DashboardTest(unittest.TestCase):
+class DatabaseCase(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.dir)
@@ -39,6 +39,8 @@ class DashboardTest(unittest.TestCase):
     def market(self):
         return [computer(f"a{i}", "Garmin Edge 530", p) for i, p in enumerate((160.0, 180.0, 200.0, 220.0))]
 
+
+class DashboardTest(DatabaseCase):
     def test_flips_upgrades_and_filtered_out_from_the_database(self):
         cheap = computer("c", "Garmin Edge 530 fietscomputer met houder", 90.0)
         holder = computer("h", "Houder voor Garmin Edge 530", 12.0)
@@ -149,6 +151,100 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("bestaat niet", err.getvalue())
 
 
+class MarksTest(DatabaseCase):
+    """Favoriet en weg (marks.py) in het dashboard."""
+
+    def mark(self, item_id, mark, reason=None, price=None):
+        conn = db.connect(self.db)
+        try:
+            db.set_mark(conn, item_id, mark, reason=reason, price_eur=price)
+        finally:
+            conn.close()
+
+    def test_a_dismissed_flip_is_gone_from_flips_but_still_in_all_and_a_comp(self):
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        self.mark("c", "weg", "niet waard", 90.0)
+        d = dashboard.load_dashboard(self.db)
+        ids = lambda items: {l.item_id for l in items}
+        self.assertNotIn("c", ids(d.flips))
+        self.assertNotIn("c", ids(d.upgrades))
+        self.assertIn("c", ids(d.computers))
+        self.assertEqual(ids(d.dismissed_flips), {"c"})
+        self.assertIn("1 flip weggezet", dashboard.flips_panel(d))
+        all_html = dashboard.all_panel(d)
+        self.assertIn("data-mark='weg'", all_html)
+        self.assertIn("weggezet (niet waard)", all_html)
+        self.assertIn("Toon: weggezet (1)", all_html)
+        # Zijn vraagprijs is net zo echt als een andere: hij blijft vergelijkingsprijs.
+        comps = dashboard.pc.db_comparables(self.db, dashboard.pc._default_catalog(), 180)
+        self.assertIn("c", comps["Garmin Edge 530"])
+
+    def test_a_dismissed_listing_comes_back_when_its_price_drops(self):
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        self.mark("c", "weg", "gereserveerd", 90.0)
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 70.0)])
+        d = dashboard.load_dashboard(self.db)
+        self.assertIn("c", {l.item_id for l in d.flips})
+        self.assertIn("Weer terug: de prijs zakte van €90 naar €70", dashboard.flips_panel(d))
+
+    def test_a_dismissed_open_bid_is_gone_too(self):
+        bid = computer("x", "Garmin Edge 530", None, price_type="BID", price_is_bid=True)
+        self.sync(self.market() + [bid])
+        self.assertIn("x", {l.item_id for l in dashboard.load_dashboard(self.db).open_bids})
+        self.mark("x", "weg", "niet waard")
+        self.assertNotIn("x", {l.item_id for l in dashboard.load_dashboard(self.db).open_bids})
+
+    def test_favorites_have_their_own_tab_and_a_badge(self):
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        self.mark("c", "favoriet", price=95.0)
+        d = dashboard.load_dashboard(self.db)
+        self.assertEqual([l.item_id for l, _, _ in d.favorites], ["c"])
+        self.assertIn("c", {l.item_id for l in d.flips})  # een favoriet blijft een flip
+        html = dashboard.render(d)
+        self.assertIn("Favorieten (1)", html)
+        self.assertIn("★ favoriet", dashboard.flips_panel(d))
+        self.assertIn("bij bewaren €95", dashboard.favorites_panel(d))
+        self.assertIn("data-mark='favoriet'", dashboard.all_panel(d))
+
+    def test_a_favorite_that_went_offline_is_listed_as_such(self):
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        self.mark("c", "favoriet", price=90.0)
+        conn = db.connect(self.db)
+        try:
+            db.sweep_disappeared(conn, "garmin edge", {"a0", "a1", "a2", "a3"}, self.now.isoformat())
+        finally:
+            conn.close()
+        d = dashboard.load_dashboard(self.db)
+        self.assertEqual(d.favorites, [])
+        self.assertEqual([m.item_id for m in d.gone_favorites], ["c"])
+        panel = dashboard.favorites_panel(d)
+        self.assertIn("Niet meer online (1)", panel)
+        self.assertIn("verdwenen", panel)
+
+    def test_a_favorite_from_the_other_market_stays_there(self):
+        watch = computer("w", "Garmin Forerunner 255", 150.0,
+                         url="https://www.marktplaats.nl/v/sieraden-tassen-en-uiterlijk/sporthorloges/w-x")
+        self.sync(self.market() + [watch])
+        self.mark("w", "favoriet", price=150.0)
+        bikes = dashboard.load_dashboard(self.db)
+        self.assertEqual((bikes.favorites, bikes.gone_favorites), ([], []))
+        watches = dashboard.load_dashboard(self.db, market=dashboard.mk.WATCHES)
+        self.assertEqual([l.item_id for l, _, _ in watches.favorites], ["w"])
+
+    def test_a_database_from_before_migration_12_still_loads(self):
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+        conn = db.connect(self.db)
+        try:
+            conn.execute("DROP TABLE listing_mark")
+            conn.execute("DELETE FROM schema_version WHERE version = 12")
+            conn.commit()
+        finally:
+            conn.close()
+        d = dashboard.load_dashboard(self.db)
+        self.assertIn("c", {l.item_id for l in d.flips})
+        self.assertIn("Favorieten (0)", dashboard.render(d))
+
+
 class LiveServerTest(unittest.TestCase):
     """--serve: the live dashboard that writes the owner's buys and sales."""
 
@@ -255,6 +351,48 @@ class LiveServerTest(unittest.TestCase):
                                     origin="https://evil.example")
         self.assertEqual(status, 403)
         self.assertEqual(self.request("GET", host="evil.example")[0], 403)
+
+    def test_putting_a_listing_away_and_back(self):
+        status, location, _ = self.request("POST", "/markeer", {"token": self.token(), "item_id": "c",
+                                                                 "soort": "niet waard", "tab": "flips"})
+        self.assertEqual(status, 303)
+        self.assertTrue(location.endswith("#flips"))  # terug naar de tab waar je klikte
+        self.assertIn("Weggezet (niet waard)", location)
+        self.assertIn("onder €90 zakt", location)
+        self.assertNotIn("c", {l.item_id for l in dashboard.load_dashboard(self.db).flips})
+
+        _, _, page = self.request("GET")
+        self.assertIn("terugzetten", page)
+        self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "geen", "tab": "alle"})
+        self.assertIn("c", {l.item_id for l in dashboard.load_dashboard(self.db).flips})
+
+    def test_a_favorite_from_the_live_page(self):
+        self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "favoriet"})
+        (mark,) = dashboard.mr.load_marks(self.db).values()
+        self.assertEqual((mark.item_id, mark.mark, mark.price_eur), ("c", "favoriet", 90.0))
+        _, _, page = self.request("GET")
+        self.assertIn("Favorieten (1)", page)
+        self.assertIn("★ uit favorieten", page)
+
+    def test_marking_refuses_what_it_does_not_know(self):
+        _, location, _ = self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "weg"})
+        self.assertIn("Niet opgeslagen", location)
+        _, location, _ = self.request("POST", "/markeer", {"token": self.token(), "item_id": "zz",
+                                                           "soort": "favoriet"})
+        self.assertIn("staat niet (meer) in het dashboard", location)
+        _, location, _ = self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "geen"})
+        self.assertIn("had geen markering", location)
+        self.assertEqual(dashboard.mr.load_marks(self.db), {})
+
+    def test_the_tab_to_go_back_to_is_only_ever_a_tab_name(self):
+        for tab in ("flips\r\nSet-Cookie: x=1", "../x", "Flips", ""):
+            _, location, _ = self.request("POST", "/markeer", {"token": self.token(), "item_id": "c",
+                                                               "soort": "favoriet", "tab": tab})
+            self.assertNotIn("#", location, tab)
+        # Na Gekocht blijft het Mijn flips, ook als er een tab meekomt.
+        _, location, _ = self.request("POST", "/gekocht", {"token": self.token(), "item_id": "c", "prijs": "85",
+                                                           "tab": "flips"})
+        self.assertTrue(location.endswith("#mijn"))
 
     def test_static_page_has_no_forms(self):
         html = dashboard.render(dashboard.load_dashboard(self.db))
