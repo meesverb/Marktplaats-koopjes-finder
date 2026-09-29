@@ -156,6 +156,79 @@ class BidMemoryTest(WatchDatabaseTest):
         self.assertIn("b", {l.item_id for l in self.board().flips})
 
 
+def variant_of(title):
+    catalog = mk.WATCHES.catalog()
+    model = next(m for m in catalog if m.pattern.search(pc.normalize_title(title)))
+    return pc.title_variant(title, model)
+
+
+class VariantTest(unittest.TestCase):
+    """Varianten delen een rij in het referentiebestand; de uitvoering komt
+    uit de titel. Titels uit de crawl van 28-09-2026."""
+
+    def test_what_a_title_says(self):
+        cases = {
+            "Garmin Fenix 7X Sapphire Solar": "X · Solar · Sapphire",
+            "Garmin Fenix 6S Pro": "S",
+            "Garmin Forerunner 265S AMOLED GPS Hardloop Smartwatch": "S · AMOLED",
+            "Garmin Fenix 8 OLED 51mm - Nog meer dan een jaar garantie": "51 mm · AMOLED",
+            "Garmin Fenix 8 Pro Microled Smartwatch 51": "MicroLED",
+            "Garmin Forerunner 245 Music": "Music",
+            "Polar Grit X Pro Titan M/L": "Titanium",
+            "Garmin Marq Athlete": "Athlete",
+            "Garmin Fenix 7": "gewone uitvoering",
+            # "2 s" is geen maat-letter en "22mm" geen kastmaat maar een bandje.
+            "Garmin Instinct 2 Solar": "Solar",
+            "Garmin Fenix 6 met 22mm bandje": "gewone uitvoering",
+        }
+        for title, label in cases.items():
+            with self.subTest(title=title):
+                self.assertEqual(variant_of(title).label, label)
+
+    def test_a_missing_case_size_fits_any_size(self):
+        # Verkopers laten de maat vaak weg; een andere letter of een ander
+        # woord is wel een andere uitvoering.
+        self.assertTrue(variant_of("Garmin Fenix 8 AMOLED").matches(variant_of("Garmin Fenix 8 47mm AMOLED")))
+        self.assertFalse(variant_of("Garmin Fenix 8 43mm AMOLED").matches(variant_of("Garmin Fenix 8 51mm AMOLED")))
+        self.assertFalse(variant_of("Garmin Fenix 7S").matches(variant_of("Garmin Fenix 7")))
+        self.assertFalse(variant_of("Garmin Fenix 7 Solar").matches(variant_of("Garmin Fenix 7 Sapphire Solar")))
+
+
+class VariantFlipTest(WatchDatabaseTest):
+    def market(self):
+        plain = [watch(f"p{i}", "Garmin Fenix 7", p) for i, p in enumerate((250.0, 260.0, 270.0))]
+        premium = [watch(f"x{i}", "Garmin Fenix 7X Sapphire Solar", p) for i, p in enumerate((450.0, 460.0, 470.0))]
+        return plain + premium
+
+    def test_a_plain_watch_is_compared_with_plain_ones(self):
+        # Tegen het hele model (mediaan 355) leek €300 voor een gewone
+        # Fenix 7 een flip; tegen de gewone uitvoering (260) is hij dat niet.
+        self.sync(self.market() + [watch("c", "Garmin Fenix 7 47mm", 300.0)])
+        c = {l.item_id: l for l in self.board().items}["c"].computer
+        self.assertEqual((c.comp_scope, c.comp_count, c.model_comp_count), ("uitvoering", 3, 6))
+        self.assertAlmostEqual(c.resale_eur, 260.0 * FACTOR, places=2)
+        self.assertLess(c.profit_eur, 0)
+        self.assertIn("dezelfde uitvoering", c.comp_note)
+
+    def test_a_premium_watch_is_compared_with_premium_ones(self):
+        self.sync(self.market() + [watch("c", "Garmin Fenix 7X Solar Sapphire 51mm", 380.0)])
+        d = self.board()
+        c = {l.item_id: l for l in d.flips}["c"].computer
+        self.assertAlmostEqual(c.profit_eur, 460.0 * FACTOR - 380.0 - COSTS, places=2)
+        html = dashboard.render(d)
+        self.assertIn("zelfde uitvoering: X · 51 mm · Solar · Sapphire", html)
+        # Marktprijzen: de uitvoeringen die nu te koop staan, met hun mediaan;
+        # zonder kastmaat, anders was "51mm" een eigen groep.
+        self.assertIn("X · Solar · Sapphire 4× €455; gewone uitvoering 3× €260", html)
+
+    def test_too_few_of_the_same_falls_back_to_the_whole_model(self):
+        self.sync(self.market() + [watch("c", "Garmin Fenix 7S", 150.0)])
+        c = {l.item_id: l for l in self.board().items}["c"].computer
+        self.assertEqual((c.comp_scope, c.comp_count, c.variant_comp_count), ("model", 6, 0))
+        self.assertAlmostEqual(c.resale_eur, 360.0 * FACTOR, places=2)
+        self.assertEqual(dashboard.comp_text(c), "n=6, hele model; S: 0")
+
+
 class UnknownWatchTest(unittest.TestCase):
     """Titels zonder bekend model, uit de crawl van 28-09-2026."""
 

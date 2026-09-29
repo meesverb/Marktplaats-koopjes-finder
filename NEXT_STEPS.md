@@ -160,9 +160,13 @@ daarop bijgewerkt; deze noot staat er voor het geval je een oudere kopie leest.
      Patronen van het horlogedashboard meet hem vanaf 20 snel verdwenen
      advertenties. Wijkt hij af, dan hoort er een eigen factor per markt bij
      (nu delen beide markten `computer_scoring.json`).
-   - **Varianten in één rij** (5/5S, Solar, Sapphire, 43/47/51 mm, en MARQ
-     zonder "gen 2" in de titel). Geeft dat veel valse flips bij één model,
-     splits dan die rij — alleen met een bron voor het prijsverschil.
+   - **Varianten in één rij** (5/5S, Solar, Sapphire, 43/47/51 mm, MARQ-edities).
+     Sinds 29-09-2026 rekent een flip eerst met dezelfde uitvoering zoals de
+     titel die noemt (`computers.title_variant()`), vanaf 3 advertenties;
+     anders met het hele model. Zie je nog valse flips bij één model, kijk
+     dan of de titels een variantwoord hebben dat er nog niet in staat
+     (`VARIANT_WORDS`). Mijn flips en de modelrij in Marktprijzen rekenen nog
+     per model: een eigen aankoop heeft geen titel, alleen een model.
    - **Geen bron gevonden** voor Tactix (7, 8, Delta), Quatix, Approach
      S12/S42/S70, Descent Mk3/G1 en Vivomove HR/Style: die staan als
      "horloge, model onbekend" in Alle horloges.

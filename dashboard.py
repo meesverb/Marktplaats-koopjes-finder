@@ -340,6 +340,33 @@ def thumb(listing) -> str:
             f"<img class='thumb' src='{esc(url[0], quote=True)}' alt='' loading='lazy'></a>")
 
 
+def comp_text(c) -> str:
+    """Waarmee de verkoopprijs is vergeleken, kort: dezelfde uitvoering of het
+    hele model (computers.apply_computer_signals())."""
+    if c.comp_scope == "uitvoering":
+        return f"n={c.comp_count}, zelfde uitvoering: {c.variant.label}"
+    if c.variant is not None and c.variant_comp_count < c.model_comp_count:
+        return f"n={c.comp_count}, hele model; {c.variant.label}: {c.variant_comp_count}"
+    return f"n={c.comp_count} vergelijkbaar"
+
+
+def variant_summary(items: list) -> str:
+    """"X · Solar 5× €420; gewone uitvoering 12× €260" voor een model met
+    meer dan één uitvoering te koop; mediaan vraagprijs per uitvoering."""
+    groups: dict[str, list] = {}
+    for l in items:
+        variant = l.computer.variant
+        groups.setdefault(variant.group_label if variant else "gewone uitvoering", []).append(l)
+    if len(groups) < 2:
+        return ""
+    parts = []
+    for label, group in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        asking = [pc.listed_price(l) for l in group if l.price_is_asking and pc.listed_price(l) is not None]
+        median = f" {euro(statistics.median(asking))}" if asking else ""
+        parts.append(f"{label} {len(group)}×{median}")
+    return "; ".join(parts)
+
+
 def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str:
     new = "<span class='badge'>nieuw</span> " if listing.item_id in d.new_ids else ""
     if listing.reserved:
@@ -436,7 +463,11 @@ def flips_panel(d: Dashboard) -> str:
         f"({euro(flip.get('costs_eur', 0))} per flip, instelbaar als <code>costs_eur</code> in "
         "<code>computer_scoring.json</code>). "
         "De verkoopprijs is de mediaan van wat andere advertenties voor hetzelfde model vragen "
-        f"(nu en de laatste {flip['comp_window_days']} dagen, verkochte meegeteld), "
+        f"(nu en de laatste {flip['comp_window_days']} dagen, verkochte meegeteld): van dezelfde "
+        f"<em>uitvoering</em> als dat er minstens {flip['min_comps']} zijn (maat-letter zoals 7S/7X, kastmaat, "
+        "Solar, Sapphire, Titanium, AMOLED, MicroLED, Music, LTE, bundel, MARQ-editie — zoals de titel ze "
+        "noemt), anders van het "
+        "hele model; onder de verkoopprijs staat welke van de twee. "
         f"× {str(flip['negotiation_factor']).replace('.', ',')} voor afdingen. De band eronder is de winst "
         "bij het goedkoopste en duurste kwart van die advertenties. Bij <em>huidig bod</em> loopt de prijs "
         "nog op; bij <em>vraagprijs, bieden kan</em> kun je vaak lager uitkomen. Gereserveerde advertenties "
@@ -453,8 +484,8 @@ def flips_panel(d: Dashboard) -> str:
                 f"<span class='gain' aria-hidden='true'>▲</span>{signed_euro(c.profit_eur)}"
                 f"<div class='sub'>{band(c.profit_low_eur, c.profit_high_eur)}</div></td>"
                 f"{price_cell(l)}"
-                f"<td class='num' data-sort='{c.resale_eur}'>{euro(c.resale_eur)}"
-                f"<div class='sub'>n={c.comp_count} vergelijkbaar</div></td>"
+                f"<td class='num' data-sort='{c.resale_eur}' title='{esc(c.comp_note, quote=True)}'>{euro(c.resale_eur)}"
+                f"<div class='sub'>{esc(comp_text(c))}</div></td>"
                 f"{listing_cell(l, d, c.model.label, c.reason)}"
                 "</tr>"
             )
@@ -471,7 +502,7 @@ def flips_panel(d: Dashboard) -> str:
             "<tr>"
             f"<td class='pic'>{thumb(l)}</td>"
             f"<td class='num' data-sort='{l.computer.max_bid_eur}'><strong>{euro(l.computer.max_bid_eur)}</strong>"
-            f"<div class='sub'>verkoop ±{euro(l.computer.resale_eur)}, n={l.computer.comp_count}</div></td>"
+            f"<div class='sub'>verkoop ±{euro(l.computer.resale_eur)}, {esc(comp_text(l.computer))}</div></td>"
             f"<td class='num'>{esc(pc.price_kind(l))}</td>"
             f"{listing_cell(l, d, l.computer.model.label, l.computer.reason)}"
             "</tr>"
@@ -586,10 +617,13 @@ def market_panel(d: Dashboard) -> str:
         median = statistics.median(asking) if asking else None
         resale = per_model.get(label, items[0].computer.resale_eur)
         new_price = model.number("nieuwprijs_eur")
+        variants = variant_summary(items)
         rows.append(
             "<tr>"
             f"<td class='what'><div class='model'>{esc(label)}</div>"
-            f"<span class='muted'>{esc(model.get('introductiejaar') or '')}</span></td>"
+            f"<span class='muted'>{esc(model.get('introductiejaar') or '')}</span>"
+            + (f"<div class='sub'>{esc(variants)}</div>" if variants else "")
+            + "</td>"
             f"<td class='num' data-sort='{len(items)}'>{len(items)}</td>"
             f"<td class='num' data-sort='{min(asking) if asking else ''}'>{euro(min(asking) if asking else None)}</td>"
             f"<td class='num' data-sort='{median if median is not None else ''}'>{euro(median)}</td>"
@@ -602,7 +636,9 @@ def market_panel(d: Dashboard) -> str:
         )
     intro = ("<p class='explain'>Per model wat er nu te koop staat. <strong>Verwacht verkoop</strong> is de "
              f"mediaan-vraagprijs × {str(factor).replace('.', ',')}, over alle advertenties van de laatste "
-             f"{d.config['flip']['comp_window_days']} dagen (ook verkochte). Nieuwprijs alleen waar een bron "
+             f"{d.config['flip']['comp_window_days']} dagen (ook verkochte); een flip rekent per uitvoering als "
+             "die er genoeg heeft. Onder het model staan de uitvoeringen die nu te koop staan, met hun "
+             "mediaan-vraagprijs. Nieuwprijs alleen waar een bron "
              f"hem gaf (<code>{esc(d.market.catalog_path.name)}</code>).</p>")
     head = [("Model", "text"), ("Te koop", "num"), ("Laagste", "num"), ("Mediaan vraag", "num"),
             ("Verwacht verkoop", "num"), ("Nieuwprijs", "num")]

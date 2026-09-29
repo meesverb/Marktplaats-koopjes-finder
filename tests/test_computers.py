@@ -490,6 +490,21 @@ class FlipMathTest(unittest.TestCase):
         self.assertLess(c.profit_low_eur, c.profit_eur)
         self.assertGreater(c.profit_high_eur, c.profit_eur)
 
+    def test_a_bundle_is_compared_with_bundles(self):
+        # Een Edge 530 met sensoren is een andere uitvoering dan een losse:
+        # tegen de mediaan van losse (180) leek een bundel voor €200 geen flip.
+        others, _ = self.listings()
+        bundles = [make_listing(item_id=f"b{i}", title="Garmin Edge 530 Sensor Bundle", price_eur=p)
+                   for i, p in enumerate((250.0, 260.0, 270.0))]
+        target = make_listing(item_id="c", title="Garmin Edge 530 bundel", price_eur=200.0)
+        pc.apply_computer_signals(others + bundles + [target])
+        c = target.computer
+        self.assertEqual((c.comp_scope, c.comp_count, c.model_comp_count), ("uitvoering", 3, 8))
+        self.assertAlmostEqual(c.resale_eur, 260.0 * CONFIG["flip"]["negotiation_factor"])
+        # Een losse Edge 530 rekent verder met de losse (5, zonder zichzelf 4).
+        self.assertEqual(others[0].computer.comp_scope, "uitvoering")
+        self.assertEqual(others[0].computer.comp_count, 4)
+
     def test_shipping_is_three_euro_by_default(self):
         # The owner's choice, 28-09-2026.
         self.assertEqual(CONFIG["flip"]["costs_eur"], 3)

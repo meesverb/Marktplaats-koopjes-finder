@@ -387,7 +387,25 @@ median of what other listings for the same model ask (this and earlier rounds,
 last 180 days, sold ones included), × 0,875 for haggling (the same heuristic
 as `valuation.py`); the band uses the lower and upper quartile instead of the
 median. Only with at least 3 other listings; a running bid is never a
-comparable. `costs_eur` in `computer_scoring.json` comes off every flip and
+comparable.
+
+**Per variant first.** Variants share a row in the reference file ("Edge 530"
+is also the sensor bundle, "Fenix 7" also the 7S and the 7X Sapphire Solar),
+so one median would mix them. `computers.title_variant()` reads the variant
+from the title: a size letter right after the model number (7S, 7X, 6S Pro,
+265S), a case size in mm (35-55 mm; "22mm" is a strap), and the words Solar,
+Sapphire, Titanium, AMOLED (also "OLED"), MicroLED, Music, LTE, bundle and the
+MARQ editions (Athlete, Aviator, Captain, ...). A flip is compared with
+listings of the same variant when there are at least 3 of them — a title that
+names none is the plain variant, and a missing mm size fits any size — and
+otherwise with the whole model, as before. The dashboard says which, under the
+selling price ("n=6, zelfde uitvoering: X · Solar · Sapphire" or "n=12, hele
+model; S: 1"), and Marktprijzen lists the variants on sale per model with
+their median asking price. On the full Garmin watch crawl of 28-09-2026, 778
+of 1229 watches had enough of their own variant: a plain Fenix 7 at +€3 and a
+Fenix 8 AMOLED 47 mm at +€29 turned out not to be flips, a Fenix 6 Sapphire
+Titanium went from −€7 to +€63. Mijn flips and the model rows in Marktprijzen
+still use the whole model. `costs_eur` in `computer_scoring.json` comes off every flip and
 off the maximum bid: €3 shipping by default (the owner's choice, 28-09-2026);
 raise it if you also want fuel or packaging counted. A "gratis" listing
 (priceType FREE, €0) has no price rather than a price of €0: it's never a flip
@@ -815,8 +833,11 @@ different market and not followed (yet); they land in Uitgefilterd as
 - `python watches.py` prints the same per model and the flips in the console.
 
 Read the flips with care. Variants share a row (5/5S, Solar, Sapphire, Music,
-43/47/51 mm), so a model's median mixes them and some "flips" are the cheaper
-variant — the band under each profit shows how wide the spread is. The 0,875
+43/47/51 mm); a flip compares with the same variant when there are at least 3
+of them (see "Per variant first" above), but a title that doesn't name its
+variant is taken for the plain one, and with too few of the same variant the
+whole model's median still mixes them — the band under each profit shows how
+wide the spread is, and the line under the selling price which median it is. The 0,875
 is not measured for watches; Patronen measures it once 20 quickly-gone
 listings of the market are in (a few weeks of night rounds). What the first
 crawl said, one snapshot, same method and day for both ("garmin,wahoo" in the
@@ -860,7 +881,8 @@ Columns: `merk`, `model`, `pattern`, `introductiejaar`, `nieuwprijs_eur`,
   `kaarten` column of the bike computer file (`routeerbaar`, `basiskaart`,
   ...); that vocabulary says something the sources for watches don't.
 - **Variants share a row** where the price tier is the same (5/5S, 265/265S,
-  Music editions, Solar/Sapphire). Where the tier differs, they have their own
+  Music editions, Solar/Sapphire); the flip separates them by the title where
+  it can (`title_variant()`, above). Where the tier differs, they have their own
   row (Fenix 5X, Fenix 6 Pro, Fenix 7 Pro, Epix Pro, MARQ Gen 2). A "Fenix 6S Sapphire"
   without "Pro" lands on Fenix 6; whether every Sapphire edition was a Pro is
   not checked.

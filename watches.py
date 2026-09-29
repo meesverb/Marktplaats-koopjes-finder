@@ -18,9 +18,11 @@ Rekent zoals de fietscomputers (computers.apply_computer_signals()): de
 vergelijkingsprijzen zijn vraagprijzen van hetzelfde model uit deze
 categorieën, verwachte verkoopprijs = mediaan × negotiation_factor, min
 costs_eur, allemaal uit computer_scoring.json. Varianten delen een rij in het
-referentiebestand (5/5S, Solar, Sapphire, Music, 43/47/51 mm): de mediaan
+referentiebestand (5/5S, Solar, Sapphire, Music, 43/47/51 mm): één mediaan
 mengt ze, en een winst op een basismodel tegen een mediaan met
-Sapphire-uitvoeringen valt te hoog uit. Kijk dus naar de titel.
+Sapphire-uitvoeringen viel dan te hoog uit. Daarom rekent een flip eerst met
+advertenties van dezelfde uitvoering (computers.title_variant()) en pas bij te
+weinig daarvan met het hele model.
 
 Dit bestand kent de horloges: de categorieën en wat een titel zonder bekend
 model is (classify_unknown()). Het dashboard zelf staat in dashboard.py, de
@@ -190,14 +192,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     for l in found[:args.flips]:
         c = l.computer
         print(f"  {pc._signed(c.profit_eur):>5} ({pc._euro(c.profit_low_eur)} tot {pc._euro(c.profit_high_eur)}) "
-              f"{sleepers.price_text(l)[:22]:<22} {c.model.label[:22]:<22} (n={c.comp_count}) {l.title[:50]}")
+              f"{sleepers.price_text(l)[:22]:<22} {c.model.label[:22]:<22} ({dashboard.comp_text(c)}) {l.title[:50]}")
         print(f"        {l.url}")
     if d.open_bids:
         print(f"\nZonder prijs, bied maximaal (quitte bij de lage verkoopschatting): {len(d.open_bids)}")
         for l in d.open_bids[:args.flips]:
             print(f"  {pc._euro(l.computer.max_bid_eur):>6}  {l.computer.model.label[:22]:<22} {l.title[:50]}")
-    print("\nLet op: de 0,875 is dezelfde heuristiek als bij de fietscomputers, geen meting; varianten "
-          "(S/X, Solar, Sapphire, Music) delen een rij, dus de mediaan mengt ze.")
+    print("\nLet op: de 0,875 is dezelfde heuristiek als bij de fietscomputers, geen meting. Varianten "
+          "(S/X, Solar, Sapphire, Music) delen een rij; een flip rekent met dezelfde uitvoering als die er "
+          "genoeg heeft, anders met het hele model (zie tussen haakjes).")
     return 0
 
 

@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 762 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 768 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -87,7 +87,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | --- | --- |
 | `racefiets_jev.py` | het hele script: crawlen, scoren, rapporteren |
 | `koopjes.py` + `schedule.json` | automatische rondes: `schedule.json` beschrijft zoekopdrachten en tijdsloten, `koopjes.py run <slot>` draait er één (lock, log, `overzicht.html`), `koopjes.py schedule` geeft de inplan-commando's |
-| `computers.py` + `computer_scoring.json` | fietscomputers: herkent het model in de titel tegen `reference_bike_computers.csv`, functiescore met de gewichten die de eigenaar koos, upgrade t.o.v. de eigen Roam v1 en flipmarge. `classify_title()` deelt elke titel in (computer, accessoire, onderdeel, defect, gevraagd); los van dealscore en waardescore. `python computers.py` toont de score per model |
+| `computers.py` + `computer_scoring.json` | fietscomputers: herkent het model in de titel tegen `reference_bike_computers.csv`, functiescore met de gewichten die de eigenaar koos, upgrade t.o.v. de eigen Roam v1 en flipmarge (per uitvoering als die er genoeg heeft: `title_variant()`, ook voor de horloges). `classify_title()` deelt elke titel in (computer, accessoire, onderdeel, defect, gevraagd); los van dealscore en waardescore. `python computers.py` toont de score per model |
 | `dashboard.py` | de dashboards per markt (`markets.py`): `dashboard.html` (fietscomputers: Flips / Upgrades / Mijn flips / Alle computers / Marktprijzen / Vinted / Patronen / Uitgefilterd) en `dashboard_horloges.html` (sporthorloges: zonder Upgrades en Vinted), uit `koopjes.db`. `koopjes.py` bouwt beide na elke ronde; `--markt sporthorloges`/`alle` met de hand. Leest alleen, behalve `--serve`: dat toont beide live (`/` en `/horloges`) en schrijft de eigen aan- en verkopen, met hun markt |
 | `markets.py` | de markten naast elkaar: categorieën, referentiebestand, bestandsnaam, welke tabbladen, indeling van titels zonder model. `trade_market()` zegt bij welke markt een eigen aankoop hoort (migratie 10, `trade.market`) |
 | `vinted.py` | Vinted-exports (een CSV die de eigenaar zelf maakt) inlezen in `koopjes.db` (tabellen `vinted_listing`/`vinted_price`, migratie 8) en naast Marktplaats zetten: tab Vinted in het dashboard, `python vinted.py` in de console. Haalt zelf niets op bij Vinted; Vinted-prijzen zijn nooit vergelijkingsprijs voor Marktplaats |

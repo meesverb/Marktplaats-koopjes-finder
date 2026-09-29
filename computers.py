@@ -7,8 +7,9 @@ Twee maten, bewust apart (de eigenaar koos "beide, apart getoond"):
   Wahoo ELEMNT ROAM v1, en wat dat per €100 kost. Alleen wat het apparaat kan
   telt mee, niet de prijs.
 - **Flipmarge**: wat andere advertenties voor hetzelfde model vragen (mediaan,
-  maal de onderhandelingsfactor) min wat deze kost. Alleen als er genoeg
-  vergelijkingsmateriaal is.
+  maal de onderhandelingsfactor) min wat deze kost — van dezelfde uitvoering
+  als die er genoeg zijn (title_variant()), anders van het hele model. Alleen
+  als er genoeg vergelijkingsmateriaal is.
 
 Geen van beide is `Listing.deal_score` of de waardescore; ze staan in een
 eigen tab. De modelgegevens komen uit `reference_bike_computers.csv` (één rij
@@ -218,6 +219,89 @@ class ComputerModel:
     def number(self, key: str) -> Optional[float]:
         value = self.get(key)
         return float(value) if value else None
+
+
+# --- Uitvoering -----------------------------------------------------------------
+#
+# Varianten delen een rij in het referentiebestand: "Fenix 7" is ook de 7S en
+# de 7X, met en zonder Solar of Sapphire; "Edge 530" ook de bundel met
+# sensoren. Een aparte rij per variant vraagt een bron per variant, en dan
+# heeft elke rij te weinig advertenties voor een mediaan. Dus rekent de
+# flipwinst eerst met advertenties van dezelfde uitvoering, en pas als dat er
+# te weinig zijn met het hele model. Een gewone Fenix 7S tegen een mediaan met
+# 7X Sapphire-exemplaren leek anders een betere flip dan hij was.
+
+# De maat-letter direct achter het modelnummer: "7X", "6S Pro", "265S". Alleen
+# binnen de gevonden modelnaam, zodat "Edge 530 S..." of een losse "x" in de
+# titel niets zegt.
+_SIZE_LETTER_RE = re.compile(r"\d\s?([sx])\b", re.I)
+# Kastmaat in mm, voor modellen zonder letter (Fenix 8 43/47/51 mm, Epix Pro).
+# Alleen horlogematen: "22mm" is een bandje, "1030 mm" bestaat niet.
+_CASE_MM_RE = re.compile(r"\b(3[5-9]|4\d|5[0-5])\s?mm\b", re.I)
+# Woorden die een duurdere of andere uitvoering van hetzelfde model noemen.
+VARIANT_WORDS = (
+    ("Solar", re.compile(r"\bsolar\b", re.I)),
+    ("Sapphire", re.compile(r"\b(?:sapphire|saphire|sapphier|saffier|saffire|saphir)\b", re.I)),
+    ("Titanium", re.compile(r"\b(?:titanium|titan|titaan)\b", re.I)),
+    # "Fenix 8 OLED 51mm": verkopers schrijven ook OLED. MicroLED (Fenix 8 Pro)
+    # is een eigen, veel duurdere uitvoering.
+    ("MicroLED", re.compile(r"\bmicro\s?-?led\b", re.I)),
+    ("AMOLED", re.compile(r"\b(?:amoled|oled)\b", re.I)),
+    ("Music", re.compile(r"\bmusic\b", re.I)),
+    ("LTE", re.compile(r"\b(?:lte|cellular|e-?sim)\b", re.I)),
+    ("bundel", re.compile(r"\b\w*(?:bundle|bundel)\w*\b", re.I)),
+    # De MARQ-edities delen een rij maar niet een prijs; welke het is, staat in
+    # de titel ("Garmin Marq Athlete", "MARQ Captain"). Alleen de naam, geen
+    # prijs: de advertenties zelf zeggen wat elke editie opbrengt.
+    *((edition.capitalize(), re.compile(rf"\b{edition}\b", re.I))
+      for edition in ("athlete", "aviator", "captain", "expedition", "driver", "adventurer", "golfer",
+                      "commander")),
+)
+
+
+@dataclass(frozen=True)
+class Variant:
+    """De uitvoering zoals de titel hem noemt. Wat de titel niet noemt, is de
+    gewone uitvoering — behalve de kastmaat: die laten verkopers vaak weg,
+    dus een ontbrekende maat past bij elke maat."""
+    size: str = ""  # "S", "X" of "" (geen letter achter het modelnummer)
+    mm: Optional[int] = None
+    words: frozenset = frozenset()
+
+    def matches(self, other: "Variant") -> bool:
+        return (self.size == other.size and self.words == other.words
+                and (self.mm is None or other.mm is None or self.mm == other.mm))
+
+    @property
+    def label(self) -> str:
+        """"X · 51 mm · Solar · Sapphire"-achtig, zonder het model; "gewone
+        uitvoering" als de titel niets noemt."""
+        return self._label(with_mm=True)
+
+    @property
+    def group_label(self) -> str:
+        """Zonder kastmaat: om te groeperen, want een titel zonder maat past bij
+        elke maat en zou anders een eigen groep worden."""
+        return self._label(with_mm=False)
+
+    def _label(self, with_mm: bool) -> str:
+        parts = [self.size] if self.size else []
+        if with_mm and self.mm:
+            parts.append(f"{self.mm} mm")
+        parts += [word for word, _ in VARIANT_WORDS if word in self.words]
+        return " · ".join(parts) or "gewone uitvoering"
+
+
+def title_variant(title: str, model: ComputerModel) -> Variant:
+    clean = normalize_title(title)
+    found = model.pattern.search(clean)
+    letter = _SIZE_LETTER_RE.search(found.group(0)) if found else None
+    mm = _CASE_MM_RE.search(clean)
+    return Variant(
+        size=letter.group(1).upper() if letter else "",
+        mm=int(mm.group(1)) if mm else None,
+        words=frozenset(word for word, regex in VARIANT_WORDS if regex.search(clean)),
+    )
 
 
 def load_catalog(path: Path = CATALOG_PATH) -> list[ComputerModel]:
@@ -508,6 +592,12 @@ class ComputerSignal:
     upgrade_per_100: Optional[float] = None  # punten per €100 van de prijs
     comp_count: int = 0
     comp_note: str = ""
+    variant: Optional[Variant] = None
+    # "uitvoering": de mediaan komt van advertenties van dezelfde uitvoering;
+    # "model": van het hele model (te weinig van dezelfde, of alles is gelijk).
+    comp_scope: str = ""
+    model_comp_count: int = 0  # alle andere advertenties van het model
+    variant_comp_count: int = 0  # waarvan van dezelfde uitvoering
     # Verwachte verkoopprijs (mediaan) en de band eromheen (kwartielen), alle
     # drie al na onderhandelingsruimte.
     resale_eur: Optional[float] = None
@@ -587,7 +677,17 @@ def _comparable_price(listing) -> Optional[float]:
 
 def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int,
                    categories: Optional[Sequence[str]] = None) -> dict[str, dict[str, float]]:
-    """{modellabel: {item_id: prijs}} uit eerdere runs in koopjes.db. Alleen
+    """{modellabel: {item_id: prijs}} uit eerdere runs in koopjes.db; zie
+    _comparable_rows()."""
+    found: dict[str, dict[str, float]] = {}
+    for model, item_id, price, _title in _comparable_rows(db_path, catalog, window_days, categories):
+        found.setdefault(model.label, {})[item_id] = price
+    return found
+
+
+def _comparable_rows(db_path, catalog: Sequence[ComputerModel], window_days: int,
+                     categories: Optional[Sequence[str]] = None) -> list[tuple]:
+    """[(model, item_id, prijs, titel)] uit eerdere runs in koopjes.db. Alleen
     vraagprijzen (`price_is_asking`, migratie 3; bij oudere rijen waar die
     NULL is beslist `is_bid`, zoals db.py dat ook doet), alleen titels die
     zonder twijfel een computer zijn, niet uit een fietscategorie, en alleen
@@ -602,7 +702,7 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int,
     telefoon- of wearable-categorie en is geen vergelijkingsprijs voor een
     horloge, en een "Forerunner"-titel uit de fietscomputercrawl evenmin."""
     if not db_path or not Path(db_path).exists():
-        return {}
+        return []
     since = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat(timespec="seconds")
     uri = Path(db_path).resolve().as_uri() + "?mode=ro"
     conn = sqlite3.connect(uri, uri=True)
@@ -623,10 +723,10 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int,
             (since,),
         ).fetchall()
     except sqlite3.Error:
-        return {}
+        return []
     finally:
         conn.close()
-    found: dict[str, dict[str, float]] = {}
+    found = []
     for item_id, title, price, url, description in rows:
         if in_bike_category(url) or WITHOUT_DEVICE_RE.search(description or ""):
             continue
@@ -634,7 +734,7 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int,
             continue
         verdict = classify_title(title, catalog)
         if verdict and verdict.kind == "computer":
-            found.setdefault(verdict.model.label, {})[item_id] = price
+            found.append((verdict.model, item_id, price, title))
     return found
 
 
@@ -755,7 +855,14 @@ def apply_computer_signals(
     def with_extras(kind, reason):
         return kind == "computer" and reason.endswith(DEVICE_ONLY)
 
-    comps = db_comparables(db_path, catalog, flip["comp_window_days"], comp_categories)
+    comps: dict[str, dict[str, float]] = {}
+    variants: dict[str, Variant] = {}
+    for model, item_id, price, title in _comparable_rows(db_path, catalog, flip["comp_window_days"],
+                                                         comp_categories):
+        comps.setdefault(model.label, {})[item_id] = price
+        variants[item_id] = title_variant(title, model)
+    for listing, model, kind, reason in found:
+        variants[listing.item_id] = title_variant(listing.title, model)
     for listing, model, kind, reason in found:
         price = _comparable_price(listing) if kind == "computer" and not with_extras(kind, reason) else None
         if price is not None:
@@ -792,12 +899,27 @@ def apply_computer_signals(
             signal.upgrade_delta = round(features.score - baseline_score, 1)
             if listing.price_eur and listing.price_eur > 0:
                 signal.upgrade_per_100 = round(signal.upgrade_delta / listing.price_eur * 100, 1)
-        others = [p for item_id, p in comps.get(model.label, {}).items() if item_id != listing.item_id]
-        signal.comp_count = len(others)
-        if len(others) >= flip["min_comps"]:
-            signal.resale_low_eur, signal.resale_eur, signal.resale_high_eur = _resale_band(others, factor)
-            signal.comp_note = (f"mediaan van {len(others)} andere advertenties × {factor:g} "
-                                "(onderhandelingsruimte, heuristiek); de band is het middelste kwart-tot-driekwart")
+        others = {i: p for i, p in comps.get(model.label, {}).items() if i != listing.item_id}
+        variant = variants[listing.item_id]
+        same = [p for i, p in others.items() if variant.matches(variants.get(i, Variant()))]
+        signal.variant = variant
+        signal.model_comp_count = len(others)
+        signal.variant_comp_count = len(same)
+        band_note = f"× {factor:g} (onderhandelingsruimte, heuristiek); de band is het middelste kwart-tot-driekwart"
+        if len(same) >= flip["min_comps"] and len(same) < len(others):
+            prices = same
+            signal.comp_scope = "uitvoering"
+            signal.comp_note = (f"mediaan van {len(same)} advertenties van dezelfde uitvoering "
+                                f"({variant.label}; het hele model heeft er {len(others)}) {band_note}")
+        else:
+            prices = list(others.values())
+            signal.comp_scope = "model"
+            differ = (f" (van deze uitvoering, {variant.label}, maar {len(same)})"
+                      if len(same) < len(others) else "")
+            signal.comp_note = f"mediaan van {len(others)} andere advertenties{differ} {band_note}"
+        signal.comp_count = len(prices)
+        if len(prices) >= flip["min_comps"]:
+            signal.resale_low_eur, signal.resale_eur, signal.resale_high_eur = _resale_band(prices, factor)
         else:
             signal.comp_note = f"te weinig vergelijkingsmateriaal ({len(others)} andere, minimaal {flip['min_comps']})"
     return count
