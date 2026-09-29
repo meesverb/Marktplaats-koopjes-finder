@@ -388,6 +388,16 @@ served (not `koopjes.db`, not `sheets.json`). A link in the overview to
 `dashboard.html` or `dashboard_horloges.html` opens the live version. Every
 live page has the same bar at the top.
 
+**Starting rounds from the start page.** Under *Rondes* every slot from
+`schedule.json` has a **starten** button, with what it searches, how deep and
+when it last ran. It runs exactly what the task scheduler runs,
+`python koopjes.py run <slot>`, as a separate background process (it keeps
+going if you stop the server); the page shows the tail of `logs/koopjes.log`
+while it runs and reloads when it's done. Never two at once (the lock of
+`koopjes.py`), and to stay polite to Marktplaats a slot can only start again
+30 minutes after its previous round, 6 hours for a slot that fetches
+everything (`pages: 0`) — scheduled rounds count too (`launcher.py`).
+
 **Recording your own buys and sales — `python dashboard.py --serve`.** The
 written `dashboard.html` only reads. `--serve` starts a small program on your
 own computer (only reachable at `http://127.0.0.1:8765/`, `--port` to change)
