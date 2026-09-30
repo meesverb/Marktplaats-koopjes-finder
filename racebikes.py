@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import sqlite3
 import statistics
 from dataclasses import dataclass, field
@@ -284,7 +285,8 @@ def bike_json(r: Row, f: Fresh) -> dict:
         "id": l.item_id, "t": l.title, "u": l.url, "p": l.price_eur, "pk": price_kind(l),
         "bi": " · ".join(bid_bits), "img": (l.image_urls or "").split()[:3], "c": l.city,
         "km": None if dist is None else round(dist.km, 1), "kma": bool(dist and dist.approx),
-        "fr": list(r.frame) if r.frame else None, "sp": r.specs, "d": r.text, "n": r.new,
+        # "60 cm of meer" is (60, inf); oneindig bestaat niet in JSON.
+        "fr": [b if math.isfinite(b) else 999 for b in r.frame] if r.frame else None, "sp": r.specs, "d": r.text, "n": r.new,
         "res": l.reserved, "fs": l.first_seen,
         "fm": None if r.flip_margin is None else round(r.flip_margin), "rs": None if r.resale is None else round(r.resale),
         "fb": r.flip_basis, "fg": r.flip_rough,
@@ -368,6 +370,10 @@ details.desc div { white-space: pre-wrap; font-size: .88rem; margin-top: 4px; ma
 """
 
 JS = r"""
+window.addEventListener('error', e => {
+  const box = document.getElementById('more');
+  if (box) { box.hidden = false; box.textContent = 'De pagina kon de fietsen niet tonen: ' + e.message; }
+});
 const BIKES = JSON.parse(document.getElementById('bikes').textContent);
 const GONE = JSON.parse(document.getElementById('gone').textContent);
 const REASONS = JSON.parse(document.getElementById('reasons').textContent);
@@ -612,10 +618,24 @@ draw();
 """
 
 
+def _finite(value):
+    """NaN en oneindig als null: JSON kent ze niet, en één zo'n getal liet
+    JSON.parse de hele pagina weigeren (een framemaat "60 cm of meer",
+    30-09-2026)."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(v) for v in value]
+    return value
+
+
 def page_json(data) -> str:
     """JSON veilig in een <script type=application/json>: `</` kan hem niet
-    afsluiten."""
-    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    afsluiten, en er komt geen NaN/Infinity in."""
+    return json.dumps(_finite(data), ensure_ascii=False, separators=(",", ":"),
+                      allow_nan=False).replace("</", "<\\/")
 
 
 def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:

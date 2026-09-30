@@ -98,6 +98,19 @@ class LoadTest(Case):
         self.assertNotIn("<b>koopje</b>", html)
 
 
+class OpenEndedFrameTest(Case):
+    def test_sixty_or_more_does_not_break_the_page_json(self):
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "racefiets", [bike("big", 450.0, frame_height="60 cm of meer")], self.now.isoformat())
+        conn.close()
+        base = rb.build_base(self.db, self.dir / "geen_fiets.md")
+        html = rb.render(base, rb.load_fresh(self.db), "tok")
+        data = re.search(r"id='bikes'>(.*?)</script>", html).group(1)
+        self.assertNotIn("Infinity", data)
+        big = next(b for b in json.loads(data.replace("<\\/", "</")) if b["id"] == "big")
+        self.assertEqual(big["fr"], [60.0, 999])
+
+
 class PermanentReasonTest(unittest.TestCase):
     def test_no_road_bike_stays_away_when_the_price_drops(self):
         listing = make_listing(price_eur=100.0)
