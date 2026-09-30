@@ -84,10 +84,10 @@ fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
 
 | Slot | When | What |
 | --- | --- | --- |
-| `overdag` | 08:30, 13:30, 19:30 | racefietsen around size 56, newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
+| `overdag` | 08:30, 13:30, 19:30 | racefietsen (every size and price since 30-09-2026; `/racefietsen` filters), newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
 | `nacht` | 03:00 | complete crawls of "giant defy", "giant defy composite" (both in every category, see `/fiets` below) and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, all Garmin, Polar, Suunto and Coros watches (`sporthorloges`, `polar`, `suunto`, `coros`: ~71 pages, plus a bid lookup for each of the ~370 "bieden" listings without a price), then `valuation.py` |
 | `computers` | 10:00, 14:00, 18:00, 22:00 | the newest bike computers and Garmin watches only, 2 pages each (3 requests per search, 6 a round), so a cheap flip doesn't wait for the night. Polar, Suunto and Coros only run at night: with ~5 new listings a day, 2 pages would fetch the same listings and bids every round. Watches: ~115 new on a Monday until 20:45 (28-09-2026), so 2 pages every 4 hours is enough there too. The whole category gets about 100-120 new listings a day, roughly a quarter of them a computer with a known model (measured 28-09-2026: at 18:40 "Vandaag" filled 3-4 pages newest first, "Gisteren" about 4), so 2 pages every 4 hours leaves room — also for the ~7 paid "Dagtoppers" Marktplaats puts on top of page 1 whatever the sort. For the bike computers `bid_lookup` `fast` cost 17 bid lookups a round on top of that, so the slot has `none`: a bidding bike computer shows under "Zonder prijs — bied maximaal" by day, and the night round fills in the running bid. The Garmin watches override that with their own `"bid_lookup": "fast"` (~15 lookups a round). A looked-up bid stays in the database until the next lookup (migration 11), so a round without lookups no longer wipes it. Being shallow, it never marks anything as gone: that stays with the night round |
-| `week` | Sunday 05:00 | all racefietsen Marktplaats will show (~5000, about 10 days' worth), without bid lookups |
+| `week` | Sunday 05:00 | every racefiets, complete, without bid lookups: with `"split": true` the search runs in parts that each stay under Marktplaats' ~5000 (see `--split` below). ~250 requests of 100 listings, deliberately slow (at least 4 s apart, a minute's break every 40), ~30 minutes |
 | `defy` | by hand (`python koopjes.py run defy`) | every Giant Defy at once — the `giant-defy` and `giant-defy-composite` searches, complete, in every category, with bid lookups (~7 pages, a few minutes) — then `valuation.py` and both dashboards. For `/fiets` now rather than after the night round, which does the same every night. `koopjes.py schedule` leaves it out, `status` shows it as "handmatig" |
 | `horloges` | by hand (`python koopjes.py run horloges`) | all sport watches at once — the `sporthorloges`, `polar`, `suunto` and `coros` searches, complete, with bid lookups (~71 pages plus ~400 lookups, 15-20 minutes) — then both dashboards; `dashboard_horloges.html` opens if there's a new flip. The night round does the same every night; this slot is for looking now. `koopjes.py schedule` leaves it out, `status` shows it as "handmatig" |
 
@@ -1208,6 +1208,24 @@ margin, the bundle factor and the share of an upgrade that a buyer of a
 complete bike pays for are heuristics, not measurements, and each is printed
 as its own line so it is clear what it contributed.
 
+### Everything in a category — `--split`
+
+Marktplaats pages through ~5000 results per search and no further, also
+with 100 per page; the category racefietsen has ~13-14k. With `--split`
+(`"split": true` in `schedule.json`) a complete crawl (`--pages 0`) with a
+`--category` that has more than that runs in parts instead: per condition
+(Nieuw, Zo goed als nieuw, Gebruikt — a condition with more than ~4800 also
+oldest first) and per price band (€0-150, 150-300, ... for the listings
+without a condition), each filtered by Marktplaats itself (checked
+30-09-2026). Listings without an amount ("bieden") can't be asked for by
+price, and sorting by price leaves them out, which is why the condition goes
+first. It is only complete if the parts together saw every listing
+Marktplaats counts; otherwise nothing is swept as gone. It runs slower than a
+normal crawl on purpose: on 30-09-2026 Marktplaats answered 403 after ~120
+quick requests of 100 listings, and was fine again a few minutes later. So:
+at least 4 s between requests, a minute's pause every 40, and after a 403 it
+waits 5 minutes and tries once more before stopping with what it has.
+
 ### Racefietsen — `/racefietsen` (`racebikes.py`)
 
 `python dashboard.py --serve` also serves **`/racefietsen`**: every road bike
@@ -1227,14 +1245,28 @@ groupset, brakes, year, wheels, weight, condition), the seller's text
 verdicts side by side:
 
 - **flip** — expected selling price minus what it costs you. The selling
-  price is `upgrade.estimate_value()`: the median asking price of comparable
-  bikes (same frame material, groupset tier and brake type) × 0,875, or
-  *grof* (the median of all bikes) when there are too few. No costs are
+  price is the median asking price of **the same model from the same
+  years** × 0,875 (`bike_identity.py`), from every road bike of the last
+  180 days, gone ones included. Brand and model come from the title (the
+  model names per brand in `reference_bike_catalog.csv`, or the word after
+  the brand: "Canyon Grail"), the year from the text or title. In steps:
+  same brand and model ±2 years; same model without a year but the same era
+  (disc or rim brakes, electronic shifting, speeds — without dates, those
+  aren't researched here); same material, groupset tier and brakes ±2 years
+  for another model; and only when the bike itself says neither year nor
+  brakes, the same model of any year, marked *onzeker* with the range and
+  never green. Otherwise no estimate — "model niet herkend" or "te weinig
+  vergelijkbare fietsen" rather than a median of everything (the owner,
+  30-09-2026: a 2024 carbon bike is not comparable to a 2014 one). *vergeleken
+  met N fietsen* on the card lists them, with links. No costs are
   subtracted: parts and travel you work out per bike on `/flips`.
 - **upgrade** — `upgrade.find_upgrades()` against your own bike in
   `mijn_fiets.md`, exactly as the report's Upgrade tab: better than yours by
-  more than the margin, within budget, size not wrong. Without a readable
-  `mijn_fiets.md` the page says why there is no verdict.
+  more than the margin, within budget, size not wrong. A bike without a
+  known year is never a green upgrade: the score has no age to discount
+  then, so an old bike with good parts looked new ("bouwjaar onbekend — vraag
+  het jaar na"). Without a readable `mijn_fiets.md` the page says why there
+  is no verdict.
 
 Plus the **waardescore** (estimated value / price). Not the dealscore: that
 belongs to the report.

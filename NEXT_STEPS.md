@@ -27,6 +27,22 @@ opmaakt; sneller wordt dat pas met bladeren of alleen de zichtbare rijen
 tekenen (zoals `/racefietsen`), en dat is een ontwerpkeuze voor de eigenaar.
 `/fiets` leest de spec-tabel twee keer (~0,1 s), niet de moeite waard.
 
+## Alle racefietsen en vergelijken op model (30-09-2026)
+
+- De zoekopdracht `racefietsen` slaat alles op, elke maat en prijs; de ronde
+  `week` haalt de hele categorie in delen (`--split`, per staat en
+  prijsschijf). Eerste echte proef: 12.055 van 14.446 via de staat-delen,
+  toen gaf Marktplaats een 403 na ~120 snelle verzoeken. Daarom nu minstens
+  4 s ertussen, een minuut pauze per 40, en na een 403 vijf minuten wachten.
+  Nog niet bewezen dat hij daarmee compleet wordt: kijk na de eerste
+  zondagronde in `logs/koopjes.log` naar "in delen: … van de … gezien" en
+  of er een 403 in staat.
+- /racefietsen vergelijkt op merk + model + bouwjaar (`bike_identity.py`).
+  Op 100 echte titels had 58 een herkend model, maar maar ~6 een bouwjaar:
+  de meeste schattingen zijn dus "model + tijdperk" of "onzeker". Vaker het
+  jaar weten kan met `--detail-lookup` (volledige omschrijving) — kost
+  verzoeken, eerst aan de eigenaar vragen.
+
 ## Racefietspagina, afstand, eigen biedingen, weergaven/likes (29/30-09-2026)
 
 Na een gesprek met de eigenaar (zijn keuzes staan in de docstrings van

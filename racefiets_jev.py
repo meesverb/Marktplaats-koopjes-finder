@@ -26,7 +26,7 @@ from dataclasses import dataclass, asdict, field, fields as dataclass_fields
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 from urllib.parse import quote_plus, urlencode
 
 import requests
@@ -260,15 +260,18 @@ def fetch_api_page(
     page: int,
     sort: str = "optimized",
     category_filter: Optional[tuple[int, list[int]]] = None,
+    extra: Sequence[tuple[str, object]] = (),
+    limit: int = PAGE_SIZE,
+    order: Optional[tuple[str, str]] = None,
 ) -> dict:
     """Like fetch_page(), through the search API: same response shape, but
     it honours a sort order and a server-side category restriction.
     category_filter is (l1 id, [l2 ids]) as resolve_categories() makes it."""
-    sort_by, sort_order = SORT_OPTIONS[sort]
+    sort_by, sort_order = order or SORT_OPTIONS[sort]
     params = [
         ("query", query),
-        ("limit", PAGE_SIZE),
-        ("offset", (page - 1) * PAGE_SIZE),
+        ("limit", limit),
+        ("offset", (page - 1) * limit),
         ("sortBy", sort_by),
         ("sortOrder", sort_order),
     ]
@@ -278,6 +281,7 @@ def fetch_api_page(
         # Plural and repeated: "l2CategoryId" (singular) is silently ignored
         # and returns every category.
         params.extend(("l2CategoryIds", l2) for l2 in l2s)
+    params.extend(extra)
     resp = session.get(BASE_URL + SEARCH_API_PATH + "?" + urlencode(params), timeout=15)
     resp.raise_for_status()
     try:
@@ -1270,6 +1274,148 @@ def _fetch_with_retry(fetch, page: int, delay: float) -> dict:
         return fetch(page)
 
 
+# --split: a complete crawl of more than Marktplaats will page through.
+# Measured 30-09-2026 on the category racefietsen (13316 listings): the
+# search API pages to offset ~5000 at most, also with limit 100 (50 pages of
+# 100), and it filters server-side on a listing's condition
+# (attributesById[], the "condition" facet: Nieuw 2325, Zo goed als nieuw
+# 4350, Gebruikt 6047) and on a price range (attributeRanges[]
+# PriceCents:lo:hi, both ends included). Price ranges alone miss everything
+# without an amount ("bieden", "zie omschrijving": 2550 of the 13316), and
+# sorting by price leaves the FAST_BID ones out altogether, so the condition
+# goes first; a condition with more than SPLIT_CAP gets a second pass oldest
+# first. Price bands then pick up the listings that have no condition set.
+SPLIT_CAP = 4800
+SPLIT_PAGE_SIZE = 100
+# Rustiger dan een gewone crawl. Op 30-09-2026 gaf Marktplaats na ~120
+# verzoeken van 100 advertenties in 6 minuten (1,5 s ertussen) een 403
+# Forbidden; een paar minuten later ging het weer. Dus: minstens 4 s
+# ertussen, elke 40 verzoeken een minuut pauze, en na een 403 vijf minuten
+# wachten en één keer opnieuw — lukt dat niet, dan stopt de crawl met wat
+# hij heeft (incompleet: er wordt niets als verdwenen gemarkeerd).
+SPLIT_MIN_DELAY = 4.0
+SPLIT_BREAK_EVERY = 40
+SPLIT_BREAK_SECONDS = 60
+SPLIT_BLOCKED_WAIT = 300
+SPLIT_PRICE_BANDS_EUR = (0, 150, 300, 500, 800, 1200, 2000, 3500)
+OLDEST_FIRST = ("SORT_INDEX", "INCREASING")
+
+
+def _facet_values(search_response: dict, key: str) -> list[tuple[int, int]]:
+    """(attributeValueId, count) of one attribute facet."""
+    for facet in search_response.get("facets") or []:
+        if facet.get("key") == key:
+            out = []
+            for option in facet.get("attributeGroup") or []:
+                ident, count = option.get("attributeValueId"), as_number(option.get("histogramCount"))
+                if isinstance(ident, int) and count:
+                    out.append((ident, int(count)))
+            return out
+    return []
+
+
+def collect_split(
+    query: str,
+    delay: float,
+    session: requests.Session,
+    category_filter: tuple[int, list[int]],
+    first: dict,
+) -> "CrawlResult":
+    """A complete crawl in parts that each stay under the page cap (see
+    SPLIT_CAP). `first`: the unfiltered search response, for the total and
+    the condition facet. Complete only if the parts together saw every
+    listing Marktplaats counts; otherwise the sweep is skipped, as for any
+    incomplete crawl."""
+    total = as_number(first.get("totalResultCount")) or 0
+    listings: dict[str, Listing] = {}
+    raw_ids: set = set()
+    fetch_error: Optional[str] = None
+    requests_made = 0
+
+    def crawl(extra: list, order: tuple, max_pages: int, label: str) -> Optional[int]:
+        """Pages of one part; returns the part's total, or None on an error."""
+        nonlocal fetch_error, requests_made
+        part_total = None
+        page = 1
+        def get(p: int) -> dict:
+            return fetch_api_page(session, query, p, category_filter=category_filter, extra=extra,
+                                  limit=SPLIT_PAGE_SIZE, order=order)
+
+        while page <= max_pages:
+            if requests_made:
+                pause = max(delay, SPLIT_MIN_DELAY) if delay > 0 else 0
+                if delay > 0 and requests_made % SPLIT_BREAK_EVERY == 0:
+                    pause = SPLIT_BREAK_SECONDS
+                time.sleep(pause)
+            try:
+                try:
+                    data = get(page)
+                except requests.HTTPError as exc:
+                    if getattr(exc.response, "status_code", None) != 403 and "403" not in str(exc):
+                        raise
+                    print(f"warning: Marktplaats weigert even (403); {SPLIT_BLOCKED_WAIT // 60} minuten wachten",
+                          file=sys.stderr)
+                    time.sleep(SPLIT_BLOCKED_WAIT if delay > 0 else 0)
+                    data = get(page)
+            except (requests.RequestException, RuntimeError) as exc:
+                print(f"warning: {label}, pagina {page}: {exc}", file=sys.stderr)
+                fetch_error = f"{label}: pagina {page} kon niet worden opgehaald"
+                return None
+            requests_made += 1
+            if part_total is None:
+                part_total = int(as_number(data.get("totalResultCount")) or 0)
+                max_pages = min(max_pages, -(-min(part_total, SPLIT_CAP + 200) // SPLIT_PAGE_SIZE))
+            raw = data.get("listings") or []
+            if not raw:
+                break
+            for item in raw:
+                if item.get("itemId"):
+                    raw_ids.add(item["itemId"])
+                listing = parse_listing(item)
+                if listing.item_id and not is_wanted_ad(listing.title):
+                    listings[listing.item_id] = listing
+            site_max = as_number(data.get("maxAllowedPageNumber"))
+            if site_max and page >= site_max:
+                break
+            page += 1
+        print(f"  {label}: {part_total} advertenties, {len(raw_ids)} van de {int(total)} tot nu toe gezien",
+              file=sys.stderr)
+        return part_total
+
+    print(f"  {int(total)} resultaten, meer dan Marktplaats doorbladert: in delen (--split)", file=sys.stderr)
+    for ident, count in _facet_values(first, "condition"):
+        extra = [("attributesById[]", ident)]
+        part = crawl(extra, SORT_OPTIONS["newest"], 10_000, f"staat {ident}")
+        if part is None:
+            break
+        if part > SPLIT_CAP:
+            # Newest first reached the cap; the oldest ones from the other end.
+            rest = -(-(part - SPLIT_CAP) // SPLIT_PAGE_SIZE) + 2
+            if crawl(extra, OLDEST_FIRST, rest, f"staat {ident}, oudste eerst") is None:
+                break
+    if not fetch_error:
+        bands = list(zip(SPLIT_PRICE_BANDS_EUR, SPLIT_PRICE_BANDS_EUR[1:] + (None,)))
+        for lo, hi in bands:
+            upper = f"{hi * 100 - 1}" if hi is not None else ""
+            extra = [("attributeRanges[]", f"PriceCents:{lo * 100}:{upper}")]
+            part = crawl(extra, SORT_OPTIONS["newest"], 10_000, f"prijs €{lo}-{hi or ''}")
+            if part is None:
+                break
+            if part > SPLIT_CAP:
+                crawl(extra, OLDEST_FIRST, -(-(part - SPLIT_CAP) // SPLIT_PAGE_SIZE) + 2,
+                      f"prijs €{lo}-{hi or ''}, oudste eerst")
+    print(f"  in delen: {requests_made} verzoeken, {len(raw_ids)} van de {int(total)} gezien", file=sys.stderr)
+    if fetch_error:
+        return CrawlResult(listings.values(), complete=False, note=fetch_error)
+    if len(raw_ids) < total:
+        # Not near_complete: what the parts miss (no condition and no price)
+        # is missed every week, and would be swept as gone although online.
+        return CrawlResult(listings.values(), complete=False,
+                           note=f"in delen {len(raw_ids)} van de {int(total)} gezien (zonder staat én zonder prijs "
+                                "is niet apart op te vragen)")
+    return CrawlResult(listings.values(), complete=True)
+
+
 def collect_listings(
     query: str,
     pages: int,
@@ -1278,6 +1424,7 @@ def collect_listings(
     *,
     sort: str = "optimized",
     categories: Optional[list[str]] = None,
+    split: bool = False,
 ) -> CrawlResult:
     """Fetch listings page by page. pages <= 0 means "fetch everything
     Marktplaats allows browsing to" (it caps pagination at a few hundred
@@ -1310,6 +1457,15 @@ def collect_listings(
             print(f"error: --category: {exc}", file=sys.stderr)
             return CrawlResult([], complete=False, note=f"--category: {exc}")
         time.sleep(delay)
+        if split and pages <= 0:
+            try:
+                whole = _fetch_with_retry(
+                    lambda p: fetch_api_page(session, query, p, category_filter=category_filter, limit=1), 1, delay)
+            except (requests.RequestException, RuntimeError) as exc:
+                return CrawlResult([], complete=False, note=f"--split: {exc}")
+            time.sleep(delay)
+            if (as_number(whole.get("totalResultCount")) or 0) > SPLIT_CAP:
+                return collect_split(query, delay, session, category_filter, whole)
 
     use_api = sort != "optimized" or category_filter is not None
 
@@ -2709,6 +2865,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "use newest for scheduled runs, so a few pages cover everything new since the last run",
     )
     parser.add_argument(
+        "--split",
+        action="store_true",
+        help="Met --pages 0 en --category: een zoekopdracht met meer resultaten dan Marktplaats "
+        "doorbladert (~5000) in delen ophalen (per staat en prijsschijf), zodat alles binnenkomt",
+    )
+    parser.add_argument(
         "--category",
         default=None,
         help="Only search in these Marktplaats categories (comma-separated key or number, e.g. "
@@ -2878,6 +3040,7 @@ WATCHLIST_FILTERS = {
     "category": "text",
     "bids_only": "flag",
     "min_score": "number",
+    "split": "flag",
 }
 WATCHLIST_ALL = "all"
 
@@ -3198,7 +3361,8 @@ def run_for_query(
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     categories = [c.strip() for c in (args.category or "").split(",") if c.strip()]
     listings = collect_listings(
-        query, args.pages, args.delay, sort=args.sort, categories=categories or None
+        query, args.pages, args.delay, sort=args.sort, categories=categories or None,
+        split=getattr(args, "split", False),
     )
     # Kept before any filtering: this is what the crawl actually saw, which is
     # what "has this listing disappeared?" has to be answered against.

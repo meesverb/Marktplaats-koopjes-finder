@@ -47,7 +47,7 @@ class Case(unittest.TestCase):
         self.now = datetime.now(timezone.utc).replace(microsecond=0)
         market = [bike(f"a{i}", p, city="Zwolle", latitude=52.51, longitude=6.09)
                   for i, p in enumerate((500.0, 550.0, 600.0, 650.0))]
-        cheap = bike("c", 300.0, title="Cube racefiets <b>koopje</b>", city="Utrecht", latitude=52.09,
+        cheap = bike("c", 300.0, title="Cube Attain racefiets <b>koopje</b>", city="Utrecht", latitude=52.09,
                      longitude=5.12, promotion="DAGTOPPER")
         old = bike("old", 400.0)
         computer = make_listing(item_id="g", title="Garmin Edge 530", price_eur=90.0, url=COMPUTER_URL.format("g"))
@@ -109,6 +109,43 @@ class OpenEndedFrameTest(Case):
         self.assertNotIn("Infinity", data)
         big = next(b for b in json.loads(data.replace("<\\/", "</")) if b["id"] == "big")
         self.assertEqual(big["fr"], [60.0, 999])
+
+
+class ModelComparisonTest(Case):
+    """Vergelijken op merk, model en bouwjaar (bike_identity.py), niet op
+    onderdelen alleen: een Ultegra-fiets van 2012 is geen maat voor een van 2023."""
+
+    def test_identity_from_title_and_text(self):
+        import bike_identity as bi
+        me = bi.identify(bike("x", 900.0, title="Trek Emonda SL6 2019 maat 56",
+                              description="Ultegra Di2, schijfremmen, carbon"))
+        self.assertEqual((me.model, me.year, me.disc, me.electronic, me.material),
+                         ("trek emonda", 2019, True, True, "carbon"))
+        # Het modelwoord hoort bij één merk: dan is dat het merk.
+        self.assertEqual(bi.identify(bike("y", 500.0, title="Émonda ALR 5", description="")).model, "trek emonda")
+        self.assertIsNone(bi.identify(bike("z", 500.0, title="Mooie racefiets", description="")).model)
+
+    def test_only_the_same_model_from_the_same_years_counts(self):
+        conn = db.connect(self.db)
+        old = [bike(f"o{i}", p, title=f"Giant Defy 2012 {i}") for i, p in enumerate((300.0, 320.0, 340.0))]
+        new = [bike(f"n{i}", p, title=f"Giant Defy Advanced 2023 {i}") for i, p in enumerate((1500.0, 1600.0, 1700.0))]
+        other = [bike(f"t{i}", 2500.0, title=f"Trek Madone 2012 {i}") for i in range(5)]
+        me = bike("me", 350.0, title="Giant Defy 2013")
+        db.sync_listings(conn, "racefiets", old + new + other + [me], self.now.isoformat())
+        conn.close()
+        row = rb.build_base(self.db, self.dir / "geen_fiets.md").row("me")
+        self.assertEqual(row.level, "model+jaar")
+        self.assertEqual({c[1] for c in row.comps}, {300.0, 320.0, 340.0})
+        self.assertAlmostEqual(row.resale, 320.0 * 0.875)
+        self.assertIn("giant defy", row.flip_basis)
+
+    def test_without_a_model_there_is_no_estimate_rather_than_a_wrong_one(self):
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "racefiets", [bike("anon", 200.0, title="Racefiets maat 56")], self.now.isoformat())
+        conn.close()
+        row = rb.build_base(self.db, self.dir / "geen_fiets.md").row("anon")
+        self.assertIsNone(row.resale)
+        self.assertIn("model niet herkend", row.flip_basis)
 
 
 class PermanentReasonTest(unittest.TestCase):

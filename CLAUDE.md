@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 925 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 931 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -102,6 +102,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `vinted.py` | Vinted-exports (een CSV die de eigenaar zelf maakt) inlezen in `koopjes.db` (tabellen `vinted_listing`/`vinted_price`, migratie 8) en naast Marktplaats zetten: tab Vinted in het dashboard, `python vinted.py` in de console. Haalt zelf niets op bij Vinted; Vinted-prijzen zijn nooit vergelijkingsprijs voor Marktplaats |
 | `marks.py` | eigen markeringen per advertentie: favoriet, of weg (niet waard, gereserveerd) — tabel `listing_mark`, migratie 12 — en een eigen notitie bij elke advertentie, los van de markering — tabel `listing_note`, migratie 15 (de kolom `listing_mark.note` van migratie 13 is sindsdien leeg en ongebruikt). Gezet via `python dashboard.py --serve`; weg haalt een advertentie uit Flips/Upgrades/Zonder prijs tot de prijs onder die van het wegzetten zakt. Nooit invloed op vergelijkingsprijzen |
 | `racebikes.py` | `/racefietsen` in `dashboard.py --serve`: alle racefietsen uit `koopjes.db` (actief = gezien binnen 8 dagen) als kaarten met 3 foto's, specs, beschrijving, flip (verkoopschatting uit vergelijkbare fietsen, zonder kosten), upgrade t.o.v. `mijn_fiets.md` en waardescore; weergaven Te beoordelen / Favorieten / Mijn biedingen / Alle / Weggezet / Patronen, filters en sneltoetsen. Het zware deel rekent één keer per ronde (`LiveCache.racebikes`), de pagina krijgt JSON en tekent zelf. Weg-redenen `marks.BIKE_REASONS`; "geen racefiets" komt niet terug bij een lagere prijs |
+| `bike_identity.py` | welke fiets is het: merk + model (de modelnamen per merk uit `reference_bike_catalog.csv`, of het woord na het merk), bouwjaar en tijdperk (rem, elektronisch, versnellingen — zonder jaartallen). `Pool.comparables()`: de vergelijking op /racefietsen gaat op model en jaren, niet op onderdelen; zonder model geen schatting. `NOT_A_FAMILY` houdt gewone woorden ("maat", "cross") buiten de modelnamen |
 | `distance.py` | afstand hemelsbreed tot de eigen postcode: plek per advertentie uit de zoekresultaten (`listing_place`, migratie 18), de postcode geplaatst met één zoekverzoek mét postcode (de afstanden terugrekenen), opgeslagen in `setting`. Schuifje + kolom Afstand op alle live pagina's; telt nergens in een score |
 | `own_bids.py` | de biedingen die de eigenaar zelf op Marktplaats deed (tabel `own_bid`, migratie 18): elk bod bewaard, status van het laatste (open/overboden/afgewezen/geaccepteerd/ingetrokken); geaccepteerd zet hem meteen op `/flips`. Tab Mijn biedingen op elke pagina, tegel op `/start`. Het script biedt nooit zelf |
 | `views.py` | weergaven en likes (bewaard) van de advertentiepagina (`stats`), tabel `listing_stats`: meeliften op biedopvraging/controleer, gericht (eigen advertenties, favorieten, biedingen) en een vaste steekproef van 1 op 10 nieuwe op 1, 3 en 7 dagen, hooguit `views_budget` per ronde (`schedule.json`). Analyse in Patronen; verloop van je eigen advertentie op `/flips`. `python views.py plan/meet N` |

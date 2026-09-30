@@ -1,7 +1,7 @@
 {
   "_uitleg": [
     "Dit bestand beschrijft alle automatische zoekrondes. Pas het hier aan; koopjes.py zet het bij elke ronde door naar de watchlists in koopjes.db.",
-    "searches: per zoekopdracht een 'query' plus filters. Toegestaan: min_price, max_price, min_frame_height, max_frame_height, strict_frame_height, bargain_ratio, reference_file, category (een of meer categorieën met een komma, of 'alle': elke categorie), bids_only, min_score. Verder 'report' (false: geen rapport, alleen het dashboard) en 'bid_lookup' (fast, all, none: gaat vóór die van het tijdslot). Een 'note' mag ook, als geheugensteun.",
+    "searches: per zoekopdracht een 'query' plus filters. Toegestaan: min_price, max_price, min_frame_height, max_frame_height, strict_frame_height, bargain_ratio, reference_file, category (een of meer categorieën met een komma, of 'alle': elke categorie), bids_only, min_score, split (true: een volledige crawl van meer dan ~5000 resultaten in delen, zie racefiets_jev.collect_split). Verder 'report' (false: geen rapport, alleen het dashboard) en 'bid_lookup' (fast, all, none: gaat vóór die van het tijdslot). Een 'note' mag ook, als geheugensteun.",
     "slots: per ronde welke zoekopdrachten, hoe diep (pages, 0 = alles tot ~5000), sortering (newest of optimized), bid_lookup (fast, all, none), tijden ('HH:MM' of 'zo HH:MM'), of er getaxeerd wordt (valuation), hoeveel advertentiepagina's de ronde mag ophalen om weergaven en likes te meten (views_budget, 0-200, standaard 0; zie views.py) en of het overzicht opent (open_browser: auto, always, never). Bij auto opent het overzicht als er nieuwe advertenties zijn in een zoekopdracht met rapport, en het dashboard als er een nieuwe flip is.",
     "Na een wijziging: 'python koopjes.py status' controleert het bestand, 'python koopjes.py schedule' geeft de inplan-commando's opnieuw."
   ],
@@ -10,10 +10,8 @@
       "query": "racefiets",
       "category": "fietsen-racefietsen",
       "reference_file": "reference_bikes.csv",
-      "min_frame_height": 54,
-      "max_frame_height": 58,
-      "max_price": 900,
-      "note": "Alle racefietsen rond maat 56. Fietsen zonder ingevulde maat blijven staan (strict_frame_height: true om ze weg te laten). Zet max_price op je budget + 15-20%."
+      "split": true,
+      "note": "Alle racefietsen, elke maat en prijs (de eigenaar, 30-09-2026: alles in de database; /racefietsen filtert zelf op maat en prijs). Tot dan maat 54-58 en tot €900. Met de categorie erbij geeft 'racefiets' de hele categorie. split: de ronde week haalt ze compleet op in delen (per staat en prijsschijf, pagina's van 100): op 30-09-2026 13316 advertenties, ~250 verzoeken per week, terwijl Marktplaats per zoekopdracht maar ~5000 laat doorbladeren. Overdag (8 pagina's nieuwste) verandert er niets aan het aantal verzoeken."
     },
     "giant-defy": {
       "query": "giant defy",

@@ -48,6 +48,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+import bike_identity as bi
 import db
 import distance as dm
 import marks as mr
@@ -84,6 +85,9 @@ class Row:
     upgrade_ok: bool = False
     upgrade_gain: Optional[float] = None
     upgrade_why: str = ""
+    identity: Optional[bi.Identity] = None
+    level: str = ""  # welke trede van bike_identity.comparables() de schatting gaf
+    comps: list = field(default_factory=list)  # (titel, prijs, url, jaar, verdwenen), goedkoopste eerst
 
 
 @dataclass
@@ -106,25 +110,61 @@ def _time(value) -> Optional[datetime]:
         return None
 
 
-def load_listings(db_path, active_days: int = ACTIVE_DAYS) -> tuple[list, Optional[datetime], set]:
-    """(advertenties, nieuwste waarneming, id's van de nieuwe) in de categorie
-    racefietsen, met alles wat de database erover weet."""
+SELECT = (
+    "SELECT item_id, title, description, price_eur, price_type, is_bid, price_is_asking, city, "
+    "posted_date, condition, frame_height, url, first_seen, last_seen, image_urls, reserved_at, "
+    "bid_count, bid_minimum, bid_high, bids_checked_at, checked_at, full_description, disappeared_at "
+    "FROM listing WHERE url LIKE ?")
+# Vergelijkingsfietsen: zo ver terug, ook verdwenen (vaak verkocht) — zelfde
+# venster als de taxatie (valuation.DEFAULT_COMP_WINDOW_DAYS).
+POOL_DAYS = val.DEFAULT_COMP_WINDOW_DAYS
+
+
+def _listing(r, site: dict, places: dict) -> mp.Listing:
+    title, detail = r["title"] or "", r["full_description"] or ""
+    groupset, tier = mp.detect_groupset(f"{title} {detail or r['description'] or ''}")
+    lat, lon, promotion, traits = places.get(r["item_id"], (None, None, "", ""))
+    listing = mp.Listing(
+        item_id=r["item_id"], title=title, description=r["description"] or "", price_eur=r["price_eur"],
+        price_type=r["price_type"] or "", city=r["city"] or "", date=r["posted_date"] or "",
+        condition=r["condition"] or "", frame_height=r["frame_height"] or "", groupset=groupset,
+        groupset_tier=tier, url=r["url"] or "", price_is_bid=bool(r["is_bid"]),
+        first_seen=r["first_seen"] or "", image_urls=r["image_urls"] or "",
+        reserved=r["reserved_at"] is not None, site_specs=site.get(r["item_id"], {}), detail_text=detail,
+        latitude=lat, longitude=lon, promotion=promotion or "", traits=traits or "")
+    listing.bid_minimum, listing.bid_high = r["bid_minimum"], r["bid_high"]
+    # Zelfde regel als dashboard.load_active_listings(): een bod boven de
+    # vraagprijs geldt tot de volgende opvraging.
+    if (listing.price_type == "MIN_BID" and listing.bid_high is not None and listing.price_eur is not None
+            and listing.bid_high > listing.price_eur):
+        listing.price_eur = listing.bid_high
+    listing.bids_checked_at, listing.checked_at = r["bids_checked_at"], r["checked_at"]
+    if r["bid_count"] is not None:
+        listing.bid_count = r["bid_count"]
+    elif r["is_bid"] and r["price_is_asking"] == 0:
+        listing.bid_count = 1
+    return listing
+
+
+def _read(db_path) -> tuple[list, dict, dict]:
     if not Path(db_path).exists():
-        return [], None, set()
+        return [], {}, {}
     conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute(
-            "SELECT item_id, title, description, price_eur, price_type, is_bid, price_is_asking, city, "
-            "posted_date, condition, frame_height, url, first_seen, last_seen, image_urls, reserved_at, "
-            "bid_count, bid_minimum, bid_high, bids_checked_at, checked_at, full_description "
-            "FROM listing WHERE disappeared_at IS NULL AND url LIKE ?", (f"%/{CATEGORY}/%",)).fetchall()
-        site = db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE)
-        places = db.list_places(conn)
+        rows = conn.execute(SELECT, (f"%/{CATEGORY}/%",)).fetchall()
+        return rows, db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE), db.list_places(conn)
     except sqlite3.Error:
-        return [], None, set()
+        return [], {}, {}
     finally:
         conn.close()
+
+
+def load_listings(db_path, active_days: int = ACTIVE_DAYS, _read_result=None) -> tuple[list, Optional[datetime], set]:
+    """(advertenties, nieuwste waarneming, id's van de nieuwe) in de categorie
+    racefietsen, met alles wat de database erover weet."""
+    rows, site, places = _read_result or _read(db_path)
+    rows = [r for r in rows if r["disappeared_at"] is None]
     seen = [t for t in (_time(r["last_seen"]) for r in rows) if t]
     if not seen:
         return [], None, set()
@@ -136,20 +176,7 @@ def load_listings(db_path, active_days: int = ACTIVE_DAYS) -> tuple[list, Option
         last = _time(r["last_seen"])
         if last is None or last < since:
             continue
-        title, detail = r["title"] or "", r["full_description"] or ""
-        groupset, tier = mp.detect_groupset(f"{title} {detail or r['description'] or ''}")
-        lat, lon, promotion, traits = places.get(r["item_id"], (None, None, "", ""))
-        listing = mp.Listing(
-            item_id=r["item_id"], title=title, description=r["description"] or "", price_eur=r["price_eur"],
-            price_type=r["price_type"] or "", city=r["city"] or "", date=r["posted_date"] or "",
-            condition=r["condition"] or "", frame_height=r["frame_height"] or "", groupset=groupset,
-            groupset_tier=tier, url=r["url"] or "", price_is_bid=bool(r["is_bid"]),
-            first_seen=r["first_seen"] or "", image_urls=r["image_urls"] or "",
-            reserved=r["reserved_at"] is not None, site_specs=site.get(r["item_id"], {}), detail_text=detail,
-            latitude=lat, longitude=lon, promotion=promotion or "", traits=traits or "")
-        # Zelfde regels als de dashboards: een bod boven de vraagprijs geldt
-        # tot de volgende opvraging.
-        mp.apply_stored_bids(listing, r)
+        listing = _listing(r, site, places)
         first = _time(r["first_seen"])
         if first and first >= new_since:
             new_ids.add(listing.item_id)
@@ -157,6 +184,55 @@ def load_listings(db_path, active_days: int = ACTIVE_DAYS) -> tuple[list, Option
     if len(new_ids) == len(out):
         new_ids = set()  # de allereerste ronde: dan zegt "nieuw" niets
     return out, newest, new_ids
+
+
+def load_pool(db_path, _read_result=None) -> bi.Pool:
+    """Alle racefietsen van de laatste POOL_DAYS met een vraagprijs, ook
+    verdwenen, als (Identity, prijs, (item_id, titel, url, verdwenen))."""
+    rows, site, places = _read_result or _read(db_path)
+    seen = [t for t in (_time(r["last_seen"]) for r in rows) if t]
+    if not seen:
+        return bi.Pool([])
+    since = max(seen) - timedelta(days=POOL_DAYS)
+    items = []
+    for r in rows:
+        last = _time(r["last_seen"])
+        if last is None or last < since:
+            continue
+        listing = _listing(r, site, places)
+        # Alleen een vraagprijs: een lopend bod zegt nog niet wat hij opbrengt.
+        if not listing.price_is_asking or not listing.price_eur or listing.price_eur <= 0:
+            continue
+        gone = (r["disappeared_at"] or "")[:10]
+        items.append((bi.identify(listing), listing.price_eur, (listing.item_id, listing.title, listing.url, gone)))
+    return bi.Pool(items)
+
+
+def estimate(listing: mp.Listing, ident: bi.Identity, pool: bi.Pool, factor: float) -> tuple:
+    """(verwachte verkoopprijs, onderbouwing, trede, vergelijkingsfietsen) —
+    de mediaan-vraagprijs van hetzelfde model uit dezelfde jaren maal de
+    afdingfactor (bike_identity.comparables())."""
+    level, found = pool.comparables(ident, listing.item_id)
+    if not found:
+        why = ("te weinig vergelijkbare fietsen van hetzelfde model en dezelfde jaren"
+               if ident.model else "model niet herkend in de titel")
+        return None, why, "", []
+    prices = [c[1] for c in found]
+    median = statistics.median(prices)
+    years = sorted(c[0].year for c in found if c[0].year)
+    span = (f" uit {years[0]}-{years[-1]}" if years and years[0] != years[-1]
+            else f" uit {years[0]}" if years else "")
+    what = {"model+jaar": ident.model, "model+tijdperk": f"{ident.model} ({'schijfrem' if ident.disc else 'velgrem'}"
+            f"{', elektronisch' if ident.electronic else ''})",
+            "opbouw+jaar": f"{ident.material}, groepsettier {ident.tier}, "
+                           f"{'schijfrem' if ident.disc else 'velgrem'}",
+            "model, jaar onbekend": ident.model}[level]
+    basis = f"mediaan van {len(found)} × {what}{span}: €{median:.0f} × {val.dutch(factor)}"
+    if level in bi.UNCERTAIN_LEVELS:
+        basis = (f"onzeker, bouwjaar en remtype onbekend — {len(found)} × {what} van €{min(prices):.0f} tot "
+                 f"€{max(prices):.0f}, mediaan €{median:.0f} × {val.dutch(factor)}; vraag het jaar na")
+    comps = sorted(((c[2][1], c[1], c[2][2], c[0].year, c[2][3]) for c in found), key=lambda c: c[1])
+    return median * factor, basis, level, comps
 
 
 def specs_line(listing: mp.Listing) -> str:
@@ -187,15 +263,14 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
     aanroeper ze al heeft (LiveCache)."""
     import report
 
-    listings, newest, new_ids = load_listings(db_path)
+    read = _read(db_path)
+    listings, newest, new_ids = load_listings(db_path, _read_result=read)
     base = Base(newest=newest.isoformat(timespec="minutes") if newest else "")
     base.patterns = vw.load_patterns(db_path, (CATEGORY,))
     if not listings:
         return base
     factor = val.NEGOTIATION_DEFAULT[1]
-    segments = up.segment_benchmarks(listings)
-    asking = [l.price_eur for l in listings if l.price_is_asking and l.price_eur and not l.reserved]
-    median = statistics.median(asking) if asking else None
+    pool = load_pool(db_path, _read_result=read)
 
     owner, problem = report.load_owner_context(str(intake_path), str(db_path), comps=comps)
     verdicts: dict[str, tuple] = {}
@@ -217,17 +292,24 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
             verdicts[r.listing.item_id] = (False, None, r.reason)
 
     for l in listings:
-        estimate = up.estimate_value(l, median, factor, segments)
+        ident = bi.identify(l)
+        resale, basis, level, comps = estimate(l, ident, pool, factor)
         entry = up.entry_price(l)
-        margin = (estimate.amount - entry.amount
-                  if estimate.amount is not None and entry.amount is not None else None)
-        ratio = up.value_score(l, median, factor, segments).ratio
+        margin = resale - entry.amount if resale is not None and entry.amount is not None else None
+        price = up.effective_price(l, factor).amount
+        ratio = resale / price if resale is not None and price else None
         ok, gain, why = verdicts.get(l.item_id, (False, None, base.owner_problem))
+        if ok and ident.year is None:
+            # Zonder bouwjaar rekent de score de fiets als nieuw (geen
+            # leeftijdsverval): een oude fiets met goede onderdelen leek dan
+            # een upgrade (de eigenaar, 30-09-2026: "upgrade-oordeel raar").
+            ok, why = False, f"bouwjaar onbekend — als hij nieuw zou zijn {why}; vraag het jaar na"
         base.rows.append(Row(
             listing=l, frame=mp.frame_height_bounds(l.frame_height), specs=specs_line(l),
             text=l.detail_text or l.description, new=l.item_id in new_ids,
-            flip_margin=margin, resale=estimate.amount, flip_basis=estimate.basis, flip_rough=estimate.rough,
-            value_ratio=ratio, upgrade_ok=ok, upgrade_gain=gain, upgrade_why=why))
+            flip_margin=margin, resale=resale, flip_basis=basis, flip_rough=level in bi.UNCERTAIN_LEVELS,
+            value_ratio=ratio, upgrade_ok=ok, upgrade_gain=gain, upgrade_why=why,
+            identity=ident, level=level, comps=comps))
     return base
 
 
@@ -303,6 +385,8 @@ def bike_json(r: Row, f: Fresh) -> dict:
                                           "at": stats.observed_at[:10]},
         "own": f.bought.get(l.item_id, "")[:10] if l.item_id in f.bought else "",
         "promo": l.promotion,
+        "mdl": r.identity.label() if r.identity else "",
+        "cmp": [[t, p, u, y, g] for t, p, u, y, g in r.comps[:12]],
         "ck": (getattr(l, "checked_at", None) or "")[:16],
     }
 
@@ -453,7 +537,7 @@ function card(b) {
     + (b.own ? `<span class="badge fav">✓ gekocht ${esc(b.own)}</span> ` : '');
   const km = b.km == null ? '' : `<span class="km">${b.kma ? 'ca. ' : ''}${b.km < 10 ? String(b.km).replace('.', ',') : Math.round(b.km)} km</span>`;
   const flip = b.fm == null ? '<span class="pill bad">flip —</span>'
-    : `<span class="pill ${b.fm > 0 && !b.fg ? 'good' : 'bad'}" title="${esc(b.fb)}">flip ${signed(b.fm)}${b.fg ? ' (grof)' : ''}</span>`;
+    : `<span class="pill ${b.fm > 0 && !b.fg ? 'good' : 'bad'}" title="${esc(b.fb)}">flip ${signed(b.fm)}${b.fg ? ' (onzeker)' : ''}</span>`;
   const upg = b.uo ? `<span class="pill good" title="${esc(b.uw)}">upgrade +${b.ug}</span>`
     : `<span class="pill bad" title="${esc(b.uw)}">geen upgrade</span>`;
   const vr = b.vr == null ? '' : `<span class="pill ${b.vr >= 1.1 ? 'good' : ''}" title="geschatte waarde / prijs">waarde ${String(b.vr.toFixed(2)).replace('.', ',')}</span>`;
@@ -472,6 +556,7 @@ function card(b) {
     <div>
       <div class="top"><span class="price">${euro(b.p)}</span><span class="muted">${esc(b.pk)}${b.bi ? ' · ' + esc(b.bi) : ''}</span>${km}<span>${badges}</span></div>
       <a class="title" href="${esc(b.u)}" target="_blank" rel="noopener">${esc(b.t)}</a>
+      <span class="model">${esc(b.mdl)}</span>
       <span class="muted">${esc(b.c)}</span>
       <div class="specs">${esc(b.sp) || '<span class="muted">geen specs in de advertentie</span>'}</div>
       <div class="verdicts">${flip}${upg}${vr}</div>
@@ -480,6 +565,7 @@ function card(b) {
       ${st}
       ${b.back ? `<div class="note">${esc(b.back)}</div>` : ''}
       ${b.no ? `<div class="mynote">${esc(b.no)}</div>` : ''}
+      ${b.cmp.length ? `<details class="desc"><summary>vergeleken met ${b.cmp.length === 12 ? '12+' : b.cmp.length} fietsen</summary><div>${b.cmp.map(c => `<a href="${esc(c[2])}" target="_blank" rel="noopener">${esc(c[0])}</a> — ${euro(c[1])}${c[3] ? ' · ' + c[3] : ''}${c[4] ? ' · verdwenen ' + esc(c[4]) : ''}`).join('<br>')}</div></details>` : ''}
       <details class="desc"><summary>beschrijving</summary><div>${esc(b.d)}</div></details>
       <div class="row">${markBtns}<span class="muted">·</span><button class="quiet" data-do="check">controleer</button>${b.ck ? `<span class="muted">gecontroleerd ${esc(b.ck.replace('T', ' '))}</span>` : ''}</div>
       ${bidRow}
@@ -732,11 +818,11 @@ def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
 def resale_for(db_path, item_id: str) -> Optional[float]:
     """De flipschatting van één fiets (verwachte verkoopprijs), zonder het
     upgradedeel: voor de doelprijs van een geaccepteerd bod op /flips."""
-    listings, _, _ = load_listings(db_path)
+    read = _read(db_path)
+    listings, _, _ = load_listings(db_path, _read_result=read)
     listing = next((l for l in listings if l.item_id == item_id), None)
     if listing is None:
         return None
-    asking = [l.price_eur for l in listings if l.price_is_asking and l.price_eur and not l.reserved]
-    median = statistics.median(asking) if asking else None
-    estimate = up.estimate_value(listing, median, val.NEGOTIATION_DEFAULT[1], up.segment_benchmarks(listings))
-    return None if estimate.amount is None or estimate.rough else round(estimate.amount, 2)
+    resale, _, _, _ = estimate(listing, bi.identify(listing), load_pool(db_path, _read_result=read),
+                               val.NEGOTIATION_DEFAULT[1])
+    return None if resale is None else round(resale, 2)

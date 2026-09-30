@@ -450,3 +450,58 @@ class FrameHeightDefaultTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SplitCrawlTest(unittest.TestCase):
+    """--split: meer resultaten dan Marktplaats doorbladert (~5000), in delen
+    per staat en prijsschijf (gemeten 30-09-2026 op de racefietsen)."""
+
+    def setUp(self):
+        self.addCleanup(setattr, mp, "SPLIT_CAP", mp.SPLIT_CAP)
+        self.addCleanup(setattr, mp, "SPLIT_PAGE_SIZE", mp.SPLIT_PAGE_SIZE)
+        self.addCleanup(setattr, mp, "SPLIT_PRICE_BANDS_EUR", mp.SPLIT_PRICE_BANDS_EUR)
+        mp.SPLIT_CAP, mp.SPLIT_PAGE_SIZE, mp.SPLIT_PRICE_BANDS_EUR = 4, 2, (0, 500)
+
+    def run_split(self, everything):
+        """`everything`: (id, staat, prijs in cent of None). Nieuwste eerst =
+        de volgorde van de lijst; de server bladert hooguit SPLIT_CAP diep."""
+        condition = [{"key": "condition", "attributeGroup": [
+            {"attributeValueId": 30, "histogramCount": sum(1 for x in everything if x[1] == 30)},
+            {"attributeValueId": 32, "histogramCount": sum(1 for x in everything if x[1] == 32)}]}]
+
+        def route(path, q):
+            items = list(everything)
+            if "attributesById[]" in q:
+                items = [x for x in items if str(x[1]) == q["attributesById[]"][0]]
+            if "attributeRanges[]" in q:
+                lo, hi = q["attributeRanges[]"][0].split(":")[1:]
+                items = [x for x in items if x[2] is not None and int(lo) <= x[2] <= (int(hi) if hi else 10**12)]
+            if q.get("sortOrder") == ["INCREASING"]:
+                items.reverse()
+            limit, offset = int(q["limit"][0]), int(q["offset"][0])
+            page = items[offset:offset + limit] if offset < mp.SPLIT_CAP else []
+            listings = [raw_listing(itemId=i, title=f"Fiets {i}", priceInfo={"priceCents": c or 0,
+                                    "priceType": "FIXED" if c else "FAST_BID"}) for i, _, c in page]
+            data = response(listings, total=len(items), max_page=-(-mp.SPLIT_CAP // limit),
+                            facets=category_facet(BIKES, BIKES_L1) + condition)
+            data["searchRequest"] = {"pagination": {"offset": offset, "limit": limit}}
+            return json.dumps(data)
+
+        return collect(RoutingSession(route), categories=["fietsen-racefietsen"], sort="newest", split=True)
+
+    def test_every_listing_through_condition_both_ways_and_price_bands(self):
+        everything = ([(f"m{n}", 32, 10000 + n) for n in range(7)]   # gebruikt: 7 > cap, dus ook oudste eerst
+                      + [(f"n{n}", 30, None) for n in range(3)]      # nieuw, bieden zonder prijs
+                      + [("x1", None, 20000), ("x2", None, 90000)])  # zonder staat: via de prijsschijven
+        result, log = self.run_split(everything)
+        self.assertEqual({l.item_id for l in result}, {x[0] for x in everything})
+        self.assertTrue(result.complete, log)
+        self.assertIn("in delen", log)
+
+    def test_what_no_part_reaches_makes_it_incomplete(self):
+        everything = [(f"m{n}", 32, 10000) for n in range(4)] + [("lost", None, None)]
+        result, _ = self.run_split(everything)
+        self.assertNotIn("lost", {l.item_id for l in result})
+        self.assertFalse(result.complete)
+        self.assertFalse(result.near_complete)  # elke week gemist: nooit als verdwenen vegen
+        self.assertIn("4 van de 5", result.note)
