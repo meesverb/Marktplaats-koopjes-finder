@@ -379,9 +379,46 @@ def normalize_title(title: str) -> str:
     return _EGDE_RE.sub("edge", title)
 
 
+# Wat classify_title() al eens uitrekende, per catalogus: {titel: oordeel}.
+# Een dashboard houdt elke titel tegen ruim honderd patronen, en deed dat voor
+# dezelfde titels drie keer per opbouw (flips, Mijn flips, Marktprijzen) en
+# opnieuw na elke ronde, terwijl er per ronde maar een paar honderd nieuwe
+# titels bijkomen: ~4 s van de ~6 voor het fietscomputerdashboard. Alleen voor
+# een tuple (markets.Market.catalog(), _default_catalog()): die verandert niet,
+# en het oordeel verwijst naar een model uit precies die tuple. De tuple zelf
+# blijft in de sleutel bewaard, zodat zijn id() niet door een andere
+# catalogus hergebruikt kan worden.
+_TITLE_MEMO: dict[int, tuple[tuple, dict]] = {}
+_TITLE_MEMO_MAX = 200_000
+
+
+def _title_memo(catalog: Sequence[ComputerModel]) -> Optional[dict]:
+    if not isinstance(catalog, tuple):
+        return None
+    entry = _TITLE_MEMO.get(id(catalog))
+    if entry is None or entry[0] is not catalog:
+        if len(_TITLE_MEMO) >= 8:
+            _TITLE_MEMO.clear()
+        entry = _TITLE_MEMO[id(catalog)] = (catalog, {})
+    elif len(entry[1]) >= _TITLE_MEMO_MAX:
+        entry[1].clear()
+    return entry[1]
+
+
 def classify_title(title: str, catalog: Sequence[ComputerModel]) -> Optional[TitleVerdict]:
     """Welk model de titel noemt en wat voor advertentie het is, of None als
     er geen bekend model in staat. Zie het blok boven NOT_A_COMPUTER_RE."""
+    memo = _title_memo(catalog)
+    if memo is None:
+        return _classify_title(title, catalog)
+    try:
+        return memo[title]
+    except KeyError:
+        verdict = memo[title] = _classify_title(title, catalog)
+        return verdict
+
+
+def _classify_title(title: str, catalog: Sequence[ComputerModel]) -> Optional[TitleVerdict]:
     title = normalize_title(title)
     for model in catalog:
         match = model.pattern.search(title)
@@ -563,6 +600,7 @@ def find_model(catalog: Sequence[ComputerModel], merk: str, model: str) -> Optio
 # --- Per advertentie --------------------------------------------------------
 
 
+@lru_cache(maxsize=1 << 17)
 def listing_category(url: str) -> Optional[str]:
     """De categorie uit een Marktplaats-URL (/v/<hoofdcategorie>/<categorie>/
     <id>-...), of None als de URL die vorm niet heeft."""
@@ -676,17 +714,21 @@ def _comparable_price(listing) -> Optional[float]:
 
 
 def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int,
-                   categories: Optional[Sequence[str]] = None) -> dict[str, dict[str, float]]:
+                   categories: Optional[Sequence[str]] = None, rows: Optional[list] = None
+                   ) -> dict[str, dict[str, float]]:
     """{modellabel: {item_id: prijs}} uit eerdere runs in koopjes.db; zie
-    _comparable_rows()."""
+    comparable_rows(). `rows`: wat comparable_rows() met dezelfde
+    argumenten al gaf (het dashboard leest ze één keer per opbouw)."""
     found: dict[str, dict[str, float]] = {}
-    for model, item_id, price, _title in _comparable_rows(db_path, catalog, window_days, categories):
+    if rows is None:
+        rows = comparable_rows(db_path, catalog, window_days, categories)
+    for model, item_id, price, _title in rows:
         found.setdefault(model.label, {})[item_id] = price
     return found
 
 
-def _comparable_rows(db_path, catalog: Sequence[ComputerModel], window_days: int,
-                     categories: Optional[Sequence[str]] = None) -> list[tuple]:
+def comparable_rows(db_path, catalog: Sequence[ComputerModel], window_days: int,
+                    categories: Optional[Sequence[str]] = None) -> list[tuple]:
     """[(model, item_id, prijs, titel)] uit eerdere runs in koopjes.db. Alleen
     vraagprijzen (`price_is_asking`, migratie 3; bij oudere rijen waar die
     NULL is beslist `is_bid`, zoals db.py dat ook doet), alleen titels die
@@ -789,16 +831,16 @@ def _resale_band(prices: list, factor: float) -> tuple[float, float, float]:
 
 def market_resale(db_path, catalog: Optional[Sequence[ComputerModel]] = None,
                   config: Optional[dict] = None, exclude: frozenset = frozenset(),
-                  categories: Optional[Sequence[str]] = None) -> dict[str, float]:
+                  categories: Optional[Sequence[str]] = None, rows: Optional[list] = None) -> dict[str, float]:
     """{modellabel: verwachte verkoopprijs nu} uit koopjes.db, met dezelfde
     regels als de flipwinst (mediaan × onderhandelingsfactor, minimaal
     min_comps advertenties). Voor de voorraad in "Mijn flips". `exclude`:
     de advertenties waar de eigenaar zelf kocht — zijn eigen koopje zou de
     schatting van wat hij ervoor terugkrijgt anders omlaag trekken.
-    `categories`: zie db_comparables()."""
+    `categories` en `rows`: zie db_comparables()."""
     catalog = catalog if catalog is not None else _default_catalog()
     flip = (config or default_config())["flip"]
-    comps = db_comparables(db_path, catalog, flip["comp_window_days"], categories)
+    comps = db_comparables(db_path, catalog, flip["comp_window_days"], categories, rows)
     result = {}
     for label, prices in comps.items():
         kept = [p for item_id, p in prices.items() if item_id not in exclude]
@@ -814,12 +856,14 @@ def apply_computer_signals(
     catalog: Optional[Sequence[ComputerModel]] = None,
     config: Optional[dict] = None,
     comp_categories: Optional[Sequence[str]] = None,
+    rows: Optional[list] = None,
 ) -> int:
     """Zet `listing.computer` voor elke advertentie waarvan de titel een
     bekend model noemt en die geen fiets is — ook voor accessoires, onderdelen
     en dergelijke, met de reden, zodat ze in Uitgefilterd te zien zijn. Geeft
     het aantal echte computers terug. De rest blijft None. `comp_categories`
-    beperkt de vergelijkingsprijzen uit de database (zie db_comparables)."""
+    beperkt de vergelijkingsprijzen uit de database (zie db_comparables);
+    `rows` is wat comparable_rows() daarvoor al gaf."""
     catalog = catalog if catalog is not None else _default_catalog()
     config = config or default_config()
     base = config["baseline"]
@@ -857,8 +901,9 @@ def apply_computer_signals(
 
     comps: dict[str, dict[str, float]] = {}
     variants: dict[str, Variant] = {}
-    for model, item_id, price, title in _comparable_rows(db_path, catalog, flip["comp_window_days"],
-                                                         comp_categories):
+    if rows is None:
+        rows = comparable_rows(db_path, catalog, flip["comp_window_days"], comp_categories)
+    for model, item_id, price, title in rows:
         comps.setdefault(model.label, {})[item_id] = price
         variants[item_id] = title_variant(title, model)
     for listing, model, kind, reason in found:

@@ -51,6 +51,14 @@ class ExtractSpecsUnitTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(mp.extract_specs(text).get("brake_type"), "schijfrem")
 
+    def test_every_call_gets_its_own_dict(self):
+        # The reading is remembered per text; a caller changing its dict must
+        # not change what the next caller gets.
+        text = "Cube Attain carbon, Shimano 105, schijfrem"
+        first = mp.extract_specs(text)
+        first["frame_material"] = "staal"
+        self.assertEqual(mp.extract_specs(text).get("frame_material"), "carbon")
+
     def test_a_disc_wheel_is_not_a_brake(self):
         for text in ("Tijdritfiets met disc wiel", "Cervelo P3 met disc achterwiel", "Zipp disc wheel"):
             with self.subTest(text=text):

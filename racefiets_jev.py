@@ -24,6 +24,7 @@ import time
 import webbrowser
 from dataclasses import dataclass, asdict, field, fields as dataclass_fields
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote_plus, urlencode
@@ -478,6 +479,34 @@ def apply_bid_info(listing: Listing, bids_info: dict) -> None:
         listing.price_is_bid = True
 
 
+def apply_stored_bids(listing: Listing, row) -> None:
+    """What koopjes.db kept from the last bid lookup and controleer
+    (migrations 11 and 14), onto a listing read back from the database: the
+    dashboards and /racefietsen build their listings from `listing`, not from
+    a run. `row` needs bid_count, bid_minimum, bid_high, bids_checked_at,
+    checked_at, is_bid and price_is_asking."""
+    listing.bid_minimum = row["bid_minimum"]
+    listing.bid_high = row["bid_high"]
+    # A bid above the asking price holds until the next lookup. A round that
+    # doesn't look MIN_BID up (bid_lookup fast, and none during the day)
+    # writes the asking price from the search results back, but below that
+    # bid the listing can't be had any more — the same rule as
+    # apply_bid_info().
+    if (listing.price_type == "MIN_BID" and listing.bid_high is not None
+            and listing.price_eur is not None and listing.bid_high > listing.price_eur):
+        listing.price_eur = listing.bid_high
+    listing.bids_checked_at = row["bids_checked_at"]
+    # When the controleer button last read the listing's own page.
+    listing.checked_at = row["checked_at"]
+    # From before migration 11 only price_is_asking = 0 marks a running bid
+    # (migration 3); one bid is enough for Listing.price_is_asking to say the
+    # same.
+    if row["bid_count"] is not None:
+        listing.bid_count = row["bid_count"]
+    elif row["is_bid"] and row["price_is_asking"] == 0:
+        listing.bid_count = 1
+
+
 def enrich_bid_listings(
     listings: list[Listing],
     delay: float,
@@ -653,6 +682,10 @@ GROUPSET_LINE_RE = re.compile(
 )
 
 
+# Remembered per text, like extract_specs(): /racefietsen, the valuation and
+# the report read the same listing texts several times per build, and again
+# after every round. The result depends on the text alone.
+@lru_cache(maxsize=1 << 15)
 def detect_groupset(text: str) -> tuple[str, Optional[int]]:
     """Best-effort groupset detection from free text. Returns (label, tier)
     for the highest-tier match found, or ("", None) if nothing recognized.
@@ -855,7 +888,13 @@ def extract_specs(text: str) -> dict[str, str]:
     """Best-effort structured specs from free text (title + description),
     beyond the groupset already covered by detect_groupset(). Only keys that
     were confidently recognized are present; nothing is guessed for the
-    rest."""
+    rest. A fresh dict every call; the reading itself is remembered per
+    text (see detect_groupset())."""
+    return dict(_extract_specs(text))
+
+
+@lru_cache(maxsize=1 << 15)
+def _extract_specs(text: str) -> tuple:
     specs: dict[str, str] = {}
 
     material = detect_frame_material(text)
@@ -887,7 +926,7 @@ def extract_specs(text: str) -> dict[str, str]:
     if COMPUTER_RE.search(text):
         specs["has_computer"] = "1"
 
-    return specs
+    return tuple(specs.items())
 
 
 def extract_listing_specs(listings: list[Listing]) -> dict[str, dict[str, str]]:

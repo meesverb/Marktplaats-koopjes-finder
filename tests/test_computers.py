@@ -413,6 +413,20 @@ class ClassifyTitleTest(unittest.TestCase):
         self.assertIsNone(pc.classify_title("Garmin stuurhouder - Zo goed als nieuw", CATALOG))
 
 
+class RememberedVerdictTest(unittest.TestCase):
+    """classify_title() onthoudt zijn oordeel per catalogus (tuple); het
+    model in het oordeel moet uit de catalogus komen die je meegaf."""
+
+    def test_the_model_comes_from_the_catalog_you_passed(self):
+        title = "Garmin Edge 530 met houder"
+        first, second = tuple(pc.load_catalog()), tuple(pc.load_catalog())
+        for catalog in (first, second, first, list(second)):
+            verdict = pc.classify_title(title, catalog)
+            self.assertTrue(any(verdict.model is m for m in catalog))
+            self.assertEqual(verdict, pc._classify_title(title, catalog))
+        self.assertIsNone(pc.classify_title("Garmin fietshouder", first))
+
+
 class DoubtTest(unittest.TestCase):
     def test_holder_without_comparables_is_judged_on_the_floor(self):
         # Karoo 3: no nieuwprijs in the catalogue, no other listings.
