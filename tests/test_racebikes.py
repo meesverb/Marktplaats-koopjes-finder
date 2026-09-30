@@ -134,10 +134,28 @@ class ModelComparisonTest(Case):
         db.sync_listings(conn, "racefiets", old + new + other + [me], self.now.isoformat())
         conn.close()
         row = rb.build_base(self.db, self.dir / "geen_fiets.md").row("me")
-        self.assertEqual(row.level, "model+jaar")
+        self.assertIn(row.level, ("referentiemodel+jaar", "model+jaar"))
         self.assertEqual({c[1] for c in row.comps}, {300.0, 320.0, 340.0})
         self.assertAlmostEqual(row.resale, 320.0 * 0.875)
-        self.assertIn("giant defy", row.flip_basis)
+        self.assertIn("Giant Defy", row.flip_basis.replace("giant defy", "Giant Defy"))
+
+    def test_linked_to_the_reference_model_and_compared_with_what_hangs_on_it(self):
+        conn = db.connect(self.db)
+        same = [bike(f"c{i}", p, title=f"Giant Defy Composite 1 racefiets {i}")
+                for i, p in enumerate((600.0, 650.0, 700.0, 750.0))]
+        higher = [bike(f"a{i}", 1400.0, title=f"Giant Defy Advanced 2 {i}") for i in range(4)]
+        me = bike("me", 450.0, title="Giant Defy Composite 1 maat 56")
+        db.sync_listings(conn, "racefiets", same + higher + [me], self.now.isoformat())
+        conn.close()
+        base = rb.build_base(self.db, self.dir / "geen_fiets.md")
+        row = base.row("me")
+        self.assertEqual(row.identity.reference, "Giant Defy Composite 1")
+        self.assertEqual(row.level, "referentiemodel")
+        self.assertEqual({c[1] for c in row.comps}, {600.0, 650.0, 700.0, 750.0})
+        self.assertEqual(row.linked, 5)  # de vier andere en hijzelf
+        data = rb.bike_json(row, rb.load_fresh(self.db))
+        self.assertEqual((data["grp"], data["ref"], data["pc"]), ("Giant Defy Composite 1", True, -33))
+        self.assertIn("Modellen", rb.render(base, rb.load_fresh(self.db), "tok"))
 
     def test_without_a_model_there_is_no_estimate_rather_than_a_wrong_one(self):
         conn = db.connect(self.db)

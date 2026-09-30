@@ -1247,7 +1247,14 @@ verdicts side by side:
 - **flip** — expected selling price minus what it costs you. The selling
   price is the median asking price of **the same model from the same
   years** × 0,875 (`bike_identity.py`), from every road bike of the last
-  180 days, gone ones included. Brand and model come from the title (the
+  180 days, gone ones included. First the **reference model**: a bike whose
+  title matches a pattern in `reference_bikes.csv` ("Giant Defy Composite
+  1") hangs on that model and is compared with the other listings hanging on
+  it, ±2 years when both give one. The card says what it is linked to, how
+  many listings hang on that model and how far its price is from their median
+  ("−25% t.o.v. de mediaan"); the view **Modellen** lists every model with
+  how many are for sale, how many are linked and their median, and clicking
+  one shows only its bikes. Without a reference model, brand and model come from the title (the
   model names per brand in `reference_bike_catalog.csv`, or the word after
   the brand: "Canyon Grail"), the year from the text or title. In steps:
   same brand and model ±2 years; same model without a year but the same era
@@ -1274,7 +1281,7 @@ belongs to the report.
 Views: **Te beoordelen** (no mark, no bid, not bought, not reserved — mark a
 bike and it leaves this view, so you work down the list), **Favorieten**,
 **Mijn biedingen** (with bids on bikes that are gone below), **Alle**
-(without the ones you put away), **Weggezet** and **Patronen** (views and
+(without the ones you put away), **Weggezet**, **Modellen** and **Patronen** (views and
 saves of road bikes, see below). Filters: search (title, specs, place, your
 note), order (newest, best flip, best waardescore, best upgrade, nearest,
 cheapest), frame size (default your size ± 2 cm, with *maat onbekend* on),

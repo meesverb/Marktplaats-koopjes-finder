@@ -86,6 +86,8 @@ class Row:
     upgrade_gain: Optional[float] = None
     upgrade_why: str = ""
     identity: Optional[bi.Identity] = None
+    linked: int = 0  # advertenties aan hetzelfde model (referentie of merk+model)
+    median: Optional[float] = None  # mediaan-vraagprijs van de vergelijkingsfietsen
     level: str = ""  # welke trede van bike_identity.comparables() de schatting gaf
     comps: list = field(default_factory=list)  # (titel, prijs, url, jaar, verdwenen), goedkoopste eerst
 
@@ -216,13 +218,14 @@ def estimate(listing: mp.Listing, ident: bi.Identity, pool: bi.Pool, factor: flo
     if not found:
         why = ("te weinig vergelijkbare fietsen van hetzelfde model en dezelfde jaren"
                if ident.model else "model niet herkend in de titel")
-        return None, why, "", []
+        return None, why, "", [], None
     prices = [c[1] for c in found]
     median = statistics.median(prices)
     years = sorted(c[0].year for c in found if c[0].year)
     span = (f" uit {years[0]}-{years[-1]}" if years and years[0] != years[-1]
             else f" uit {years[0]}" if years else "")
-    what = {"model+jaar": ident.model, "model+tijdperk": f"{ident.model} ({'schijfrem' if ident.disc else 'velgrem'}"
+    what = {"referentiemodel+jaar": ident.reference, "referentiemodel": ident.reference,
+            "model+jaar": ident.model, "model+tijdperk": f"{ident.model} ({'schijfrem' if ident.disc else 'velgrem'}"
             f"{', elektronisch' if ident.electronic else ''})",
             "opbouw+jaar": f"{ident.material}, groepsettier {ident.tier}, "
                            f"{'schijfrem' if ident.disc else 'velgrem'}",
@@ -232,7 +235,7 @@ def estimate(listing: mp.Listing, ident: bi.Identity, pool: bi.Pool, factor: flo
         basis = (f"onzeker, bouwjaar en remtype onbekend — {len(found)} × {what} van €{min(prices):.0f} tot "
                  f"€{max(prices):.0f}, mediaan €{median:.0f} × {val.dutch(factor)}; vraag het jaar na")
     comps = sorted(((c[2][1], c[1], c[2][2], c[0].year, c[2][3]) for c in found), key=lambda c: c[1])
-    return median * factor, basis, level, comps
+    return median * factor, basis, level, comps, median
 
 
 def specs_line(listing: mp.Listing) -> str:
@@ -292,8 +295,8 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
             verdicts[r.listing.item_id] = (False, None, r.reason)
 
     for l in listings:
-        ident = bi.identify(l)
-        resale, basis, level, comps = estimate(l, ident, pool, factor)
+        ident = pool.identity_of.get(l.item_id) or bi.identify(l)
+        resale, basis, level, comps, median = estimate(l, ident, pool, factor)
         entry = up.entry_price(l)
         margin = resale - entry.amount if resale is not None and entry.amount is not None else None
         price = up.effective_price(l, factor).amount
@@ -309,7 +312,7 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
             text=l.detail_text or l.description, new=l.item_id in new_ids,
             flip_margin=margin, resale=resale, flip_basis=basis, flip_rough=level in bi.UNCERTAIN_LEVELS,
             value_ratio=ratio, upgrade_ok=ok, upgrade_gain=gain, upgrade_why=why,
-            identity=ident, level=level, comps=comps))
+            identity=ident, level=level, comps=comps, linked=pool.linked(ident), median=median))
     return base
 
 
@@ -386,6 +389,11 @@ def bike_json(r: Row, f: Fresh) -> dict:
         "own": f.bought.get(l.item_id, "")[:10] if l.item_id in f.bought else "",
         "promo": l.promotion,
         "mdl": r.identity.label() if r.identity else "",
+        "grp": (r.identity.group or "") if r.identity else "",
+        "ref": bool(r.identity and r.identity.reference),
+        "lk": r.linked,
+        # Vraagprijs tegen de mediaan van de vergelijkingsfietsen: -25 = 25% goedkoper.
+        "pc": (round((l.price_eur / r.median - 1) * 100) if r.median and l.price_eur else None),
         "cmp": [[t, p, u, y, g] for t, p, u, y, g in r.comps[:12]],
         "ck": (getattr(l, "checked_at", None) or "")[:16],
     }
@@ -448,6 +456,9 @@ details.desc div { white-space: pre-wrap; font-size: .88rem; margin-top: 4px; ma
 .row input { font: inherit; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card);
   color: var(--text); }
 .bids { font-size: .82rem; }
+.link { font-size: .85rem; margin-top: 2px; }
+.cheap { color: var(--good); }
+.dear { color: var(--bad); }
 .bids .st { font-weight: 600; }
 #more { padding: 18px; text-align: center; color: var(--muted); }
 @media (max-width: 760px) { .bike { grid-template-columns: 1fr; } .photos { height: 200px; } }
@@ -490,7 +501,9 @@ function restoreFilters() {
   for (const k of ['unk', 'nokm', 'res']) if (s[k] != null && $(k)) $(k).checked = s[k];
 }
 
+let modelFilter = '';
 function inView(b) {
+  if (modelFilter && b.grp !== modelFilter) return false;
   const bid = b.b.length > 0;
   if (view === 'open') return !b.m && !bid && !b.own && !b.res;
   if (view === 'fav') return b.m === 'favoriet';
@@ -556,7 +569,7 @@ function card(b) {
     <div>
       <div class="top"><span class="price">${euro(b.p)}</span><span class="muted">${esc(b.pk)}${b.bi ? ' · ' + esc(b.bi) : ''}</span>${km}<span>${badges}</span></div>
       <a class="title" href="${esc(b.u)}" target="_blank" rel="noopener">${esc(b.t)}</a>
-      <span class="model">${esc(b.mdl)}</span>
+      <div class="link">${b.grp ? `gekoppeld aan <a href="#" data-model="${esc(b.grp)}">${esc(b.grp)}</a>${b.ref ? ' <span class="muted">(referentiemodel)</span>' : ''} · ${b.lk} advertentie${b.lk === 1 ? '' : 's'}` : '<span class="muted">aan geen model gekoppeld</span>'}${b.pc != null ? ` · <strong class="${b.pc <= -10 ? 'cheap' : b.pc >= 10 ? 'dear' : ''}">${b.pc > 0 ? '+' : ''}${b.pc}%</strong> t.o.v. de mediaan` : ''}</div>
       <span class="muted">${esc(b.c)}</span>
       <div class="specs">${esc(b.sp) || '<span class="muted">geen specs in de advertentie</span>'}</div>
       <div class="verdicts">${flip}${upg}${vr}</div>
@@ -583,17 +596,46 @@ function counts() {
     const k = bt.dataset.view; if (k in n) bt.textContent = bt.dataset.label + ' (' + n[k] + ')';
   });
 }
+function drawModels() {
+  // Per model: hoeveel er te koop staan (na de filters), mediaan en laagste prijs.
+  const groups = new Map();
+  BIKES.filter(b => b.grp && passes(b)).forEach(b => {
+    if (!groups.has(b.grp)) groups.set(b.grp, {ref: b.ref, prices: [], lk: b.lk});
+    if (b.p != null) groups.get(b.grp).prices.push(b.p);
+  });
+  const rows = Array.from(groups.entries()).sort((a, b) => b[1].prices.length - a[1].prices.length).map(([g, v]) => {
+    const p = v.prices.slice().sort((x, y) => x - y);
+    const med = p.length ? p[Math.floor(p.length / 2)] : null;
+    return `<tr><td><a href="#" data-model="${esc(g)}">${esc(g)}</a>${v.ref ? ' <span class="muted">referentie</span>' : ''}</td>`
+      + `<td class="num">${p.length}</td><td class="num">${v.lk}</td><td class="num">${euro(med)}</td><td class="num">${euro(p[0])}</td></tr>`;
+  }).join('');
+  $('models').innerHTML = `<p class="explain">Elke fiets hangt aan een referentiemodel uit reference_bikes.csv of anders aan merk + model uit de titel. Klik op een model om alleen die fietsen te zien. <em>Gekoppeld</em> telt ook verdwenen advertenties van de laatste 180 dagen: daarmee wordt vergeleken.</p>`
+    + `<div class="table-wrap"><table><thead><tr><th>Model</th><th class="num">Te koop</th><th class="num">Gekoppeld</th><th class="num">Mediaan</th><th class="num">Laagste</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[data-model]'); if (!a) return;
+  e.preventDefault();
+  modelFilter = a.dataset.model;
+  if (view === 'models' || view === 'patterns') view = 'all';
+  document.querySelectorAll('.views button').forEach(x => x.classList.toggle('on', x.dataset.view === view));
+  draw(); window.scrollTo(0, 0);
+});
 function draw() {
-  shown = BIKES.filter(b => inView(b) && passes(b)).sort(SORTS[$('sort').value] || SORTS.newest);
+  shown = view === 'models' ? [] : BIKES.filter(b => inView(b) && passes(b)).sort(SORTS[$('sort').value] || SORTS.newest);
   list.innerHTML = ''; drawn = 0; cur = -1;
+  $('models').hidden = view !== 'models';
+  if (view === 'models') drawModels();
+  $('modelchip').hidden = !modelFilter;
+  $('modelchip').innerHTML = modelFilter ? `model: <strong>${esc(modelFilter)}</strong> <button class="quiet" id="nomodel">× alle modellen</button>` : '';
+  if (modelFilter) $('nomodel').onclick = () => { modelFilter = ''; draw(); };
   $('patterns').hidden = view !== 'patterns';
   $('gonebids').hidden = view !== 'bids' || !GONE.length;
-  list.hidden = view === 'patterns';
-  $('count').textContent = view === 'patterns' ? '' : shown.length + ' fietsen';
+  list.hidden = view === 'patterns' || view === 'models';
+  $('count').textContent = view === 'patterns' || view === 'models' ? '' : shown.length + ' fietsen';
   drawMore(); counts(); remember();
 }
 function drawMore() {
-  if (view === 'patterns') { more.hidden = true; return; }
+  if (view === 'patterns' || view === 'models') { more.hidden = true; return; }
   const html = shown.slice(drawn, drawn + BATCH).map(card).join('');
   list.insertAdjacentHTML('beforeend', html);
   drawn = Math.min(drawn + BATCH, shown.length);
@@ -755,7 +797,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     views_bar = "".join(
         f"<button data-view='{k}' data-label='{esc(label)}'>{esc(label)}</button>"
         for k, label in (("open", "Te beoordelen"), ("fav", "Favorieten"), ("bids", "Mijn biedingen"),
-                         ("all", "Alle"), ("away", "Weggezet"), ("patterns", "Patronen")))
+                         ("all", "Alle"), ("away", "Weggezet"), ("models", "Modellen"), ("patterns", "Patronen")))
     sort = ("<select id='sort' aria-label='Volgorde'>"
             "<option value='newest'>Nieuwste eerst</option><option value='flip'>Beste flip eerst</option>"
             "<option value='value'>Beste waardescore eerst</option><option value='upgrade'>Beste upgrade eerst</option>"
@@ -794,7 +836,8 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         "<kbd>b</kbd> bod invullen · <kbd>n</kbd> notitie · <kbd>spatie</kbd> beschrijving · "
         "<kbd>o</kbd> openen op Marktplaats · <kbd>c</kbd> controleer · <kbd>Esc</kbd> uit een invulveld</div>"
         "</div>"
-        f"<div id='list' data-home='{1 if home else 0}'></div><div id='more'></div>"
+        "<div id='modelchip' class='row' hidden></div>"
+        f"<div id='list' data-home='{1 if home else 0}'></div><div id='more'></div><section id='models' hidden></section>"
         f"<div id='gonebids' hidden><h3>Biedingen op fietsen die niet meer online zijn</h3><ul>{gone_html}</ul></div>"
         f"<section id='patterns' hidden>{vw.patterns_html(base.patterns or vw.ViewPatterns(), 'racefietsen')}</section>"
         f"<script type='application/json' id='bikes'>{page_json(bikes)}</script>"
@@ -823,6 +866,6 @@ def resale_for(db_path, item_id: str) -> Optional[float]:
     listing = next((l for l in listings if l.item_id == item_id), None)
     if listing is None:
         return None
-    resale, _, _, _ = estimate(listing, bi.identify(listing), load_pool(db_path, _read_result=read),
+    resale, _, _, _, _ = estimate(listing, bi.identify(listing), load_pool(db_path, _read_result=read),
                                val.NEGOTIATION_DEFAULT[1])
     return None if resale is None else round(resale, 2)

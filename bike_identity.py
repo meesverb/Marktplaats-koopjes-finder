@@ -40,6 +40,24 @@ import sleepers
 import upgrade as up
 
 CATALOG_PATH = Path(__file__).resolve().parent / "reference_bike_catalog.csv"
+# De referentiemodellen met een patroon (fase 7): "Giant Defy Composite 1",
+# "Trek Domane AL 2", ... Een advertentie die er een raakt, hangt aan dat
+# model; de andere advertenties van hetzelfde model zijn zijn vergelijking
+# (de eigenaar, 30-09-2026: "gelinkt aan een fietsmodel, en als daar 10
+# andere aan hangen, vergelijken of hij goedkoop is").
+REFERENCE_PATH = Path(__file__).resolve().parent / "reference_bikes.csv"
+
+
+@lru_cache(maxsize=None)
+def reference_rows(path: str = str(REFERENCE_PATH)) -> tuple:
+    return tuple(mp.load_reference_data(path))
+
+
+def reference_model(listing: mp.Listing) -> Optional[str]:
+    """Het eerste referentiemodel waarvan het patroon past, in bestandsvolgorde
+    — dezelfde regel als racefiets_jev.apply_reference_data()."""
+    haystack = f"{listing.title} {listing.description}"
+    return next((row["label"] for row in reference_rows() if row["regex"].search(haystack)), None)
 # Eerste woorden van modelnamen die geen model zijn maar een toevoeging of
 # een algemeen woord ("Speed Concept" is wel een model, maar "speed" staat in
 # elke tweede titel).
@@ -124,13 +142,19 @@ class Identity:
     electronic: bool
     speeds: Optional[int]
     tier: Optional[int]
+    reference: Optional[str] = None  # referentiemodel uit reference_bikes.csv
 
     @property
     def model(self) -> Optional[str]:
         return f"{self.brand} {self.family}" if self.brand and self.family else None
 
+    @property
+    def group(self) -> Optional[str]:
+        """Waar hij aan hangt: het referentiemodel, anders merk + model."""
+        return self.reference or (self.model.title() if self.model else None)
+
     def label(self) -> str:
-        parts = [self.model or "model onbekend"]
+        parts = [self.group or "model onbekend"]
         if self.year:
             parts.append(str(self.year))
         return " ".join(parts)
@@ -172,6 +196,7 @@ def identify(listing: mp.Listing) -> Identity:
         electronic=bool(ELECTRONIC_RE.search(text)),
         speeds=int(speeds) if speeds and str(speeds).isdigit() else None,
         tier=listing.groupset_tier,
+        reference=reference_model(listing),
     )
 
 
@@ -199,7 +224,7 @@ def same_material(a: Identity, b: Identity) -> bool:
     return a.material is None or b.material is None or a.material == b.material
 
 
-def comparables(me: Identity, same_model: list, same_build: list) -> tuple[str, list]:
+def comparables(me: Identity, same_model: list, same_build: list, same_reference: list = ()) -> tuple[str, list]:
     """(niveau, [(Identity, prijs, extra), ...]) van de beste trede met genoeg
     fietsen. `same_model`: de fietsen met hetzelfde merk en model,
     `same_build`: die met hetzelfde materiaal, groepsettier en remtype
@@ -212,7 +237,18 @@ def comparables(me: Identity, same_model: list, same_build: list) -> tuple[str, 
     4. alleen zelfde merk en model, als van de fiets zelf jaar én remtype
        onbekend zijn: "model, jaar onbekend" — onzeker, de pagina toont het
        niet als koopje (UNCERTAIN_LEVELS).
-    Daarna niets: een mediaan van alle racefietsen is appels met peren."""
+    Daarna niets: een mediaan van alle racefietsen is appels met peren.
+
+    Nog vóór 1: hetzelfde referentiemodel (reference_bikes.csv), ±2 jaar als
+    beide een jaar noemen — dat is de koppeling die de eigenaar bedoelt.
+    `same_reference` komt als eerste; zonder referentiemodel is hij leeg."""
+    if same_reference:
+        ref_year = [c for c in same_reference if close_years(me, c[0])]
+        if me.year is not None and len(ref_year) >= MIN_SAME_MODEL:
+            return "referentiemodel+jaar", ref_year
+        usable = ref_year + [c for c in same_reference if me.year is None or c[0].year is None]
+        if len(usable) >= MIN_SAME_MODEL:
+            return "referentiemodel", usable
     if me.model:
         same = [c for c in same_model if same_material(me, c[0])]
         by_year = [c for c in same if close_years(me, c[0])]
@@ -242,8 +278,13 @@ class Pool:
     def __init__(self, items: list):
         self.by_model: dict = {}
         self.by_build: dict = {}
+        self.by_reference: dict = {}
+        # Wie al herkend is, hoeft dat voor de actieve fietsen niet nog eens.
+        self.identity_of: dict = {item[2][0]: item[0] for item in items}
         for item in items:
             ident = item[0]
+            if ident.reference:
+                self.by_reference.setdefault(ident.reference, []).append(item)
             if ident.model:
                 self.by_model.setdefault(ident.model, []).append(item)
             if ident.material and ident.tier is not None and ident.disc is not None:
@@ -253,4 +294,11 @@ class Pool:
         """Zonder de fiets zelf (`exclude`: zijn item_id, het eerste veld van `extra`)."""
         same_model = [c for c in self.by_model.get(me.model, ()) if c[2][0] != exclude]
         same_build = [c for c in self.by_build.get((me.material, me.tier, me.disc), ()) if c[2][0] != exclude]
-        return comparables(me, same_model, same_build)
+        same_reference = [c for c in self.by_reference.get(me.reference, ()) if c[2][0] != exclude]
+        return comparables(me, same_model, same_build, same_reference)
+
+    def linked(self, me: Identity) -> int:
+        """Hoeveel advertenties (de laatste 180 dagen) aan hetzelfde model hangen."""
+        if me.reference:
+            return len(self.by_reference.get(me.reference, ()))
+        return len(self.by_model.get(me.model, ())) if me.model else 0
