@@ -117,6 +117,9 @@ class Dashboard:
     stats: dict = field(default_factory=dict)  # item_id -> views.Latest
     home: Optional[dm.Home] = None  # de eigen postcode (distance.py)
     distances: dict = field(default_factory=dict)  # item_id -> distance.Distance
+    # Verwachte verkoopprijs per model (Marktprijzen, model_resale()), één
+    # keer per opbouw; None: nog niet uitgerekend.
+    resale_by_model: Optional[dict] = None
 
     # De signalen heten .computer omdat ze uit computers.py komen; bij de
     # sporthorloges zijn het horloges.
@@ -162,6 +165,11 @@ class Dashboard:
     @property
     def favorites(self) -> list:
         return [row for row in self.all_rows if self.is_favorite(row[0])]
+
+    def unknown_reasons(self) -> dict:
+        """{id(advertentie): reden} voor wat geen bekend model heeft; Alle
+        computers zocht de reden per rij door de hele lijst."""
+        return {id(u.listing): u.reason for u in self.unknown}
 
     def bid_trails(self) -> list:
         """Eigen biedingen van deze markt: op een advertentie die hier staat,
@@ -235,7 +243,14 @@ def load_base(db_path, config: dict, market: mk.Market = mk.COMPUTERS) -> Dashbo
     """Alles behalve de eigen markeringen en notities: het zware deel
     (vergelijkingsprijzen, flips, patronen), dat de live server onthoudt
     tussen twee klikken (LiveCache)."""
-    d = _with_trades(_load_market(db_path, config, market), db_path)
+    # De vergelijkingsprijzen één keer: de flips, de voorraad in Mijn flips en
+    # Marktprijzen rekenen alle drie met dezelfde advertenties. Marktprijzen
+    # las ze vroeger bij elke paginaweergave opnieuw (1-2 s per klik op F5).
+    rows = (pc.comparable_rows(db_path, market.catalog(), config["flip"]["comp_window_days"],
+                               market.comp_categories) if Path(db_path).exists() else [])
+    d = _with_trades(_load_market(db_path, config, market, rows), db_path, rows)
+    d.resale_by_model = pc.market_resale(db_path, catalog=market.catalog(), config=config,
+                                         categories=market.comp_categories, rows=rows)
     d.patterns = pt.load_patterns(db_path, config, market)
     d.view_patterns = vw.load_patterns(db_path, market.categories)
     d.vinted = vn.load_view(db_path, config) if market.has_vinted else None
@@ -343,7 +358,7 @@ class LiveCache:
         return replace(base, **fresh_parts(db_path))
 
 
-def _with_trades(d: Dashboard, db_path) -> Dashboard:
+def _with_trades(d: Dashboard, db_path, rows: Optional[list] = None) -> Dashboard:
     """Mijn flips erbij: de eigen trades van deze markt, met de huidige
     marktwaarde per model. `bought` kent alle trades: wat gekocht is, is geen
     kans meer, uit welk dashboard het ook gekocht werd."""
@@ -353,7 +368,7 @@ def _with_trades(d: Dashboard, db_path) -> Dashboard:
     trades = [t for t in everything if (t.market or "") not in fl.OWN_MARKETS and mk.trade_market(t) is d.market]
     own_ids = frozenset(t.item_id for t in everything if t.item_id)
     market = (pc.market_resale(db_path, catalog=d.market.catalog(), config=d.config, exclude=own_ids,
-                               categories=d.market.comp_categories)
+                               categories=d.market.comp_categories, rows=rows)
               if trades and Path(db_path).exists() else {})
     d.progress = tr.progress(trades, market, d.config["flip"].get("costs_eur", 0.0))
     d.bought = {t.item_id: t for t in everything if t.item_id}
@@ -420,27 +435,8 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
             image_urls=r["image_urls"] or "",
             reserved=r["reserved_at"] is not None,
         )
-        # Wat de biedopvraging vond (migratie 11). Van vóór die migratie staat
-        # alleen price_is_asking = 0 als teken van een lopend bod (migratie
-        # 3); één bod is dan genoeg om Listing.price_is_asking hetzelfde te
-        # laten zeggen.
-        listing.bid_minimum = r["bid_minimum"]
-        listing.bid_high = r["bid_high"]
-        # Een bod boven de vraagprijs geldt tot de volgende opvraging. Een
-        # ronde die MIN_BID niet opvraagt (bid_lookup fast, en overdag none)
-        # schrijft de vraagprijs uit de zoekresultaten terug, maar daaronder
-        # is de advertentie niet meer te krijgen — dezelfde regel als
-        # racefiets_jev.apply_bid_info().
-        if (listing.price_type == "MIN_BID" and listing.bid_high is not None
-                and listing.price_eur is not None and listing.bid_high > listing.price_eur):
-            listing.price_eur = listing.bid_high
-        listing.bids_checked_at = r["bids_checked_at"]
-        # Wanneer de knop controleer de advertentiepagina las (migratie 14).
-        listing.checked_at = r["checked_at"]
-        if r["bid_count"] is not None:
-            listing.bid_count = r["bid_count"]
-        elif r["is_bid"] and r["price_is_asking"] == 0:
-            listing.bid_count = 1
+        # Wat de biedopvraging en controleer vonden (migratie 11 en 14).
+        mp.apply_stored_bids(listing, r)
         first = _parse_time(r["first_seen"])
         if first and first >= new_since:
             new_ids.add(listing.item_id)
@@ -451,14 +447,14 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
     return listings, newest, new_ids
 
 
-def _load_market(db_path, config: dict, market: mk.Market = mk.COMPUTERS) -> Dashboard:
+def _load_market(db_path, config: dict, market: mk.Market = mk.COMPUTERS, rows: Optional[list] = None) -> Dashboard:
     listings, newest, new_ids = load_active_listings(db_path, market.categories, config["dashboard"])
     if newest is None:
         return Dashboard([], config=config, market=market)
 
     catalog = market.catalog()
     pc.apply_computer_signals(listings, db_path=db_path, catalog=catalog, config=config,
-                              comp_categories=market.comp_categories)
+                              comp_categories=market.comp_categories, rows=rows)
     # Alleen titels zonder bekend model; een fiets met computer ("Racefiets
     # Cube + Garmin Edge 130 Plus") hoort hier niet bij.
     unknown = [
@@ -472,6 +468,8 @@ def _load_market(db_path, config: dict, market: mk.Market = mk.COMPUTERS) -> Das
 def model_resale(d: Dashboard) -> dict[str, float]:
     """{modellabel: verwachte verkoopprijs} over alle vergelijkingsprijzen van
     het model (niet per advertentie zonder zichzelf, zoals bij een flip)."""
+    if d.resale_by_model is not None:
+        return d.resale_by_model
     if not d.db_path:
         return {}
     return pc.market_resale(d.db_path, catalog=d.market.catalog(), config=d.config,
@@ -1014,12 +1012,13 @@ def all_panel(d: Dashboard) -> str:
         "<span class='muted' id='all-count'></span></div>"
     ]
     rows = []
+    reasons = d.unknown_reasons()
     for l, label, c in sorted(items, key=lambda i: (i[1] == "model onbekend", i[1], i[0].price_eur or 0)):
         brand = label.split(" ")[0] if c is not None else "model onbekend"
         profit = c.profit_eur if c else None
         delta = c.upgrade_delta if c else None
         score = c.features.score if c else None
-        note = c.reason if c else next(u.reason for u in d.unknown if u.listing is l)
+        note = c.reason if c else reasons[id(l)]
         rows.append(
             f"<tr data-item='{esc(l.item_id, quote=True)}' "
             f"data-brand='{esc(brand, quote=True)}' data-new='{int(l.item_id in d.new_ids)}' "
@@ -1056,11 +1055,12 @@ def favorites_panel(d: Dashboard) -> str:
              "gewoon mee als vergelijkingsprijs.</p>"]
     if favs:
         rows = []
+        reasons = d.unknown_reasons()
         for l, label, c in favs:
             mark = d.marks[l.item_id]
             then = (f"bij bewaren {euro(mark.price_eur)}"
                     if mark.price_eur is not None and mark.price_eur != l.price_eur else "")
-            note = c.reason if c else next(u.reason for u in d.unknown if u.listing is l)
+            note = c.reason if c else reasons[id(l)]
             profit = c.profit_eur if c else None
             rows.append(
                 "<tr>"
@@ -1623,12 +1623,42 @@ function show(name) {
   if (!target) return;
   document.querySelectorAll('.panel').forEach(p => p.hidden = p !== target);
   buttons.forEach(b => b.classList.toggle('active', b.dataset.panel === name));
+  if (target.dataset.lazy) loadPanel(target, name);
 }
 buttons.forEach(b => b.addEventListener('click', () => {
   show(b.dataset.panel); history.replaceState(null, '', '#' + b.dataset.panel);
 }));
-if (location.hash) show(location.hash.slice(1));
 window.addEventListener('hashchange', () => show(location.hash.slice(1)));
+
+// Een tab uit LAZY_PANELS (dashboard.py) staat op de live pagina leeg en
+// komt pas van de server als je hem opent. Alle computers is ruim de helft
+// van de pagina, en de browser las hem bij elke keer laden terwijl je
+// meestal alleen Flips bekijkt. Wat je tijdens het laden aanklikt, wordt
+// daarna nog eens op de nieuwe rijen gezet.
+let loading = 0, pendingItems = [], pendingOptions = null, pendingScroll = null;
+function loadPanel(panel, name) {
+  if (panel.dataset.loading) return;
+  panel.dataset.loading = '1';
+  loading++;
+  panel.innerHTML = "<p class='empty'>Laden…</p>";
+  const url = '/paneel?markt=' + encodeURIComponent(pageData.markt || '') + '&naam=' + encodeURIComponent(name);
+  fetch(url)
+    .then(r => r.ok ? r.text() : Promise.reject(r.status))
+    .then(html => {
+      delete panel.dataset.lazy;
+      panel.innerHTML = html;
+      initSortable(panel);
+      initAll();
+      pendingItems.splice(0).forEach(applyItem);
+      if (pendingOptions !== null) { setMarkOptions(pendingOptions); pendingOptions = null; }
+      if (search) filterAll();
+      filterKm(panel);
+      if (pendingScroll !== null && !panel.hidden) { window.scrollTo(0, pendingScroll); pendingScroll = null; }
+    }, () => {
+      panel.innerHTML = "<p class='empty'>Laden lukte niet; herlaad de pagina.</p>";
+    })
+    .finally(() => { delete panel.dataset.loading; loading--; });
+}
 
 // Controleer en Gekocht laden de pagina opnieuw (controleer haalt de
 // advertentie bij Marktplaats en kan prijs, bod en reservering veranderen).
@@ -1650,6 +1680,20 @@ function rememberPlace() {
   try {
     sessionStorage.setItem(RESTORE, JSON.stringify({path: location.pathname, y: window.scrollY, filters}));
   } catch (_) {}
+}
+// De bewaarde filters weer invullen, voor zover ze er al staan; die van een
+// tab die nog moet laden, zodra hij er is.
+function restoreFilters() {
+  if (!restore) return;
+  const filters = restore.filters || {};
+  Object.keys(filters).forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const value = filters[id];
+    if (el.type === 'checkbox') el.checked = !!value;
+    else if (el.tagName !== 'SELECT' || Array.from(el.options).some(o => o.value === value)) el.value = value;
+    delete filters[id];
+  });
 }
 STAY['/controleer'] = rememberPlace;
 LIVE['/markeer'] = applyMark;
@@ -1682,6 +1726,8 @@ if (kmMax) {
   filterKm();
 }
 
+// Sorteren: de sleutel één keer per rij (niet bij elke vergelijking
+// opnieuw uit de cel), en de rijen in één keer op hun nieuwe plek.
 function initSortable(root) {
  root.querySelectorAll('table.sortable').forEach(table => {
   const tbody = table.querySelector('tbody');
@@ -1689,22 +1735,20 @@ function initSortable(root) {
     let asc = th.dataset.type !== 'num';
     th.addEventListener('click', () => {
       const col = Array.from(th.parentNode.children).indexOf(th);
-      const rows = Array.from(tbody.rows);
-      const key = r => {
+      const num = th.dataset.type === 'num';
+      const keyed = Array.from(tbody.rows, r => {
         const cell = r.cells[col];
-        if (th.dataset.type === 'num') {
-          const v = parseFloat(cell.dataset.sort);
-          return Number.isNaN(v) ? null : v;
-        }
-        return cell.textContent.trim().toLowerCase();
-      };
-      rows.sort((a, b) => {
-        const x = key(a), y = key(b);
+        if (!num) return [cell.textContent.trim().toLowerCase(), r];
+        const v = parseFloat(cell.dataset.sort);
+        return [Number.isNaN(v) ? null : v, r];
+      });
+      keyed.sort((a, b) => {
+        const x = a[0], y = b[0];
         if (x === null) return 1;
         if (y === null) return -1;
         return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1);
       });
-      rows.forEach(r => tbody.appendChild(r));
+      tbody.append(...keyed.map(k => k[1]));
       asc = !asc;
     });
   });
@@ -1712,12 +1756,10 @@ function initSortable(root) {
 }
 initSortable(document);
 
-const search = document.getElementById('all-search');
-const brand = document.getElementById('all-brand');
-const markFilter = document.getElementById('all-mark');
-const onlyNew = document.getElementById('all-new');
-const count = document.getElementById('all-count');
+// De filters van Alle computers; op de live pagina pas als die tab geladen is.
+let search = null, brand = null, markFilter = null, onlyNew = null, count = null;
 function filterAll() {
+  if (!search) return;
   const q = search.value.trim().toLowerCase();
   const which = markFilter.value;
   let shown = 0;
@@ -1732,22 +1774,42 @@ function filterAll() {
   });
   count.textContent = shown + ' getoond';
 }
-if (restore) {
-  Object.entries(restore.filters || {}).forEach(([id, value]) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (el.type === 'checkbox') el.checked = !!value;
-    else if (el.tagName !== 'SELECT' || Array.from(el.options).some(o => o.value === value)) el.value = value;
-  });
-}
-if (search) {
-  [search, brand, markFilter, onlyNew].forEach(el => el.addEventListener('input', filterAll));
+function initAll() {
+  const box = document.getElementById('all-search');
+  if (!box || box === search) return;
+  search = box;
+  brand = document.getElementById('all-brand');
+  markFilter = document.getElementById('all-mark');
+  onlyNew = document.getElementById('all-new');
+  count = document.getElementById('all-count');
+  restoreFilters();
+  // Typen filtert als je even stopt: elke toets liep anders alle rijen langs.
+  let typing = null;
+  search.addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(filterAll, 150); });
+  [brand, markFilter, onlyNew].forEach(el => el.addEventListener('input', filterAll));
   filterAll();
 }
-if (restore) window.scrollTo(0, restore.y || 0);
+function setMarkOptions(html) {
+  if (!markFilter) return;
+  const value = markFilter.value;
+  markFilter.innerHTML = html;
+  markFilter.value = value;
+}
 
 // Na favoriet/weg of een notitie: de server stuurt de stukjes die
 // veranderden (live_update in dashboard.py).
+function applyItem(it) {
+  const sel = `[data-item="${CSS.escape(it.id)}"]`;
+  // Weggezet (of gekocht, gereserveerd): weg uit Flips en Upgrades.
+  document.querySelectorAll(`#panel-flips .mine${sel}, #panel-upgrades .mine${sel}`).forEach(el => {
+    el.closest('tr').classList.toggle('hidden', !it.available);
+  });
+  document.querySelectorAll('.markbadge' + sel).forEach(el => { el.innerHTML = it.badge; });
+  document.querySelectorAll('.mine' + sel).forEach(el => { el.innerHTML = it.mine; });
+  document.querySelectorAll('#all-table tr' + sel).forEach(r => {
+    r.dataset.mark = it.mark; r.dataset.note = String(it.note); r.dataset.text = it.text;
+  });
+}
 function applyMark(data) {
   Object.entries(data.panels || {}).forEach(([name, html]) => {
     const panel = document.getElementById('panel-' + name);
@@ -1763,26 +1825,25 @@ function applyMark(data) {
   });
   const away = document.querySelector('#panel-flips .away');
   if (away && data.away !== undefined && !(data.panels || {}).flips) away.outerHTML = data.away;
-  const it = data.item;
-  if (it) {
-    const sel = `[data-item="${CSS.escape(it.id)}"]`;
-    // Weggezet (of gekocht, gereserveerd): weg uit Flips en Upgrades.
-    document.querySelectorAll(`#panel-flips .mine${sel}, #panel-upgrades .mine${sel}`).forEach(el => {
-      el.closest('tr').classList.toggle('hidden', !it.available);
-    });
-    document.querySelectorAll('.markbadge' + sel).forEach(el => { el.innerHTML = it.badge; });
-    document.querySelectorAll('.mine' + sel).forEach(el => { el.innerHTML = it.mine; });
-    document.querySelectorAll('#all-table tr' + sel).forEach(r => {
-      r.dataset.mark = it.mark; r.dataset.note = String(it.note); r.dataset.text = it.text;
-    });
+  if (data.item) {
+    applyItem(data.item);
+    if (loading) pendingItems.push(data.item);
   }
-  if (markFilter && data.markOptions) {
-    const value = markFilter.value;
-    markFilter.innerHTML = data.markOptions;
-    markFilter.value = value;
+  if (data.markOptions) {
+    setMarkOptions(data.markOptions);
+    if (loading) pendingOptions = data.markOptions;
   }
   if (search) filterAll();
   filterKm();
+}
+
+restoreFilters();
+initAll();
+if (location.hash) show(location.hash.slice(1));
+if (restore) {
+  // Terug op een tab die nog laadt: pas scrollen als hij er is.
+  if (document.querySelector('.panel:not([hidden])[data-lazy]')) pendingScroll = restore.y || 0;
+  else window.scrollTo(0, restore.y || 0);
 }
 """
 
@@ -1910,16 +1971,31 @@ def distance_bar(d: Dashboard) -> str:
     return f"<div class='filters'>{slider}<span class='muted'>{where}</span>{form}</div>"
 
 
-def render(d: Dashboard, overview_link: Optional[str] = None) -> str:
+# Tabs die de live pagina pas ophaalt als je ze opent (PANEL_PATH, JS
+# loadPanel()). Alle computers is met ~2000 rijen, elk met eigen knoppen,
+# ruim de helft van de pagina: 5 van de 9 MB en 90.000 van de 145.000
+# elementen bij een proefdatabase van twee maanden rondes. De browser las en
+# bouwde hem bij elke keer laden en bij elke klik liep het bijwerken er
+# doorheen, ook als je alleen Flips bekeek. De eerste tab nooit, en het
+# geschreven dashboard.html heeft alles: dat heeft geen server om te vragen.
+LAZY_PANELS = ("alle",)
+PANEL_PATH = "/paneel"
+
+
+def render(d: Dashboard, overview_link: Optional[str] = None, lazy: Sequence[str] = ()) -> str:
+    """De hele pagina. `lazy`: tabs die leeg blijven (alleen live, zie
+    LAZY_PANELS)."""
     m = d.market
     computers = len(d.items) + len(d.unknown_items)
-    tabs = [(name, label, panel(d)) for name, label, panel in tab_list(d)]
+    tabs = [(name, label, None if i and name in lazy else panel(d))
+            for i, (name, label, panel) in enumerate(tab_list(d))]
     nav = "".join(
         f"<button data-panel='{name}'{' class=active' if i == 0 else ''}>{esc(label)}</button>"
         for i, (name, label, _) in enumerate(tabs)
     )
     panels = "".join(
-        f"<section class='panel' id='panel-{name}'{'' if i == 0 else ' hidden'}>{body}</section>"
+        f"<section class='panel' id='panel-{name}'{'' if i == 0 else ' hidden'}"
+        f"{' data-lazy=1' if body is None else ''}>{body or ''}</section>"
         for i, (name, _, body) in enumerate(tabs)
     )
     notices = ""
@@ -3658,7 +3734,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         market = next((m for m in mk.MARKETS.values() if m.serve_path == path), None)
         is_photo = path.startswith(FLIPS_PHOTO_PATH + "/")
         is_file = path.startswith(FILES_PATH + "/")
-        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH)
+        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH, PANEL_PATH)
         if market is None and path not in pages and not (is_photo or is_file):
             return self._send(404, "Niet gevonden")
         if not self._host_ok():
@@ -3677,6 +3753,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             config = load_schedule(self.files_dir)
             return self._json({"running": bool(self._running_round()),
                                "log": launcher.log_tail(config) if config else ""})
+        if path == PANEL_PATH:
+            return self._send_panel(parse_qs(url.query))
         if path == rb.PATH:
             base = self.cache.racebikes(self.db_path, self.intake_path)
             return self._send(200, rb.render(base, rb.load_fresh(self.db_path), self.token, message),
@@ -3691,11 +3769,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             view = load_bike_view(self.db_path, self.intake_path, self.cache)
             return self._send(200, render_bike(view, self.token, message),
                               "text/html; charset=utf-8")
-        d = self.cache.dashboard(self.db_path, market)
-        d.editable, d.token = True, self.token
+        d = self._live_dashboard(market)
         d.other_links = []  # de balk bovenaan (site_nav) heeft ze allemaal
         d.message = message
-        self._send(200, render(d), "text/html; charset=utf-8")
+        self._send(200, render(d, lazy=LAZY_PANELS), "text/html; charset=utf-8")
+
+    def _live_dashboard(self, market: mk.Market) -> Dashboard:
+        d = self.cache.dashboard(self.db_path, market)
+        d.editable, d.token = True, self.token
+        return d
+
+    def _send_panel(self, query: dict) -> None:
+        """Eén tab van een live dashboard, voor een tab die de pagina pas
+        ophaalt als je hem opent (LAZY_PANELS)."""
+        market = mk.MARKETS.get(query.get("markt", [""])[0])
+        name = query.get("naam", [""])[0]
+        if market is None:
+            return self._send(404, "Niet gevonden")
+        d = self._live_dashboard(market)
+        panel = next((panel for key, _, panel in tab_list(d) if key == name), None)
+        if panel is None:
+            return self._send(404, "Niet gevonden")
+        self._send(200, panel(d), "text/html; charset=utf-8")
 
     def _running_round(self) -> str:
         """Het slot dat deze server startte en nog loopt, "ja" voor een
@@ -3879,8 +3974,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if back:
             view = load_bike_view(self.db_path, self.intake_path, self.cache)
             return self._json(bike_update(view, item_id, message))
-        d = self.cache.dashboard(self.db_path, market)
-        d.editable, d.token = True, self.token
+        d = self._live_dashboard(market)
         self._json(live_update(d, item_id, message, form.get("soort") if path == "/markeer" else None,
                                bids_changed=path.startswith("/bod")))
 

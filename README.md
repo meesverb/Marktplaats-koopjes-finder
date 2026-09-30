@@ -464,6 +464,30 @@ the page (measured in Chromium on 29-09-2026 on a database of that size:
 29 s for the bike computer page and 13 s for the watch page, now 2.2 s and
 1.4 s).
 
+Since 30-09-2026 three more things (measured on a made-up database of two
+months of rounds: ~36,000 listings, ~340,000 price observations):
+
+- **Comparable prices once per build.** The flips, the stock in Mijn flips
+  and Marktprijzen use the same comparable listings; they used to read and
+  recognise them separately, and Marktprijzen did so again on every page
+  view. Titles, groupsets and specs that were recognised once are
+  remembered (the result depends on the text alone), so a rebuild after a
+  round only looks at what is new. Serving the bike computer page went from
+  1.5 s to 0.2 s, its first build after a round from 5 s to 1 s, and
+  writing both dashboards after a round (`koopjes.py`) from 7 s to 1.8 s —
+  with exactly the same pages as output.
+- **Alle computers loads when you open it.** That tab is over half of the
+  page (with its own buttons on every row), and the browser read it on
+  every load while you usually look at Flips. The live page now fetches it
+  from the server the first time you click the tab (the address
+  `/paneel?markt=...&naam=alle`); the written `dashboard.html` still has
+  everything. The page loads in about 1 s instead of 2.5-3.5 s (the watch
+  page: 1.3 s instead of 3.4 s). A mark or note you set while the tab is
+  loading is put on it once it's there, and after controleer it comes back
+  with the same search and place.
+- **Typing in the search box** filters once you pause (0.15 s), instead of
+  going through every row on each key.
+
 **Checking a listing now — controleer.** The dashboard shows what the last
 round saw, and that can be hours old: by day the `computers` slot only looks
 at the newest 2 pages, so a listing from last week only comes by again in

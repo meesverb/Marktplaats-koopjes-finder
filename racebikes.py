@@ -146,17 +146,9 @@ def load_listings(db_path, active_days: int = ACTIVE_DAYS) -> tuple[list, Option
             first_seen=r["first_seen"] or "", image_urls=r["image_urls"] or "",
             reserved=r["reserved_at"] is not None, site_specs=site.get(r["item_id"], {}), detail_text=detail,
             latitude=lat, longitude=lon, promotion=promotion or "", traits=traits or "")
-        listing.bid_minimum, listing.bid_high = r["bid_minimum"], r["bid_high"]
-        # Zelfde regel als dashboard.load_active_listings(): een bod boven de
-        # vraagprijs geldt tot de volgende opvraging.
-        if (listing.price_type == "MIN_BID" and listing.bid_high is not None and listing.price_eur is not None
-                and listing.bid_high > listing.price_eur):
-            listing.price_eur = listing.bid_high
-        listing.bids_checked_at, listing.checked_at = r["bids_checked_at"], r["checked_at"]
-        if r["bid_count"] is not None:
-            listing.bid_count = r["bid_count"]
-        elif r["is_bid"] and r["price_is_asking"] == 0:
-            listing.bid_count = 1
+        # Zelfde regels als de dashboards: een bod boven de vraagprijs geldt
+        # tot de volgende opvraging.
+        mp.apply_stored_bids(listing, r)
         first = _time(r["first_seen"])
         if first and first >= new_since:
             new_ids.add(listing.item_id)

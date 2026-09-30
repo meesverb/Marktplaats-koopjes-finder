@@ -5,6 +5,28 @@ De code, `reference_prices.csv` en de git-geschiedenis (commit messages)
 bevatten de volledige context; dit bestand is alleen een korte routewijzer
 zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 
+## Sneller zonder iets weg te laten (30-09-2026)
+
+Gemeten op een zelfgemaakte database van twee maanden rondes (~36.000
+advertenties, ~340.000 prijsregels; het script staat niet in git, de
+aantallen komen uit `schedule.json`). Uitvoer vóór en na byte voor byte
+vergeleken: dezelfde dashboards, `/racefietsen` en `/fiets`.
+
+- Vergelijkingsprijzen één keer per opbouw (`computers.comparable_rows()`,
+  `rows=`): Marktprijzen las ze bij elke paginaweergave opnieuw.
+- Herkenning onthouden per tekst: `classify_title()` (per catalogus-tuple),
+  `listing_category()`, `extract_specs()`, `detect_groupset()`.
+- Alle computers/horloges laadt live pas bij openen (`LAZY_PANELS`,
+  `/paneel`); het geschreven dashboard.html is ongewijzigd compleet.
+- `racefiets_jev.apply_stored_bids()`: de biedregels bij het teruglezen uit
+  de database stonden twee keer (dashboard en /racefietsen).
+
+Niet gedaan, en waarom: sorteren in Alle (~1-2 s) en een klik op favoriet
+(~0,4 s) zijn nu vooral de browser die een tabel van duizenden rijen opnieuw
+opmaakt; sneller wordt dat pas met bladeren of alleen de zichtbare rijen
+tekenen (zoals `/racefietsen`), en dat is een ontwerpkeuze voor de eigenaar.
+`/fiets` leest de spec-tabel twee keer (~0,1 s), niet de moeite waard.
+
 ## Racefietspagina, afstand, eigen biedingen, weergaven/likes (29/30-09-2026)
 
 Na een gesprek met de eigenaar (zijn keuzes staan in de docstrings van

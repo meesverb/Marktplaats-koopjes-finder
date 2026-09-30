@@ -343,6 +343,17 @@ class LiveServerTest(unittest.TestCase):
         _, _, page = self.request("GET")
         return self.re.search(r"name='token' value='([^']+)'", page).group(1)
 
+    def every_tab(self):
+        """De live pagina met de tabs die hij pas bij openen ophaalt
+        (dashboard.LAZY_PANELS) erbij, zoals je hem na het openen van elke
+        tab ziet."""
+        _, _, page = self.request("GET")
+        for name in dashboard.LAZY_PANELS:
+            status, _, panel = self.request("GET", f"{dashboard.PANEL_PATH}?markt=fietscomputers&naam={name}")
+            self.assertEqual(status, 200)
+            page += panel
+        return page
+
     def test_buying_from_a_flip_row_and_selling_it(self):
         import trades as tr
 
@@ -353,7 +364,7 @@ class LiveServerTest(unittest.TestCase):
         self.assertEqual((trade.item_id, trade.buy_price_eur, trade.model), ("c", 85.0, "Garmin Edge 530"))
         self.assertIsNotNone(trade.expected_resale_eur)
 
-        _, _, page = self.request("GET")
+        page = self.every_tab()
         self.assertIn("✓ gekocht", page)
         # Bought is no longer a chance: gone from the flips.
         self.assertNotIn("c", {l.item_id for l in dashboard.load_dashboard(self.db).flips})
@@ -414,7 +425,7 @@ class LiveServerTest(unittest.TestCase):
         self.assertIn("onder €90 zakt", location)
         self.assertNotIn("c", {l.item_id for l in dashboard.load_dashboard(self.db).flips})
 
-        _, _, page = self.request("GET")
+        page = self.every_tab()
         self.assertIn("terugzetten", page)
         self.request("POST", "/markeer", {"token": self.token(), "item_id": "c", "soort": "geen", "tab": "alle"})
         self.assertIn("c", {l.item_id for l in dashboard.load_dashboard(self.db).flips})
@@ -528,6 +539,23 @@ class LiveServerTest(unittest.TestCase):
         self.assertIn("data-action='/markeer' data-item='c'", page)
         self.assertIn("data-action='/gekocht' data-item='c'", page)
         self.assertIn("data-action='/notitie' data-item='c'", page)
+
+    def test_all_listings_come_when_the_tab_is_opened(self):
+        # Alle computers is het grootste deel van de pagina; live haalt de
+        # pagina hem pas op als je de tab opent. Het geschreven bestand
+        # heeft hem gewoon, dat heeft geen server om te vragen.
+        _, _, page = self.request("GET")
+        self.assertIn("<section class='panel' id='panel-alle' hidden data-lazy=1></section>", page)
+        self.assertNotIn("id='all-table'", page)
+        self.assertIn("data-action='/markeer' data-item='c'", page)  # Flips staat er wel
+        status, _, panel = self.request("GET", "/paneel?markt=fietscomputers&naam=alle")
+        self.assertEqual(status, 200)
+        self.assertIn("id='all-table'", panel)
+        self.assertIn("data-action='/markeer' data-item='a3'", panel)
+        self.assertIn("id='all-table'", dashboard.render(dashboard.load_dashboard(self.db)))
+        for query in ("markt=fietscomputers&naam=bestaatniet", "markt=onbekend&naam=alle", ""):
+            self.assertEqual(self.request("GET", f"/paneel?{query}")[0], 404, query)
+        self.assertEqual(self.request("GET", "/paneel?markt=fietscomputers&naam=alle", host="evil.example")[0], 403)
 
     def test_the_heavy_part_is_remembered_until_a_round_changes_the_data(self):
         cache = dashboard.LiveCache()
