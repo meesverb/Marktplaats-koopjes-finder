@@ -127,22 +127,24 @@ class ModelComparisonTest(Case):
 
     def test_only_the_same_model_from_the_same_years_counts(self):
         conn = db.connect(self.db)
-        old = [bike(f"o{i}", p, title=f"Giant Defy 2012 {i}") for i, p in enumerate((300.0, 320.0, 340.0))]
+        # Vijf: minder is geen trede (bike_identity.MIN_COMPS), dan zou de
+        # opbouw met de Madones het worden.
+        old = [bike(f"o{i}", p, title=f"Giant Defy 2012 {i}") for i, p in enumerate((300.0, 310.0, 320.0, 330.0, 340.0))]
         new = [bike(f"n{i}", p, title=f"Giant Defy Advanced 2023 {i}") for i, p in enumerate((1500.0, 1600.0, 1700.0))]
         other = [bike(f"t{i}", 2500.0, title=f"Trek Madone 2012 {i}") for i in range(5)]
         me = bike("me", 350.0, title="Giant Defy 2013")
         db.sync_listings(conn, "racefiets", old + new + other + [me], self.now.isoformat())
         conn.close()
         row = rb.build_base(self.db, self.dir / "geen_fiets.md").row("me")
-        self.assertIn(row.level, ("referentiemodel+jaar", "model+jaar"))
-        self.assertEqual({c[1] for c in row.comps}, {300.0, 320.0, 340.0})
+        self.assertEqual(row.level, "model+jaar")
+        self.assertEqual({c[1] for c in row.comps}, {300.0, 310.0, 320.0, 330.0, 340.0})
         self.assertAlmostEqual(row.resale, 320.0 * 0.875)
         self.assertIn("Giant Defy", row.flip_basis.replace("giant defy", "Giant Defy"))
 
     def test_linked_to_the_reference_model_and_compared_with_what_hangs_on_it(self):
         conn = db.connect(self.db)
         same = [bike(f"c{i}", p, title=f"Giant Defy Composite 1 racefiets {i}")
-                for i, p in enumerate((600.0, 650.0, 700.0, 750.0))]
+                for i, p in enumerate((600.0, 650.0, 700.0, 750.0, 800.0))]
         higher = [bike(f"a{i}", 1400.0, title=f"Giant Defy Advanced 2 {i}") for i in range(4)]
         me = bike("me", 450.0, title="Giant Defy Composite 1 maat 56")
         db.sync_listings(conn, "racefiets", same + higher + [me], self.now.isoformat())
@@ -150,11 +152,13 @@ class ModelComparisonTest(Case):
         base = rb.build_base(self.db, self.dir / "geen_fiets.md")
         row = base.row("me")
         self.assertEqual(row.identity.reference, "Giant Defy Composite 1")
-        self.assertEqual(row.level, "referentiemodel")
-        self.assertEqual({c[1] for c in row.comps}, {600.0, 650.0, 700.0, 750.0})
-        self.assertEqual(row.linked, 5)  # de vier andere en hijzelf
+        self.assertEqual(row.level, "model")
+        self.assertEqual({c[1] for c in row.comps}, {600.0, 650.0, 700.0, 750.0, 800.0})
+        self.assertEqual(row.linked, 6)  # de vijf andere en hijzelf
         data = rb.bike_json(row, rb.load_fresh(self.db))
-        self.assertEqual((data["grp"], data["ref"], data["pc"]), ("Giant Defy Composite 1", True, -33))
+        # €450 tegen de schatting 700 × 0,875 = 612,50: 27% goedkoper.
+        self.assertEqual((data["grp"], data["ref"], data["src"], data["pc"]),
+                         ("Giant Defy Composite 1", True, "referentie", -27))
         self.assertIn("Modellen", rb.render(base, rb.load_fresh(self.db), "tok"))
 
     def test_without_a_model_there_is_no_estimate_rather_than_a_wrong_one(self):
@@ -164,6 +168,241 @@ class ModelComparisonTest(Case):
         row = rb.build_base(self.db, self.dir / "geen_fiets.md").row("anon")
         self.assertIsNone(row.resale)
         self.assertIn("model niet herkend", row.flip_basis)
+
+
+class VariantTest(unittest.TestCase):
+    """Model + uitvoering uit de titel (bike_identity.variant_of()), de
+    voorbeelden uit opdrachten/fietsmodellen.md."""
+
+    def ident(self, title, description="", **kw):
+        import bike_identity as bi
+        return bi.identify(bike("x", 500.0, title=title, description=description), **kw)
+
+    def test_the_five_examples(self):
+        for title, family, variant, name in (
+                ("Giant Defy Advanced 2 maat M", "defy", "advanced 2", "Giant Defy Advanced 2"),
+                ("Trek Domane SL6 Gen 4", "domane", "sl6", "Trek Domane SL6"),
+                ("Trek Domane AL 2 2024", "domane", "al 2", "Trek Domane AL 2"),
+                ("Canyon Aeroad CF SLX 8", "aeroad", "cf slx 8", "Canyon Aeroad CF SLX 8"),
+                ("Cube Attain racefiets", "attain", None, None)):
+            me = self.ident(title)
+            self.assertEqual((me.family, me.variant), (family, variant), title)
+            if name:
+                self.assertEqual(me.name, name, title)
+        self.assertEqual(self.ident("Trek Domane AL 2 2024").year, 2024)
+
+    def test_spaces_do_not_make_another_model(self):
+        self.assertEqual(self.ident("Trek Domane SL 6").exact, self.ident("trek domane sl6 maat 56").exact)
+        self.assertNotEqual(self.ident("Trek Domane SL6").exact, self.ident("Trek Domane AL 2").exact)
+        self.assertEqual(self.ident("Trek Domane SL6").coarse, self.ident("Trek Domane AL 2").coarse)
+
+    def test_a_reference_model_only_wins_when_it_says_more(self):
+        # "Trek Domane" in reference_bikes.csv is een vangnet voor de hele
+        # lijn; de titel zegt hier meer.
+        self.assertEqual(self.ident("Trek Domane SL6").reference, "Trek Domane")
+        self.assertEqual(self.ident("Trek Domane SL6").source, "automatisch")
+        composite = self.ident("Giant Defy Composite 1 maat 56")
+        self.assertEqual((composite.name, composite.source), ("Giant Defy Composite 1", "referentie"))
+
+    def test_the_owners_link_goes_first(self):
+        link = {"model_id": 7, "model": "Koga Kinsei Pro", "brand": "koga", "family": "kinsei", "variant": "pro",
+                "year": 2016, "confirmed": 1}
+        me = self.ident("Giant Defy Composite 1 bouwjaar 2012", "Bouwjaar 2012.", link=link)
+        self.assertEqual((me.name, me.source, me.own_id, me.year, me.own_year, me.confirmed),
+                         ("Koga Kinsei Pro", "eigen", 7, 2016, True, True))
+        self.assertEqual(me.coarse, "kogakinsei")
+
+    def test_a_typed_name(self):
+        import bike_identity as bi
+        self.assertEqual(bi.split_name("Koga  Kinsei Pro"), ("Koga Kinsei Pro", "koga", "kinsei", "pro"))
+        self.assertEqual(bi.split_name("De Rosa Merak"), ("De Rosa Merak", "de rosa", "merak", None))
+        # Een modelwoord van één merk krijgt dat merk erbij.
+        self.assertEqual(bi.split_name("Emonda SL6")[0], "Trek Emonda SL6")
+
+
+class LadderTest(unittest.TestCase):
+    """De vergelijkingstrap (bike_identity.comparables()): minstens 5 per
+    trede, anders een stap grover."""
+
+    def pool(self, *groups):
+        import bike_identity as bi
+        items = []
+        for title, n in groups:
+            for i in range(n):
+                listing = bike(f"{title}-{i}", 500.0 + i, title=title)
+                items.append((bi.identify(listing), listing.price_eur, (listing.item_id, title, "", "", False)))
+        return bi.Pool(items)
+
+    def me(self, title):
+        import bike_identity as bi
+        return bi.identify(bike("me", 400.0, title=title))
+
+    def test_same_model_within_two_years_only(self):
+        pool = self.pool(("Trek Domane SL6 2018", 5), ("Trek Domane SL6 2012", 5))
+        level, found, few = pool.comparables(self.me("Trek Domane SL6 2019"), "me")
+        self.assertEqual((level, few), ("model+jaar", False))
+        self.assertEqual({c[0].year for c in found}, {2018})
+        self.assertEqual(len(found), 5)
+
+    def test_too_few_of_the_exact_model_goes_to_the_family(self):
+        import bike_identity as bi
+        pool = self.pool(("Trek Domane SL6 2019", 3), ("Trek Domane AL 2 2020", 6))
+        level, found, few = pool.comparables(self.me("Trek Domane SL6 2019"), "me")
+        self.assertEqual((level, len(found), few), ("familie+jaar", 9, False))
+        self.assertEqual(bi.LEVEL_LABELS[level], "modelfamilie, ±2 jaar")
+
+    def test_three_is_few_but_better_than_nothing(self):
+        pool = self.pool(("Trek Domane SL6 2019", 3))
+        self.assertEqual(pool.comparables(self.me("Trek Domane SL6 2019"), "me")[::2], ("model+jaar", True))
+
+    def test_never_the_median_of_all_road_bikes(self):
+        pool = self.pool(("Trek Domane SL6 2019", 8))
+        self.assertEqual(pool.comparables(self.me("Mooie racefiets maat 56"), "me"), ("", [], False))
+        # En nooit de fiets zelf.
+        level, found, _ = pool.comparables(self.me("Trek Domane SL6 2019"), "Trek Domane SL6 2019-0")
+        self.assertEqual(len(found), 7)
+
+    def test_replace_moves_one_bike(self):
+        import bike_identity as bi
+        pool = self.pool(("Trek Domane SL6 2019", 3))
+        moved = bi.identify(bike("Trek Domane SL6 2019-0", 500.0, title="Koga Kinsei Pro"))
+        old = pool.replace("Trek Domane SL6 2019-0", moved)
+        self.assertEqual(old.exact, "trekdomanesl6")
+        self.assertEqual(len(pool.by_exact["trekdomanesl6"]), 2)
+        self.assertEqual(len(pool.by_exact["kogakinseipro"]), 1)
+        self.assertIs(pool.identity_of["Trek Domane SL6 2019-0"], moved)
+        self.assertIsNone(pool.replace("onbekend", moved))
+
+
+class FastSoldTest(Case):
+    """Vergelijken met wat snel wegging (≤ 7 dagen, of gereserveerd en dan weg)."""
+
+    def add(self, fast_ids, for_sale=5):
+        conn = db.connect(self.db)
+        early = (self.now - timedelta(days=10)).isoformat()
+        sold = [bike(f"f{i}", p, title="Trek Domane SL6 racefiets") for i, p in enumerate((600.0, 620.0, 640.0))]
+        db.sync_listings(conn, "racefiets", sold, early)
+        listed = [bike(f"s{i}", 800.0 + 25 * i, title="Trek Domane SL6 racefiets") for i in range(for_sale)]
+        db.sync_listings(conn, "racefiets", listed + [bike("me", 500.0, title="Trek Domane SL6 racefiets")],
+                         self.now.isoformat())
+        for item_id in fast_ids:
+            conn.execute("UPDATE listing SET disappeared_at = ?, days_online = 3 WHERE item_id = ?",
+                         ((self.now - timedelta(days=7)).isoformat(), item_id))
+        conn.commit()
+        conn.close()
+        return rb.build_base(self.db, self.dir / "geen_fiets.md").row("me")
+
+    def test_three_sold_fast_set_the_price(self):
+        row = self.add(["f0", "f1", "f2"])
+        self.assertEqual(row.level, "model")
+        self.assertEqual(row.resale, 620.0)  # hun mediaan, zonder afdingfactor
+        self.assertEqual(row.fast, (3, 620.0))
+        self.assertEqual(row.for_sale, (5, 850.0))
+        self.assertIn("snel verkochte", row.flip_basis)
+        data = rb.bike_json(row, rb.load_fresh(self.db))
+        self.assertEqual((data["sv"], data["tk"], data["pc"]), ([3, 620], [5, 850], -19))
+        self.assertEqual(sum(1 for c in data["cmp"] if c[5]), 3)
+
+    def test_two_are_not_enough(self):
+        row = self.add(["f0", "f1"])
+        prices = [600.0, 620.0, 640.0, 800.0, 825.0, 850.0, 875.0, 900.0]
+        import statistics
+        self.assertAlmostEqual(row.resale, statistics.median(prices) * 0.875)
+        self.assertIn("nog maar 2 snel verkocht", row.flip_basis)
+
+    def test_what_counts_as_fast(self):
+        gone = (self.now - timedelta(days=1)).isoformat()
+        first = (self.now - timedelta(days=30)).isoformat()
+        base = {"disappeared_at": gone, "reserved_at": None, "days_online": None, "first_seen": first}
+        self.assertFalse(rb.sold_fast(base))
+        self.assertTrue(rb.sold_fast(dict(base, reserved_at=first)))  # gereserveerd en dan weg
+        self.assertTrue(rb.sold_fast(dict(base, days_online=7)))
+        self.assertFalse(rb.sold_fast(dict(base, days_online=8)))
+        self.assertTrue(rb.sold_fast(dict(base, first_seen=(self.now - timedelta(days=6)).isoformat())))
+        self.assertFalse(rb.sold_fast(dict(base, disappeared_at=None, reserved_at=first)))
+
+
+class OwnLinkTest(Case):
+    """De eigen koppeling (bike_link/bike_model, migratie 19) via
+    racebikes.apply_model(), zonder server."""
+
+    def setUp(self):
+        super().setUp()
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "racefiets", [bike("y", 450.0, title="Cube Attain racefiets",
+                                                   description="Bouwjaar 2012, carbon, velgremmen.")],
+                         self.now.isoformat())
+        conn.close()
+        self.base = rb.build_base(self.db, self.dir / "geen_fiets.md")
+
+    def links(self):
+        conn = db.connect(self.db)
+        try:
+            return db.list_bike_models(conn), db.list_bike_links(conn)
+        finally:
+            conn.close()
+
+    def test_link_to_a_new_model_and_back(self):
+        message, row, keys = rb.apply_model(self.base, self.db, {"item_id": "c", "model": "Koga  Kinsei Pro"})
+        self.assertIn("na de volgende ronde", message)
+        (model,), links = self.links()
+        self.assertEqual((model["name"], model["brand"], model["family"], model["variant"]),
+                         ("Koga Kinsei Pro", "koga", "kinsei", "pro"))
+        self.assertEqual((links["c"]["model_id"], links["c"]["confirmed"]), (model["id"], 1))
+        self.assertIs(self.base.row("c"), row)
+        self.assertEqual((row.identity.name, row.identity.source, row.name), ("Koga Kinsei Pro", "eigen", "Koga Kinsei Pro"))
+        self.assertEqual(keys, {"cubeattain", "kogakinseipro"})
+        # Verplaatst in de pool: weg bij Cube Attain, bij het nieuwe model.
+        self.assertEqual([c[2][0] for c in self.base.pool.by_exact["kogakinseipro"]], ["c"])
+        self.assertNotIn("c", [c[2][0] for c in self.base.pool.by_exact["cubeattain"]])
+        # Een volle herberekening leest de koppeling uit de database.
+        self.assertEqual(rb.build_base(self.db, self.dir / "geen_fiets.md").row("c").identity.own, "Koga Kinsei Pro")
+
+        _, row, _ = rb.apply_model(self.base, self.db, {"item_id": "c", "clear": "1"})
+        self.assertEqual(self.links()[1], {})
+        self.assertEqual((row.identity.own, row.identity.exact), (None, "cubeattain"))
+        self.assertIn("c", [c[2][0] for c in self.base.pool.by_exact["cubeattain"]])
+
+    def test_the_owners_year_goes_before_the_text(self):
+        self.assertEqual(self.base.row("y").identity.year, 2012)
+        _, row, _ = rb.apply_model(self.base, self.db, {"item_id": "y", "year": "2016"})
+        self.assertEqual((row.identity.year, row.identity.own_year, row.identity.own), (2016, True, None))
+        self.assertIn("2016", row.specs)
+        self.assertEqual(self.links()[1]["y"]["model_id"], None)
+        _, row, _ = rb.apply_model(self.base, self.db, {"item_id": "y", "year": ""})
+        self.assertEqual((row.identity.year, row.identity.own_year), (2012, False))
+
+    def test_klopt_keeps_the_model_and_marks_it_checked(self):
+        before = self.base.row("c").identity.exact
+        _, row, _ = rb.apply_model(self.base, self.db, {"item_id": "c", "confirm": "1"})
+        (model,), _ = self.links()
+        self.assertEqual(model["name"], "Cube Attain (overig)")
+        self.assertEqual((row.identity.exact, row.identity.confirmed), (before, True))
+        self.assertTrue(rb.bike_json(row, rb.load_fresh(self.db))["ok"])
+        # Een tweede fiets aan hetzelfde model maakt geen tweede model.
+        rb.apply_model(self.base, self.db, {"item_id": "a0", "model": "cube attain"})
+        self.assertEqual(len(self.links()[0]), 1)
+
+    def test_checks(self):
+        for form, why in (({"item_id": "c", "year": "1899"}, "bouwjaar"),
+                          ({"item_id": "c", "model": "Koga"}, "merk en minstens één woord"),
+                          ({"item_id": "c", "model": "K" * 81 + " x"}, "tekens"),
+                          ({"item_id": "weg", "model": "Koga Kinsei"}, "niet (meer) op de pagina"),
+                          ({"item_id": "c"}, "niets te koppelen")):
+            data = rb.model_update(self.base, self.db, form)
+            self.assertIn("Niet opgeslagen", data["message"])
+            self.assertIn(why, data["message"])
+        self.assertEqual(self.links(), ([], {}))
+
+    def test_an_own_model_without_listings_is_in_the_list(self):
+        data = rb.model_update(self.base, self.db, {"model": "Koga Kinsei Pro"})
+        self.assertEqual(data["models"][0]["n"], "Koga Kinsei Pro")
+        html = rb.render(rb.build_base(self.db, self.dir / "geen_fiets.md"), rb.load_fresh(self.db), "tok")
+        models = json.loads(re.search(r"id='models'>(.*?)</script>", html).group(1).replace("<\\/", "</"))
+        koga = next(m for m in models if m["n"] == "Koga Kinsei Pro")
+        self.assertEqual((koga["s"], koga["a"], koga["lk"]), ("eigen", 0, 0))
+        attain = next(m for m in models if m["k"] == "cubeattain")
+        self.assertEqual((attain["a"], attain["lk"], attain["s"]), (6, 7, "referentie"))
 
 
 class PermanentReasonTest(unittest.TestCase):
@@ -228,6 +467,22 @@ class LiveTest(Case):
         self.assertTrue(data["bike"]["own"])
         (flip,) = fl.load_book(self.db, with_market_check=False).flips
         self.assertEqual((flip.trade.market, flip.trade.buy_price_eur, flip.stage), ("fietsen", 275.0, "gekocht"))
+
+    def test_model_link_updates_one_bike_without_recomputing_the_page(self):
+        self.request("GET", rb.PATH)  # de berekening staat nu in de cache
+        with mock.patch.object(rb, "build_base", wraps=rb.build_base) as built:
+            data = self.live(rb.MODEL_PATH, {"item_id": "c", "model": "Koga Kinsei Pro", "year": "2016"})
+            self.assertEqual((data["bike"]["grp"], data["bike"]["src"], data["bike"]["yr"], data["bike"]["ok"]),
+                             ("Koga Kinsei Pro", "eigen", 2016, True))
+            self.assertIn("na de volgende ronde", data["message"])
+            self.assertIn("Koga Kinsei Pro", {m["n"] for m in data["models"]})
+            self.assertIn("Koga Kinsei Pro", self.request("GET", rb.PATH)[2])
+            self.assertIn("Niet opgeslagen", self.live(rb.MODEL_PATH, {"item_id": "c", "year": "1800"})["message"])
+            data = self.live(rb.MODEL_PATH, {"model": "Ridley Fenix SL"})
+            self.assertEqual(data["models"][0]["n"], "Ridley Fenix SL")
+        built.assert_not_called()
+        status, _, text = self.request("POST", rb.MODEL_PATH, {"token": "fout", "item_id": "c", "clear": "1"}, live=True)
+        self.assertTrue(json.loads(text)["reload"])
 
     def test_computer_page_has_the_bid_control_and_tab(self):
         conn = db.connect(self.db)

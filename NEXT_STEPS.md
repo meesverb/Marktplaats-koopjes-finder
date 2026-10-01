@@ -27,13 +27,41 @@ opmaakt; sneller wordt dat pas met bladeren of alleen de zichtbare rijen
 tekenen (zoals `/racefietsen`), en dat is een ontwerpkeuze voor de eigenaar.
 `/fiets` leest de spec-tabel twee keer (~0,1 s), niet de moeite waard.
 
-## Volgende opdracht: fietsmodellen (01-10-2026)
+## Fietsmodellen, stap 1 klaar (01-10-2026)
 
-Uitgeschreven in **`opdrachten/fietsmodellen.md`**: elke racefiets aan een
-fietsmodel (merk + model + uitvoering, generatie = ±2 jaar), zelf corrigeren
-en modellen aanmaken, een lijst met alle modellen, vergelijken met wat binnen
-7 dagen verkocht werd, en later regels leren en bouwjaren ophalen. Migratie
-19 (`bike_model`, `bike_link`) staat al klaar, nog ongebruikt.
+Opdracht: **`opdrachten/fietsmodellen.md`**. Stap 1 (A t/m E) is gebouwd:
+
+- `bike_identity.py`: uitvoering uit de titel (`variant_of()`), sleutels
+  `exact` (model + uitvoering) en `coarse` (merk + model) via `model_key()`
+  (zonder spaties en zonder wat tussen haakjes staat), nette namen
+  (`pretty_name()`), de eigen koppeling in `identify(listing, link)`, de
+  nieuwe trap (minstens 5, anders grover, dan nog eens met 3 "(weinig)") en
+  `Pool.replace()`.
+- `racebikes.py`: snel verkocht (`sold_fast()`, ≤ 7 dagen of gereserveerd en
+  weg) in de pool; schatting = mediaan van ≥ 3 snel verkochte, anders
+  vraagprijzen × 0,875; klopt / ander model / nieuw model / bouwjaar /
+  ontkoppelen op de kaart (`POST /racefietsen/model`, `apply_model()`,
+  `relink()`: alleen die ene fiets opnieuw, ~0,1 s); de weergave Modellen is
+  de volledige lijst (`model_list()`, JSON `id='models'`).
+- `upgrade.find_upgrades(years=...)`: een zelf ingevuld bouwjaar telt mee in
+  het leeftijdsverval.
+
+**Eigen keuze, controleer met de eigenaar:** het referentiemodel gaat níet
+voor als de titel meer zegt. In `reference_bikes.csv` zijn een aantal
+modellen een vangnet voor een hele lijn ("Trek Domane", "Giant Defy
+(overig)"); als die altijd voorgingen, werd "Trek Domane SL6" nooit een eigen
+model en klopten de voorbeelden uit de opdracht niet. Een preciezer
+referentiemodel ("Giant Defy Composite 1") gaat nog wel voor
+(`Identity.name`). Ook houden de familietreden (3, 4, 6) het filter op
+materiaal van de oude trap: binnen "Giant Defy" zitten aluminium en carbon.
+
+Laten liggen voor **stap 2** (F en G uit de opdracht): regels leren uit
+herhaalde correcties (migratie 20, `bike_rule`) en het bouwjaar ophalen voor
+kanshebbers (max. 20 per ronde, `schedule.json`). Voor F: `bike_link`
+bewaart niet wat er herkend was; herken de fiets opnieuw zonder koppeling
+(`identify(listing)`) en vergelijk die `exact` met de sleutel van het
+gekoppelde model. `confirmed` staat op 1 bij klopt én bij een zelf gekozen
+model.
 
 ## Alle racefietsen en vergelijken op model (30-09-2026)
 

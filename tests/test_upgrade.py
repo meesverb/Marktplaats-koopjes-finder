@@ -339,6 +339,17 @@ class FindUpgradesTest(unittest.TestCase):
         self.assertGreater(candidate.quality.total, baseline_score())
         self.assertEqual(candidate.budget.route, up.ROUTE_DISC)
 
+    def test_a_year_the_owner_filled_in_counts_for_the_age(self):
+        # /racefietsen: een bouwjaar dat de eigenaar invulde (bike_link) gaat
+        # vóór find_upgrades() in de specs, zodat het leeftijdsverval meetelt.
+        listing = upgrade_listing(title="Giant TCR Advanced carbon racefiets", description=(
+            "Carbon frame, Shimano Ultegra Di2 11 speed, hydraulische schijfremmen, carbon wielen van Zipp."))
+        as_new = find([listing]).candidates[0]
+        (old,) = find([listing], years={"up1": 2005}).candidates
+        self.assertLess(old.quality.total, as_new.quality.total)
+        self.assertIn("bouwjaar 2005 door jou ingevuld", old.reasons)
+        self.assertEqual(up.listing_specs(listing, 2005)[0]["model_year"], "2005")
+
     def test_a_bike_outside_the_size_never_appears(self):
         """Acceptatie-eis van de fase."""
         wrong = upgrade_listing(item_id="wrong", frame_height="48 cm")

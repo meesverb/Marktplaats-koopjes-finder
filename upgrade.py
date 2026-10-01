@@ -507,7 +507,7 @@ def bid_panel(
 # --- De upgrade-finder -----------------------------------------------------
 
 
-def listing_specs(listing: mp.Listing) -> tuple[dict[str, str], Optional[str]]:
+def listing_specs(listing: mp.Listing, year: Optional[int] = None) -> tuple[dict[str, str], Optional[str]]:
     """extract_specs() voor de kwaliteitsscore, met één aanvulling: het
     bouwjaar uit de titel als de tekst geen gelabeld bouwjaar heeft.
 
@@ -518,8 +518,14 @@ def listing_specs(listing: mp.Listing) -> tuple[dict[str, str], Optional[str]]:
     Composite 2012 binnen. Dezelfde regel als de comp-ladder in valuation.py
     (valuation.title_year()), zodat taxatie en score over het jaar van een
     advertentie hetzelfde zeggen. Geeft ook een reden-regel terug, want een
-    jaar uit de titel is een aanname die in de uitsplitsing hoort te staan."""
+    jaar uit de titel is een aanname die in de uitsplitsing hoort te staan.
+
+    `year`: een bouwjaar dat de eigenaar zelf invulde (/racefietsen,
+    bike_link). Dat gaat voor de tekst, zodat het leeftijdsverval ermee
+    rekent."""
     specs = mp.listing_spec_dict(listing)
+    if year is not None:
+        return {**specs, "model_year": str(year)}, f"bouwjaar {year} door jou ingevuld"
     if specs.get("model_year"):
         return specs, None
     year = val.title_year(listing.title)
@@ -620,6 +626,7 @@ def find_upgrades(
     size_tolerance_cm: float = DEFAULT_SIZE_TOLERANCE_CM,
     allow_unknown_size: bool = True,
     as_of_year: Optional[int] = None,
+    years: Optional[dict] = None,
 ) -> UpgradeResult:
     """Kandidaten uit §7: `past_qua_maat` ∧ `kwaliteitsscore > baseline +
     marge` ∧ `effectieve_prijs ≤ budget`, gerangschikt op upgrade per euro.
@@ -630,8 +637,11 @@ def find_upgrades(
 
     Elke afgewezen advertentie komt met een reden terug. Dat is geen extra:
     zonder die lijst is "hij staat er niet bij" niet te onderscheiden van een
-    bug in de maatpoort."""
+    bug in de maatpoort.
+
+    `years`: {item_id: bouwjaar} dat de eigenaar zelf invulde; gaat voor de tekst."""
     candidates: list[Candidate] = []
+    years = years or {}
     rejected: list[Rejected] = []
 
     for listing in listings:
@@ -652,7 +662,7 @@ def find_upgrades(
             continue
 
         text = mp.spec_text(listing)
-        specs, year_note = listing_specs(listing)
+        specs, year_note = listing_specs(listing, years.get(listing.item_id))
         build = sc.build_from_listing(
             specs=specs,
             groupset_label=listing.groupset,

@@ -1244,29 +1244,25 @@ groupset, brakes, year, wheels, weight, condition), the seller's text
 (*beschrijving*, the full text where `--detail-lookup` fetched it) and two
 verdicts side by side:
 
-- **flip** — expected selling price minus what it costs you. The selling
-  price is the median asking price of **the same model from the same
-  years** × 0,875 (`bike_identity.py`), from every road bike of the last
-  180 days, gone ones included. First the **reference model**: a bike whose
-  title matches a pattern in `reference_bikes.csv` ("Giant Defy Composite
-  1") hangs on that model and is compared with the other listings hanging on
-  it, ±2 years when both give one. The card says what it is linked to, how
-  many listings hang on that model and how far its price is from their median
-  ("−25% t.o.v. de mediaan"); the view **Modellen** lists every model with
-  how many are for sale, how many are linked and their median, and clicking
-  one shows only its bikes. Without a reference model, brand and model come from the title (the
-  model names per brand in `reference_bike_catalog.csv`, or the word after
-  the brand: "Canyon Grail"), the year from the text or title. In steps:
-  same brand and model ±2 years; same model without a year but the same era
-  (disc or rim brakes, electronic shifting, speeds — without dates, those
-  aren't researched here); same material, groupset tier and brakes ±2 years
-  for another model; and only when the bike itself says neither year nor
-  brakes, the same model of any year, marked *onzeker* with the range and
-  never green. Otherwise no estimate — "model niet herkend" or "te weinig
-  vergelijkbare fietsen" rather than a median of everything (the owner,
-  30-09-2026: a 2024 carbon bike is not comparable to a 2014 one). *vergeleken
-  met N fietsen* on the card lists them, with links. No costs are
-  subtracted: parts and travel you work out per bike on `/flips`.
+- **flip** — expected selling price minus what it costs you, from the
+  other listings of **the same bike model** (`bike_identity.py`), every road
+  bike of the last 180 days, gone ones included. See *Bike models* below for
+  what a model is and how the comparison steps down when there are too few.
+  Within the chosen step: when at least 3 of them **sold fast** — gone within
+  7 days of first being seen, or reserved and then gone — the estimate is the
+  median of their last price, without a negotiation factor (it is roughly
+  what was paid; the real price isn't known, the card says so). Otherwise
+  the median of all asking prices × 0,875, with "(nog geen snelle
+  verkopen)". Gone is only established after a complete crawl (the Sunday
+  round `week`, see *Everything in a category*), so the first weeks there are
+  few fast sales. The card says what the bike hangs on and how it compares,
+  e.g. *Trek Domane SL6 · 6 snel verkocht (≤7 d), mediaan €620 · 14 te koop,
+  mediaan €690 — deze €480 (−23% t.o.v. de schatting)*; *vergeleken met N
+  fietsen* lists the fast sales and the cheapest others, with links. No
+  model, no estimate ("model niet herkend", "te weinig vergelijkbare
+  fietsen") — never a median of all road bikes (the owner, 30-09-2026: a 2024
+  carbon bike is not comparable to a 2014 one). No costs are subtracted:
+  parts and travel you work out per bike on `/flips`.
 - **upgrade** — `upgrade.find_upgrades()` against your own bike in
   `mijn_fiets.md`, exactly as the report's Upgrade tab: better than yours by
   more than the margin, within budget, size not wrong. A bike without a
@@ -1277,6 +1273,69 @@ verdicts side by side:
 
 Plus the **waardescore** (estimated value / price). Not the dealscore: that
 belongs to the report.
+
+#### Bike models
+
+Every bike hangs on a **model**: brand + model + *uitvoering* (variant), e.g.
+"Trek Domane SL6", "Giant Defy Advanced 2", "Canyon Aeroad CF SLX 8". Where
+it comes from, first match wins:
+
+1. **your own link** (`bike_link`, migration 19), set on the card;
+2. a **reference model** from `reference_bikes.csv` whose pattern matches —
+   unless the title says more: some reference models cover a whole line
+   ("Trek Domane", "Giant Defy (overig)"), and then "Trek Domane SL6" from
+   the title is the model; a more precise reference model ("Giant Defy
+   Composite 1") stays;
+3. brand + model + variant from the title: the brand as the sleepers know
+   it, the model word from `reference_bike_catalog.csv` or the word after the
+   brand ("Koga Kinsei"), and as variant the 1-3 words right after it that
+   look like one (`sl`, `slr`, `al`, `cf`, `slx`, `advanced`, `pro`, `comp`,
+   `sport`, `elite`, `expert`, `disc`, `team`, `ltd`, a one- or two-digit
+   number, letters with a digit like `sl7`) — not "105" (groupset), not a
+   year, and it stops at the first other word.
+
+Models compare without spaces and without what is in brackets ("SL 6" =
+"SL6", "Trek Émonda (overig)" = "Trek Emonda"). The year comes from the text
+or the title, or from your own link, which goes first — also for the
+upgrade verdict, so the age discount counts.
+
+The comparison wants **at least 5** listings per step and otherwise goes one
+step coarser; the card says which step:
+
+1. same model + variant, year ±2 (both known) — *model, ±2 jaar*
+2. same model + variant where one of the two has no year, plus those of 1 — *model*
+3. same brand + model (any variant), same material, year ±2 — *modelfamilie, ±2 jaar*
+4. same brand + model, same material, same era when a year is missing (disc
+   or rim, electronic or not, speeds when both say) — *modelfamilie, zelfde tijdperk*
+5. any model, same material, groupset tier and brakes, year ±2 — *zelfde opbouw, ±2 jaar*
+6. only when the bike itself says neither year nor brakes: same brand +
+   model of any year — *onzeker*, with the range, never green.
+
+When no step has 5, the ladder runs again with 3 and the step gets
+*(weinig)*. The ±2 years is the generation; no generation years are looked
+up or invented (CLAUDE.md).
+
+**Correcting, on the card**, under *gekoppeld aan …*:
+
+- **klopt** — the model is right: it becomes one of your models
+  (`bike_model`) and the link is marked checked (*✓ gecontroleerd*);
+- **ander model** (key **m**) — a search field and a scrolling list of all
+  models with how many listings hang on each; pick one to link, or type a
+  new one ("merk model uitvoering", e.g. "Koga Kinsei Pro": 3-80 characters,
+  brand plus at least one word) to create and link it;
+- **bouwjaar** — your year (1970 to next year), empty to remove it;
+- **ontkoppelen** — back to what the listing says.
+
+A correction recomputes only that bike (about 0,1 s, also with 14.000 bikes);
+the comparison of the other bikes of the old and new model is updated after
+the next round, the message says so.
+
+**Modellen** (view) is the list of all models: your own (also without
+listings), the reference models and the recognised ones, with *te koop*,
+*gekoppeld* (180 days, gone ones included), *snel verkocht*, the median of
+the fast sales, the median asking price and the lowest price for sale. A
+search field, click a column to sort, drawn 200 rows at a time as you
+scroll, and a field to **add a new model**. Click a model to see its bikes.
 
 Views: **Te beoordelen** (no mark, no bid, not bought, not reserved — mark a
 bike and it leaves this view, so you work down the list), **Favorieten**,
@@ -1291,7 +1350,7 @@ remembers your view and filters (per browser).
 Keys: **j**/**↓** next, **k**/**↑** previous, **f** favourite, **w** not worth
 it, **1**-**6** put away with a reason, **u** put back, **b** enter a bid,
 **n** note, **space** description, **o** open on Marktplaats, **c**
-controleer, **Esc** out of a field. The reasons to put a bike away are *niet
+controleer, **m** another model, **Esc** out of a field. The reasons to put a bike away are *niet
 waard*, *gereserveerd*, *niet doorverkoopbaar*, *te hoge vraagprijs*,
 *slechte staat* and *geen racefiets* (`marks.BIKE_REASONS`), stored in
 `listing_mark` like the computers' marks, so you can look back later at
@@ -1304,7 +1363,10 @@ Fast on purpose: the heavy part (comparables, upgrade scores) is computed
 once per round and kept by the server; the page gets the bikes as JSON and
 draws 40 cards at a time, more as you scroll; a click sends back only that
 one bike. Measured on a test database with 2000 bikes (Chromium): the page
-loads in about half a second, putting a bike away takes ~150 ms.
+loads in about half a second, putting a bike away takes ~150 ms. With models
+(01-10-2026): 2000 bikes, page ~1,2 s on the first load (the computation,
+0,8 s) and a model correction 80-110 ms; 14.000 bikes, the computation ~5,6
+s once per round and a correction 110-150 ms.
 
 ### Distance — `distance.py`
 

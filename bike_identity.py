@@ -16,6 +16,13 @@ Ultegra-fiets van 2012 naast een van 2023.
   bij maar hoort het modelwoord bij precies één merk ("Emonda"), dan is het
   dat merk. Geen modelwoord gevonden: geen model — liever geen vergelijking
   dan een verkeerde.
+- **Uitvoering**: de 1-3 woorden direct na het model in de titel die op een
+  uitvoering lijken ("SL6", "Advanced 2", "CF SLX 8"). Model + uitvoering is
+  waar een fiets aan hangt (de eigenaar, 01-10-2026: "Trek Domane SL6"),
+  model alleen is de grovere trede.
+- **Eigen koppeling** (bike_link, migratie 19): wat de eigenaar op
+  /racefietsen koppelde gaat altijd voor de herkenning, en zijn bouwjaar voor
+  dat uit de tekst.
 - **Bouwjaar**: uit de tekst ("bouwjaar 2016") of de titel (upgrade.listing_specs()).
 - **Tijdperk** als het bouwjaar ontbreekt: wat de advertentie zelf zegt en
   waarin fietsen van verschillende jaren van elkaar verschillen — schijf- of
@@ -31,7 +38,7 @@ import csv
 import re
 import unicodedata
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -132,8 +139,172 @@ def _words(text: str) -> set:
     return set(re.findall(r"[a-z0-9][a-z0-9\-]*", fold(text)))
 
 
+# --- Uitvoering -------------------------------------------------------------------
+#
+# Wat direct na het model in de titel staat en op een uitvoering lijkt (de
+# opdracht van 01-10-2026: "Trek Domane SL6", "Giant Defy Advanced 2").
+# Een lijst van wat wél mag, niet van wat niet mag: na het model staat net zo
+# vaak "racefiets", "maat 56", "carbon" of "Shimano", en een woord te veel
+# maakt van één model er twee.
+VARIANT_WORDS = frozenset({
+    "sl", "slr", "al", "alr", "cf", "cfr", "slx", "advanced", "pro", "comp", "sport", "elite", "expert",
+    "disc", "team", "ltd",
+})
+# Afkortingen: in hoofdletters in de modelnaam ("CF SLX 8", "AL 2").
+VARIANT_ABBREVIATIONS = frozenset({"sl", "slr", "al", "alr", "cf", "cfr", "slx", "ltd"})
+# Een getal van één of twee cijfers ("2", "6", "8.0"): "105" is een groepset
+# en "2024" een bouwjaar, geen uitvoering.
+VARIANT_NUMBER_RE = re.compile(r"\d{1,2}(?:\.\d)?")
+# Letters met een cijfer ("sl7", "r5"); "r7000" (een groepsetnummer) niet.
+VARIANT_CODE_RE = re.compile(r"[a-z]{1,4}\d{1,3}")
+# Letters met een cijfer die schakelen zijn, geen uitvoering.
+NOT_A_VARIANT = frozenset({"di2", "etap", "axs", "e-tap", "11s", "10s", "12s"})
+VARIANT_MAX_WORDS = 3
+TOKEN_RE = re.compile(r"[a-z0-9]+(?:[.\-][a-z0-9]+)*")
+
+
+def _is_variant_word(token: str) -> bool:
+    if token in NOT_A_VARIANT:
+        return False
+    if token in VARIANT_WORDS:
+        return True
+    return bool(VARIANT_NUMBER_RE.fullmatch(token) or VARIANT_CODE_RE.fullmatch(token))
+
+
+def variant_of(title: str, family: Optional[str]) -> Optional[str]:
+    """De uitvoering: de woorden direct na het model in de titel ("advanced
+    2", "sl6", "cf slx 8"), tot het eerste woord dat er geen is; None als de
+    titel het model niet noemt of er niets op volgt. Alleen de titel: in de
+    beschrijving staat na een modelnaam van alles."""
+    if not family:
+        return None
+    tokens = TOKEN_RE.findall(fold(title))
+    for i, token in enumerate(tokens):
+        if token == family:
+            found, rest = [], tokens[i + 1:]
+            break
+        # "CAAD12": het model is "caad" (zie _family_word), de cijfers zijn de uitvoering.
+        if len(family) >= 3 and token.startswith(family) and token[len(family):].isdigit():
+            found, rest = [token[len(family):]], tokens[i + 1:]
+            break
+    else:
+        return None
+    for token in rest:
+        if len(found) >= VARIANT_MAX_WORDS or not _is_variant_word(token):
+            break
+        found.append(token)
+    return " ".join(found) or None
+
+
+# --- Modelnamen en sleutels -------------------------------------------------------
+
+
+def model_key(name: Optional[str]) -> Optional[str]:
+    """Waarop modellen gelijk zijn: kleine letters zonder accenten en zonder
+    spaties ("SL 6" = "SL6"), en zonder wat tussen haakjes staat — "Trek
+    Émonda (overig)" is een toelichting bij het referentiemodel, geen ander
+    model dan "Trek Emonda". Zo komen een eigen model, een referentiemodel
+    en een herkend model met dezelfde naam op één plek uit."""
+    if not name:
+        return None
+    key = re.sub(r"\s+", "", re.sub(r"\([^)]*\)", "", fold(name)))
+    return key or None
+
+
+@lru_cache(maxsize=None)
+def _casing() -> dict[str, str]:
+    """{woord (klein): zoals het hoort} uit de merken en modelnamen van de
+    referentiemodellen en de catalogus: "TCR", "Émonda", "BMC", "SuperSix".
+    De referentiemodellen eerst, die zijn met de hand geschreven; de
+    catalogus komt van merksites die vaak alles in hoofdletters zetten
+    ("AEROAD"), dus een lang woord in hoofdletters wordt daar gewoon
+    "Aeroad"."""
+    found: dict[str, str] = {}
+
+    def add(text: str, shouting: bool = False) -> None:
+        for word in (text or "").split():
+            word = word.strip(".,()")
+            if not word or not re.fullmatch(r"[\w\-.]+", word) or fold(word) in found:
+                continue
+            if word.isupper() != shouting:
+                continue
+            if shouting and len(word) > 4 and word.isalpha():
+                word = word[:1] + word[1:].lower()
+            found[fold(word)] = word
+
+    for row in reference_rows():
+        add(row["label"])
+        add(row["label"], shouting=True)
+    for brand in sleepers.EXTRA_BRANDS:
+        found.setdefault(fold(brand), brand)
+    try:
+        with open(CATALOG_PATH, newline="", encoding="utf-8-sig") as f:
+            rows = list(csv.DictReader(f))
+    except (OSError, csv.Error):
+        rows = []
+    for row in rows:
+        if row.get("brand"):
+            found.setdefault(fold(row["brand"].strip()), row["brand"].strip())
+    for shouting in (False, True):
+        for row in rows:
+            add((row.get("model") or "").split(" ")[0], shouting)
+    return found
+
+
+def _pretty_word(word: str, variant: bool = False) -> str:
+    if variant and (word in VARIANT_ABBREVIATIONS or VARIANT_CODE_RE.fullmatch(word)):
+        return word.upper()
+    if variant and word in VARIANT_WORDS:
+        return word.capitalize()  # "Pro", "Team", ook als een merksite "PRO" schrijft
+    known = _casing().get(word)
+    if known:
+        return known
+    if VARIANT_CODE_RE.fullmatch(word) or (len(word) <= 3 and word.isalpha() and not variant):
+        return word.upper()
+    return word[:1].upper() + word[1:]
+
+
+def pretty_name(brand: Optional[str], family: Optional[str], variant: Optional[str] = None) -> Optional[str]:
+    """"Trek Domane SL6", "Giant Defy Advanced 2" uit de herkende woorden."""
+    if not brand or not family:
+        return None
+    known = _casing().get(brand)
+    parts = [known or " ".join(_pretty_word(w) for w in brand.split()), _pretty_word(family)]
+    parts += [_pretty_word(w, variant=True) for w in (variant or "").split()]
+    return " ".join(parts)
+
+
+def split_name(name: str) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
+    """Een zelf getypte modelnaam ("Koga Kinsei Pro") in (naam, merk,
+    familie, uitvoering), alles behalve de naam in kleine letters. Het merk
+    zoals de herkenning het kent, anders het eerste woord; de familie is het
+    woord daarna, de rest de uitvoering. Begint de naam met een modelwoord
+    dat maar bij één merk hoort ("Emonda SL6"), dan komt het merk ervoor,
+    zodat hij bij de herkende "Trek Emonda SL6" uitkomt."""
+    name = " ".join((name or "").split())
+    folded = fold(name)
+    hit = sleepers.named_brand(name)
+    if hit and folded.startswith(fold(hit)):
+        brand = fold(hit)
+        rest = folded[len(brand):].split()
+    else:
+        words = folded.split()
+        owner = _owner_of().get(words[0]) if words else None
+        if owner:
+            brand, rest = owner, words
+            name = f"{_casing().get(owner) or owner.title()} {name}"
+        else:
+            brand, rest = (words[0] if words else None), words[1:]
+    family = rest[0] if rest else None
+    variant = " ".join(rest[1:]) or None
+    return name, brand, family, variant
+
+
 @dataclass(frozen=True)
 class Identity:
+    """Wat een advertentie over de fiets zegt. Bevroren: de namen en
+    sleutels worden één keer uitgerekend (cached_property), want de pool
+    vraagt ze voor elke fiets op."""
     brand: Optional[str]
     family: Optional[str]
     material: Optional[str]
@@ -143,15 +314,69 @@ class Identity:
     speeds: Optional[int]
     tier: Optional[int]
     reference: Optional[str] = None  # referentiemodel uit reference_bikes.csv
+    variant: Optional[str] = None  # uitvoering uit de titel ("advanced 2"), of van het eigen model
+    own: Optional[str] = None  # het eigen model (bike_model.name) waaraan de eigenaar hem koppelde
+    own_id: Optional[int] = None
+    confirmed: bool = False  # de eigenaar klikte "klopt" of koos zelf het model
+    own_year: bool = False  # het bouwjaar komt van de eigenaar (bike_link.year)
+    linked: bool = False  # er is een eigen koppeling (model, jaar of klopt)
 
     @property
     def model(self) -> Optional[str]:
         return f"{self.brand} {self.family}" if self.brand and self.family else None
 
+    @cached_property
+    def auto_name(self) -> Optional[str]:
+        return pretty_name(self.brand, self.family, self.variant)
+
+    @cached_property
+    def name(self) -> Optional[str]:
+        """Het model waaraan hij hangt: het eigen model, anders het
+        referentiemodel, anders merk + model + uitvoering uit de titel.
+
+        Het referentiemodel alleen als de titel niets preciezers zegt: een
+        aantal referentiemodellen zijn een vangnet voor een hele lijn
+        ("Trek Domane", "Giant Defy (overig)"), en dan is "Trek Domane SL6"
+        uit de titel het model dat de eigenaar bedoelt (01-10-2026). Een
+        referentiemodel dat zelf preciezer is ("Giant Defy Composite 1")
+        gaat voor."""
+        if self.own:
+            return self.own
+        auto = self.auto_name
+        if self.reference:
+            ref_key, auto_key = model_key(self.reference), model_key(auto)
+            if not (auto_key and ref_key and auto_key != ref_key and auto_key.startswith(ref_key)):
+                return self.reference
+        return auto
+
+    @cached_property
+    def exact(self) -> Optional[str]:
+        """De sleutel van het model met uitvoering (model_key())."""
+        return model_key(self.name)
+
+    @cached_property
+    def coarse(self) -> Optional[str]:
+        """De sleutel van merk + model, zonder uitvoering: de grovere trede."""
+        return model_key(self.model)
+
+    @cached_property
+    def coarse_name(self) -> Optional[str]:
+        return pretty_name(self.brand, self.family)
+
+    @property
+    def source(self) -> str:
+        """Waar het model vandaan komt, voor de pagina."""
+        if self.own:
+            return "eigen"
+        name = self.name
+        if name and name == self.reference:
+            return "referentie"
+        return "automatisch" if name else ""
+
     @property
     def group(self) -> Optional[str]:
-        """Waar hij aan hangt: het referentiemodel, anders merk + model."""
-        return self.reference or (self.model.title() if self.model else None)
+        """Waar hij aan hangt (de naam); zie name."""
+        return self.name
 
     def label(self) -> str:
         parts = [self.group or "model onbekend"]
@@ -160,7 +385,10 @@ class Identity:
         return " ".join(parts)
 
 
-def identify(listing: mp.Listing) -> Identity:
+def identify(listing: mp.Listing, link: Optional[dict] = None) -> Identity:
+    """Merk, model, uitvoering, bouwjaar en tijdperk van een advertentie.
+    `link`: de eigen koppeling uit bike_link (db.list_bike_links()), die gaat
+    voor wat de advertentie zegt."""
     title, text = listing.title or "", mp.spec_text(listing)
     brand = sleepers.named_brand(title) or sleepers.named_brand(text)
     brand = fold(brand) if brand else None
@@ -185,25 +413,54 @@ def identify(listing: mp.Listing) -> Identity:
         after = re.search(re.escape(brand) + r"\s+([a-z][a-z\-]{2,})", fold(title))
         if after and after.group(1) not in NOT_A_MODEL_AFTER_BRAND:
             family = after.group(1)
+    variant = variant_of(title, family)
     specs, _ = up.listing_specs(listing)
     year = specs.get("model_year")
+    year = int(year) if year and str(year).isdigit() else None
+    own = own_id = None
+    confirmed = own_year = False
+    if link:
+        if link.get("model_id") is not None and link.get("model"):
+            # Het merk en de familie van het eigen model: daarop gaat de
+            # grovere trede, ook als de titel iets anders zegt.
+            own, own_id = link["model"], link["model_id"]
+            brand = fold(link["brand"]) if link.get("brand") else brand
+            family = fold(link["family"]) if link.get("family") else family
+            variant = fold(link["variant"]) if link.get("variant") else None
+        if link.get("year"):
+            year, own_year = int(link["year"]), True
+        confirmed = bool(link.get("confirmed"))
     route = up.brake_route(specs.get("brake_type"))
     speeds = specs.get("speeds")
     return Identity(
-        brand=brand, family=family, material=specs.get("frame_material"),
-        year=int(year) if year and str(year).isdigit() else None,
+        brand=brand, family=family, material=specs.get("frame_material"), year=year,
         disc=True if route == up.ROUTE_DISC else False if route == up.ROUTE_RIM else None,
         electronic=bool(ELECTRONIC_RE.search(text)),
         speeds=int(speeds) if speeds and str(speeds).isdigit() else None,
         tier=listing.groupset_tier,
-        reference=reference_model(listing),
+        reference=reference_model(listing), variant=variant, own=own, own_id=own_id,
+        confirmed=confirmed, own_year=own_year, linked=bool(link),
     )
 
 
-# Hoeveel jaar een vergelijkbare fiets mag schelen.
+# Hoeveel jaar een vergelijkbare fiets mag schelen: de "generatie" van de
+# eigenaar (01-10-2026), bewust zonder opgezochte generatiejaren.
 YEAR_WINDOW = 2
-MIN_SAME_MODEL = 3
-MIN_SAME_BUILD = 5
+# Zoveel vergelijkbare advertenties wil een trede; minder, dan een stap
+# grover. Lukt dat nergens, dan de trap nog eens met MIN_FEW ("weinig").
+MIN_COMPS = 5
+MIN_FEW = 3
+
+# De treden van comparables(), met wat de pagina erbij zegt.
+LEVEL_LABELS = {
+    "model+jaar": "model, ±2 jaar",
+    "model": "model",
+    "familie+jaar": "modelfamilie, ±2 jaar",
+    "familie+tijdperk": "modelfamilie, zelfde tijdperk",
+    "opbouw+jaar": "zelfde opbouw, ±2 jaar",
+    "onzeker": "onzeker",
+}
+UNCERTAIN_LEVELS = frozenset({"onzeker"})
 
 
 def same_era(a: Identity, b: Identity) -> bool:
@@ -224,81 +481,125 @@ def same_material(a: Identity, b: Identity) -> bool:
     return a.material is None or b.material is None or a.material == b.material
 
 
-def comparables(me: Identity, same_model: list, same_build: list, same_reference: list = ()) -> tuple[str, list]:
-    """(niveau, [(Identity, prijs, extra), ...]) van de beste trede met genoeg
-    fietsen. `same_model`: de fietsen met hetzelfde merk en model,
-    `same_build`: die met hetzelfde materiaal, groepsettier en remtype
-    (Pool geeft ze), beide zonder de fiets zelf.
-
-    1. zelfde merk en model, bouwjaar ±2 (beide bekend), zelfde materiaal;
-    2. zelfde merk en model, waarvan een van beide geen bouwjaar heeft: zelfde
-       tijdperk (same_era()), plus die van ±2 jaar;
-    3. ander model, maar zelfde materiaal, groepsettier en remtype, bouwjaar ±2.
-    4. alleen zelfde merk en model, als van de fiets zelf jaar én remtype
-       onbekend zijn: "model, jaar onbekend" — onzeker, de pagina toont het
-       niet als koopje (UNCERTAIN_LEVELS).
-    Daarna niets: een mediaan van alle racefietsen is appels met peren.
-
-    Nog vóór 1: hetzelfde referentiemodel (reference_bikes.csv), ±2 jaar als
-    beide een jaar noemen — dat is de koppeling die de eigenaar bedoelt.
-    `same_reference` komt als eerste; zonder referentiemodel is hij leeg."""
-    if same_reference:
-        ref_year = [c for c in same_reference if close_years(me, c[0])]
-        if me.year is not None and len(ref_year) >= MIN_SAME_MODEL:
-            return "referentiemodel+jaar", ref_year
-        usable = ref_year + [c for c in same_reference if me.year is None or c[0].year is None]
-        if len(usable) >= MIN_SAME_MODEL:
-            return "referentiemodel", usable
-    if me.model:
-        same = [c for c in same_model if same_material(me, c[0])]
-        by_year = [c for c in same if close_years(me, c[0])]
-        if me.year is not None and len(by_year) >= MIN_SAME_MODEL:
+def _ladder(me: Identity, exact, coarse, build, minimum: int, exclude=None) -> tuple[str, list]:
+    # `exclude` hier in elke trede in plaats van vooraf uit elke lijst: de
+    # opbouwlijst heeft er duizenden, en meestal slaagt een fijnere trede al.
+    if me.exact:
+        by_year = [c for c in exact if close_years(me, c[0]) and c[2][0] != exclude]
+        if me.year is not None and len(by_year) >= minimum:
             return "model+jaar", by_year
-        era = by_year + [c for c in same if (me.year is None or c[0].year is None) and same_era(me, c[0])]
-        if len(era) >= MIN_SAME_MODEL:
-            return "model+tijdperk", era
+        usable = by_year + [c for c in exact if (me.year is None or c[0].year is None) and c[2][0] != exclude]
+        if len(usable) >= minimum:
+            return "model", usable
+    if me.coarse:
+        # Binnen een modelfamilie zitten aluminium en carbon ("Giant Defy" en
+        # "Defy Advanced"): daar wel op materiaal, zoals de oude trede.
+        family = [c for c in coarse if same_material(me, c[0]) and c[2][0] != exclude]
+        by_year = [c for c in family if close_years(me, c[0])]
+        if me.year is not None and len(by_year) >= minimum:
+            return "familie+jaar", by_year
+        era = by_year + [c for c in family if (me.year is None or c[0].year is None) and same_era(me, c[0])]
+        if len(era) >= minimum:
+            return "familie+tijdperk", era
     if me.year is not None and me.material and me.tier is not None and me.disc is not None:
-        build = [c for c in same_build if close_years(me, c[0])]
-        if len(build) >= MIN_SAME_BUILD:
-            return "opbouw+jaar", build
-    if me.model and me.year is None and me.disc is None:
-        same = [c for c in same_model if same_material(me, c[0])]
-        if len(same) >= MIN_SAME_MODEL:
-            return "model, jaar onbekend", same
+        same_build = [c for c in build if close_years(me, c[0]) and c[2][0] != exclude]
+        if len(same_build) >= minimum:
+            return "opbouw+jaar", same_build
+    if me.coarse and me.year is None and me.disc is None:
+        family = [c for c in coarse if same_material(me, c[0]) and c[2][0] != exclude]
+        if len(family) >= minimum:
+            return "onzeker", family
     return "", []
 
 
-UNCERTAIN_LEVELS = frozenset({"model, jaar onbekend"})
+def comparables(me: Identity, exact, coarse, build, exclude=None) -> tuple[str, list, bool]:
+    """(trede, [(Identity, prijs, extra), ...], weinig) van de eerste trede
+    met minstens MIN_COMPS fietsen; lukt dat nergens, dan de trap nog eens
+    met MIN_FEW en weinig = True. `exact`: de fietsen met hetzelfde model en
+    dezelfde uitvoering (Identity.exact), `coarse`: met hetzelfde merk en
+    model, `build`: met hetzelfde materiaal, groepsettier en remtype (Pool
+    geeft ze), alle zonder de fiets zelf.
+
+    1. model + uitvoering, bouwjaar ±2 (beide bekend);
+    2. model + uitvoering, waarvan een van beide geen bouwjaar heeft, plus die van 1;
+    3. merk + model, zelfde materiaal, bouwjaar ±2;
+    4. merk + model, zelfde materiaal, zelfde tijdperk (same_era()) als een
+       van beide geen bouwjaar heeft, plus die van 3;
+    5. elk model, zelfde materiaal, groepsettier en remtype, bouwjaar ±2;
+    6. alleen als van de fiets zelf jaar én remtype onbekend zijn: merk +
+       model, elk jaar — onzeker, de pagina toont het nooit als koopje
+       (UNCERTAIN_LEVELS).
+    Daarna niets: een mediaan van alle racefietsen is appels met peren.
+    `exclude`: het item_id van de fiets zelf, als die in de lijsten zit."""
+    level, found = _ladder(me, exact, coarse, build, MIN_COMPS, exclude)
+    if found:
+        return level, found, False
+    level, found = _ladder(me, exact, coarse, build, MIN_FEW, exclude)
+    return level, found, bool(found)
+
+
+def build_key(ident: Identity) -> Optional[tuple]:
+    if ident.material and ident.tier is not None and ident.disc is not None:
+        return (ident.material, ident.tier, ident.disc)
+    return None
 
 
 class Pool:
-    """De vergelijkingsfietsen, per model en per opbouw geïndexeerd: met
-    ~20.000 fietsen is elke fiets tegen alle andere te traag."""
+    """De vergelijkingsfietsen, per model, per familie en per opbouw
+    geïndexeerd: met ~20.000 fietsen is elke fiets tegen alle andere te
+    traag. Items: (Identity, prijs, extra), extra[0] is het item_id."""
 
     def __init__(self, items: list):
-        self.by_model: dict = {}
+        self.by_exact: dict = {}
+        self.by_coarse: dict = {}
         self.by_build: dict = {}
-        self.by_reference: dict = {}
+        self.item_of: dict = {}
         # Wie al herkend is, hoeft dat voor de actieve fietsen niet nog eens.
-        self.identity_of: dict = {item[2][0]: item[0] for item in items}
+        self.identity_of: dict = {}
         for item in items:
-            ident = item[0]
-            if ident.reference:
-                self.by_reference.setdefault(ident.reference, []).append(item)
-            if ident.model:
-                self.by_model.setdefault(ident.model, []).append(item)
-            if ident.material and ident.tier is not None and ident.disc is not None:
-                self.by_build.setdefault((ident.material, ident.tier, ident.disc), []).append(item)
+            self._add(item)
 
-    def comparables(self, me: Identity, exclude: str) -> tuple[str, list]:
+    def _indexes(self, ident: Identity) -> list:
+        return [(self.by_exact, ident.exact), (self.by_coarse, ident.coarse), (self.by_build, build_key(ident))]
+
+    def _add(self, item: tuple) -> None:
+        item_id = item[2][0]
+        self.item_of[item_id] = item
+        self.identity_of[item_id] = item[0]
+        for index, key in self._indexes(item[0]):
+            if key is not None:
+                index.setdefault(key, []).append(item)
+
+    def _remove(self, item: tuple) -> None:
+        for index, key in self._indexes(item[0]):
+            bucket = index.get(key)
+            if not bucket:
+                continue
+            at = next((i for i, other in enumerate(bucket) if other is item), None)
+            if at is not None:
+                del bucket[at]
+            if not bucket:
+                del index[key]
+
+    def replace(self, item_id: str, identity: Identity) -> Optional[Identity]:
+        """Na een eigen koppeling: deze fiets met zijn nieuwe Identity op de
+        goede plek in de indexen, zonder de rest opnieuw te herkennen.
+        Geeft de oude Identity, of None als hij niet in de pool zit (geen
+        vraagprijs, of ouder dan de pool)."""
+        item = self.item_of.get(item_id)
+        if item is None:
+            return None
+        self._remove(item)
+        self._add((identity, item[1], item[2]))
+        return item[0]
+
+    def comparables(self, me: Identity, exclude: str) -> tuple[str, list, bool]:
         """Zonder de fiets zelf (`exclude`: zijn item_id, het eerste veld van `extra`)."""
-        same_model = [c for c in self.by_model.get(me.model, ()) if c[2][0] != exclude]
-        same_build = [c for c in self.by_build.get((me.material, me.tier, me.disc), ()) if c[2][0] != exclude]
-        same_reference = [c for c in self.by_reference.get(me.reference, ()) if c[2][0] != exclude]
-        return comparables(me, same_model, same_build, same_reference)
+        build = build_key(me)
+        return comparables(me, self.by_exact.get(me.exact, ()) if me.exact else (),
+                           self.by_coarse.get(me.coarse, ()) if me.coarse else (),
+                           self.by_build.get(build, ()) if build else (), exclude)
 
     def linked(self, me: Identity) -> int:
         """Hoeveel advertenties (de laatste 180 dagen) aan hetzelfde model hangen."""
-        if me.reference:
-            return len(self.by_reference.get(me.reference, ()))
-        return len(self.by_model.get(me.model, ())) if me.model else 0
+        return len(self.by_exact.get(me.exact, ())) if me.exact else 0

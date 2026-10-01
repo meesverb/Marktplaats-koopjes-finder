@@ -3915,6 +3915,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 data["message"] = ""
         self._json(data)
 
+    def _race_model(self, form: dict) -> None:
+        """Een eigen koppeling op /racefietsen (model, klopt, bouwjaar,
+        ontkoppelen, nieuw model): altijd JSON, en alleen die ene fiets
+        opnieuw (racebikes.relink()) in de onthouden berekening — de hele
+        pagina opnieuw kost met ~14.000 fietsen enkele seconden."""
+        if not hmac.compare_digest(form.get("token", ""), self.token):
+            return self._json({"message": "De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.",
+                               "reload": True})
+        base = self.cache.racebikes(self.db_path, self.intake_path)
+        self._json(rb.model_update(base, self.db_path, form))
+
     def do_POST(self) -> None:
         origin = self.headers.get("Origin")
         if not self._host_ok() or (origin and urlsplit(origin).netloc not in self._origins()):
@@ -3935,6 +3946,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._send(413, "Te groot")
             raw = self.rfile.read(length).decode("utf-8", errors="replace")
             return self._flip_post(path, {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()})
+        if path == rb.MODEL_PATH:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_FORM_BYTES:
+                return self._send(413, "Te groot")
+            raw = self.rfile.read(length).decode("utf-8", errors="replace")
+            return self._race_model({k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()})
         action = action_choice if path == BIKE_CHOICE_PATH else ACTIONS.get(path)
         if action is None:
             return self._send(404, "Niet gevonden")

@@ -12,12 +12,13 @@ meer om weg te zetten (marks.BIKE_REASONS). Het rapport blijft bestaan.
 Per fiets twee oordelen naast elkaar, want de eigenaar koopt voor allebei
 (29-09-2026):
 
-- **flip**: geschatte verkoopprijs − wat hij kost. De verkoopprijs is die
-  van upgrade.estimate_value(): de mediaan-vraagprijs van vergelijkbare
-  fietsen (zelfde framemateriaal, groepsettier en remtype) maal de
-  afdingfactor, en zonder vergelijkbare fietsen grof de mediaan van alles
-  (dan staat er "grof"). Geen kosten eraf: onderdelen en reizen zoekt de
-  eigenaar per fiets uit, op /flips.
+- **flip**: geschatte verkoopprijs − wat hij kost. De verkoopprijs komt
+  uit de fietsen van hetzelfde model (bike_identity.py: model + uitvoering,
+  bouwjaar ±2, en trapsgewijs grover): de mediaan van wat daarvan snel
+  verkocht werd (binnen FAST_DAYS weg), of zonder genoeg snelle verkopen de
+  mediaan-vraagprijs maal de afdingfactor. Geen model, geen schatting.
+  Geen kosten eraf: onderdelen en reizen zoekt de eigenaar per fiets uit,
+  op /flips.
 - **upgrade**: upgrade.find_upgrades() tegen de eigen fiets uit
   mijn_fiets.md, precies als het tabblad Upgrade van het rapport: beter
   dan de eigen fiets, binnen het budget, maat niet fout.
@@ -25,6 +26,12 @@ Per fiets twee oordelen naast elkaar, want de eigenaar koopt voor allebei
 Plus de waardescore (upgrade.value_score(): waarde / prijs). Niet de
 dealscore; die hoort bij het rapport (CLAUDE.md: twee scores, niet
 vermengen).
+
+Elke fiets hangt aan een fietsmodel; de eigenaar kan dat op de kaart
+goedkeuren (klopt), een ander model kiezen of aanmaken, en het bouwjaar
+invullen (bike_link/bike_model, migratie 19). De weergave Modellen is de
+lijst met alle modellen. Zo'n correctie rekent alleen die ene fiets opnieuw
+(relink()); de andere fietsen van het model volgen bij de volgende ronde.
 
 Snel: het zware deel (vergelijkingsprijzen, upgrade-scores) rekent één keer
 per ronde (LiveCache in dashboard.py). De pagina krijgt de fietsen als JSON
@@ -38,11 +45,14 @@ zondagronde (week) weer gezien wordt.
 """
 from __future__ import annotations
 
+import heapq
 import html
 import json
 import math
 import sqlite3
 import statistics
+import threading
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -65,6 +75,21 @@ ACTIVE_DAYS = 8
 NEW_HOURS = 24
 # Waar een geaccepteerd bod heen gaat: een fiets op /flips (flips.OWN_MARKETS).
 FLIP_MARKET = "fietsen"
+# Waar de pagina een eigen koppeling heen stuurt (dashboard.py).
+MODEL_PATH = PATH + "/model"
+# Snel verkocht: binnen zoveel dagen na de eerste keer gezien verdwenen, of
+# gereserveerd en daarna verdwenen (de eigenaar, 01-10-2026). Verdwenen
+# wordt pas na een complete crawl vastgesteld (de zondagronde), dus de
+# eerste weken zijn het er weinig.
+FAST_DAYS = 7
+# Vanaf zoveel snel verkochte in een trede is hun mediaan de schatting.
+MIN_FAST = 3
+# Zoveel vergelijkingsfietsen (de goedkoopste) gaan mee naar de kaart; een
+# trede op opbouw heeft er soms honderden.
+COMPS_SHOWN = 12
+# Een zelf ingevuld bouwjaar en een zelf gemaakte modelnaam.
+YEAR_MIN = 1970
+NAME_MIN, NAME_MAX = 3, 80
 
 esc = html.escape
 
@@ -86,10 +111,15 @@ class Row:
     upgrade_gain: Optional[float] = None
     upgrade_why: str = ""
     identity: Optional[bi.Identity] = None
-    linked: int = 0  # advertenties aan hetzelfde model (referentie of merk+model)
+    linked: int = 0  # advertenties (180 dagen) aan hetzelfde model
     median: Optional[float] = None  # mediaan-vraagprijs van de vergelijkingsfietsen
     level: str = ""  # welke trede van bike_identity.comparables() de schatting gaf
-    comps: list = field(default_factory=list)  # (titel, prijs, url, jaar, verdwenen), goedkoopste eerst
+    few: bool = False  # de trede had er maar MIN_FEW in plaats van MIN_COMPS
+    comps: list = field(default_factory=list)  # (titel, prijs, url, jaar, verdwenen, snel): COMPS_SHOWN, snel verkochte eerst
+    comp_count: int = 0  # met hoeveel fietsen vergeleken
+    fast: tuple = (0, None)  # (aantal, mediaan) snel verkocht in de trede
+    for_sale: tuple = (0, None)  # (aantal, mediaan) nog te koop in de trede
+    name: str = ""  # de naam van het model zoals de lijst Modellen hem toont
 
 
 @dataclass
@@ -100,9 +130,27 @@ class Base:
     baseline: Optional[float] = None
     target_cm: Optional[float] = None
     patterns: Optional[vw.ViewPatterns] = None
+    # Voor relink(): de pool, de eigen fiets en de afdingfactor van deze
+    # berekening, de eigen modellen ({sleutel: bike_model-rij}) en de naam
+    # per model ({sleutel: (naam, bron)}).
+    pool: bi.Pool = field(default_factory=lambda: bi.Pool([]))
+    owner: object = None
+    factor: float = val.NEGOTIATION_DEFAULT[1]
+    own_models: dict = field(default_factory=dict)
+    names: dict = field(default_factory=dict)
+    # Een correctie werkt deze Base bij terwijl een ander verzoek hem kan
+    # lezen of ook bijwerken: allebei met dit slot vast.
+    lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    _index: dict = field(default_factory=dict, repr=False)
+
+    def position(self, item_id: str) -> Optional[int]:
+        if len(self._index) != len(self.rows):
+            self._index = {r.listing.item_id: i for i, r in enumerate(self.rows)}
+        return self._index.get(item_id)
 
     def row(self, item_id: str) -> Optional[Row]:
-        return next((r for r in self.rows if r.listing.item_id == item_id), None)
+        at = self.position(item_id)
+        return self.rows[at] if at is not None else None
 
 
 def _time(value) -> Optional[datetime]:
@@ -115,8 +163,8 @@ def _time(value) -> Optional[datetime]:
 SELECT = (
     "SELECT item_id, title, description, price_eur, price_type, is_bid, price_is_asking, city, "
     "posted_date, condition, frame_height, url, first_seen, last_seen, image_urls, reserved_at, "
-    "bid_count, bid_minimum, bid_high, bids_checked_at, checked_at, full_description, disappeared_at "
-    "FROM listing WHERE url LIKE ?")
+    "bid_count, bid_minimum, bid_high, bids_checked_at, checked_at, full_description, disappeared_at, "
+    "days_online FROM listing WHERE url LIKE ?")
 # Vergelijkingsfietsen: zo ver terug, ook verdwenen (vaak verkocht) — zelfde
 # venster als de taxatie (valuation.DEFAULT_COMP_WINDOW_DAYS).
 POOL_DAYS = val.DEFAULT_COMP_WINDOW_DAYS
@@ -148,16 +196,40 @@ def _listing(r, site: dict, places: dict) -> mp.Listing:
     return listing
 
 
-def _read(db_path) -> tuple[list, dict, dict]:
+@dataclass
+class Read:
+    """Wat _read() in één keer uit de database haalt."""
+    rows: list = field(default_factory=list)
+    site: dict = field(default_factory=dict)
+    places: dict = field(default_factory=dict)
+    links: dict = field(default_factory=dict)  # item_id -> eigen koppeling (db.list_bike_links())
+    models: list = field(default_factory=list)  # de eigen modellen (db.list_bike_models())
+
+
+def _read(db_path) -> Read:
     if not Path(db_path).exists():
-        return [], {}, {}
+        return Read()
     conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(SELECT, (f"%/{CATEGORY}/%",)).fetchall()
-        return rows, db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE), db.list_places(conn)
+        return Read(rows, db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE), db.list_places(conn),
+                    db.list_bike_links(conn), db.list_bike_models(conn))
     except sqlite3.Error:
-        return [], {}, {}
+        return Read()
+    finally:
+        conn.close()
+
+
+def read_links(db_path) -> tuple[dict, list]:
+    """Alleen de eigen koppelingen en modellen: klein, voor één correctie."""
+    if not Path(db_path).exists():
+        return {}, []
+    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        return db.list_bike_links(conn), db.list_bike_models(conn)
+    except sqlite3.Error:
+        return {}, []
     finally:
         conn.close()
 
@@ -165,7 +237,8 @@ def _read(db_path) -> tuple[list, dict, dict]:
 def load_listings(db_path, active_days: int = ACTIVE_DAYS, _read_result=None) -> tuple[list, Optional[datetime], set]:
     """(advertenties, nieuwste waarneming, id's van de nieuwe) in de categorie
     racefietsen, met alles wat de database erover weet."""
-    rows, site, places = _read_result or _read(db_path)
+    read = _read_result or _read(db_path)
+    rows, site, places = read.rows, read.site, read.places
     rows = [r for r in rows if r["disappeared_at"] is None]
     seen = [t for t in (_time(r["last_seen"]) for r in rows) if t]
     if not seen:
@@ -188,10 +261,30 @@ def load_listings(db_path, active_days: int = ACTIVE_DAYS, _read_result=None) ->
     return out, newest, new_ids
 
 
+def sold_fast(r) -> bool:
+    """Verdwenen binnen FAST_DAYS na de eerste keer gezien, of gereserveerd
+    en daarna verdwenen: dan ging hij waarschijnlijk voor ongeveer die prijs
+    weg. Verdwenen is geen bewijs van verkocht (patterns.py), maar snel weg
+    is het beste wat de zoekresultaten erover zeggen."""
+    gone = r["disappeared_at"]
+    if not gone:
+        return False
+    if r["reserved_at"]:
+        return True
+    if r["days_online"] is not None:
+        return r["days_online"] <= FAST_DAYS
+    first, end = _time(r["first_seen"]), _time(gone)
+    try:
+        return bool(first and end and end - first <= timedelta(days=FAST_DAYS))
+    except TypeError:  # de een met tijdzone, de ander zonder
+        return False
+
+
 def load_pool(db_path, _read_result=None) -> bi.Pool:
     """Alle racefietsen van de laatste POOL_DAYS met een vraagprijs, ook
-    verdwenen, als (Identity, prijs, (item_id, titel, url, verdwenen))."""
-    rows, site, places = _read_result or _read(db_path)
+    verdwenen, als (Identity, prijs, (item_id, titel, url, verdwenen, snel verkocht))."""
+    read = _read_result or _read(db_path)
+    rows, site, places = read.rows, read.site, read.places
     seen = [t for t in (_time(r["last_seen"]) for r in rows) if t]
     if not seen:
         return bi.Pool([])
@@ -206,40 +299,78 @@ def load_pool(db_path, _read_result=None) -> bi.Pool:
         if not listing.price_is_asking or not listing.price_eur or listing.price_eur <= 0:
             continue
         gone = (r["disappeared_at"] or "")[:10]
-        items.append((bi.identify(listing), listing.price_eur, (listing.item_id, listing.title, listing.url, gone)))
+        items.append((bi.identify(listing, read.links.get(listing.item_id)), listing.price_eur,
+                      (listing.item_id, listing.title, listing.url, gone, sold_fast(r))))
     return bi.Pool(items)
 
 
-def estimate(listing: mp.Listing, ident: bi.Identity, pool: bi.Pool, factor: float) -> tuple:
-    """(verwachte verkoopprijs, onderbouwing, trede, vergelijkingsfietsen) —
-    de mediaan-vraagprijs van hetzelfde model uit dezelfde jaren maal de
-    afdingfactor (bike_identity.comparables())."""
-    level, found = pool.comparables(ident, listing.item_id)
+@dataclass
+class Estimate:
+    """Wat estimate() over één fiets zegt."""
+    resale: Optional[float] = None  # verwachte verkoopprijs
+    basis: str = ""  # de onderbouwing, of waarom er geen schatting is
+    level: str = ""  # trede van bike_identity.comparables()
+    few: bool = False
+    comps: list = field(default_factory=list)  # (titel, prijs, url, jaar, verdwenen, snel), de goedkoopste eerst
+    median: Optional[float] = None  # mediaan-vraagprijs van de hele trede
+    fast: tuple = (0, None)  # (aantal, mediaan) snel verkocht
+    for_sale: tuple = (0, None)  # (aantal, mediaan) nog te koop
+    count: int = 0  # met hoeveel fietsen vergeleken; comps is er een deel van
+
+
+def _median(values: list) -> Optional[float]:
+    return statistics.median(values) if values else None
+
+
+def _era(ident: bi.Identity) -> str:
+    return f"{'schijfrem' if ident.disc else 'velgrem'}{', elektronisch' if ident.electronic else ''}"
+
+
+def estimate(listing: mp.Listing, ident: bi.Identity, pool: bi.Pool, factor: float) -> Estimate:
+    """De verwachte verkoopprijs uit de vergelijkbare fietsen van de trede
+    die bike_identity.comparables() kiest. Zijn er minstens MIN_FAST snel
+    verkocht, dan de mediaan van hun laatste prijs, zonder afdingfactor: dat
+    is ongeveer wat ervoor betaald is (de eigenaar, 01-10-2026: "vooral wat
+    snel wegging"). Anders de mediaan van alle vraagprijzen maal de
+    afdingfactor."""
+    level, found, few = pool.comparables(ident, listing.item_id)
     if not found:
-        why = ("te weinig vergelijkbare fietsen van hetzelfde model en dezelfde jaren"
-               if ident.model else "model niet herkend in de titel")
-        return None, why, "", [], None
+        return Estimate(basis="te weinig vergelijkbare fietsen van hetzelfde model en dezelfde jaren"
+                        if ident.exact or ident.coarse else "model niet herkend in de titel")
     prices = [c[1] for c in found]
+    fast = [c[1] for c in found if c[2][4]]
+    for_sale = [c[1] for c in found if not c[2][3]]
     median = statistics.median(prices)
     years = sorted(c[0].year for c in found if c[0].year)
     span = (f" uit {years[0]}-{years[-1]}" if years and years[0] != years[-1]
             else f" uit {years[0]}" if years else "")
-    what = {"referentiemodel+jaar": ident.reference, "referentiemodel": ident.reference,
-            "model+jaar": ident.model, "model+tijdperk": f"{ident.model} ({'schijfrem' if ident.disc else 'velgrem'}"
-            f"{', elektronisch' if ident.electronic else ''})",
-            "opbouw+jaar": f"{ident.material}, groepsettier {ident.tier}, "
-                           f"{'schijfrem' if ident.disc else 'velgrem'}",
-            "model, jaar onbekend": ident.model}[level]
-    basis = f"mediaan van {len(found)} × {what}{span}: €{median:.0f} × {val.dutch(factor)}"
+    what = {"model+jaar": ident.name, "model": ident.name, "familie+jaar": ident.coarse_name,
+            "familie+tijdperk": f"{ident.coarse_name} ({_era(ident)})",
+            "opbouw+jaar": f"{ident.material}, groepsettier {ident.tier}, {'schijfrem' if ident.disc else 'velgrem'}",
+            "onzeker": ident.coarse_name}[level]
+    label = bi.LEVEL_LABELS[level] + (" (weinig)" if few else "")
+    if len(fast) >= MIN_FAST:
+        resale = statistics.median(fast)
+        how = (f"mediaan van de laatste vraagprijs van {len(fast)} snel verkochte (≤{FAST_DAYS} d): "
+               f"€{resale:.0f} — wat er echt betaald is weet je niet")
+    else:
+        resale = median * factor
+        how = (f"mediaan van {len(found)} vraagprijzen €{median:.0f} × {val.dutch(factor)} "
+               f"({'nog geen snelle verkopen' if not fast else f'nog maar {len(fast)} snel verkocht'})")
+    basis = f"{len(found)} × {what}{span} ({label}): {how}"
     if level in bi.UNCERTAIN_LEVELS:
         basis = (f"onzeker, bouwjaar en remtype onbekend — {len(found)} × {what} van €{min(prices):.0f} tot "
-                 f"€{max(prices):.0f}, mediaan €{median:.0f} × {val.dutch(factor)}; vraag het jaar na")
-    comps = sorted(((c[2][1], c[1], c[2][2], c[0].year, c[2][3]) for c in found), key=lambda c: c[1])
-    return median * factor, basis, level, comps, median
+                 f"€{max(prices):.0f}: {how}; vraag het jaar na")
+    # De snel verkochte eerst (daar rust de schatting op), dan de goedkoopste andere.
+    shown = heapq.nsmallest(COMPS_SHOWN, (c for c in found if c[2][4]), key=lambda c: c[1])
+    shown += heapq.nsmallest(COMPS_SHOWN - len(shown), (c for c in found if not c[2][4]), key=lambda c: c[1])
+    comps = sorted(((c[2][1], c[1], c[2][2], c[0].year, c[2][3], c[2][4]) for c in shown), key=lambda c: c[1])
+    return Estimate(resale, basis, level, few, comps, median, (len(fast), _median(fast)),
+                    (len(for_sale), _median(for_sale)), len(found))
 
 
-def specs_line(listing: mp.Listing) -> str:
-    specs, _ = up.listing_specs(listing)
+def specs_line(listing: mp.Listing, year: Optional[int] = None) -> str:
+    specs, _ = up.listing_specs(listing, year)
     parts = []
     if listing.frame_height:
         parts.append(listing.frame_height if "cm" in listing.frame_height else f"{listing.frame_height} cm")
@@ -260,6 +391,86 @@ def specs_line(listing: mp.Listing) -> str:
     return " · ".join(parts)
 
 
+def _verdicts(base: Base, listings: list, years: dict) -> dict:
+    """{item_id: (upgrade, winst, waarom)} van upgrade.find_upgrades() tegen
+    de eigen fiets; leeg zonder eigen fiets (dan base.owner_problem)."""
+    owner = base.owner
+    if owner is None:
+        return {}
+    result = up.find_upgrades(
+        listings, baseline=owner.quality.total, config=owner.config, budgets=owner.budgets,
+        target_size_cm=owner.target_size_cm,
+        owner_wheels=(owner.build.wheel_material, owner.build.wheel_branded),
+        owner_already_has=owner.owner_has, years=years)
+    verdicts = {}
+    for c in result.candidates:
+        verdicts[c.listing.item_id] = (
+            True, c.gain,
+            f"+{c.gain:.0f} punten ({c.quality.total:.0f} tegen {owner.quality.total:.0f}), "
+            f"€{c.effective.amount:.0f} binnen {c.budget.route}budget €{c.budget.amount:.0f}")
+    for r in result.rejected:
+        verdicts[r.listing.item_id] = (False, None, r.reason)
+    return verdicts
+
+
+def _own_years(idents: dict) -> dict:
+    return {item_id: ident.year for item_id, ident in idents.items() if ident.own_year}
+
+
+def _make_row(base: Base, l: mp.Listing, ident: bi.Identity, new: bool, verdict: Optional[tuple]) -> Row:
+    est = estimate(l, ident, base.pool, base.factor)
+    entry = up.entry_price(l)
+    margin = est.resale - entry.amount if est.resale is not None and entry.amount is not None else None
+    price = up.effective_price(l, base.factor).amount
+    ratio = est.resale / price if est.resale is not None and price else None
+    ok, gain, why = verdict or (False, None, base.owner_problem)
+    if ok and ident.year is None:
+        # Zonder bouwjaar rekent de score de fiets als nieuw (geen
+        # leeftijdsverval): een oude fiets met goede onderdelen leek dan
+        # een upgrade (de eigenaar, 30-09-2026: "upgrade-oordeel raar").
+        ok, why = False, f"bouwjaar onbekend — als hij nieuw zou zijn {why}; vraag het jaar na"
+    name = base.names.get(ident.exact, (ident.name or "", ""))[0] if ident.exact else ""
+    return Row(
+        listing=l, frame=mp.frame_height_bounds(l.frame_height),
+        specs=specs_line(l, ident.year if ident.own_year else None),
+        text=l.detail_text or l.description, new=new,
+        flip_margin=margin, resale=est.resale, flip_basis=est.basis, flip_rough=est.level in bi.UNCERTAIN_LEVELS,
+        value_ratio=ratio, upgrade_ok=ok, upgrade_gain=gain, upgrade_why=why,
+        identity=ident, level=est.level, few=est.few, comps=est.comps, comp_count=est.count,
+        linked=base.pool.linked(ident),
+        median=est.median, fast=est.fast, for_sale=est.for_sale, name=name)
+
+
+def _names(base: Base, idents) -> dict:
+    """{sleutel: (naam, bron)} per model: het eigen model als de eigenaar
+    het aanmaakte, anders het referentiemodel, anders de vaakst herkende
+    schrijfwijze ("SL6" en "SL 6" zijn hetzelfde model)."""
+    spelled: dict = {}
+    reference: dict = {}
+    for ident in idents:
+        key = ident.exact
+        if not key:
+            continue
+        spelled.setdefault(key, Counter())[ident.name] += 1
+        if ident.source == "referentie":
+            reference.setdefault(key, ident.name)
+    names = {}
+    for key, counts in spelled.items():
+        if key in base.own_models:
+            names[key] = (base.own_models[key]["name"], "eigen")
+        elif key in reference:
+            names[key] = (reference[key], "referentie")
+        else:
+            names[key] = (counts.most_common(1)[0][0], "automatisch")
+    for key, model in base.own_models.items():
+        names.setdefault(key, (model["name"], "eigen"))
+    return names
+
+
+def _own_models(models: list) -> dict:
+    return {bi.model_key(m["name"]): m for m in models if bi.model_key(m["name"])}
+
+
 def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
     """Het zware deel: per fiets flip, waardescore en upgrade. `comps`: de
     vergelijkingskandidaten voor de taxatie van de eigen fiets, als de
@@ -270,50 +481,212 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
     listings, newest, new_ids = load_listings(db_path, _read_result=read)
     base = Base(newest=newest.isoformat(timespec="minutes") if newest else "")
     base.patterns = vw.load_patterns(db_path, (CATEGORY,))
+    base.own_models = _own_models(read.models)
     if not listings:
+        base.names = _names(base, ())
         return base
-    factor = val.NEGOTIATION_DEFAULT[1]
-    pool = load_pool(db_path, _read_result=read)
+    base.pool = load_pool(db_path, _read_result=read)
 
     owner, problem = report.load_owner_context(str(intake_path), str(db_path), comps=comps)
-    verdicts: dict[str, tuple] = {}
     if owner is None or owner.budgets is None or owner.target_size_cm is None:
         base.owner_problem = problem or (owner.valuation_problem if owner else "") or "geen eigen fiets"
     else:
+        base.owner = owner
         base.baseline, base.target_cm = owner.quality.total, owner.target_size_cm
-        result = up.find_upgrades(
-            listings, baseline=owner.quality.total, config=owner.config, budgets=owner.budgets,
-            target_size_cm=owner.target_size_cm,
-            owner_wheels=(owner.build.wheel_material, owner.build.wheel_branded),
-            owner_already_has=owner.owner_has)
-        for c in result.candidates:
-            verdicts[c.listing.item_id] = (
-                True, c.gain,
-                f"+{c.gain:.0f} punten ({c.quality.total:.0f} tegen {owner.quality.total:.0f}), "
-                f"€{c.effective.amount:.0f} binnen {c.budget.route}budget €{c.budget.amount:.0f}")
-        for r in result.rejected:
-            verdicts[r.listing.item_id] = (False, None, r.reason)
 
+    idents = {l.item_id: base.pool.identity_of.get(l.item_id) or bi.identify(l, read.links.get(l.item_id))
+              for l in listings}
+    base.names = _names(base, list(base.pool.identity_of.values()) + list(idents.values()))
+    verdicts = _verdicts(base, listings, _own_years(idents))
     for l in listings:
-        ident = pool.identity_of.get(l.item_id) or bi.identify(l)
-        resale, basis, level, comps, median = estimate(l, ident, pool, factor)
-        entry = up.entry_price(l)
-        margin = resale - entry.amount if resale is not None and entry.amount is not None else None
-        price = up.effective_price(l, factor).amount
-        ratio = resale / price if resale is not None and price else None
-        ok, gain, why = verdicts.get(l.item_id, (False, None, base.owner_problem))
-        if ok and ident.year is None:
-            # Zonder bouwjaar rekent de score de fiets als nieuw (geen
-            # leeftijdsverval): een oude fiets met goede onderdelen leek dan
-            # een upgrade (de eigenaar, 30-09-2026: "upgrade-oordeel raar").
-            ok, why = False, f"bouwjaar onbekend — als hij nieuw zou zijn {why}; vraag het jaar na"
-        base.rows.append(Row(
-            listing=l, frame=mp.frame_height_bounds(l.frame_height), specs=specs_line(l),
-            text=l.detail_text or l.description, new=l.item_id in new_ids,
-            flip_margin=margin, resale=resale, flip_basis=basis, flip_rough=level in bi.UNCERTAIN_LEVELS,
-            value_ratio=ratio, upgrade_ok=ok, upgrade_gain=gain, upgrade_why=why,
-            identity=ident, level=level, comps=comps, linked=pool.linked(ident), median=median))
+        base.rows.append(_make_row(base, l, idents[l.item_id], l.item_id in new_ids, verdicts.get(l.item_id)))
     return base
+
+
+# --- Eigen koppeling: één fiets opnieuw ----------------------------------------------
+
+
+class ModelError(ValueError):
+    """Een koppeling die niet kan; de tekst gaat terug naar de pagina."""
+
+
+def relink(base: Base, db_path, item_id: str) -> tuple[Optional[Row], set]:
+    """Na een eigen koppeling: alleen deze fiets opnieuw herkennen, hem in de
+    pool verplaatsen (bike_identity.Pool.replace()) en zijn eigen rij
+    opnieuw uitrekenen. De andere fietsen van zijn oude en nieuwe model
+    houden hun vergelijking tot de volgende ronde: alles opnieuw duurt met
+    ~14.000 fietsen ~10 s, en de pagina moet snel blijven (de eigenaar).
+    Geeft (nieuwe rij, sleutels van de modellen die veranderden)."""
+    with base.lock:
+        at = base.position(item_id)
+        if at is None:
+            return None, set()
+        links, models = read_links(db_path)
+        base.own_models = _own_models(models)
+        row = base.rows[at]
+        ident = bi.identify(row.listing, links.get(item_id))
+        old = base.pool.replace(item_id, ident) or row.identity
+        keys = {k for k in (old.exact if old else None, ident.exact) if k}
+        for key in keys:
+            members = [c[0] for c in base.pool.by_exact.get(key, ())]
+            members += [r.identity for r in base.rows if r.identity and r.identity.exact == key and
+                        r.listing.item_id != item_id] + [ident]
+            fresh = _names(base, [m for m in members if m.exact == key])
+            if key in fresh:
+                base.names[key] = fresh[key]
+            elif key not in base.own_models:
+                base.names.pop(key, None)
+        verdict = _verdicts(base, [row.listing], _own_years({item_id: ident})).get(item_id)
+        new_row = _make_row(base, row.listing, ident, row.new, verdict)
+        base.rows[at] = new_row
+        return new_row, keys
+
+
+def parse_year(value) -> Optional[int]:
+    text = (value or "").strip()
+    if not text:
+        return None
+    top = datetime.now().year + 1
+    if not text.isdigit() or not YEAR_MIN <= int(text) <= top:
+        raise ModelError(f"bouwjaar is een jaartal van {YEAR_MIN} tot {top}.")
+    return int(text)
+
+
+def check_name(value) -> str:
+    name = " ".join((value or "").split())
+    if not NAME_MIN <= len(name) <= NAME_MAX:
+        raise ModelError(f"een modelnaam is {NAME_MIN} tot {NAME_MAX} tekens.")
+    if len(name.split()) < 2:
+        raise ModelError("een modelnaam is merk en minstens één woord, bv. 'Koga Kinsei Pro'.")
+    return name
+
+
+def _model_id(conn, name: str, brand=None, family=None, variant=None) -> tuple[int, str, bool]:
+    """(id, naam, nieuw) van het eigen model met deze sleutel; aangemaakt
+    als het er nog niet is. Op sleutel, niet op naam: "Trek Domane SL 6" is
+    hetzelfde model als "Trek Domane SL6"."""
+    key = bi.model_key(name)
+    for model in db.list_bike_models(conn):
+        if bi.model_key(model["name"]) == key:
+            return model["id"], model["name"], False
+    return db.add_bike_model(conn, name, brand, family, variant), name, True
+
+
+LATER = " De vergelijking van de andere fietsen van dit model wordt na de volgende ronde bijgewerkt."
+
+
+def apply_model(base: Base, db_path, form: dict) -> tuple[str, Optional[Row], set]:
+    """Wat de pagina naar MODEL_PATH stuurt: `item_id` met `model` (een
+    naam, bestaand of nieuw), `confirm=1` (klopt), `year` (leeg = weghalen)
+    of `clear=1` (ontkoppelen); zonder item_id alleen een nieuw model
+    aanmaken (de lijst Modellen). Geeft (melding, bijgewerkte rij, sleutels
+    van de modellen die veranderden)."""
+    item_id = (form.get("item_id") or "").strip()
+    typed = (form.get("model") or "").strip()
+    if not item_id:
+        name, brand, family, variant = bi.split_name(check_name(typed))
+        conn = db.connect(str(db_path))
+        try:
+            _, name, created = _model_id(conn, name, brand, family, variant)
+        finally:
+            conn.close()
+        key = bi.model_key(name)
+        with base.lock:
+            known = key in base.names and base.names[key][1] != "eigen"
+            base.own_models = _own_models(read_links(db_path)[1])
+            base.names[key] = (base.own_models[key]["name"], "eigen") if key in base.own_models else (name, "eigen")
+        message = (f"{name} is nu een eigen model." if created and known else
+                   f"Model {name} toegevoegd." if created else f"{name} stond er al.")
+        return message, None, {key}
+    with base.lock:
+        row = base.row(item_id)
+        if row is None:
+            raise ModelError("die fiets staat niet (meer) op de pagina.")
+        conn = db.connect(str(db_path))
+        try:
+            current = db.list_bike_links(conn).get(item_id) or {}
+            if form.get("clear") == "1":
+                db.set_bike_link(conn, item_id)
+                message = "Ontkoppeld: hij hangt weer aan wat de advertentie zegt"
+            else:
+                model_id, year = current.get("model_id"), current.get("year")
+                confirmed = bool(current.get("confirmed"))
+                message = ""
+                if typed:
+                    name, brand, family, variant = bi.split_name(check_name(typed))
+                    # Een herkend model uit de lijst kiezen maakt er ook een
+                    # eigen model van, maar nieuw is het dan niet.
+                    known = bi.model_key(name) in base.names
+                    model_id, name, created = _model_id(conn, name, brand, family, variant)
+                    confirmed = True
+                    message = (f"Nieuw model {name}; deze fiets hangt eraan." if created and not known
+                               else f"Gekoppeld aan {name}.")
+                elif form.get("confirm") == "1":
+                    ident = row.identity
+                    name = row.name or (ident.name if ident else None)
+                    if not name:
+                        raise ModelError("er is geen model herkend; kies 'ander model'.")
+                    if ident.own_id is not None:
+                        model_id = ident.own_id
+                    else:
+                        # Merk en familie zoals herkend; een referentiemodel
+                        # zonder herkend merk of model ("Scott CR1"): uit de naam.
+                        parts = ((ident.brand, ident.family, ident.variant) if ident.brand and ident.family
+                                 else bi.split_name(name)[1:])
+                        model_id, name, _ = _model_id(conn, name, *parts)
+                    confirmed = True
+                    message = f"Gecontroleerd: {name}."
+                if "year" in form:
+                    year = parse_year(form.get("year"))
+                    message += (f" Bouwjaar {year}." if year else " Bouwjaar weggehaald.")
+                if not message:
+                    raise ModelError("er was niets te koppelen.")
+                db.set_bike_link(conn, item_id, model_id=model_id, year=year, confirmed=confirmed)
+        finally:
+            conn.close()
+        new_row, keys = relink(base, db_path, item_id)
+        if form.get("clear") == "1":
+            message += f" ({new_row.name or 'geen model'})."
+        return message.strip() + LATER, new_row, keys
+
+
+def model_entry(key: str, name: str, source: str, pool_items: list, active: list, own_id=None) -> dict:
+    """Eén regel van de lijst Modellen; korte sleutels, het zijn er duizenden."""
+    prices = [c[1] for c in pool_items]
+    fast = [c[1] for c in pool_items if c[2][4]]
+    for_sale = [p for p in active if p is not None]
+    return {"k": key, "n": name, "s": source, "id": own_id, "a": len(active), "lk": len(pool_items),
+            "f": len(fast), "fm": None if not fast else round(statistics.median(fast)),
+            "m": None if not prices else round(statistics.median(prices)),
+            "lo": None if not for_sale else round(min(for_sale))}
+
+
+def model_list(base: Base, keys: Optional[set] = None) -> list:
+    """De lijst Modellen: alle eigen modellen (ook zonder advertenties) en
+    alle modellen die in de pool of op de pagina voorkomen, met te koop,
+    gekoppeld (180 dagen), snel verkocht en de prijzen. `keys`: alleen deze."""
+    with base.lock:
+        active: dict = {}
+        for r in base.rows:
+            key = r.identity.exact if r.identity else None
+            if key and (keys is None or key in keys):
+                active.setdefault(key, []).append(r.listing.price_eur)
+        wanted = set(base.names) | set(base.pool.by_exact) | set(active) | set(base.own_models)
+        if keys is not None:
+            wanted &= keys
+        out = []
+        for key in wanted:
+            name, source = base.names.get(key, (key, "automatisch"))
+            own = base.own_models.get(key)
+            if own:
+                name, source = own["name"], "eigen"
+            out.append(model_entry(key, name, source, base.pool.by_exact.get(key, []), active.get(key, []),
+                                   own["id"] if own else None))
+        if keys is not None:
+            # Een model zonder advertenties en zonder eigen model (ontkoppeld): leeg terug, zodat de pagina hem bijwerkt.
+            out += [dict(model_entry(k, k, "automatisch", [], []), gone=True) for k in keys - wanted]
+        out.sort(key=lambda m: (-m["lk"], -m["a"], m["n"].lower()))
+        return out
 
 
 # --- Wat per klik vers is -----------------------------------------------------------
@@ -353,6 +726,7 @@ def bike_json(r: Row, f: Fresh) -> dict:
     """Wat de pagina van één fiets nodig heeft; korte sleutels, want het
     zijn er duizenden."""
     l = r.listing
+    ident = r.identity
     mark = f.marks.get(l.item_id)
     dismissed = mr.is_dismissed(mark, l)
     back = (mark is not None and mark.mark == mr.DISMISSED and not dismissed)
@@ -388,13 +762,21 @@ def bike_json(r: Row, f: Fresh) -> dict:
                                           "at": stats.observed_at[:10]},
         "own": f.bought.get(l.item_id, "")[:10] if l.item_id in f.bought else "",
         "promo": l.promotion,
-        "mdl": r.identity.label() if r.identity else "",
-        "grp": (r.identity.group or "") if r.identity else "",
-        "ref": bool(r.identity and r.identity.reference),
+        "mdl": ident.label() if ident else "",
+        "grp": (r.name or ident.name or "") if ident else "",
+        "mk": (ident.exact or "") if ident else "",
+        "src": ident.source if ident else "",
+        "ref": bool(ident and ident.source == "referentie"),
+        "ok": bool(ident and ident.confirmed), "lnk": bool(ident and ident.linked),
+        "yr": ident.year if ident else None, "yo": bool(ident and ident.own_year),
         "lk": r.linked,
-        # Vraagprijs tegen de mediaan van de vergelijkingsfietsen: -25 = 25% goedkoper.
-        "pc": (round((l.price_eur / r.median - 1) * 100) if r.median and l.price_eur else None),
-        "cmp": [[t, p, u, y, g] for t, p, u, y, g in r.comps[:12]],
+        "lv": (bi.LEVEL_LABELS.get(r.level, "") + (" (weinig)" if r.few else "")) if r.level else "",
+        "sv": [r.fast[0], None if r.fast[1] is None else round(r.fast[1])],
+        "tk": [r.for_sale[0], None if r.for_sale[1] is None else round(r.for_sale[1])],
+        # Vraagprijs tegen de schatting (de mediaan van de snel verkochte als
+        # die er genoeg zijn): -25 = 25% goedkoper.
+        "pc": (round((l.price_eur / r.resale - 1) * 100) if r.resale and l.price_eur else None),
+        "cmp": [[t, p, u, y, g, s] for t, p, u, y, g, s in r.comps[:COMPS_SHOWN]], "nc": r.comp_count,
         "ck": (getattr(l, "checked_at", None) or "")[:16],
     }
 
@@ -461,7 +843,19 @@ details.desc div { white-space: pre-wrap; font-size: .88rem; margin-top: 4px; ma
 .dear { color: var(--bad); }
 .bids .st { font-weight: 600; }
 #more { padding: 18px; text-align: center; color: var(--muted); }
-@media (max-width: 760px) { .bike { grid-template-columns: 1fr; } .photos { height: 200px; } }
+.picker { margin-top: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.picker input[name=mq] { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--card); color: var(--text); }
+.plist { max-height: 240px; overflow: auto; margin: 6px 0; }
+.plist button.pick { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--text);
+  padding: 3px 4px; font-size: .88rem; cursor: pointer; border-radius: 4px; }
+.plist button.pick:hover, .plist button.pick:focus { background: var(--badge); }
+#modellist th[data-sort] { cursor: pointer; user-select: none; }
+#modellist .row input { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--card); color: var(--text); }
+.fast { color: var(--good); font-weight: 600; }
+#newmodel, .picker input[name=nieuw] { flex: 1 1 16em; min-width: 0; max-width: 30em; box-sizing: border-box; }
+@media (max-width: 760px) { .bike { grid-template-columns: minmax(0, 1fr); } .photos { height: 200px; } }
 """
 
 JS = r"""
@@ -470,6 +864,8 @@ window.addEventListener('error', e => {
   if (box) { box.hidden = false; box.textContent = 'De pagina kon de fietsen niet tonen: ' + e.message; }
 });
 const BIKES = JSON.parse(document.getElementById('bikes').textContent);
+const MODELS = JSON.parse(document.getElementById('models').textContent);
+const MODEL_PATH = '/racefietsen/model';
 const GONE = JSON.parse(document.getElementById('gone').textContent);
 const REASONS = JSON.parse(document.getElementById('reasons').textContent);
 const STATUSES = JSON.parse(document.getElementById('statuses').textContent);
@@ -483,6 +879,9 @@ const signed = v => v == null ? '—' : (v >= 0 ? '+' : '−') + '€' + Math.ab
 const BATCH = 40;
 let view = 'open', shown = [], drawn = 0, cur = -1;
 const byId = new Map(BIKES.map(b => [b.id, b]));
+const modelByKey = new Map(MODELS.map(m => [m.k, m]));
+// Zoeken zonder accenten en hoofdletters: "emonda" vindt "Émonda".
+const fold = s => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 function state() {
   let s = {};
@@ -503,7 +902,7 @@ function restoreFilters() {
 
 let modelFilter = '';
 function inView(b) {
-  if (modelFilter && b.grp !== modelFilter) return false;
+  if (modelFilter && b.mk !== modelFilter) return false;
   const bid = b.b.length > 0;
   if (view === 'open') return !b.m && !bid && !b.own && !b.res;
   if (view === 'fav') return b.m === 'favoriet';
@@ -540,6 +939,64 @@ const SORTS = {
   cheap: (a, b) => (a.p ?? 1e9) - (b.p ?? 1e9),
 };
 
+const SOURCES = {eigen: 'eigen model', referentie: 'referentiemodel', automatisch: 'herkend uit de titel'};
+function modelLine(b) {
+  if (!b.grp) return '<span class="muted">aan geen model gekoppeld</span>';
+  return `gekoppeld aan <a href="#" data-model="${esc(b.mk)}">${esc(b.grp)}</a> <span class="muted">(${esc(SOURCES[b.src] || b.src)})</span>`
+    + (b.ok ? ' <span class="cheap">✓ gecontroleerd</span>' : '')
+    + ` · ${b.lk} advertentie${b.lk === 1 ? '' : 's'}`;
+}
+// "6 snel verkocht (≤7 d), mediaan €620 · 14 te koop, mediaan €690 — deze €480 (−23%)"
+function compareLine(b) {
+  if (!b.lv) return '';
+  const parts = [];
+  if (b.sv[0]) parts.push(`<span class="fast">${b.sv[0]} snel verkocht</span> (≤7 d), mediaan ${euro(b.sv[1])}`);
+  if (b.tk[0]) parts.push(`${b.tk[0]} te koop, mediaan ${euro(b.tk[1])}`);
+  const cls = b.fg ? '' : b.pc <= -10 ? 'cheap' : b.pc >= 10 ? 'dear' : '';
+  const pc = b.pc == null ? '' : ` — deze ${euro(b.p)} (<strong class="${cls}">${b.pc > 0 ? '+' : b.pc < 0 ? '−' : ''}${Math.abs(b.pc)}%</strong> t.o.v. de schatting)`;
+  return `<div class="why">vergeleken op ${esc(b.lv)}: ${parts.join(' · ') || 'alleen verdwenen advertenties'}${pc}</div>`;
+}
+function fixRow(b) {
+  return '<div class="row fix">'
+    + (b.grp && !b.ok ? '<button class="quiet" data-do="klopt" title="het model klopt">klopt</button>' : '')
+    + '<button class="quiet" data-do="ander" title="toets m">ander model</button>'
+    + `<label>bouwjaar <input name="jaar" value="${b.yo ? esc(b.yr) : ''}" placeholder="${b.yr && !b.yo ? esc(b.yr) : 'onbekend'}" size="5" maxlength="4" inputmode="numeric" aria-label="Bouwjaar"></label>`
+    + '<button class="quiet" data-do="jaar">opslaan</button>'
+    + (b.lnk ? '<button class="quiet" data-do="ontkoppel" title="terug naar wat de advertentie zegt">ontkoppelen</button>' : '')
+    + '</div><div class="picker" hidden></div>';
+}
+function modelSearch(q) {
+  const words = fold(q).split(/\s+/).filter(Boolean);
+  if (!words.length) return MODELS.slice();
+  return MODELS.filter(m => { const n = m._f || (m._f = fold(m.n)); return words.every(w => n.includes(w)); });
+}
+const PICK_MAX = 300;
+function fillPicker(box, q) {
+  const hits = modelSearch(q);
+  box.querySelector('.plist').innerHTML = hits.slice(0, PICK_MAX).map(m => `<button type="button" class="pick" data-do="kies" data-v="${esc(m.n)}">${esc(m.n)} <span class="muted">${m.lk} gekoppeld${m.s === 'eigen' ? ' · eigen' : ''}</span></button>`).join('')
+    + (hits.length > PICK_MAX ? `<div class="muted">nog ${hits.length - PICK_MAX} — typ om te zoeken</div>` : '')
+    + (hits.length ? '' : '<div class="muted">niets gevonden — maak hieronder een nieuw model</div>');
+}
+function openPicker(art) {
+  const box = art.querySelector('.picker');
+  if (!box.hidden) { box.hidden = true; return; }
+  box.innerHTML = '<input type="search" name="mq" placeholder="zoek een model, bv. domane sl6" aria-label="Zoek een model"><div class="plist"></div>'
+    + '<div class="row"><input name="nieuw" size="34" maxlength="80" placeholder="nieuw model: merk model uitvoering, bv. Koga Kinsei Pro" aria-label="Nieuw model">'
+    + '<button class="quiet" data-do="nieuw">aanmaken en koppelen</button></div>';
+  box.hidden = false;
+  fillPicker(box, '');
+  box.querySelector('input[name=mq]').focus();
+}
+function mergeModels(items) {
+  for (const m of items || []) {
+    const i = MODELS.findIndex(x => x.k === m.k);
+    if (m.gone) { if (i >= 0) MODELS.splice(i, 1); modelByKey.delete(m.k); continue; }
+    if (i >= 0) MODELS[i] = m; else MODELS.push(m);
+    modelByKey.set(m.k, m);
+  }
+  if (view === 'models') drawModelRows();
+}
+
 function card(b) {
   const imgs = b.img.length ? b.img.map(u => `<a href="${esc(b.u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`).join('')
     : '<div class="empty"></div>';
@@ -569,7 +1026,9 @@ function card(b) {
     <div>
       <div class="top"><span class="price">${euro(b.p)}</span><span class="muted">${esc(b.pk)}${b.bi ? ' · ' + esc(b.bi) : ''}</span>${km}<span>${badges}</span></div>
       <a class="title" href="${esc(b.u)}" target="_blank" rel="noopener">${esc(b.t)}</a>
-      <div class="link">${b.grp ? `gekoppeld aan <a href="#" data-model="${esc(b.grp)}">${esc(b.grp)}</a>${b.ref ? ' <span class="muted">(referentiemodel)</span>' : ''} · ${b.lk} advertentie${b.lk === 1 ? '' : 's'}` : '<span class="muted">aan geen model gekoppeld</span>'}${b.pc != null ? ` · <strong class="${b.pc <= -10 ? 'cheap' : b.pc >= 10 ? 'dear' : ''}">${b.pc > 0 ? '+' : ''}${b.pc}%</strong> t.o.v. de mediaan` : ''}</div>
+      <div class="link">${modelLine(b)}</div>
+      ${compareLine(b)}
+      ${fixRow(b)}
       <span class="muted">${esc(b.c)}</span>
       <div class="specs">${esc(b.sp) || '<span class="muted">geen specs in de advertentie</span>'}</div>
       <div class="verdicts">${flip}${upg}${vr}</div>
@@ -578,7 +1037,7 @@ function card(b) {
       ${st}
       ${b.back ? `<div class="note">${esc(b.back)}</div>` : ''}
       ${b.no ? `<div class="mynote">${esc(b.no)}</div>` : ''}
-      ${b.cmp.length ? `<details class="desc"><summary>vergeleken met ${b.cmp.length === 12 ? '12+' : b.cmp.length} fietsen</summary><div>${b.cmp.map(c => `<a href="${esc(c[2])}" target="_blank" rel="noopener">${esc(c[0])}</a> — ${euro(c[1])}${c[3] ? ' · ' + c[3] : ''}${c[4] ? ' · verdwenen ' + esc(c[4]) : ''}`).join('<br>')}</div></details>` : ''}
+      ${b.cmp.length ? `<details class="desc"><summary>vergeleken met ${b.nc} fietsen${b.nc > b.cmp.length ? ` (hier ${b.cmp.length}: de snel verkochte en de goedkoopste)` : ''}</summary><div>${b.cmp.map(c => `<a href="${esc(c[2])}" target="_blank" rel="noopener">${esc(c[0])}</a> — ${euro(c[1])}${c[3] ? ' · ' + c[3] : ''}${c[5] ? ' · <span class="fast">snel verkocht</span> ' + esc(c[4]) : c[4] ? ' · verdwenen ' + esc(c[4]) : ''}`).join('<br>')}</div></details>` : ''}
       <details class="desc"><summary>beschrijving</summary><div>${esc(b.d)}</div></details>
       <div class="row">${markBtns}<span class="muted">·</span><button class="quiet" data-do="check">controleer</button>${b.ck ? `<span class="muted">gecontroleerd ${esc(b.ck.replace('T', ' '))}</span>` : ''}</div>
       ${bidRow}
@@ -596,21 +1055,62 @@ function counts() {
     const k = bt.dataset.view; if (k in n) bt.textContent = bt.dataset.label + ' (' + n[k] + ')';
   });
 }
+// De lijst met alle modellen: eigen, referentie en herkend, ook zonder
+// advertenties; zoeken, sorteren op een kolom, en tekenen in porties.
+const MODEL_COLS = [['n', 'Model'], ['a', 'Te koop'], ['lk', 'Gekoppeld'], ['f', 'Snel verkocht'], ['fm', 'Mediaan snel'],
+                    ['m', 'Mediaan vraag'], ['lo', 'Laagste']];
+const MODEL_BATCH = 200;
+let modelSort = 'lk', modelDesc = true, modelRows = [], modelDrawn = 0;
 function drawModels() {
-  // Per model: hoeveel er te koop staan (na de filters), mediaan en laagste prijs.
-  const groups = new Map();
-  BIKES.filter(b => b.grp && passes(b)).forEach(b => {
-    if (!groups.has(b.grp)) groups.set(b.grp, {ref: b.ref, prices: [], lk: b.lk});
-    if (b.p != null) groups.get(b.grp).prices.push(b.p);
+  const box = $('modellist');
+  if (!box.dataset.ready) {
+    box.innerHTML = '<p class="explain">Elke fiets hangt aan een model: merk + model + uitvoering uit de titel ("Trek Domane SL6"), een referentiemodel uit reference_bikes.csv, of een model dat je zelf koppelde of aanmaakte (<em>eigen</em>). Klik op een model om zijn fietsen te zien. <em>Gekoppeld</em> telt ook verdwenen advertenties van de laatste 180 dagen; <em>snel verkocht</em> is binnen 7 dagen verdwenen of gereserveerd en daarna weg.</p>'
+      + '<div class="row"><input id="newmodel" size="40" maxlength="80" placeholder="nieuw model toevoegen: merk model uitvoering, bv. Koga Kinsei Pro" aria-label="Nieuw model"><button class="quiet" id="addmodel">toevoegen</button></div>'
+      + '<div class="row"><input type="search" id="msearch" size="30" placeholder="zoek een model" aria-label="Zoek een model"><span class="muted" id="mcount"></span></div>'
+      + `<div class="table-wrap"><table><thead><tr>${MODEL_COLS.map(([k, l]) => `<th${k === 'n' ? '' : ' class="num"'} data-sort="${k}">${l}</th>`).join('')}</tr></thead><tbody id="mbody"></tbody></table></div>`;
+    box.dataset.ready = '1';
+    $('msearch').addEventListener('input', drawModelRows);
+    $('addmodel').addEventListener('click', addModel);
+    $('newmodel').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addModel(); } });
+    box.querySelector('thead').addEventListener('click', e => {
+      const th = e.target.closest('th[data-sort]'); if (!th) return;
+      if (modelSort === th.dataset.sort) modelDesc = !modelDesc; else { modelSort = th.dataset.sort; modelDesc = modelSort !== 'n'; }
+      drawModelRows();
+    });
+  }
+  drawModelRows();
+}
+function drawModelRows() {
+  if (!$('mbody')) return;
+  const dir = modelDesc ? -1 : 1;
+  modelRows = modelSearch($('msearch').value).sort((x, y) => {
+    if (modelSort === 'n') return dir * fold(x.n).localeCompare(fold(y.n));
+    const a = x[modelSort], b = y[modelSort];
+    if (a == null || b == null) return a == null && b == null ? 0 : a == null ? 1 : -1;  // leeg altijd onderaan
+    return dir * (a - b) || fold(x.n).localeCompare(fold(y.n));
   });
-  const rows = Array.from(groups.entries()).sort((a, b) => b[1].prices.length - a[1].prices.length).map(([g, v]) => {
-    const p = v.prices.slice().sort((x, y) => x - y);
-    const med = p.length ? p[Math.floor(p.length / 2)] : null;
-    return `<tr><td><a href="#" data-model="${esc(g)}">${esc(g)}</a>${v.ref ? ' <span class="muted">referentie</span>' : ''}</td>`
-      + `<td class="num">${p.length}</td><td class="num">${v.lk}</td><td class="num">${euro(med)}</td><td class="num">${euro(p[0])}</td></tr>`;
-  }).join('');
-  $('models').innerHTML = `<p class="explain">Elke fiets hangt aan een referentiemodel uit reference_bikes.csv of anders aan merk + model uit de titel. Klik op een model om alleen die fietsen te zien. <em>Gekoppeld</em> telt ook verdwenen advertenties van de laatste 180 dagen: daarmee wordt vergeleken.</p>`
-    + `<div class="table-wrap"><table><thead><tr><th>Model</th><th class="num">Te koop</th><th class="num">Gekoppeld</th><th class="num">Mediaan</th><th class="num">Laagste</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  $('modellist').querySelectorAll('th[data-sort]').forEach(th => {
+    const label = MODEL_COLS.find(c => c[0] === th.dataset.sort)[1];
+    th.textContent = label + (th.dataset.sort === modelSort ? (modelDesc ? ' ↓' : ' ↑') : '');
+  });
+  $('mbody').innerHTML = ''; modelDrawn = 0;
+  $('mcount').textContent = modelRows.length + ' modellen';
+  drawMoreModels();
+}
+function drawMoreModels() {
+  const html = modelRows.slice(modelDrawn, modelDrawn + MODEL_BATCH).map(m =>
+    `<tr><td><a href="#" data-model="${esc(m.k)}">${esc(m.n)}</a> <span class="muted">${m.s === 'automatisch' ? 'herkend' : esc(m.s)}</span></td>`
+    + `<td class="num">${m.a}</td><td class="num">${m.lk}</td><td class="num">${m.f || ''}</td><td class="num">${m.fm == null ? '' : euro(m.fm)}</td>`
+    + `<td class="num">${euro(m.m)}</td><td class="num">${euro(m.lo)}</td></tr>`).join('');
+  $('mbody').insertAdjacentHTML('beforeend', html);
+  modelDrawn = Math.min(modelDrawn + MODEL_BATCH, modelRows.length);
+  more.hidden = modelDrawn >= modelRows.length;
+  more.textContent = modelDrawn < modelRows.length ? `nog ${modelRows.length - modelDrawn} modellen — scroll verder` : '';
+}
+function addModel() {
+  const input = $('newmodel'), v = input.value.trim();
+  if (!v) { input.focus(); return; }
+  post(MODEL_PATH, {model: v}).then(d => { if (d && d.models) input.value = ''; });
 }
 document.addEventListener('click', e => {
   const a = e.target.closest('a[data-model]'); if (!a) return;
@@ -623,19 +1123,21 @@ document.addEventListener('click', e => {
 function draw() {
   shown = view === 'models' ? [] : BIKES.filter(b => inView(b) && passes(b)).sort(SORTS[$('sort').value] || SORTS.newest);
   list.innerHTML = ''; drawn = 0; cur = -1;
-  $('models').hidden = view !== 'models';
-  if (view === 'models') drawModels();
+  $('modellist').hidden = view !== 'models';
   $('modelchip').hidden = !modelFilter;
-  $('modelchip').innerHTML = modelFilter ? `model: <strong>${esc(modelFilter)}</strong> <button class="quiet" id="nomodel">× alle modellen</button>` : '';
+  const chip = modelFilter ? ((modelByKey.get(modelFilter) || {}).n || (BIKES.find(b => b.mk === modelFilter) || {}).grp || modelFilter) : '';
+  $('modelchip').innerHTML = modelFilter ? `model: <strong>${esc(chip)}</strong> <button class="quiet" id="nomodel">× alle modellen</button>` : '';
   if (modelFilter) $('nomodel').onclick = () => { modelFilter = ''; draw(); };
   $('patterns').hidden = view !== 'patterns';
   $('gonebids').hidden = view !== 'bids' || !GONE.length;
   list.hidden = view === 'patterns' || view === 'models';
   $('count').textContent = view === 'patterns' || view === 'models' ? '' : shown.length + ' fietsen';
-  drawMore(); counts(); remember();
+  if (view === 'models') drawModels(); else drawMore();
+  counts(); remember();
 }
 function drawMore() {
-  if (view === 'patterns' || view === 'models') { more.hidden = true; return; }
+  if (view === 'models') { drawMoreModels(); return; }
+  if (view === 'patterns') { more.hidden = true; return; }
   const html = shown.slice(drawn, drawn + BATCH).map(card).join('');
   list.insertAdjacentHTML('beforeend', html);
   drawn = Math.min(drawn + BATCH, shown.length);
@@ -681,7 +1183,7 @@ function post(path, fields, box) {
   if (box) box.classList.add('busy');
   return fetch(path, {method: 'POST', body, headers: {'X-Live': '1'}})
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
-    .then(data => { if (data.reload) { location.reload(); return; } say(data.message); update(data.bike); return data; })
+    .then(data => { if (data.reload) { location.reload(); return; } say(data.message); if (data.models) mergeModels(data.models); update(data.bike); return data; })
     .catch(() => say('Niet gelukt; ververs de pagina (F5) en probeer het opnieuw.'))
     .finally(() => { if (box) box.classList.remove('busy'); });
 }
@@ -698,6 +1200,17 @@ function act(id, what, value, art) {
     return post('/bod', {item_id: id, bedrag: v}, art);
   }
   if (what === 'status') return post('/bod/status', {item_id: id, status: value}, art);
+  // Het model en het bouwjaar (bike_link): de server rekent alleen deze fiets opnieuw.
+  if (what === 'klopt') return post(MODEL_PATH, {item_id: id, confirm: '1'}, art);
+  if (what === 'ander') return openPicker(art);
+  if (what === 'kies') return post(MODEL_PATH, {item_id: id, model: value}, art);
+  if (what === 'nieuw') {
+    const v = art.querySelector('input[name=nieuw]').value.trim();
+    if (!v) { art.querySelector('input[name=nieuw]').focus(); return; }
+    return post(MODEL_PATH, {item_id: id, model: v}, art);
+  }
+  if (what === 'jaar') return post(MODEL_PATH, {item_id: id, year: art.querySelector('input[name=jaar]').value.trim()}, art);
+  if (what === 'ontkoppel') return post(MODEL_PATH, {item_id: id, clear: '1'}, art);
 }
 list.addEventListener('click', e => {
   const bt = e.target.closest('button[data-do]'); if (!bt) return;
@@ -710,8 +1223,10 @@ list.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.matches('input')) return;
   e.preventDefault();
   const art = e.target.closest('article.bike');
-  act(art.dataset.id, e.target.name === 'bod' ? 'bod' : 'note', null, art);
+  const what = {bod: 'bod', notitie: 'note', jaar: 'jaar', nieuw: 'nieuw'}[e.target.name];
+  if (what) act(art.dataset.id, what, null, art);
 });
+list.addEventListener('input', e => { if (e.target.name === 'mq') fillPicker(e.target.closest('.picker'), e.target.value); });
 document.addEventListener('keydown', e => {
   if (e.target.matches('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) {
     if (e.key === 'Escape') e.target.blur();
@@ -727,6 +1242,7 @@ document.addEventListener('keydown', e => {
   else if (/^[1-9]$/.test(k) && REASONS[+k - 1]) act(id, 'weg', REASONS[+k - 1], art);
   else if (k === 'u') act(id, 'geen', null, art);
   else if (k === 'c') act(id, 'check', null, art);
+  else if (k === 'm') { e.preventDefault(); act(id, 'ander', null, art); }
   else if (k === 'o') window.open(byId.get(id).u, '_blank', 'noopener');
   else if (k === 'b') { e.preventDefault(); art.querySelector('input[name=bod]').focus(); }
   else if (k === 'n') { e.preventDefault(); art.querySelector('input[name=notitie]').focus(); }
@@ -769,7 +1285,9 @@ def page_json(data) -> str:
 def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     import dashboard as dash
 
-    bikes = [bike_json(r, fresh) for r in base.rows]
+    with base.lock:
+        bikes = [bike_json(r, fresh) for r in base.rows]
+        models = model_list(base)
     gone = gone_bids(base, fresh)
     lo, hi = ((base.target_cm - 2, base.target_cm + 2) if base.target_cm else (54, 58))
     notices = ""
@@ -834,13 +1352,15 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         "<div class='keys'>Toetsen: <kbd>j</kbd>/<kbd>↓</kbd> volgende · <kbd>k</kbd>/<kbd>↑</kbd> vorige · "
         f"<kbd>f</kbd> favoriet · <kbd>w</kbd> niet waard · {reasons_keys} · <kbd>u</kbd> terugzetten · "
         "<kbd>b</kbd> bod invullen · <kbd>n</kbd> notitie · <kbd>spatie</kbd> beschrijving · "
-        "<kbd>o</kbd> openen op Marktplaats · <kbd>c</kbd> controleer · <kbd>Esc</kbd> uit een invulveld</div>"
+        "<kbd>o</kbd> openen op Marktplaats · <kbd>c</kbd> controleer · <kbd>m</kbd> ander model · "
+        "<kbd>Esc</kbd> uit een invulveld</div>"
         "</div>"
         "<div id='modelchip' class='row' hidden></div>"
-        f"<div id='list' data-home='{1 if home else 0}'></div><div id='more'></div><section id='models' hidden></section>"
+        f"<div id='list' data-home='{1 if home else 0}'></div><section id='modellist' hidden></section><div id='more'></div>"
         f"<div id='gonebids' hidden><h3>Biedingen op fietsen die niet meer online zijn</h3><ul>{gone_html}</ul></div>"
         f"<section id='patterns' hidden>{vw.patterns_html(base.patterns or vw.ViewPatterns(), 'racefietsen')}</section>"
         f"<script type='application/json' id='bikes'>{page_json(bikes)}</script>"
+        f"<script type='application/json' id='models'>{page_json(models)}</script>"
         f"<script type='application/json' id='gone'>{page_json(gone)}</script>"
         f"<script type='application/json' id='reasons'>{page_json(list(mr.BIKE_REASONS))}</script>"
         f"<script type='application/json' id='statuses'>{page_json(list(ob.STATUSES))}</script>"
@@ -849,8 +1369,22 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
 
 
 def bike_update(base: Base, fresh: Fresh, item_id: str, message: str) -> dict:
-    row = base.row(item_id)
-    return {"message": message, "bike": bike_json(row, fresh) if row else None}
+    with base.lock:
+        row = base.row(item_id)
+        return {"message": message, "bike": bike_json(row, fresh) if row else None}
+
+
+def model_update(base: Base, db_path, form: dict) -> dict:
+    """Het antwoord op MODEL_PATH: de bijgewerkte fiets en de regels van de
+    modellen die veranderden, zodat de pagina zonder herladen klopt."""
+    try:
+        message, row, keys = apply_model(base, db_path, form)
+    except ModelError as exc:
+        return {"message": f"Niet opgeslagen: {exc}"}
+    data = {"message": message, "models": model_list(base, keys)}
+    if row is not None:
+        data["bike"] = bike_json(row, load_fresh(db_path))
+    return data
 
 
 def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
@@ -866,6 +1400,6 @@ def resale_for(db_path, item_id: str) -> Optional[float]:
     listing = next((l for l in listings if l.item_id == item_id), None)
     if listing is None:
         return None
-    resale, _, _, _, _ = estimate(listing, bi.identify(listing), load_pool(db_path, _read_result=read),
-                               val.NEGOTIATION_DEFAULT[1])
-    return None if resale is None else round(resale, 2)
+    est = estimate(listing, bi.identify(listing, read.links.get(item_id)), load_pool(db_path, _read_result=read),
+                   val.NEGOTIATION_DEFAULT[1])
+    return None if est.resale is None else round(est.resale, 2)
