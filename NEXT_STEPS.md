@@ -27,6 +27,14 @@ opmaakt; sneller wordt dat pas met bladeren of alleen de zichtbare rijen
 tekenen (zoals `/racefietsen`), en dat is een ontwerpkeuze voor de eigenaar.
 `/fiets` leest de spec-tabel twee keer (~0,1 s), niet de moeite waard.
 
+## Volgende opdracht: fietsmodellen (01-10-2026)
+
+Uitgeschreven in **`opdrachten/fietsmodellen.md`**: elke racefiets aan een
+fietsmodel (merk + model + uitvoering, generatie = ±2 jaar), zelf corrigeren
+en modellen aanmaken, een lijst met alle modellen, vergelijken met wat binnen
+7 dagen verkocht werd, en later regels leren en bouwjaren ophalen. Migratie
+19 (`bike_model`, `bike_link`) staat al klaar, nog ongebruikt.
+
 ## Alle racefietsen en vergelijken op model (30-09-2026)
 
 - De zoekopdracht `racefietsen` slaat alles op, elke maat en prijs; de ronde

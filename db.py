@@ -512,6 +512,31 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX listing_stats_item ON listing_stats (item_id);
     """,
+    # 19: fietsmodellen die de eigenaar zelf aanmaakt, en zijn eigen koppeling
+    # van een advertentie aan een model (bike_identity.py, /racefietsen). De
+    # herkenning uit de titel gaat vaak goed maar niet altijd, en een model
+    # dat nergens in een lijst staat kon je niet toevoegen (de eigenaar,
+    # 01-10-2026). bike_link: model_id NULL met alleen een jaar = "het model
+    # klopt, dit is het bouwjaar"; confirmed = "klopt" geklikt, voor het
+    # leren van regels later. Eigen tabellen, geen kolommen (zie 17).
+    """
+    CREATE TABLE bike_model (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        brand TEXT,
+        family TEXT,
+        variant TEXT,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE bike_link (
+        item_id TEXT PRIMARY KEY,
+        model_id INTEGER,
+        year INTEGER,
+        confirmed INTEGER NOT NULL DEFAULT 0,
+        set_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -519,6 +544,8 @@ MIGRATIONS: list[str] = [
 FLIP_TABLES = ("flip", "trade_stage", "flip_task", "flip_bid", "flip_photo")
 # And migration 18.
 PLACE_TABLES = ("listing_place", "setting", "own_bid", "listing_stats")
+# And migration 19.
+MODEL_TABLES = ("bike_model", "bike_link")
 
 # A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
 # the first column's name and makes every row look like it is missing that
@@ -1697,3 +1724,54 @@ def export_csv(conn: sqlite3.Connection, path: str, kind: str = "other") -> int:
                 ]
             )
     return len(rows)
+
+
+# --- Own bike models and links (migration 19) -----------------------------------
+
+
+def add_bike_model(conn: sqlite3.Connection, name: str, brand: Optional[str] = None,
+                   family: Optional[str] = None, variant: Optional[str] = None) -> int:
+    """The id of the model with this name, created if it isn't there yet
+    (names compare without regard to case)."""
+    row = conn.execute("SELECT id FROM bike_model WHERE lower(name) = lower(?)", (name,)).fetchone()
+    if row is not None:
+        return row[0]
+    cur = conn.execute(
+        "INSERT INTO bike_model (name, brand, family, variant, created_at) VALUES (?, ?, ?, ?, ?)",
+        (name, brand, family, variant, _now()))
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_bike_models(conn: sqlite3.Connection) -> list[dict]:
+    if not _has_table(conn, "bike_model"):
+        return []
+    cur = conn.execute("SELECT id, name, brand, family, variant, created_at FROM bike_model ORDER BY name")
+    names = [c[0] for c in cur.description]
+    return [dict(zip(names, r)) for r in cur.fetchall()]
+
+
+def set_bike_link(conn: sqlite3.Connection, item_id: str, *, model_id: Optional[int] = None,
+                  year: Optional[int] = None, confirmed: bool = False) -> None:
+    """The owner's link of a listing to a model and/or its year. Nothing set
+    (no model, no year, not confirmed) removes it: back to recognition."""
+    if model_id is None and year is None and not confirmed:
+        conn.execute("DELETE FROM bike_link WHERE item_id = ?", (item_id,))
+    else:
+        conn.execute(
+            "INSERT INTO bike_link (item_id, model_id, year, confirmed, set_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(item_id) DO UPDATE SET model_id = excluded.model_id, year = excluded.year, "
+            "confirmed = excluded.confirmed, set_at = excluded.set_at",
+            (item_id, model_id, year, 1 if confirmed else 0, _now()))
+    conn.commit()
+
+
+def list_bike_links(conn: sqlite3.Connection) -> dict[str, dict]:
+    """{item_id: {model_id, model (name), brand, family, variant, year, confirmed}}."""
+    if not _has_table(conn, "bike_link"):
+        return {}
+    cur = conn.execute(
+        "SELECT l.item_id, l.model_id, m.name AS model, m.brand, m.family, m.variant, l.year, l.confirmed "
+        "FROM bike_link l LEFT JOIN bike_model m ON m.id = l.model_id")
+    names = [c[0] for c in cur.description]
+    return {r[0]: dict(zip(names, r)) for r in cur.fetchall()}
