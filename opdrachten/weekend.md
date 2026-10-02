@@ -149,3 +149,17 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   balk 477 → 107 px, geen horizontaal scrollen op /racefietsen, /flips, /,
   /start; op /flips geen knop meer onder 40 px; op /racefietsen alleen nog
   tekstlinks in lopende tekst. Desktop (1300 px) ongewijzigd.
+- **02-10 — punt 7 (daarna), tussenstand.** Elk een eigen commit, met test:
+  - Sneller (14.000 testadvertenties, uitvoer byte voor byte gelijk):
+    opbouw `/racefietsen` 6,5 → 4,1 s (2c677df, 37914a7, d061da1,
+    b649b18: beginwoorden van de referentiepatronen, `fold()` voor ASCII,
+    de vergelijkingstrap zonder functieaanroepen); een paginaweergave
+    0,95 → 0,5 s (77abb4d) en de pagina 19,2 → 7,9 MB, herladen 1,7 →
+    0,6 s (628948b: de vergelijkingslijst komt bij openklappen).
+  - Mijn flips werkt meteen bij na "geaccepteerd", op /racefietsen
+    (131f3c6) en op de dashboards (0637076).
+  - Fout: spatie opende de vergelijking in plaats van de beschrijving
+    (6cc7626).
+  - `u` in Te beoordelen maakt de laatste markering ongedaan (3d4e303).
+  - Alle 992 tests ook groen op Python 3.14 (rc2; de eigenaar draait 3.14),
+    ook met DeprecationWarning als fout.
