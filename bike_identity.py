@@ -576,40 +576,39 @@ def same_era(a: Identity, b: Identity) -> bool:
     return a.speeds is None or b.speeds is None or a.speeds == b.speeds
 
 
-def close_years(a: Identity, b: Identity) -> bool:
-    return a.year is not None and b.year is not None and abs(a.year - b.year) <= YEAR_WINDOW
-
-
-def same_material(a: Identity, b: Identity) -> bool:
-    return a.material is None or b.material is None or a.material == b.material
-
-
 def _ladder(me: Identity, exact, coarse, build, minimum: int, exclude=None) -> tuple[str, list]:
     # `exclude` hier in elke trede in plaats van vooraf uit elke lijst: de
     # opbouwlijst heeft er duizenden, en meestal slaagt een fijnere trede al.
+    # Bouwjaar ±YEAR_WINDOW (beide bekend) en zelfde materiaal (of een van
+    # beide onbekend) staan hier uitgeschreven in plaats van als functie: het
+    # zijn miljoenen vergelijkingen per opbouw van /racefietsen.
+    year, material = me.year, me.material
+    lo, hi = (year - YEAR_WINDOW, year + YEAR_WINDOW) if year is not None else (1, 0)
     if me.exact:
-        by_year = [c for c in exact if close_years(me, c[0]) and c[2][0] != exclude]
-        if me.year is not None and len(by_year) >= minimum:
+        by_year = [c for c in exact if c[0].year is not None and lo <= c[0].year <= hi and c[2][0] != exclude]
+        if year is not None and len(by_year) >= minimum:
             return "model+jaar", by_year
-        usable = by_year + [c for c in exact if (me.year is None or c[0].year is None) and c[2][0] != exclude]
+        usable = by_year + [c for c in exact if (year is None or c[0].year is None) and c[2][0] != exclude]
         if len(usable) >= minimum:
             return "model", usable
     if me.coarse:
         # Binnen een modelfamilie zitten aluminium en carbon ("Giant Defy" en
         # "Defy Advanced"): daar wel op materiaal, zoals de oude trede.
-        family = [c for c in coarse if same_material(me, c[0]) and c[2][0] != exclude]
-        by_year = [c for c in family if close_years(me, c[0])]
-        if me.year is not None and len(by_year) >= minimum:
+        family = [c for c in coarse if (material is None or c[0].material is None or c[0].material == material)
+                  and c[2][0] != exclude]
+        by_year = [c for c in family if c[0].year is not None and lo <= c[0].year <= hi]
+        if year is not None and len(by_year) >= minimum:
             return "familie+jaar", by_year
-        era = by_year + [c for c in family if (me.year is None or c[0].year is None) and same_era(me, c[0])]
+        era = by_year + [c for c in family if (year is None or c[0].year is None) and same_era(me, c[0])]
         if len(era) >= minimum:
             return "familie+tijdperk", era
-    if me.year is not None and me.material and me.tier is not None and me.disc is not None:
-        same_build = [c for c in build if close_years(me, c[0]) and c[2][0] != exclude]
+    if year is not None and material and me.tier is not None and me.disc is not None:
+        same_build = [c for c in build if c[0].year is not None and lo <= c[0].year <= hi and c[2][0] != exclude]
         if len(same_build) >= minimum:
             return "opbouw+jaar", same_build
-    if me.coarse and me.year is None and me.disc is None:
-        family = [c for c in coarse if same_material(me, c[0]) and c[2][0] != exclude]
+    if me.coarse and year is None and me.disc is None:
+        family = [c for c in coarse if (material is None or c[0].material is None or c[0].material == material)
+                  and c[2][0] != exclude]
         if len(family) >= minimum:
             return "onzeker", family
     return "", []
