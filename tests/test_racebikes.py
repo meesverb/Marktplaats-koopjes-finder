@@ -747,6 +747,8 @@ class LiveTest(Case):
         self.assertEqual(data["message"], dashboard.DB_BUSY)
         with mock.patch.object(rb, "model_update", side_effect=sqlite3.OperationalError("database is locked")):
             self.assertEqual(self.live(rb.MODEL_PATH, {"item_id": "c", "confirm": "1"})["message"], dashboard.DB_BUSY)
+        with mock.patch.object(rb, "reserve_update", side_effect=sqlite3.OperationalError("database is locked")):
+            self.assertEqual(self.live(rb.RESERVE_PATH, {"soorten": "cassette"})["message"], dashboard.DB_BUSY)
 
     def test_spares_choice_and_marking_a_part(self):
         conn = db.connect(self.db)

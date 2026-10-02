@@ -295,6 +295,21 @@ class ServeTest(FlipTest):
         self.assertIn("Cassette", page)
         self.assertIn("€29,95", page)
 
+    def test_only_web_links_become_a_link(self):
+        # Links vult de eigenaar zelf in, ook via de Google Sheet: een
+        # "javascript:"-link zou code worden op een pagina met het token.
+        fl.update_task(self.conn, self.task, url="javascript:alert(1)")
+        fl.update_flip(self.conn, self.trade, sale_url="JavaScript:alert(2)")
+        self.conn.execute("UPDATE trade SET url = 'javascript:alert(3)' WHERE id = ?", (self.trade,))
+        self.conn.commit()
+        _, _, page = self.request("GET", "/flips")
+        self.assertNotIn("href='javascript", page.decode().lower())
+        fl.update_task(self.conn, self.task, url="https://www.futurumshop.nl/cassette")
+        _, _, page = self.request("GET", "/flips")
+        self.assertIn("href='https://www.futurumshop.nl/cassette'", page.decode())
+        self.assertEqual(dashboard.web_link(" https://x.nl"), "")
+        self.assertEqual(dashboard.web_link("HTTP://x.nl"), "HTTP://x.nl")
+
     def test_a_price_and_a_tick_without_reloading(self):
         token = self.token()
         status, _, data = self.request("POST", "/flips/klus", {"token": token, "item_id": self.task, "doe": "prijs",

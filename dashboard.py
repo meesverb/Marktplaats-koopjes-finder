@@ -41,6 +41,7 @@ import argparse
 import hmac
 import html
 import json
+import re
 import secrets
 import sqlite3
 import statistics
@@ -535,6 +536,14 @@ def signed_euro(amount: Optional[float]) -> str:
     return ("+" if amount >= 0 else "") + euro(amount)
 
 
+def web_link(url: Optional[str]) -> str:
+    """De link als hij met http(s):// begint, anders "". Links die de
+    eigenaar zelf invult (Mijn flips, /flips, en via de Google Sheet die in
+    twee richtingen gaat) komen in een href; "javascript:..." zou daar code
+    worden op een pagina met het token."""
+    return url if url and re.match(r"https?://", url, re.I) else ""
+
+
 MONTHS = ("jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec")
 
 
@@ -770,8 +779,8 @@ def bids_panel(d: Dashboard) -> str:
                         f"{listing_cell(l, d, label)}</tr>")
         else:
             when = f"verdwenen {nl_date(t.disappeared_at)}" if t.gone else f"laatst gezien {nl_date(t.last_seen)}"
-            link = (f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
-                    if t.url else esc(t.title))
+            link = (f"<a href='{esc(web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
+                    if web_link(t.url) else esc(t.title))
             rows.append(f"<tr><td class='pic'></td><td class='num'>{euro(t.price_eur)}</td><td class='num'>—</td>"
                         f"<td class='what'>{link}<div class='note'>{esc(when)}</div>"
                         f"<div class='mine' data-item='{esc(t.item_id, quote=True)}'>"
@@ -1197,8 +1206,8 @@ def market_panel(d: Dashboard) -> str:
 def _vinted_thumb(item: vn.VintedItem) -> str:
     if not item.row.image_url:
         return "<div class='thumb empty' aria-hidden='true'></div>"
-    return (f"<a href='{esc(item.row.url, quote=True)}' target='_blank' rel='noopener'>"
-            f"<img class='thumb' src='{esc(item.row.image_url, quote=True)}' alt='' loading='lazy'></a>")
+    return (f"<a href='{esc(web_link(item.row.url), quote=True)}' target='_blank' rel='noopener'>"
+            f"<img class='thumb' src='{esc(web_link(item.row.image_url), quote=True)}' alt='' loading='lazy'></a>")
 
 
 def _vinted_cell(item: vn.VintedItem, label: str) -> str:
@@ -1207,7 +1216,7 @@ def _vinted_cell(item: vn.VintedItem, label: str) -> str:
              "zakelijke verkoper" if item.row.is_business else ""]
     muted = " · ".join(x for x in extra if x)
     return (f"<td class='what'><div class='model'>{new}{esc(label)}</div>"
-            f"<a href='{esc(item.row.url, quote=True)}' target='_blank' rel='noopener'>{esc(item.row.title)}</a>"
+            f"<a href='{esc(web_link(item.row.url), quote=True)}' target='_blank' rel='noopener'>{esc(item.row.title)}</a>"
             f"{f'<span class=muted> · {esc(muted)}</span>' if muted else ''}</td>")
 
 
@@ -1412,8 +1421,8 @@ def mine_panel(d: Dashboard) -> str:
                     "<option>anders</option></select><button>Verkocht</button></form>"
                     + delete_form(d, t.id)
                 )
-            link = (f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
-                    if t.url else esc(t.title))
+            link = (f"<a href='{esc(web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
+                    if web_link(t.url) else esc(t.title))
             rows.append(
                 "<tr>"
                 f"<td class='what'><div class='model'>{esc(t.model or 'model onbekend')}</div>{link}"
@@ -1443,8 +1452,8 @@ def mine_panel(d: Dashboard) -> str:
                     f"{hidden(d, id=t.id)}<button class='quiet'>terug naar voorraad</button></form>"
                     + delete_form(d, t.id)
                 )
-            link = (f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
-                    if t.url else esc(t.title))
+            link = (f"<a href='{esc(web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
+                    if web_link(t.url) else esc(t.title))
             vs = ""
             if t.expected_resale_eur:
                 vs = f"<div class='sub'>verwacht {euro(t.expected_resale_eur)}</div>"
@@ -2470,8 +2479,8 @@ def flip_task_row(k: fl.Task) -> str:
     if k.price_source in fl.SOURCES:
         facts.append(f"<span class='badge{' est' if k.price_source == 'schatting' else ''}'>"
                      f"{esc(fl.SOURCES[k.price_source])}</span>")
-    if k.url:
-        facts.append(f"<a href='{esc(k.url, quote=True)}' target='_blank' rel='noopener'>link</a>")
+    if web_link(k.url):
+        facts.append(f"<a href='{esc(web_link(k.url), quote=True)}' target='_blank' rel='noopener'>link</a>")
     if k.notes:
         facts.append(esc(k.notes))
     offers = flip_offers(k) if k.kind == "onderdeel" else ""
@@ -2521,7 +2530,8 @@ def flip_offers(k: fl.Task) -> str:
     items = []
     for o in k.offers:
         chosen = (o.url == k.url) if o.url else (o.shop == k.shop and o.total_eur == k.est_eur)
-        link = (f"<a href='{esc(o.url, quote=True)}' target='_blank' rel='noopener'>{esc(o.domain)}</a>" if o.url
+        link = (f"<a href='{esc(web_link(o.url), quote=True)}' target='_blank' rel='noopener'>{esc(o.domain)}</a>"
+                if web_link(o.url)
                 else "<span class='badge est'>geen link</span>")
         ship = (f" + {flip_money(o.shipping_eur)} verzending = {flip_money(o.total_eur)}" if o.shipping_eur
                 else (" incl. verzending" if o.shipping_eur == 0 else ""))
@@ -2709,10 +2719,12 @@ def flip_card(f: fl.Flip) -> str:
     days = f.days_in_stage
     since = f" · {days} dag{'en' if days != 1 else ''}" if days is not None else ""
     links = []
-    if t.url:
-        links.append(f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>gekocht via deze advertentie</a>")
-    if f.sale_url:
-        links.append(f"<a href='{esc(f.sale_url, quote=True)}' target='_blank' rel='noopener'>jouw advertentie</a>")
+    if web_link(t.url):
+        links.append(f"<a href='{esc(web_link(t.url), quote=True)}' target='_blank' rel='noopener'>"
+                     "gekocht via deze advertentie</a>")
+    if web_link(f.sale_url):
+        links.append(f"<a href='{esc(web_link(f.sale_url), quote=True)}' target='_blank' rel='noopener'>"
+                     "jouw advertentie</a>")
     meta = [esc(f.kind_label), f"gekocht {esc(nl_date(t.bought_at))}", *links]
     views_html = flip_views(f)
     cover = next((p for p in reversed(f.photos) if p["kind"] == "na"), f.photos[0] if f.photos else None)
@@ -3241,7 +3253,6 @@ def flip_action_new(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
         url = url.split("?")[0].split("#")[0]
     item_id = None
     if url:
-        import re
         found = re.search(r"/(m\d{6,})", url)
         item_id = found.group(1) if found else None
     conn = db.connect(str(db_path))
@@ -4152,7 +4163,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                                  keep_blank_values=True).items()}
             if not hmac.compare_digest(form.get("token", ""), self.token):
                 return self._json({"message": "De pagina was verouderd; er is niets opgeslagen.", "reload": True})
-            return self._json(rb.reserve_update(self.db_path, form))
+            try:
+                return self._json(rb.reserve_update(self.db_path, form))
+            except sqlite3.OperationalError as exc:
+                if not db_busy(exc):
+                    raise
+                return self._json({"message": DB_BUSY})
         if path in (rb.MODEL_PATH, rb.RULE_PATH):
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_FORM_BYTES:
