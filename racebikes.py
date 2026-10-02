@@ -1428,8 +1428,21 @@ function post(path, fields, box) {
     .catch(() => say('Niet gelukt; ververs de pagina (F5) en probeer het opnieuw.'))
     .finally(() => { if (box) box.classList.remove('busy'); });
 }
+// De laatst gemarkeerde fiets: u zet die terug als de fiets onder de cursor
+// niets heeft (in Te beoordelen verdwijnt een gemarkeerde fiets meteen).
+let lastMarked = null;
+function reinsert(b, before) {
+  if (el(b.id) || !(inView(b) && passes(b)) || !before || !before.isConnected) return;
+  const at = shown.findIndex(x => x.id === before.dataset.id);
+  if (at < 0) return;
+  shown.splice(at, 0, b); drawn++;
+  before.insertAdjacentHTML('beforebegin', card(b));
+  $('count').textContent = shown.length + ' fietsen';
+  focusAt(at);
+}
 function act(id, what, value, art) {
   const b = byId.get(id); if (!b) return;
+  if (what === 'fav' || what === 'weg') lastMarked = id;
   if (what === 'fav') return post('/markeer', {item_id: id, soort: 'favoriet'}, art);
   if (what === 'weg') return post('/markeer', {item_id: id, soort: value}, art);
   if (what === 'geen') return post('/markeer', {item_id: id, soort: 'geen'}, art);
@@ -1499,7 +1512,12 @@ document.addEventListener('keydown', e => {
   if (k === 'f') act(id, byId.get(id).m === 'favoriet' ? 'geen' : 'fav', null, art);
   else if (k === 'w') act(id, 'weg', REASONS[0], art);
   else if (/^[1-9]$/.test(k) && REASONS[+k - 1]) act(id, 'weg', REASONS[+k - 1], art);
-  else if (k === 'u') act(id, 'geen', null, art);
+  else if (k === 'u') {
+    const target = byId.get(id).m || !lastMarked || !byId.get(lastMarked) ? id : lastMarked;
+    lastMarked = null;
+    const done = act(target, 'geen', null, el(target) || art);
+    if (target !== id && done) done.then(data => { if (data && data.bike) reinsert(data.bike, art); });
+  }
   else if (k === 'c') act(id, 'check', null, art);
   else if (k === 'm') { e.preventDefault(); act(id, 'ander', null, art); }
   else if (k === 'o') window.open(byId.get(id).u, '_blank', 'noopener');
@@ -1707,7 +1725,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         "<label><input type='checkbox' id='new'> alleen nieuw</label>"
         "<span class='muted' id='count'></span></div>"
         "<div class='keys'>Toetsen: <kbd>j</kbd>/<kbd>↓</kbd> volgende · <kbd>k</kbd>/<kbd>↑</kbd> vorige · "
-        f"<kbd>f</kbd> favoriet · <kbd>w</kbd> niet waard · {reasons_keys} · <kbd>u</kbd> terugzetten · "
+        f"<kbd>f</kbd> favoriet · <kbd>w</kbd> niet waard · {reasons_keys} · <kbd>u</kbd> terugzetten (of de laatste ongedaan) · "
         "<kbd>b</kbd> bod invullen · <kbd>n</kbd> notitie · <kbd>spatie</kbd> beschrijving · "
         "<kbd>o</kbd> openen op Marktplaats · <kbd>c</kbd> controleer · <kbd>m</kbd> ander model · "
         "<kbd>Esc</kbd> uit een invulveld</div>"

@@ -1432,7 +1432,9 @@ maximum price, maximum distance, *gereserveerd*, *alleen nieuw*. The page
 remembers your view and filters (per browser).
 
 Keys: **j**/**↓** next, **k**/**↑** previous, **f** favourite, **w** not worth
-it, **1**-**6** put away with a reason, **u** put back, **b** enter a bid,
+it, **1**-**6** put away with a reason, **u** put back (the bike under the cursor;
+if that has no mark — in Te beoordelen a marked bike leaves the list at once —
+it undoes your last marking and puts that bike back), **b** enter a bid,
 **n** note, **space** description, **o** open on Marktplaats, **c**
 controleer, **m** another model, **Esc** out of a field. The reasons to put a bike away are *niet
 waard*, *gereserveerd*, *niet doorverkoopbaar*, *te hoge vraagprijs*,
