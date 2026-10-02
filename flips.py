@@ -896,12 +896,27 @@ def _task_values(item: dict) -> tuple[str, str, dict]:
     return values.pop("kind", "onderdeel"), values.pop("title", ""), values
 
 
+def _read_json(path) -> dict:
+    """Een importbestand: een object met "flips" (en eventueel
+    "investeringen"). Wat anders is, wordt een ValueError met uitleg in
+    plaats van een traceback halverwege."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"kan {path} niet lezen ({exc.strerror or exc})") from None
+    if not isinstance(data, dict) or not all(isinstance(x, dict) for key in ("flips", "investeringen")
+                                             for x in data.get(key) or []):
+        raise ValueError(f'{path} is geen importbestand: verwacht {{"flips": [{{...}}, ...]}}, '
+                         "zie flips_import/cube_peloton_pro.json")
+    return data
+
+
 def import_file(conn, path) -> list[str]:
     """Flips, hun klussen en losse investeringen uit een JSON-bestand (zie
     flips_import/cube_peloton_pro.json). Een flip met dezelfde titel of
     link die er al is wordt overgeslagen, net als een investering met
     dezelfde naam: twee keer inlezen dubbelt niets."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data = _read_json(path)
     done = []
     existing = {(r["title"], r["url"]) for r in db.list_trades(conn)}
     titles = {t for t, _ in existing}
@@ -950,7 +965,7 @@ def update_file(conn, path) -> list[str]:
     onder "flip" (of bij "investeringen" onder de losse investeringen). Wat
     al gekocht is (een echte prijs) blijft staan: dan is het aanbod te laat.
     Wat niet gevonden wordt, zegt de uitvoer; er komt niets bij."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data = _read_json(path)
     trades = {r["title"]: r["id"] for r in db.list_trades(conn)}
     done = []
 

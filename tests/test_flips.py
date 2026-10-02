@@ -234,6 +234,33 @@ class OfferTest(FlipTest):
         self.assertEqual(len(fl.load_book(self.db).get(self.trade).tasks[0].offers), 1)
         self.assertIsNone(fl.delete_offer(self.conn, dear))
 
+    def test_what_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "onbekende regel"):
+            fl.add_offer(self.conn, 999, url="https://x.nl/a", price_eur=1.0)
+        with self.assertRaisesRegex(ValueError, "onbekende bron"):
+            fl.add_offer(self.conn, self.task, url="https://x.nl/a", price_eur=1.0, source="gok")
+        self.assertIsNone(fl.choose_offer(self.conn, 999))
+        self.assertEqual(fl.clean_url("https://www.marktplaats.nl/v/x/m1-fiets?_gl=1&c=2#top"),
+                         "https://www.marktplaats.nl/v/x/m1-fiets")
+        self.assertEqual(fl.shop_from_url(""), "")
+        path = self.dir / "bijwerken.json"
+        path.write_text(json.dumps({"flips": [{"flip": "Cube", "klussen": [
+            {"titel": "Ketting KMC X10", "aanbiedingen": [{"prijs": 9, "kleur": "rood"}]}]}]}))
+        with self.assertRaisesRegex(ValueError, "onbekende sleutels"):
+            fl.update_file(self.conn, path)
+        # Een verkeerd bestand: een uitleg, geen traceback.
+        path.write_text(json.dumps([{"titel": "Cube"}]))
+        for read in (fl.update_file, fl.import_file):
+            with self.assertRaisesRegex(ValueError, "geen importbestand"):
+                read(self.conn, path)
+            with self.assertRaisesRegex(ValueError, "niet lezen"):
+                read(self.conn, self.dir / "bestaat-niet.json")
+        import io
+        from contextlib import redirect_stderr
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(fl.main(["--db", self.db, "bijwerken", str(path)]), 1)
+        self.assertIn("geen importbestand", err.getvalue())
+
     def test_links(self):
         with self.assertRaisesRegex(ValueError, "http"):
             fl.add_offer(self.conn, self.task, url="bike24.nl/p/1", price_eur=10.0)
