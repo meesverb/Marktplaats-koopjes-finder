@@ -115,7 +115,9 @@ def needles(pattern: str) -> Optional[frozenset]:
 
 @lru_cache(maxsize=None)
 def reference_index(path: str = str(REFERENCE_PATH)) -> tuple:
-    return tuple((row["label"], row["regex"], needles(row["regex"].pattern)) for row in reference_rows(path))
+    """(patronen als (label, regex, beginwoorden), alle beginwoorden)."""
+    rows = tuple((row["label"], row["regex"], needles(row["regex"].pattern)) for row in reference_rows(path))
+    return rows, tuple(sorted({w for _, _, words in rows if words for w in words}))
 
 
 def reference_model(listing: mp.Listing) -> Optional[str]:
@@ -126,8 +128,10 @@ def reference_model(listing: mp.Listing) -> Optional[str]:
     opbouw van /racefietsen."""
     haystack = f"{listing.title} {listing.description}"
     low = haystack.lower()
-    for label, regex, words in reference_index():
-        if words is not None and not any(w in low for w in words):
+    rows, all_words = reference_index()
+    present = {w for w in all_words if w in low}  # één keer per tekst, niet per patroon
+    for label, regex, words in rows:
+        if words is not None and words.isdisjoint(present):
             continue
         if regex.search(haystack):
             return label
