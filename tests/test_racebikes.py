@@ -695,6 +695,49 @@ class YearLookupTest(Case):
         self.assertIn("paginastructuur gewijzigd", lines[-1])
         self.assertEqual([t.item_id for t in rb.plan_years(self.db, 20)], ["c"])  # niets opgeslagen: volgende keer weer
 
+    def test_views_and_likes_come_along(self):
+        # Dezelfde pagina heeft weergaven en likes: die gaan mee (views.py),
+        # zonder extra verzoek.
+        import views as vw
+        stats = {"listing": {"itemId": "c", "stats": {"viewCount": 41, "favoritedCount": 3,
+                                                     "since": "2026-09-27T12:00:00Z"}}}
+        page = self.PAGE.replace("</body>", f"<script>window.__CONFIG__ = {json.dumps(stats)};</script></body>")
+        rb.lookup_years(self.db, 20, session=self.session({BIKE_URL.format("c"): page}), log=lambda _: None)
+        latest = vw.load_latest(self.db)["c"]
+        self.assertEqual((latest.views, latest.favorites), (41, 3))
+
+    def test_three_failures_in_a_row_stop_the_round(self):
+        import requests
+        conn = db.connect(self.db)
+        # Vier goedkope erbij, en genoeg dure dat de schatting niet zakt.
+        more = ([bike(f"c{i}", 200.0 + i, title="Cube Attain racefiets") for i in range(4)]
+                + [bike(f"d{i}", 700.0, title="Cube Attain racefiets") for i in range(8)])
+        db.sync_listings(conn, "racefiets", more, self.now.isoformat())
+        conn.close()
+        self.assertGreaterEqual(len(rb.plan_years(self.db, 20)), 4)
+
+        class Down:
+            requested = []
+            headers = {}
+
+            def get(self, url, timeout=0):
+                self.requested.append(url)
+                raise requests.ConnectionError("geen verbinding")
+
+        lines, down = [], Down()
+        rb.lookup_years(self.db, 20, session=down, log=lines.append)
+        self.assertEqual(len(down.requested), 3)
+        self.assertIn("drie keer achter elkaar", lines[-1])
+        self.assertIn("niet opgehaald (geen verbinding)", lines[-2])
+        # Een serverfout telt ook als mislukt, en de volgende ronde probeert het weer.
+        from helpers import FakeResponse
+        lines = []
+        error = self.session({BIKE_URL.format("c0"): FakeResponse("", status_code=500)})
+        rb.lookup_years(self.db, 1, session=error, log=lines.append)  # c0 is de goedkoopste
+        self.assertEqual(error.requested, [BIKE_URL.format("c0")])
+        self.assertIn("niet opgehaald (HTTP 500)", lines[-1])
+        self.assertIn("c0", [t.item_id for t in rb.plan_years(self.db, 20)])
+
     def test_by_hand_at_most_twenty(self):
         import io
         from contextlib import redirect_stderr
