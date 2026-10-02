@@ -87,6 +87,43 @@ class PlanTest(Case):
         self.assertEqual({t.why for t in later if t.item_id in sampled}, {"steekproef 7 d"})
         self.assertIn("eigen advertentie", {t.why for t in later})
 
+    def test_a_round_measures_logs_and_stops_after_three_failures(self):
+        # Wat koopjes.py elke ronde draait (measure_round): plannen, meten,
+        # loggen; drie mislukte op rij en hij houdt op.
+        import requests
+        ids = ["m2001", "m2002", "m2003", "m2004"]
+        listings = self.bikes(*ids)
+        for i in ids:
+            db.set_mark(self.conn, i, "favoriet")
+        self.conn.commit()
+        lines = []
+        pages = {l.url: listing_page(views=10 + n, favorites=n) for n, l in enumerate(listings)}
+        self.assertEqual(vw.measure_round(self.db, 10, session=FakeSession(pages), log=lines.append), 4)
+        self.assertIn("4 advertentie(s)", lines[0])
+        self.assertTrue(all("bekeken" in line for line in lines[1:]))
+        self.assertEqual(vw.measure_round(self.db, 0, session=FakeSession(pages), log=lines.append), 0)
+
+        class Down:
+            headers = {}
+            requested = []
+
+            def get(self, url, timeout=0):
+                self.requested.append(url)
+                raise requests.ConnectionError("geen verbinding")
+
+        for i in ids:  # opnieuw aan de beurt
+            self.conn.execute("DELETE FROM listing_stats WHERE item_id = ?", (i,))
+        self.conn.commit()
+        lines, down = [], Down()
+        self.assertEqual(vw.measure_round(self.db, 10, session=down, log=lines.append), 3)
+        self.assertEqual(len(down.requested), 3)
+        self.assertIn("drie keer achter elkaar", lines[-1])
+        # Een gewijzigde pagina telt ook als mislukt.
+        lines = []
+        changed = FakeSession({l.url: "<html>anders</html>" for l in listings})
+        self.assertEqual(vw.measure_round(self.db, 10, session=changed, log=lines.append), 3)
+        self.assertIn("paginastructuur gewijzigd", lines[-2])
+
     def test_measure_records_and_a_gone_listing_is_marked(self):
         a, b = self.bikes("m1001", "m1002")
         session = FakeSession({a.url: listing_page(views=40, favorites=2), b.url: FakeResponse("", 410)})
