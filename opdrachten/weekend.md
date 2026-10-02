@@ -175,7 +175,9 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
     (4bc9aac).
   - Meer tests waar de dekkingsmeting gaten liet: bouwjaar opzoeken bij
     netwerk- en serverfouten (0db92eb); een open sqlite-verbinding in een
-    test (5f9edf1). Nu 1001 tests.
+    test (5f9edf1); een ronde weergaven/likes meten (9dde511); de knoppen
+    op een flipkaart en per regel door de server heen (d0a92d4, 6b6d275).
+    Nu 1004 tests.
 - **02-10 — de eigenaar zag "database is locked" opnieuw.** Zijn regelnummers
   (dashboard.py 3962/3485, db.py 1427) zijn die van `main`: daar zit de fix
   (44b2f79, op de branch) nog niet in. Hem gezegd de branch nu al te mergen
