@@ -204,3 +204,8 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - **02-10 — koppelen, regel en ontkoppelen samen nagelopen.** Het gedrag
   klopte (een regel blijft gelden na ontkoppelen), de melding niet; die is
   aangepast, met een test.
+- **02-10 — tijdbom in de tests.** De suite gedraaid met de klok 30, 170,
+  400 en 1500 dagen vooruit (pure-Python `datetime` met een verschoven
+  `time.time()`): vijf tests in `test_upgrade.py` zouden vanaf februari 2027
+  falen door een vaste datum. Nu relatief aan vandaag; groen tot vier jaar
+  vooruit.
