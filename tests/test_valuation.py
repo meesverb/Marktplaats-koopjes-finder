@@ -682,3 +682,20 @@ class ReviewFixesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissingDatabaseTest(unittest.TestCase):
+    def test_a_typo_in_the_path_makes_no_empty_database(self):
+        # db.connect() maakt een database aan als hij er niet is; bij een
+        # tikfout in --db gaf dat stil een lege koopjes.db.
+        import tempfile
+        import upgrade
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "kopjes.db"
+            for main in (val.main, upgrade.main):
+                err = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                    code = main(["--db", str(path), "--mijn-fiets", repo_file("mijn_fiets.md")])
+                self.assertEqual(code, 1)
+                self.assertIn("bestaat niet", err.getvalue())
+                self.assertFalse(path.exists())

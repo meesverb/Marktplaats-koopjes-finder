@@ -39,6 +39,7 @@ import statistics
 import sys
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, Sequence
 
 import db
@@ -1028,6 +1029,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     # een tussenstand van deze draai, geen taxatie van de fiets — die hoort bij
     # valuation.py, en twee plekken die in `valuation` schrijven zouden alleen
     # maar rijen opleveren die elkaar tegenspreken.
+    if not Path(args.db).exists():
+        # Anders maakte db.connect() bij een tikfout stil een lege database aan.
+        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+        return 1
     conn = db.connect(args.db)
     try:
         comps = val.fetch_comp_candidates(conn, window_days=args.window_days, query=args.query)
