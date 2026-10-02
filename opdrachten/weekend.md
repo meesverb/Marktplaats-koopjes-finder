@@ -201,3 +201,6 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - **02-10 — reservelijst nagelopen** op 31 soorten titels: houders,
   schoenen en gereedschap direct achter een onderdeel tellen niet meer
   (zie de commit hierboven).
+- **02-10 — koppelen, regel en ontkoppelen samen nagelopen.** Het gedrag
+  klopte (een regel blijft gelden na ontkoppelen), de melding niet; die is
+  aangepast, met een test.
