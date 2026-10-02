@@ -198,3 +198,6 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   nog onder het slot van de hele cache; met het vooruitrekenen op de
   achtergrond liet dat een verzoek naar een dashboard dat al klaarstond
   wachten (gemeten 0,6 s in een test, nu direct).
+- **02-10 — reservelijst nagelopen** op 31 soorten titels: houders,
+  schoenen en gereedschap direct achter een onderdeel tellen niet meer
+  (zie de commit hierboven).
