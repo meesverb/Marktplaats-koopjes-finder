@@ -2136,7 +2136,8 @@ def live_update(d: Dashboard, item_id: str, message: str, choice: Optional[str] 
     row = next(((l, label) for l, label, _ in d.all_rows if l.item_id == item_id), None)
     wanted = {"favorieten"}
     if bids_changed:
-        wanted.add("biedingen")
+        # Geaccepteerd maakt een eigen aankoop: Mijn flips (een handvol rijen) mee.
+        wanted |= {"biedingen", "mijn"}
     if row is None and item_id in d.bids:
         # Een bod op een advertentie die niet meer online is (alleen in Mijn biedingen).
         out["item"] = {"id": item_id, "badge": "", "mine": bid_control(item_id, d), "mark": "", "note": 0,
@@ -2154,7 +2155,7 @@ def live_update(d: Dashboard, item_id: str, message: str, choice: Optional[str] 
                 wanted.add("upgrades")
     out["tabs"].update(view_tab_labels(d))
     for name, label, panel in tab_list(d):
-        if name in ("flips", "upgrades", "favorieten", "biedingen"):
+        if name in ("flips", "upgrades", "favorieten", "biedingen", "mijn"):
             out["tabs"][name] = label
         if name in wanted:
             out["panels"][name] = panel(d)

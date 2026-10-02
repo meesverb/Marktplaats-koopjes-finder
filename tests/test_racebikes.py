@@ -833,6 +833,12 @@ class LiveTest(Case):
         self.assertIn("biedingen", data["panels"])
         self.assertEqual(data["tabs"]["biedingen"], "Mijn biedingen (1)")
         self.assertIn("jouw bod €70", data["item"]["mine"])
+        # Geaccepteerd maakt een eigen aankoop: Mijn flips komt meteen mee.
+        status, _, text = self.request("POST", "/bod/status", {"token": token, "item_id": "g", "status": "geaccepteerd"},
+                                       live=True)
+        data = json.loads(text)
+        self.assertIn("Garmin Edge 530", data["panels"]["mijn"])
+        self.assertIn("mijn", data["tabs"])
 
     def test_postcode_sets_the_distances(self):
         with mock.patch.object(dm, "locate_postcode", return_value=dm.Home("3511AB", 52.0952, 5.1161)) as found:
