@@ -840,6 +840,24 @@ class LiveTest(Case):
         self.assertIn("Garmin Edge 530", data["panels"]["mijn"])
         self.assertIn("mijn", data["tabs"])
 
+    def test_the_comparison_list_comes_when_you_open_it(self):
+        # In de pagina was de vergelijkingslijst twee derde van alles; hij
+        # komt nu pas van de server als je hem openklapt.
+        _, _, page = self.request("GET", rb.PATH)
+        bikes = json.loads(re.search(r"id='bikes'>(.*?)</script>", page).group(1).replace("<\\/", "</"))
+        c = next(b for b in bikes if b["id"] == "c")
+        self.assertNotIn("cmp", c)
+        self.assertGreater(c["nc"], 0)
+        self.assertIn(f"const COMPS_PATH = '{rb.COMPS_PATH}', COMPS_SHOWN = {rb.COMPS_SHOWN};", page)
+        status, _, text = self.request("GET", rb.COMPS_PATH + "?id=c")
+        self.assertEqual(status, 200)
+        comps = json.loads(text)["cmp"]
+        self.assertEqual(len(comps), min(c["nc"], rb.COMPS_SHOWN))
+        self.assertTrue(all(len(x) == 6 and x[2].startswith("https://") for x in comps))
+        self.assertIsNone(json.loads(self.request("GET", rb.COMPS_PATH + "?id=bestaat-niet")[2])["cmp"])
+        # Een klik geeft de hele fiets terug, met de lijst erbij.
+        self.assertIn("cmp", self.live("/notitie", {"item_id": "c", "notitie": "x"})["bike"])
+
     def test_postcode_sets_the_distances(self):
         with mock.patch.object(dm, "locate_postcode", return_value=dm.Home("3511AB", 52.0952, 5.1161)) as found:
             status, where, _ = self.request("POST", "/afstand", {"token": self.token(), "markt": rb.MARKET_KEY,

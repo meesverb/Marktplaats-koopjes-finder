@@ -81,6 +81,7 @@ FLIP_MARKET = "fietsen"
 MODEL_PATH = PATH + "/model"
 RULE_PATH = PATH + "/regel"
 RESERVE_PATH = PATH + "/reserves"
+COMPS_PATH = PATH + "/vergelijk"  # GET ?id=: de vergelijkingslijst van één fiets
 # Snel verkocht: binnen zoveel dagen na de eerste keer gezien verdwenen, of
 # gereserveerd en daarna verdwenen (de eigenaar, 01-10-2026). Verdwenen
 # wordt pas na een complete crawl vastgesteld (de zondagronde), dus de
@@ -849,9 +850,17 @@ def price_kind(l: mp.Listing) -> str:
     return pc.price_kind(l)
 
 
-def bike_json(r: Row, f: Fresh) -> dict:
+def comps_json(r: Row) -> list:
+    """De fietsen waarmee hij vergeleken is (hooguit COMPS_SHOWN) als
+    [titel, prijs, url, jaar, verdwenen, snel verkocht]."""
+    return [[t, p, u, y, g, s] for t, p, u, y, g, s in r.comps[:COMPS_SHOWN]]
+
+
+def bike_json(r: Row, f: Fresh, comps: bool = True) -> dict:
     """Wat de pagina van één fiets nodig heeft; korte sleutels, want het
-    zijn er duizenden."""
+    zijn er duizenden. `comps`: met de vergelijkingslijst; de pagina zelf
+    laat hem weg en haalt hem op als je hem openklapt (COMPS_PATH): twee
+    derde van de pagina was die lijst, bij 14.000 fietsen 11 MB."""
     l = r.listing
     ident = r.identity
     mark = f.marks.get(l.item_id)
@@ -903,7 +912,7 @@ def bike_json(r: Row, f: Fresh) -> dict:
         # Vraagprijs tegen de schatting (de mediaan van de snel verkochte als
         # die er genoeg zijn): -25 = 25% goedkoper.
         "pc": (round((l.price_eur / r.resale - 1) * 100) if r.resale and l.price_eur else None),
-        "cmp": [[t, p, u, y, g, s] for t, p, u, y, g, s in r.comps[:COMPS_SHOWN]], "nc": r.comp_count,
+        "nc": r.comp_count, **({"cmp": comps_json(r)} if comps else {}),
         "ck": (getattr(l, "checked_at", None) or "")[:16],
     }
 
@@ -1015,6 +1024,7 @@ const BIKES = JSON.parse(document.getElementById('bikes').textContent);
 const MODELS = JSON.parse(document.getElementById('models').textContent);
 let RULES = JSON.parse(document.getElementById('rules').textContent);
 const MODEL_PATH = '/racefietsen/model', RULE_PATH = '/racefietsen/regel', RESERVE_PATH = '/racefietsen/reserves';
+const COMPS_PATH = '/racefietsen/vergelijk', COMPS_SHOWN = 12;
 const SPARES = JSON.parse(document.getElementById('spares').textContent);
 const GONE = JSON.parse(document.getElementById('gone').textContent);
 const REASONS = JSON.parse(document.getElementById('reasons').textContent);
@@ -1236,7 +1246,7 @@ function card(b) {
       ${st}
       ${b.back ? `<div class="note">${esc(b.back)}</div>` : ''}
       ${b.no ? `<div class="mynote">${esc(b.no)}</div>` : ''}
-      ${b.cmp.length ? `<details class="desc"><summary>vergeleken met ${b.nc} fietsen${b.nc > b.cmp.length ? ` (hier ${b.cmp.length}: de snel verkochte en de goedkoopste)` : ''}</summary><div>${b.cmp.map(c => `<a href="${esc(c[2])}" target="_blank" rel="noopener">${esc(c[0])}</a> — ${euro(c[1])}${c[3] ? ' · ' + c[3] : ''}${c[5] ? ' · <span class="fast">snel verkocht</span> ' + esc(c[4]) : c[4] ? ' · verdwenen ' + esc(c[4]) : ''}`).join('<br>')}</div></details>` : ''}
+      ${b.nc ? `<details class="desc cmp"><summary>vergeleken met ${b.nc} fietsen${b.nc > COMPS_SHOWN ? ` (hier ${COMPS_SHOWN}: de snel verkochte en de goedkoopste)` : ''}</summary><div>${b.cmp ? cmpHtml(b.cmp) : 'laden…'}</div></details>` : ''}
       <details class="desc"><summary>beschrijving</summary><div>${esc(b.d)}</div></details>
       <div class="row">${markBtns}<span class="muted">·</span><button class="quiet" data-do="check">controleer</button>${b.ck ? `<span class="muted">gecontroleerd ${esc(b.ck.replace('T', ' '))}</span>` : ''}</div>
       ${bidRow}
@@ -1443,6 +1453,24 @@ function act(id, what, value, art) {
   if (what === 'jaar') return post(MODEL_PATH, {item_id: id, year: art.querySelector('input[name=jaar]').value.trim()}, art);
   if (what === 'ontkoppel') return post(MODEL_PATH, {item_id: id, clear: '1'}, art);
 }
+function cmpHtml(comps) {
+  return comps.map(c => `<a href="${esc(c[2])}" target="_blank" rel="noopener">${esc(c[0])}</a> — ${euro(c[1])}${c[3] ? ' · ' + c[3] : ''}${c[5] ? ' · <span class="fast">snel verkocht</span> ' + esc(c[4]) : c[4] ? ' · verdwenen ' + esc(c[4]) : ''}`).join('<br>');
+}
+// De vergelijkingslijst komt pas van de server als je hem openklapt: in de
+// pagina was hij twee derde van alles. 'toggle' bubbelt niet, dus capture.
+list.addEventListener('toggle', e => {
+  const box = e.target;
+  if (!box.matches || !box.matches('details.cmp') || !box.open) return;
+  const b = byId.get(box.closest('article.bike').dataset.id);
+  if (!b || b.cmp) return;
+  fetch(COMPS_PATH + '?id=' + encodeURIComponent(b.id))
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(data => {
+      if (data.cmp) b.cmp = data.cmp;
+      box.querySelector('div').innerHTML = data.cmp ? cmpHtml(data.cmp) : 'Niet meer te vinden; ververs de pagina (F5).';
+    })
+    .catch(() => { box.querySelector('div').textContent = 'Niet gelukt; ververs de pagina (F5).'; });
+}, true);
 list.addEventListener('click', e => {
   const bt = e.target.closest('button[data-do]'); if (!bt) return;
   const art = bt.closest('article.bike');
@@ -1609,7 +1637,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     import dashboard as dash
 
     with base.lock:
-        bikes = [bike_json(r, fresh) for r in base.rows]
+        bikes = [bike_json(r, fresh, comps=False) for r in base.rows]
         models = model_list(base)
         rules = rules_json(base)
         spares = spares_json(base, fresh, fresh.db_path)
@@ -1721,6 +1749,13 @@ def spares_json(base: Base, f: Fresh, db_path=None) -> dict:
     return {"kinds": [[key, label, base.spare_counts.get(key, 0)] for key, label, _ in sp.KINDS],
             "on": sp.load_choice(db_path) if db_path else list(sp.DEFAULT_ON),
             "parts": [part_json(p, f) for p in base.spares]}
+
+
+def comps_update(base: Base, item_id: str) -> dict:
+    """Het antwoord op COMPS_PATH; cmp is None als de fiets er niet (meer) is."""
+    with base.lock:
+        row = base.row(item_id)
+        return {"cmp": comps_json(row) if row else None}
 
 
 def bike_update(base: Base, fresh: Fresh, item_id: str, message: str) -> dict:

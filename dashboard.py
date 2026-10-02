@@ -3969,7 +3969,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         market = next((m for m in mk.MARKETS.values() if m.serve_path == path), None)
         is_photo = path.startswith(FLIPS_PHOTO_PATH + "/")
         is_file = path.startswith(FILES_PATH + "/")
-        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH, PANEL_PATH)
+        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH, PANEL_PATH, rb.COMPS_PATH)
         if market is None and path not in pages and not (is_photo or is_file):
             return self._send(404, "Niet gevonden")
         if not self._host_ok():
@@ -3990,6 +3990,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                "log": launcher.log_tail(config) if config else ""})
         if path == PANEL_PATH:
             return self._send_panel(parse_qs(url.query))
+        if path == rb.COMPS_PATH:
+            base = self.cache.racebikes(self.db_path, self.intake_path)
+            return self._json(rb.comps_update(base, parse_qs(url.query).get("id", [""])[0]))
         if path == rb.PATH:
             base = self.cache.racebikes(self.db_path, self.intake_path)
             return self._send(200, rb.render(base, rb.load_fresh(self.db_path), self.token, message),
