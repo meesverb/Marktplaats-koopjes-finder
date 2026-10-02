@@ -688,10 +688,76 @@ class LiveServerTest(unittest.TestCase):
         self.assertIsNot(after.listings, first.listings)
         self.assertIn("n", {l.item_id for l in after.listings})
 
+    def test_two_requests_at_once_build_once(self):
+        # Een tweede verzoek (of het vooruitwerken van de server) wacht op de
+        # lopende opbouw in plaats van hem nog eens te doen.
+        import threading
+        import time
+        from unittest import mock
+        cache = dashboard.LiveCache()
+        real = dashboard.load_base
+
+        def slow(*args, **kwargs):
+            time.sleep(0.2)
+            return real(*args, **kwargs)
+
+        with mock.patch.object(dashboard, "load_base", side_effect=slow) as built:
+            found = []
+            threads = [threading.Thread(target=lambda: found.append(cache.dashboard(self.db, dashboard.mk.COMPUTERS)))
+                       for _ in range(3)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+        self.assertEqual(built.call_count, 1)
+        self.assertEqual(len({id(d.listings) for d in found}), 1)
+
     def test_static_page_has_no_forms(self):
         html = dashboard.render(dashboard.load_dashboard(self.db))
         self.assertNotIn("<form", html)
         self.assertIn("python dashboard.py --serve", html)
+
+
+class KeepWarmTest(unittest.TestCase):
+    """De server rekent na het starten en na elke ronde alvast vooruit, maar
+    niet tijdens een ronde (dan verandert de database steeds)."""
+
+    def test_after_start_and_once_a_round_is_done(self):
+        from unittest import mock
+        stamps = iter(["A", "A", "B", "C", "C", "C", "D"])
+
+        class Stop:
+            calls = 0
+
+            def is_set(self):
+                return self.calls >= 7
+
+            def wait(self, _seconds):
+                self.calls += 1
+
+        cache = mock.Mock()
+        with mock.patch.object(dashboard, "data_stamp", side_effect=lambda *_: next(stamps)), \
+                mock.patch.object(dashboard.Path, "exists", return_value=True):
+            dashboard.keep_warm(cache, "koopjes.db", "mijn_fiets.md", Stop(), every=0)
+        # A meteen; B en C veranderden nog (een ronde loopt); C bleef staan: dan.
+        self.assertEqual(cache.warm.call_count, 2)
+
+    def test_a_failure_only_means_no_head_start(self):
+        from unittest import mock
+
+        class Stop:
+            calls = 0
+
+            def is_set(self):
+                return self.calls >= 2
+
+            def wait(self, _seconds):
+                self.calls += 1
+
+        cache = mock.Mock()
+        cache.warm.side_effect = RuntimeError("oude database")
+        with mock.patch.object(dashboard, "data_stamp", return_value="A"), \
+                mock.patch.object(dashboard.Path, "exists", return_value=True):
+            dashboard.keep_warm(cache, "koopjes.db", "mijn_fiets.md", Stop(), every=0)
+        self.assertEqual(cache.warm.call_count, 1)  # niet elke minuut opnieuw proberen
 
 
 class AbortedConnectionTest(unittest.TestCase):

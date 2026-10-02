@@ -401,7 +401,10 @@ rounds write — the overview, every `racefiets_report*.html`, the lists in
 `/bestanden/` with a bar back to the start page. Nothing else in the folder is
 served (not `koopjes.db`, not `sheets.json`). A link in the overview to
 `dashboard.html` or `dashboard_horloges.html` opens the live version. Every
-live page has the same bar at the top.
+live page has the same bar at the top. The server computes the heavy part of
+the dashboards and `/racefietsen` ahead: right after it starts, and again
+once a round has finished (the database stayed the same for a minute), so the
+first visit after a round doesn't wait the few seconds that takes.
 
 **On a phone** (narrower than 700 px; the server only listens on 127.0.0.1,
 so this is the browser on the machine itself or a narrow window): the bar at

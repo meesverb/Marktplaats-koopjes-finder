@@ -316,6 +316,13 @@ class LiveCache:
         self._lock = threading.Lock()
         self._base: dict = {}
         self._comps: dict = {}
+        # Eén opbouw tegelijk per pagina: een tweede verzoek (of warm())
+        # wacht op de lopende in plaats van hem nog eens te doen.
+        self._building: dict = {}
+
+    def _build_lock(self, key) -> threading.Lock:
+        with self._lock:
+            return self._building.setdefault(key, threading.Lock())
 
     def comps(self, db_path) -> Optional[list]:
         """De vergelijkingskandidaten voor de taxatie op /fiets
@@ -343,32 +350,65 @@ class LiveCache:
         waardescore en upgrade per fiets. Een markering of bod verandert het
         niet, een ronde of controleer wel."""
         stamp = data_stamp(db_path, trades=False)
-        where = (str(Path(db_path).resolve()), str(intake_path))
-        with self._lock:
-            cached = self._base.get(("racefietsen",) + where)
-        if cached is not None and stamp is not None and cached[0] == stamp:
-            return cached[1]
-        comps = self.comps(db_path)
-        base = rb.build_base(db_path, intake_path, comps)
-        with self._lock:
-            self._base[("racefietsen",) + where] = (stamp, base)
-        return base
+        key = ("racefietsen", str(Path(db_path).resolve()), str(intake_path))
+        with self._build_lock(key):
+            with self._lock:
+                cached = self._base.get(key)
+            if cached is not None and stamp is not None and cached[0] == stamp:
+                return cached[1]
+            comps = self.comps(db_path)
+            base = rb.build_base(db_path, intake_path, comps)
+            with self._lock:
+                self._base[key] = (stamp, base)
+            return base
 
     def dashboard(self, db_path, market: mk.Market) -> Dashboard:
         config = pc.default_config()
         key = (data_stamp(db_path), json.dumps(config, sort_keys=True, default=str))
         where = (str(Path(db_path).resolve()), market.key)
-        with self._lock:
-            cached = self._base.get(where)
+        with self._build_lock(where):
+            with self._lock:
+                cached = self._base.get(where)
             if cached is not None and key[0] is not None and cached[0] == key:
                 base = cached[1]
             else:
                 base = load_base(db_path, config, market)
-                self._base[where] = (key, base)
+                with self._lock:
+                    self._base[where] = (key, base)
         # Markeringen, notities, biedingen, metingen en afstanden zijn goedkoop
         # en veranderen per klik: die altijd vers, op een kopie, zodat twee
         # verzoeken elkaar niet raken.
         return replace(base, **fresh_parts(db_path))
+
+    def warm(self, db_path, intake_path) -> None:
+        """Alvast rekenen wat een paginabezoek anders laat wachten: de
+        dashboards en /racefietsen (enkele seconden bij ~14.000 fietsen)."""
+        for market in mk.MARKETS.values():
+            self.dashboard(db_path, market)
+        self.racebikes(db_path, intake_path)
+
+
+# Hoe vaak de server kijkt of een ronde klaar is om alvast te rekenen.
+WARM_EVERY_S = 60
+
+
+def keep_warm(cache: LiveCache, db_path, intake_path, stop: threading.Event, every: float = WARM_EVERY_S) -> None:
+    """Na het starten, en na elke ronde zodra de database een keer `every`
+    seconden niet veranderde (tijdens een ronde verandert hij steeds):
+    LiveCache.warm(), zodat de eerste klik na een ronde niet wacht. Leest
+    alleen; een fout (bv. een database van een oudere versie) laat de
+    pagina's gewoon zelf rekenen."""
+    warmed, previous = None, None
+    while not stop.is_set():
+        stamp = data_stamp(db_path) if Path(db_path).exists() else None
+        if stamp is not None and stamp != warmed and (warmed is None or stamp == previous):
+            try:
+                cache.warm(db_path, intake_path)
+                warmed = stamp
+            except Exception:  # noqa: BLE001 — alleen vooruitwerken; de pagina rekent anders zelf
+                warmed = stamp
+        previous = stamp
+        stop.wait(every)
 
 
 def _with_trades(d: Dashboard, db_path, rows: Optional[list] = None) -> Dashboard:
@@ -4305,11 +4345,16 @@ def serve(db_path, port: int, open_browser: bool) -> int:
           f"{url}/fiets, flips {url}/flips, rapporten via de startpagina) — stoppen met Ctrl+C.")
     if open_browser:
         webbrowser.open(url + START_PATH)
+    stop = threading.Event()
+    handler = httpd.RequestHandlerClass
+    threading.Thread(target=keep_warm, args=(handler.cache, handler.db_path, handler.intake_path, stop),
+                     daemon=True, name="warm").start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nGestopt.")
     finally:
+        stop.set()
         httpd.server_close()
     return 0
 
