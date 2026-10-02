@@ -42,7 +42,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - [x] **4b. Reservelijst onderdelen op /racefietsen** (keuzes hierboven)
 - [x] **4c. Zelfde knoppen en weergaven** op racefietsen, fietscomputers, horloges (keuzes hierboven)
 - [x] **4d. Snel verkocht** ook bij fietscomputers en horloges
-- [ ] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
+- [x] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
 - [ ] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
 - [ ] **7. Daarna** — kleine verbeteringen (zie keuzes), elk als eigen commit
 
@@ -125,3 +125,17 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   `market_resale()` (voorraad in Mijn flips, Marktprijzen, Vinted), en
   Marktprijzen kreeg een kolom Snel verkocht. Zolang de nachtrondes nog
   weinig verdwenen advertenties hebben, verandert er in de praktijk weinig.
+- **02-10 ~10:00 — punt 5 (controle en opruimen) af.** Gevonden en
+  gerepareerd, elk met een test: (1) links die de eigenaar zelf invult (of
+  via de Google Sheet) kwamen ongecontroleerd in een href — een
+  `javascript:`-link werd code op een pagina met het token; nu alleen
+  http(s) (`dashboard.web_link()`); (2) `/racefietsen/reserves` gaf bij een
+  bezette database een traceback; (3) een fout uit 4c: Alle zette Toon terug
+  op de standaard ook na controleer, de eigen keuze ging verloren. Verder:
+  CLAUDE.md miste vier bestanden, de uitleg boven Flips en onder `python
+  watches.py` kende snel verkocht nog niet, NEXT_STEPS.md kreeg een blok over
+  het weekend. Alle pagina's en tabs/weergaven in Chromium op 1300 en 390
+  px: geen JS-fouten, geen 5xx, geen horizontaal scrollen; de commando's
+  uit de README zonder netwerk draaien. Bleef liggen (voor punt 7):
+  `bike_identity.reference_model()` is ~1/4 van `build_base()` (339
+  patronen per advertentie).

@@ -5,6 +5,27 @@ De code, `reference_prices.csv` en de git-geschiedenis (commit messages)
 bevatten de volledige context; dit bestand is alleen een korte routewijzer
 zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 
+## Weekendwerk (02/03-10-2026)
+
+De eigenaar was weg; de werklijst, zijn keuzes en een logboek per punt staan
+in **`opdrachten/weekend.md`**. Alles staat op de branch
+`claude/claude-fietsmodellen-stap-1-80kp1n`, niet in `main`. Gebouwd:
+fietsmodellen stap 2 F (regels leren, migratie 20) en G (bouwjaar ophalen,
+`year_budget`), aanbiedingen per onderdeel op /flips (migratie 21), het
+prijsonderzoek voor de Cube (`flips_import/cube_prijsonderzoek.md` +
+`cube_aanbiedingen.json`, nog in te lezen met `python flips.py bijwerken`),
+de reservelijst Onderdelen op /racefietsen (`spares.py`), dezelfde
+weergaven op elke pagina (Te beoordelen / Weggezet bij computers en
+horloges, Mijn flips op /racefietsen), snel verkocht ook bij computers en
+horloges, en de fout "database is locked" (WAL-modus).
+
+**Nakijken na de eerste rondes:**
+- `logs/koopjes.log`: "Bouwjaren opzoeken" — vindt het jaren, geen 403?
+- Fietscomputers/horloges: hoeveel modellen hebben al 3 snel verkochte
+  (Marktprijzen, kolom Snel verkocht)? Pas dan verandert de schatting.
+- `flips_sheets.gs` moet één keer opnieuw in de Sheet geplakt worden voor
+  het tabblad Aanbiedingen (SHEETS.md).
+
 ## Sneller zonder iets weg te laten (30-09-2026)
 
 Gemeten op een zelfgemaakte database van twee maanden rondes (~36.000
