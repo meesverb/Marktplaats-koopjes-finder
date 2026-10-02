@@ -194,3 +194,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   een fast-forward. Rookproef op die commit: alle pagina's en tabs in
   Chromium op 1300 en 390 px zonder fouten; alleen de browser vroeg om
   `/favicon.ico` en kreeg een 404 (nu 204).
+- **02-10, 7618afb — eigen werk nagelopen.** `LiveCache.comps()` rekende
+  nog onder het slot van de hele cache; met het vooruitrekenen op de
+  achtergrond liet dat een verzoek naar een dashboard dat al klaarstond
+  wachten (gemeten 0,6 s in een test, nu direct).
