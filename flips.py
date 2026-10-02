@@ -110,8 +110,17 @@ def now_iso() -> str:
 
 
 def _date(value: Optional[str]) -> Optional[date]:
+    """De dag van een datum of tijdstip. Een tijdstip met tijdzone (de
+    fasewissels staan in UTC) telt op de lokale dag, zoals date.today():
+    anders stond een flip die je om half een 's nachts op te koop zette
+    meteen op "1 dag"."""
+    value = value or ""
     try:
-        return date.fromisoformat((value or "")[:10])
+        if len(value) > 10:
+            moment = datetime.fromisoformat(value)
+            if moment.tzinfo is not None:
+                return moment.astimezone().date()
+        return date.fromisoformat(value[:10])
     except ValueError:
         return None
 
