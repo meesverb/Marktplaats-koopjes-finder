@@ -1,0 +1,46 @@
+# Weekendwerk: vrijdag 02-10 tot zaterdag 03-10-2026 13:00
+
+De eigenaar is weg en kan niets beantwoorden. Hij koos op 02-10-2026 (03:30)
+wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
+"ga door" naar dezelfde sessie; dit bestand zegt waar je bent.
+
+## Zijn keuzes (02-10-2026)
+
+| Vraag | Antwoord |
+| --- | --- |
+| Welke blokken? | Alle vier, in deze volgorde: fietsmodellen stap 2, goedkoopste onderdelen (A en B), controle en opruimen, telefoon. |
+| Waarheen pushen? | **Alleen** naar `claude/claude-fietsmodellen-stap-1-80kp1n`. Niet naar `main`; de eigenaar merget zaterdag zelf. |
+| Stap 1: referentiemodel | Zo laten: een vangnet-referentiemodel ("Trek Domane") wijkt voor model + uitvoering uit de titel. |
+| Lijst eerder af? | Zelf kleine verbeteringen (bugs, snelheid, tests, documentatie), zonder nieuwe verzoeken naar Marktplaats en zonder nieuwe functies die zijn keuze vragen; ideeën als voorstel in `NEXT_STEPS.md`. |
+| Onderdelen deel B | Het voorstel uit `opdrachten/goedkoopste_onderdelen.md` (tabel `flip_offer`, klapblok Aanbiedingen, "kies deze") mag zo gebouwd worden. Migratie 18 en 19 zijn inmiddels bezet: het wordt de eerstvolgende vrije. |
+
+## Regels die er bovenop gelden
+
+- `CLAUDE.md` blijft gelden: tests groen (nooit een test weghalen of
+  uitzetten), README en CLAUDE.md bijwerken in dezelfde commit, Nederlandse
+  teksten, geen nieuwe dependencies, tabellen en geen kolommen bij een
+  migratie.
+- **Geen enkel verzoek naar Marktplaats vanuit de sandbox.** Code die
+  verzoeken doet (stap 2 G) test je met `FakeSession`, niet tegen de site.
+- Niet bieden, niet reageren, geen marktfeiten verzinnen. Prijzen bij de
+  onderdelen alleen met directe URL en datum; AliExpress alleen als schatting.
+- Na elk punt: tests groen, punt afvinken hieronder met een regel wat er is
+  gedaan en wat bleef liggen, commit, **push naar de branch**. Een container
+  kan verdwijnen; wat niet gepusht is, is weg.
+- Een punt dat halverwege blijft steken: commit wat werkt (tests groen),
+  noteer hieronder waar je bent, en ga verder bij de volgende ronde.
+- Na zaterdag 03-10-2026 13:00 (Europe/Amsterdam) niets nieuws beginnen.
+
+## Werklijst
+
+- [ ] **1. Fietsmodellen stap 2 F — regels leren** (`opdrachten/fietsmodellen.md` → F)
+- [ ] **2. Fietsmodellen stap 2 G — bouwjaar ophalen voor kanshebbers** (→ G; `schedule.json`: 20 in `overdag` en `nacht`, standaard 0)
+- [ ] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
+- [ ] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
+- [ ] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
+- [ ] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
+- [ ] **7. Daarna** — kleine verbeteringen (zie keuzes), elk als eigen commit
+
+## Logboek
+
+(per punt: datum/tijd, commit, wat er is gedaan, wat bleef liggen)
