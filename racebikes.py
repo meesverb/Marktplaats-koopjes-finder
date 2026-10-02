@@ -734,7 +734,7 @@ def apply_model(base: Base, db_path, form: dict) -> tuple[str, Optional[Row], se
             current = db.list_bike_links(conn).get(item_id) or {}
             if form.get("clear") == "1":
                 db.set_bike_link(conn, item_id)
-                message = "Ontkoppeld: hij hangt weer aan wat de advertentie zegt"
+                message = ""  # hieronder, als bekend is waar hij nu aan hangt
             else:
                 model_id, year = current.get("model_id"), current.get("year")
                 confirmed = bool(current.get("confirmed"))
@@ -773,8 +773,21 @@ def apply_model(base: Base, db_path, form: dict) -> tuple[str, Optional[Row], se
             conn.close()
         new_row, keys = relink(base, db_path, item_id)
         if form.get("clear") == "1":
-            message += f" ({new_row.name or 'geen model'})."
+            message = unlink_message(new_row, had_link=bool(current))
         return message.strip() + LATER, new_row, keys
+
+
+def unlink_message(row: Row, had_link: bool) -> str:
+    """Wat ontkoppelen deed. Een regel blijft gelden na ontkoppelen; dat de
+    fiets dan "aan wat de advertentie zegt" hing, klopte niet (02-10-2026)."""
+    ident = row.identity
+    name = row.name or "geen model"
+    if ident is not None and ident.source == "regel":
+        rule = f"je regel {ident.recognized_name} → {name}"
+        return (f"Ontkoppeld; {rule} geldt nu voor hem (weghalen kan bij Modellen)." if had_link
+                else f"Deze fiets had geen eigen koppeling: hij volgt {rule}. Die regel haal je weg bij Modellen.")
+    return (f"Ontkoppeld: hij hangt weer aan wat de advertentie zegt ({name})." if had_link
+            else f"Deze fiets had geen eigen koppeling ({name}).")
 
 
 def model_entry(key: str, name: str, source: str, pool_items: list, active: list, own_id=None) -> dict:

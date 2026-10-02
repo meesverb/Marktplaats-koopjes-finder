@@ -621,6 +621,21 @@ class RuleTest(Case):
         self.assertEqual(self.base.row("d4").identity.source, "referentie")
         self.assertEqual(rb.rules_json(self.base)["r"], [])
 
+    def test_unlinking_after_a_rule(self):
+        # Ontkoppelen haalt de eigen koppeling weg; een regel blijft gelden,
+        # en de melding zegt dat (niet "wat de advertentie zegt").
+        self.correct("d0", "d1", "d2")
+        model_id = rb.rules_json(self.base)["p"][0]["id"]
+        rb.rule_update(self.base, self.db, {"from_key": "trekdomane", "model_id": str(model_id), "answer": "toepassen"})
+        data = rb.model_update(self.base, self.db, {"item_id": "d0", "clear": "1"})
+        self.assertIn("je regel Trek Domane → Trek Domane AL 2 geldt nu voor hem", data["message"])
+        self.assertEqual(data["bike"]["src"], "regel")
+        data = rb.model_update(self.base, self.db, {"item_id": "d3", "clear": "1"})
+        self.assertIn("had geen eigen koppeling: hij volgt je regel", data["message"])
+        rb.rule_update(self.base, self.db, {"from_key": "trekdomane", "model_id": str(model_id), "answer": "weg"})
+        data = rb.model_update(self.base, self.db, {"item_id": "d1", "clear": "1"})
+        self.assertIn("hangt weer aan wat de advertentie zegt (Trek Domane)", data["message"])
+
     def test_no_is_remembered(self):
         self.correct("d0", "d1", "d2")
         model_id = rb.rules_json(self.base)["p"][0]["id"]
