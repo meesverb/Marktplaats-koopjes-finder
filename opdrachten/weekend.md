@@ -48,9 +48,9 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 
 ## Logboek
 
-(per punt: datum/tijd, commit, wat er is gedaan, wat bleef liggen)
+(per punt: datum, commit, wat er is gedaan, wat bleef liggen)
 
-- **02-10 ~04:00 — punt 1 (F) af.** Migratie 20 `bike_rule`; voorstel na 3
+- **02-10, 615f347 — punt 1 (F) af.** Migratie 20 `bike_rule`; voorstel na 3
   dezelfde correcties bovenaan Modellen (en op de knop: "Modellen (1
   voorstel)"), toepassen / nee (onthouden) / weghalen; `bike_identity`
   gesplitst in `recognize()` + `resolve()` zodat een regel ook verdwenen
@@ -58,7 +58,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   testfietsen: regel toepassen 76 ms (35 fietsen). Onderweg: een test in
   `test_dashboard.py` verkocht op de vaste datum 01-10-2026 en faalde sinds
   02-10 (aparte commit, de test verkoopt nu op de aankoopdag).
-- **02-10 ~04:45 — punt 2 (G) af.** `python racebikes.py jaar N` (en `plan
+- **02-10, 0bd5b20 — punt 2 (G) af.** `python racebikes.py jaar N` (en `plan
   N`): actieve racefietsen zonder bouwjaar, met prijs, niet gereserveerd of
   weggezet, nooit eerder opgehaald, ≥ 15% onder de schatting (of in de
   onzekere trede onder de mediaan); goedkoopste eerst, hooguit 20,
@@ -69,7 +69,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   Niet tegen Marktplaats getest (geen verzoeken vanuit de sandbox); de
   eigenaar ziet het eerste resultaat in `logs/koopjes.log` ("Bouwjaren
   opzoeken: …").
-- **02-10 ~05:45 — punt 3 (onderdelen B) af.** Migratie 21 `flip_offer` (met
+- **02-10, ef1dfc8 — punt 3 (onderdelen B) af.** Migratie 21 `flip_offer` (met
   `source`: gecontroleerd/schatting); per onderdeel "Aanbiedingen (n)" op
   /flips: link plakken + prijs + verzending + winkel + notitie, goedkoopste
   eerst, "kies deze" (zet winkel, link, geschat = prijs + verzending, bron),
@@ -79,13 +79,13 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   in (voor punt 4). Sheet: alleen-lezen tabblad Aanbiedingen; de eigenaar
   moet `flips_sheets.gs` één keer opnieuw plakken (SHEETS.md). In Chromium
   op 1300 en 390 px: geen JS-fouten, geen horizontaal scrollen.
-- **02-10 ~06:30 — tussendoor: fout van de eigenaar opgelost.** "database is
+- **02-10, 44b2f79 — tussendoor: fout van de eigenaar opgelost.** "database is
   locked" bij wegzetten op /racefietsen (traceback in zijn terminal). WAL-modus
   + 30 s wachten in `db.connect()`, `racebikes.find_listing()` leest één fiets
   in plaats van alle, en een nette melding (`dashboard.DB_BUSY`) als het toch
-  bezet is. Commit 44b2f79. De eigenaar is gezegd hoe hij het nu al in main
+  bezet is. De eigenaar is gezegd hoe hij het nu al in main
   krijgt.
-- **02-10 ~09:00 — punt 4 (onderdelen A) af.** `flips_import/cube_prijsonderzoek.md`
+- **02-10, 8181bfa — punt 4 (onderdelen A) af.** `flips_import/cube_prijsonderzoek.md`
   + `cube_aanbiedingen.json` (21 aanbiedingen, in te lezen met `flips.py
   bijwerken`). Belangrijkste: (1) 11-32 cassette alleen op een RD-5701-**GS**
   (Shimano: SS 25-30T), anders 12-28; (2) origineel 105 FC-5750 50T-blad
@@ -97,7 +97,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   geautomatiseerde verzoeken (403): hun prijzen komen uit de lijst van de
   eigenaar. Niet nagezocht: Action/bouwmarkt-spullen, AliExpress-retour,
   Marktplaats (geen verzoeken).
-- **02-10 ~10:00 — punt 4b (reservelijst) af.** `spares.py` + weergave
+- **02-10, 120cd4e — punt 4b (reservelijst) af.** `spares.py` + weergave
   Onderdelen op /racefietsen: 16 soorten herkend op de titel, aan/uit per
   soort (bewaard in `setting`, eerst cassettes/kettingen/zadels/pedalen),
   per soort de 40 goedkoopste met foto, prijs, plaats, afstand, favoriet,
@@ -105,7 +105,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   de racefietsen). Geen nieuwe zoekopdracht (keuze eigenaar): er zijn er
   weinig; README zegt hoe er een bij kan. In Chromium op 1300 en 390 px
   zonder JS-fouten.
-- **02-10 ~08:30 — punt 4c (zelfde knoppen en weergaven) af.** Fietscomputers
+- **02-10, 23797d3 — punt 4c (zelfde knoppen en weergaven) af.** Fietscomputers
   en horloges kregen **Te beoordelen** en **Weggezet** (tabknoppen die Alle
   openen met Toon op dat filter: geen tweede tabel van duizenden rijen; ook
   via `#beoordelen`/`#weggezet` en live bijgewerkt na favoriet/weg), Toon
@@ -115,7 +115,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   Alle, Patronen, favoriet/weg/notitie/bod/controleer, afstand. Niet gedaan
   (keuze eigenaar): sneltoetsen en Modellen bij computers/horloges. In
   Chromium op 1300 en 390 px zonder JS-fouten of horizontaal scrollen.
-- **02-10 ~09:15 — punt 4d (snel verkocht bij computers en horloges) af.**
+- **02-10, 654b754 — punt 4d (snel verkocht bij computers en horloges) af.**
   `computers.comparable_rows()` geeft nu per vergelijkingsprijs of hij snel
   verkocht is (`is_fast_sold()`: ≤ 7 dagen weg, of gereserveerd en weg —
   dezelfde regel als `racebikes.sold_fast()`). Vanaf 3 snel verkochte (binnen
@@ -125,7 +125,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   `market_resale()` (voorraad in Mijn flips, Marktprijzen, Vinted), en
   Marktprijzen kreeg een kolom Snel verkocht. Zolang de nachtrondes nog
   weinig verdwenen advertenties hebben, verandert er in de praktijk weinig.
-- **02-10 ~10:00 — punt 5 (controle en opruimen) af.** Gevonden en
+- **02-10, 95d327f t/m f6566fb — punt 5 (controle en opruimen) af.** Gevonden en
   gerepareerd, elk met een test: (1) links die de eigenaar zelf invult (of
   via de Google Sheet) kwamen ongecontroleerd in een href — een
   `javascript:`-link werd code op een pagina met het token; nu alleen
@@ -139,7 +139,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   uit de README zonder netwerk draaien. Bleef liggen (voor punt 7):
   `bike_identity.reference_model()` is ~1/4 van `build_base()` (339
   patronen per advertentie).
-- **02-10 ~10:45 — punt 6 (telefoon) af.** Onder 700 px: de balk bovenaan
+- **02-10, 60215fc — punt 6 (telefoon) af.** Onder 700 px: de balk bovenaan
   elke live pagina klapt in tot één knop "☰ <pagina>" (een vinkje, geen
   JS); rijen tabknoppen (`/`, `/horloges`) en weergaven (`/racefietsen`)
   scrollen zijwaarts, de gekozen weergave schuift in beeld; knoppen en
