@@ -990,6 +990,20 @@ table.spares td { vertical-align: top; }
 table.spares .row { margin-top: 0; }
 #newmodel, .picker input[name=nieuw] { flex: 1 1 16em; min-width: 0; max-width: 30em; box-sizing: border-box; }
 @media (max-width: 760px) { .bike { grid-template-columns: minmax(0, 1fr); } .photos { height: 200px; } }
+#filtersbtn { display: none; }
+/* Telefoon: de plakkende balk nam 477 van 844 px. Nu één rij weergaven die
+   zijwaarts scrollt, zoeken + Filters, en de rest pas na een tik; de
+   sneltoetsen zijn er zonder toetsenbord niet. */
+@media (max-width: 700px) {
+  .bar { padding-top: 4px; }
+  .bar .keys { display: none; }
+  .views { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-bottom: 6px; }
+  .views::-webkit-scrollbar { display: none; }
+  .views button { flex: none; }
+  #filtersbtn { display: inline-flex; align-items: center; }
+  .bar:not(.open) .filters > :not(#q):not(#filtersbtn):not(#count) { display: none; }
+  .filters #q { flex: 1 1 120px; min-width: 0; }
+}
 """
 
 JS = r"""
@@ -1496,6 +1510,20 @@ function kmLabel() { if (!kmOut) return; const v = +$('km').value; kmOut.textCon
 restoreFilters(); kmLabel();
 document.querySelectorAll('.views button').forEach(x => x.classList.toggle('on', x.dataset.view === view));
 draw();
+// Telefoon: de filters achter één knop (CSS verbergt ze zolang .bar niet open is).
+$('filtersbtn').addEventListener('click', () => {
+  const bar = document.querySelector('.bar'), open = bar.classList.toggle('open');
+  $('filtersbtn').setAttribute('aria-expanded', String(open));
+  $('filtersbtn').textContent = open ? 'Filters ▴' : 'Filters ▾';
+});
+// De gekozen weergave in beeld in de rij die zijwaarts scrollt.
+function showView() {
+  const on = document.querySelector('.views button.on');
+  if (on && on.parentElement.scrollWidth > on.parentElement.clientWidth)
+    on.parentElement.scrollLeft = on.offsetLeft - on.parentElement.offsetLeft - 8;
+}
+showView();
+document.querySelectorAll('.views button').forEach(x => x.addEventListener('click', showView));
 """
 
 
@@ -1630,6 +1658,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         f"<div class='views'>{views_bar}</div>"
         "<div class='filters'>"
         "<input type='search' id='q' placeholder='Zoek in titel, specs, plaats, notitie' aria-label='Zoeken'>"
+        "<button type='button' class='quiet' id='filtersbtn' aria-expanded='false'>Filters ▾</button>"
         f"{sort}"
         f"<label>Maat <input type='number' id='fmin' value='{lo:.0f}' aria-label='Maat van'>–"
         f"<input type='number' id='fmax' value='{hi:.0f}' aria-label='Maat tot'> cm</label>"

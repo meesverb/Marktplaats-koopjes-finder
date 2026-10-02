@@ -43,7 +43,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - [x] **4c. Zelfde knoppen en weergaven** op racefietsen, fietscomputers, horloges (keuzes hierboven)
 - [x] **4d. Snel verkocht** ook bij fietscomputers en horloges
 - [x] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
-- [ ] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
+- [x] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
 - [ ] **7. Daarna** — kleine verbeteringen (zie keuzes), elk als eigen commit
 
 ## Logboek
@@ -139,3 +139,13 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   uit de README zonder netwerk draaien. Bleef liggen (voor punt 7):
   `bike_identity.reference_model()` is ~1/4 van `build_base()` (339
   patronen per advertentie).
+- **02-10 ~10:45 — punt 6 (telefoon) af.** Onder 700 px: de balk bovenaan
+  elke live pagina klapt in tot één knop "☰ <pagina>" (een vinkje, geen
+  JS); rijen tabknoppen (`/`, `/horloges`) en weergaven (`/racefietsen`)
+  scrollen zijwaarts, de gekozen weergave schuift in beeld; knoppen en
+  velden minstens 40 px hoog, vinkjes 20 px, klapblokken op /flips 40 px;
+  op `/racefietsen` de filters achter **Filters ▾** naast het zoekvak en
+  geen sneltoetsen. Gemeten in Chromium op 390 × 844 (touch): plakkende
+  balk 477 → 107 px, geen horizontaal scrollen op /racefietsen, /flips, /,
+  /start; op /flips geen knop meer onder 40 px; op /racefietsen alleen nog
+  tekstlinks in lopende tekst. Desktop (1300 px) ongewijzigd.

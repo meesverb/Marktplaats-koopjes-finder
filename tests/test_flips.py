@@ -555,10 +555,13 @@ class StartTest(unittest.TestCase):
         self.assertIn("nacht — ok, 7 nieuw", page)
 
     def test_every_live_page_has_the_bar(self):
-        for path in ("/", "/horloges", "/fiets", "/flips"):
+        for path, here in (("/", "Fietscomputers"), ("/horloges", "Sporthorloges"), ("/fiets", "Mijn fiets"),
+                           ("/flips", "Flips")):
             _, _, page = self.get(path)
             self.assertIn("<nav class='site'>", page, path)
             self.assertIn("href='/start'", page, path)
+            # Op de telefoon ingeklapt tot één knop met de naam van de pagina.
+            self.assertIn(f"<label for='site-open' class='site-menu'>☰ {here}</label>", page, path)
 
     def test_files_are_served_with_the_bar_and_relative_links_still_work(self):
         status, _, page = self.get("/bestanden/overzicht.html")

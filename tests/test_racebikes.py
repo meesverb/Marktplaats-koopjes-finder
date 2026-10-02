@@ -178,6 +178,9 @@ class OwnFlipsViewTest(Case):
         base = rb.build_base(self.db, self.dir / "geen_fiets.md")
         page = rb.render(base, rb.load_fresh(self.db), "tok")
         self.assertIn("data-view='flips' data-label='Mijn flips (2)'", page)
+        # Op de telefoon staan de filters achter één knop.
+        self.assertIn("id='filtersbtn'", page)
+        self.assertIn(".bar:not(.open) .filters", page)
         self.assertIn("<section id='flipview' hidden>", page)
 
 

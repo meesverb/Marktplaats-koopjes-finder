@@ -2927,6 +2927,8 @@ details.offers li { margin: 2px 0; }
 @media (max-width: 640px) {
   .flipcard { padding: 12px; }
   .flipcard header { flex-direction: column; }
+  .flipcard details > summary, details.offers > summary { padding: 10px 0; }
+  button.tick { min-width: 40px; }
   table.tasks th:nth-child(4), table.tasks td:nth-child(4) { min-width: 150px; }
 }
 """
@@ -3343,18 +3345,44 @@ def site_pages() -> list:
 
 
 def site_nav(current: str) -> str:
+    """De balk bovenaan elke live pagina. Op de telefoon ingeklapt tot één
+    knop met de naam van de pagina (SITE_CSS; een vinkje, geen JavaScript):
+    zeven links op een rij namen daar drie regels voor de inhoud weg."""
+    pages = site_pages()
+    here = next((label for label, href in pages if href == current), "Menu")
     links = "".join(
         f"<a href='{esc(href, quote=True)}'{' aria-current=page' if href == current else ''}>{esc(label)}</a>"
-        for label, href in site_pages())
-    return f"<nav class='site'>{links}</nav>"
+        for label, href in pages)
+    return (f"<nav class='site'><input type='checkbox' id='site-open' class='site-open' hidden>"
+            f"<label for='site-open' class='site-menu'>☰ {esc(here)}</label>"
+            f"<div class='site-links'>{links}</div></nav>")
 
 
 SITE_CSS = """
-nav.site { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: -6px 0 14px; padding-bottom: 8px;
-  border-bottom: 1px solid var(--line); font-size: .92rem; }
+nav.site { margin: -6px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: .92rem; }
+nav.site .site-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+nav.site .site-menu { display: none; }
 nav.site a { text-decoration: none; color: var(--text-2); }
 nav.site a[aria-current] { color: var(--text); font-weight: 700; }
 nav.site a:hover { color: var(--accent); }
+/* Telefoon (de eigenaar, 02-10-2026): de balk bovenaan ingeklapt, rijen
+   tabknoppen die zijwaarts scrollen in plaats van vier regels hoog, en
+   knoppen en velden groot genoeg voor een duim. */
+@media (max-width: 700px) {
+  nav.site { margin-top: -10px; padding-bottom: 0; }
+  nav.site .site-menu { display: flex; align-items: center; min-height: 44px; font-weight: 700; cursor: pointer;
+    user-select: none; }
+  nav.site .site-links { display: none; flex-direction: column; gap: 0; }
+  nav.site .site-open:checked ~ .site-links { display: flex; }
+  nav.site .site-links a { padding: 11px 0; border-top: 1px solid var(--line); }
+  nav.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button { flex: none; }
+  button, select, input[type=text], input[type=search], input[type=number], input[type=date], input:not([type]) {
+    min-height: 40px; }
+  input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }
+  summary { padding: 8px 0; }
+}
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
 .card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
   padding: 12px 14px; text-decoration: none; color: var(--text); }

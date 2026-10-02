@@ -403,6 +403,15 @@ served (not `koopjes.db`, not `sheets.json`). A link in the overview to
 `dashboard.html` or `dashboard_horloges.html` opens the live version. Every
 live page has the same bar at the top.
 
+**On a phone** (narrower than 700 px; the server only listens on 127.0.0.1,
+so this is the browser on the machine itself or a narrow window): the bar at
+the top folds into one button with the page's name (☰), rows of tabs and
+views scroll sideways instead of wrapping over four lines, buttons and
+fields are at least 40 px high, and on `/racefietsen` the filters sit behind
+**Filters ▾** next to the search box (the keyboard shortcuts are hidden: no
+keyboard). The sticky bar there went from more than half the screen to
+about 110 px.
+
 **Starting rounds from the start page.** Under *Rondes* every slot from
 `schedule.json` has a **starten** button, with what it searches, how deep and
 when it last ran. It runs exactly what the task scheduler runs,
