@@ -369,8 +369,10 @@ class LiveServerTest(unittest.TestCase):
         # Bought is no longer a chance: gone from the flips.
         self.assertNotIn("c", {l.item_id for l in dashboard.load_dashboard(self.db).flips})
 
+        # Verkocht op de dag van de aankoop (vandaag): een vaste datum ging
+        # mis zodra "vandaag" erna lag (verkocht vóór gekocht wordt geweigerd).
         self.request("POST", "/verkocht", {"token": self.token(), "id": trade.id, "prijs": "150,50",
-                                           "kosten": "3", "datum": "2026-10-01", "via": "vinted"})
+                                           "kosten": "3", "datum": trade.bought_at, "via": "vinted"})
         (trade,) = tr.load_trades(self.db)
         self.assertEqual((trade.sell_price_eur, trade.sold_via, trade.profit_eur), (150.5, "vinted", 62.5))
         _, _, page = self.request("GET")
