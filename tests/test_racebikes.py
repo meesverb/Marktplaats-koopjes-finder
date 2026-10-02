@@ -98,6 +98,18 @@ class LoadTest(Case):
         self.assertNotIn("<b>koopje</b>", html)
 
 
+class FindOneTest(Case):
+    def test_one_bike_as_the_whole_list_gives_it(self):
+        listings, _, _ = rb.load_listings(self.db)
+        for listing in listings:
+            one = rb.find_listing(self.db, listing.item_id)
+            self.assertEqual((one.title, one.price_eur, one.city, one.latitude, one.promotion),
+                             (listing.title, listing.price_eur, listing.city, listing.latitude, listing.promotion))
+        self.assertIsNone(rb.find_listing(self.db, "old"))  # te lang niet gezien
+        self.assertIsNone(rb.find_listing(self.db, "g"))  # geen racefiets
+        self.assertIsNone(rb.find_listing(self.db, "bestaat-niet"))
+
+
 class OpenEndedFrameTest(Case):
     def test_sixty_or_more_does_not_break_the_page_json(self):
         conn = db.connect(self.db)
@@ -640,6 +652,18 @@ class LiveTest(Case):
         built.assert_not_called()
         self.assertEqual({b["id"] for b in data["bikes"] if b["src"] == "regel"}, {"a3", "c"})
         self.assertEqual(data["rules"]["r"][0]["m"], "Cube Attain C:62")
+
+    def test_a_busy_database_is_a_message_not_a_traceback(self):
+        import sqlite3
+
+        def busy(db_path, form):
+            raise sqlite3.OperationalError("database is locked")
+
+        with mock.patch.dict(dashboard.ACTIONS, {"/markeer": busy}):
+            data = self.live("/markeer", {"item_id": "c", "soort": "niet waard"})
+        self.assertEqual(data["message"], dashboard.DB_BUSY)
+        with mock.patch.object(rb, "model_update", side_effect=sqlite3.OperationalError("database is locked")):
+            self.assertEqual(self.live(rb.MODEL_PATH, {"item_id": "c", "confirm": "1"})["message"], dashboard.DB_BUSY)
 
     def test_computer_page_has_the_bid_control_and_tab(self):
         conn = db.connect(self.db)

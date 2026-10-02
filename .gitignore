@@ -11,6 +11,9 @@ dashboard.html
 logs/
 .koopjes.lock
 koopjes.db
+# Write-ahead log van koopjes.db (db.py, sinds 02-10-2026): hoort bij de database.
+koopjes.db-wal
+koopjes.db-shm
 lijsten/
 flip_fotos/
 sheets.json

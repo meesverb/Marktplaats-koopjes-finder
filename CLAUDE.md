@@ -15,7 +15,7 @@ server.
 4. Draai de tests, vóór én na je wijziging.
 
 ```bash
-python -m unittest discover -s tests -t tests    # 969 tests, moet groen zijn
+python -m unittest discover -s tests -t tests    # 973 tests, moet groen zijn
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -82,6 +82,11 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
   COLUMN` op `listing` laat zich zo niet terugdraaien en de migratie loopt
   dan vast. Daarom staan plek en promotie in `listing_place`, niet in
   `listing`.
+- **`koopjes.db` staat in WAL-modus** (`db._use_wal()`, 02-10-2026): lezers
+  blokkeren geen schrijver meer ("database is locked" bij wegzetten op
+  `/racefietsen`). `koopjes.db-wal`/`-shm` horen erbij en staan in
+  `.gitignore`. Lees in een klik niet alle advertenties in om er één te
+  vinden (`racebikes.find_listing()` doet één fiets).
 - **`db.import_legacy()` heeft padargumenten met standaardwaarden** die naar
   het werkpad wijzen. Geef ze alle drie expliciet mee; laat je er een weg, dan
   leest hij stilzwijgend het echte bestand uit de repo in plaats van dat wat

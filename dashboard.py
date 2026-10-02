@@ -3495,6 +3495,17 @@ class FormError(ValueError):
     """Een formulier met iets dat niet klopt; de tekst gaat terug naar de pagina."""
 
 
+# Als een ander proces koopjes.db langer dan db.BUSY_TIMEOUT_S vasthoudt (een
+# ronde die schrijft): liever dit op de pagina dan een traceback in de
+# terminal en een knop die niets lijkt te doen (de eigenaar, 02-10-2026).
+DB_BUSY = ("De database is even bezet (waarschijnlijk loopt er een ronde); er is niets opgeslagen. "
+           "Probeer het over een minuut opnieuw.")
+
+
+def db_busy(exc: Exception) -> bool:
+    return isinstance(exc, sqlite3.OperationalError) and ("locked" in str(exc) or "busy" in str(exc))
+
+
 def parse_euro(value: str, what: str, required: bool = True) -> Optional[float]:
     text = (value or "").replace("€", "").replace(" ", "").replace(",", ".")
     if not text:
@@ -3996,6 +4007,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             failed = False
         except FormError as exc:
             message, trade_id, failed = f"Niet opgeslagen: {exc}", None, True
+        except sqlite3.OperationalError as exc:
+            if not db_busy(exc):
+                raise
+            message, trade_id, failed = DB_BUSY, None, True
         if not live:
             anchor = f"#flip-{trade_id}" if trade_id is not None and not failed else ""
             self.send_response(303)
@@ -4021,9 +4036,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(form.get("token", ""), self.token):
             return self._json({"message": "De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.",
                                "reload": True})
-        base = self.cache.racebikes(self.db_path, self.intake_path)
-        update = rb.rule_update if path == rb.RULE_PATH else rb.model_update
-        self._json(update(base, self.db_path, form))
+        try:
+            base = self.cache.racebikes(self.db_path, self.intake_path)
+            update = rb.rule_update if path == rb.RULE_PATH else rb.model_update
+            self._json(update(base, self.db_path, form))
+        except sqlite3.OperationalError as exc:
+            if not db_busy(exc):
+                raise
+            self._json({"message": DB_BUSY})
 
     def do_POST(self) -> None:
         origin = self.headers.get("Origin")
@@ -4079,6 +4099,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             failed = False
         except FormError as exc:
             message, failed = f"Niet opgeslagen: {exc}", True
+        except sqlite3.OperationalError as exc:
+            if not db_busy(exc):
+                raise
+            message, failed = DB_BUSY, True
         if not live:
             return self._back(message, market, tab, back)
         item_id = form.get("item_id", "")

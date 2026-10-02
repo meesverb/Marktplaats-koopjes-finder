@@ -699,5 +699,37 @@ class ListingQueryTest(TempDirTest):
         conn.close()
 
 
+
+class ConcurrencyTest(TempDirTest):
+    """Een klik op de live server terwijl iets anders de database leest
+    (02-10-2026: "database is locked" bij wegzetten op /racefietsen)."""
+
+    def test_write_ahead_logging_and_a_longer_wait(self):
+        conn = db.connect(self.path("koopjes.db"))
+        try:
+            self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone()[0].lower(), "wal")
+            self.assertEqual(conn.execute("PRAGMA busy_timeout").fetchone()[0], db.BUSY_TIMEOUT_S * 1000)
+        finally:
+            conn.close()
+
+    def test_a_reader_does_not_block_a_writer(self):
+        conn = db.connect(self.path("koopjes.db"))
+        for i in range(50):
+            conn.execute("INSERT INTO listing (item_id, title) VALUES (?, 'x')", (f"m{i}",))
+        conn.commit()
+        conn.close()
+        reader = sqlite3.connect(Path(self.path("koopjes.db")).resolve().as_uri() + "?mode=ro", uri=True, timeout=0)
+        writer = db.connect(self.path("koopjes.db"))
+        writer.execute("PRAGMA busy_timeout = 0")  # niet wachten: in de oude modus faalde dit meteen
+        try:
+            cur = reader.execute("SELECT item_id FROM listing")
+            cur.fetchone()  # de lezer is nog bezig
+            db.set_mark(writer, "m1", "favoriet", price_eur=10.0)
+            self.assertEqual(len(cur.fetchall()), 49)
+        finally:
+            reader.close()
+            writer.close()
+
+
 if __name__ == "__main__":
     unittest.main()

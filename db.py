@@ -607,13 +607,21 @@ MODEL_KINDS = ("bike", "frameset", "groupset", "wheelset", "computer", "powermet
 FRAME_MATERIALS = ("carbon", "aluminium", "staal", "titanium")
 
 
+# How long a write waits for another connection before "database is
+# locked". sqlite's default of 5 s was too short on the owner's laptop
+# (02-10-2026): putting a bike away on /racefietsen failed while a round or
+# the server itself was reading thousands of listings.
+BUSY_TIMEOUT_S = 30
+
+
 def connect(path: str) -> sqlite3.Connection:
     """Open (creating if needed) the koopjes.db at `path` and bring it up to
     the latest schema version."""
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_S)
     try:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        _use_wal(conn)
         _migrate(conn)
     except BaseException:
         # A refused or failed migration would otherwise leave the file open,
@@ -622,6 +630,23 @@ def connect(path: str) -> sqlite3.Connection:
         conn.close()
         raise
     return conn
+
+
+def _use_wal(conn: sqlite3.Connection) -> None:
+    """Write-ahead logging: readers no longer block a writer, nor a writer
+    the readers. In sqlite's default mode a click on the live server had to
+    wait until every reader was done — a round building the dashboards, the
+    server reading every road bike — and gave up with "database is locked".
+    The mode is stored in the file, so this only does something once; while
+    another process holds the database it can't switch, and the next
+    connection tries again. Next to koopjes.db there are then two more files
+    (koopjes.db-wal, koopjes.db-shm) while it is open: part of the database,
+    don't delete them separately."""
+    try:
+        if str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
+            conn.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.OperationalError:
+        pass
 
 
 def _migrate(conn: sqlite3.Connection) -> None:

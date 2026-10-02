@@ -1071,6 +1071,14 @@ with `--no-price-history`.
 
 ### SQLite mirror — `--db`
 
+The database runs in sqlite's write-ahead mode (since 02-10-2026): a round
+or the live server reading thousands of listings no longer makes a click on
+the live server fail with "database is locked", and a write waits up to 30 s
+for another one. While it is open there are two more files next to it,
+`koopjes.db-wal` and `koopjes.db-shm`: they are part of the database (don't
+delete them separately; copy the database only when nothing has it open).
+Should a click still find it busy, the page says so and nothing is saved.
+
 Every run also mirrors its listings into a local SQLite database
 (`koopjes.db` by default, created automatically), on top of — not instead
 of — the CSV/JSON files above: every field the script parses (price, city,

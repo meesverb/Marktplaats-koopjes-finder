@@ -1546,8 +1546,34 @@ def rule_update(base: Base, db_path, form: dict) -> dict:
 
 
 def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
-    listings, _, _ = load_listings(db_path)
-    return next((l for l in listings if l.item_id == item_id), None)
+    """Eén actieve racefiets, zoals load_listings() hem zou geven, maar
+    zonder alle ~14.000 te lezen: een klik op weg of favoriet deed dat wel,
+    en hield daarmee de database seconden bezet ("database is locked" bij de
+    eigenaar, 02-10-2026)."""
+    if not Path(db_path).exists():
+        return None
+    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(SELECT + " AND item_id = ?", (f"%/{CATEGORY}/%", item_id)).fetchone()
+        newest = conn.execute("SELECT MAX(last_seen) FROM listing WHERE url LIKE ? AND disappeared_at IS NULL",
+                              (f"%/{CATEGORY}/%",)).fetchone()[0]
+        if row is None or row["disappeared_at"] is not None:
+            return None
+        site = {item_id: {k: v for k, v in conn.execute(
+            "SELECT key, value FROM spec WHERE source = ? AND listing_id = ?", (db.SITE_SPEC_SOURCE, item_id))}}
+        tables = {t[0] for t in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        place = conn.execute("SELECT latitude, longitude, promotion, traits FROM listing_place WHERE item_id = ?",
+                             (item_id,)).fetchone() if "listing_place" in tables else None
+        places = {item_id: tuple(place)} if place else {}
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    last, newest = _time(row["last_seen"]), _time(newest)
+    if last is None or newest is None or last < newest - timedelta(days=ACTIVE_DAYS):
+        return None
+    return _listing(row, site, places)
 
 
 def resale_for(db_path, item_id: str) -> Optional[float]:
