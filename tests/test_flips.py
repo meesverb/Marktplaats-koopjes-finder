@@ -403,6 +403,54 @@ class ServeTest(FlipTest):
                                        {"X-Live": "1"})[2])
         self.assertIn("Aanbiedingen (0)", data["card"])
 
+    def test_the_other_buttons_on_a_card(self):
+        # Klus erbij (onderdeel, reis, losse investering), specs, doelprijs,
+        # een bod van een koper en weer weg, en de flip verwijderen: elk door
+        # de server, zoals de knoppen op /flips het sturen.
+        token = self.token()
+
+        def live(path, fields):
+            status, _, data = self.request("POST", path, {"token": token, **fields}, {"X-Live": "1"})
+            self.assertEqual(status, 200, path)
+            return json.loads(data)
+
+        data = live("/flips/klus-nieuw", {"item_id": self.trade, "titel": " Remkabels  ", "geschat": "8,50"})
+        self.assertEqual(data["message"], "Op de lijst: Remkabels.")
+        self.assertIn("Remkabels", data["card"])
+        live("/flips/klus-nieuw", {"item_id": self.trade, "titel": "Trein heen", "soort": "reis", "prijs": "7,20"})
+        self.assertIn("Niet opgeslagen", live("/flips/klus-nieuw", {"item_id": self.trade, "titel": " "})["message"])
+        self.request("POST", "/flips/klus-nieuw", {"token": token, "titel": "Kettingpons", "investering": "1",
+                                                   "prijs": "12"})
+        book = fl.load_book(self.db)
+        tasks = {k.title: k for k in book.get(self.trade).tasks}
+        self.assertEqual((tasks["Remkabels"].est_eur, tasks["Remkabels"].price_source), (8.5, "schatting"))
+        self.assertEqual(tasks["Trein heen"].fare_eur, 7.2)
+        (tool,) = book.tools
+        self.assertEqual((tool.title, tool.price_eur, tool.trade_id), ("Kettingpons", 12.0, None))
+
+        live("/flips/gegevens", {"item_id": self.trade, "doe": "specs", "spec_merk": "Cube Peloton Pro",
+                                 "spec_jaar": " 2015 "})
+        self.assertIn("http(s)://", live("/flips/gegevens", {"item_id": self.trade, "doel_laag": "400",
+                                                             "verkooplink": "ftp://x"})["message"])
+        live("/flips/gegevens", {"item_id": self.trade, "doel_laag": "400", "doel_hoog": "450", "uren": "3"})
+        f = fl.load_book(self.db).get(self.trade)
+        self.assertEqual(f.specs, {"merk": "Cube Peloton Pro", "jaar": "2015"})
+        self.assertEqual((f.target, f.hours), ((400.0, 450.0), 3.0))
+
+        self.assertIn("€350,00", live("/flips/bod", {"item_id": self.trade, "bedrag": "350", "wie": "Jan"})["message"])
+        (bid,) = fl.load_book(self.db).get(self.trade).bids
+        self.assertEqual((bid["amount_eur"], bid["note"]), (350.0, "Jan"))
+        live("/flips/bod-weg", {"item_id": bid["id"]})
+        self.assertEqual(fl.load_book(self.db).get(self.trade).bids, [])
+        self.assertIn("Onbekend bod", live("/flips/bod-weg", {"item_id": bid["id"]})["message"])
+
+        status, where, _ = self.request("POST", "/flips/weg", {"token": token, "item_id": self.trade}, {"X-Live": "1"})
+        self.assertEqual(status, 303)
+        self.assertIn("Verwijderd: Cube", where)
+        self.assertIsNone(fl.load_book(self.db).get(self.trade))
+        (tool,) = fl.load_book(self.db).tools  # de losse investering blijft
+        self.assertEqual(tool.title, "Kettingpons")
+
     def test_stage_and_sale_reload_the_page(self):
         token = self.token()
         status, where, _ = self.request("POST", "/flips/fase", {"token": token, "item_id": self.trade,
