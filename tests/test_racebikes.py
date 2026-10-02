@@ -128,6 +128,14 @@ class SparesTest(Case):
         self.assertEqual([p.listing.item_id for p in sp.cheapest(sp.load(self.db), per_kind=1)], ["p5", "p1", "p3"])
         self.assertEqual(sp.kinds_of("Zadelpen carbon", "fietsonderdelen"), ["zadelpen"])
         self.assertEqual(sp.kinds_of("Kettingslot Abus", "fietsonderdelen"), [])
+        # Gereedschap, houders en schoenen zijn geen reserve; een bundel wel.
+        part = lambda title: sp.kinds_of(title, "fietsonderdelen")
+        for title in ("Garmin houder voor stuur", "Fietsschoenen SPD maat 43", "Cassette sleutel en kettingzweep",
+                      "Kettingpons Park Tool"):
+            self.assertEqual(part(title), [], title)
+        self.assertEqual(part("Shimano cassette 11-28 met afnemer"), ["cassette"])
+        self.assertEqual(part("Shimano SPD-SL pedalen + schoenplaatjes"), ["pedalen"])
+        self.assertEqual(part("Elite bidonhouder carbon"), ["bidonhouder"])
 
     def test_the_owner_chooses_the_kinds(self):
         import spares as sp

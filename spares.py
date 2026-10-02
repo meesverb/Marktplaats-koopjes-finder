@@ -64,6 +64,13 @@ SETTING_KEY = "reserve_soorten"
 # Een titel die een hele fiets is, buiten de categorie onderdelen.
 BIKE_RE = re.compile(r"\b(?:race|heren|dames|sport|stads|e-?)?fiets\b|\bracer\b|\bmaat\s?\d|\b[4-6]\d\s?cm\b|\bframemaat\b")
 WANTED_RE = re.compile(r"\b(?:zoek|zoeke|gezocht|gevraagd|wanted|wie\s+heeft|ruilen)\b")
+# Geen reserveonderdeel: gereedschap direct achter het onderdeel
+# ("cassettesleutel", "kettingzweep" — maar "cassette met afnemer" is een
+# cassette), houders ("Garmin houder voor stuur") en schoenen ("SPD"; wel
+# pedalen met schoenplaatjes).
+NOT_A_PART_RE = re.compile(
+    r"\b(?:cassette|ketting|kettingblad|crank|trapas|pedaal|pedalen)[\s-]?"
+    r"(?:sleutel|afnemer|zweep|pons|tool|gereedschap)|\b(?:houder|mount|beugel)\b|schoen(?:en)?\b")
 MAIN_RE = re.compile(r"/v/([^/]+)/([^/]+)/")
 PARTS_CATEGORIES = ("fietsonderdelen",)
 SKIP_CATEGORIES = ("fietsaccessoires-fietscomputers", "fietsaccessoires-fietskleding")
@@ -76,7 +83,7 @@ def kinds_of(title: str, category: str) -> list[str]:
     """De soorten die een titel noemt; leeg als het een hele fiets of een
     gezocht-advertentie is."""
     text = (title or "").lower()
-    if WANTED_RE.search(text):
+    if WANTED_RE.search(text) or NOT_A_PART_RE.search(text):
         return []
     if category not in PARTS_CATEGORIES and BIKE_RE.search(text):
         return []

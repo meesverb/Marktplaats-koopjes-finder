@@ -1407,7 +1407,9 @@ sale now (at most 40), with photo, price, place, distance, and favourite /
 put away / your bid as for the bikes. A kind counts when the title names it
 ("zadel", not "zadelpen"); outside the category fietsonderdelen a title that
 is a whole bike ("racefiets", "maat 56") doesn't count, and neither does a
-wanted ad. **No search was added** (the owner's choice, 02-10-2026): the
+wanted ad, a tool named right after the part ("cassette sleutel",
+"kettingzweep"; "cassette met afnemer" is still a cassette), a mount
+("houder voor stuur") or shoes. **No search was added** (the owner's choice, 02-10-2026): the
 parts come from what the rounds find anyway — between the road bikes, the
 `category: alle` searches (giant-defy) and the powermeter search — so there
 are few. For more, add a search in the category `fietsonderdelen` to
