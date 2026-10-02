@@ -3,6 +3,7 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -107,7 +108,8 @@ class MarkStorageTest(unittest.TestCase):
         finally:
             conn.close()
         self.assertFalse({"mark", "reason", "marked_at"} & columns)
-        with sqlite3.connect(self.db) as raw:
+        # closing(): `with sqlite3.connect()` sluit de verbinding niet (Python 3.13+ waarschuwt).
+        with closing(sqlite3.connect(self.db)) as raw:
             self.assertEqual(raw.execute("SELECT price_eur FROM listing WHERE item_id = 'a'").fetchone()[0], 120.0)
 
 
