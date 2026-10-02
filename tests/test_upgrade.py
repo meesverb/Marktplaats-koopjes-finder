@@ -4,6 +4,7 @@ De drie acceptatie-eisen van de fase staan expliciet in deze suite:
 met fixture-advertenties komt de verwachte volgorde eruit, een fiets buiten
 de maat verschijnt nooit, en een biedadvertentie zonder opgehaald bod valt
 niet stil terug op €0."""
+import datetime
 import os
 import sqlite3
 import tempfile
@@ -590,13 +591,17 @@ class OwnerIntakeTest(unittest.TestCase):
 
 class FetchCandidateListingsTest(unittest.TestCase):
     def setUp(self):
+        self.seen = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=10)).replace(microsecond=0)
         self.dir = tempfile.TemporaryDirectory()
         self.path = os.path.join(self.dir.name, "koopjes.db")
         self.addCleanup(self.dir.cleanup)
 
     def sync(self, listings, query="racefiets"):
         conn = db.connect(self.path)
-        db.sync_listings(conn, query, listings, observed_at="2026-09-22T10:00:00+00:00")
+        # Ten opzichte van nu: fetch_candidate_listings() kijkt een vast aantal
+        # dagen terug, en een vaste datum liet deze tests vanaf februari 2027
+        # falen zonder dat er iets veranderd was.
+        db.sync_listings(conn, query, listings, observed_at=self.seen.isoformat())
         return conn
 
     def test_bid_listings_are_kept_unlike_in_the_comps(self):
@@ -627,7 +632,7 @@ class FetchCandidateListingsTest(unittest.TestCase):
         conn = self.sync([make_listing(item_id="gone", price_eur=500.0)])
         self.addCleanup(conn.close)
         conn.execute("UPDATE listing SET disappeared_at = ? WHERE item_id = 'gone'",
-                     ("2026-09-20T10:00:00+00:00",))
+                     ((self.seen + datetime.timedelta(days=1)).isoformat(),))
         conn.commit()
         self.assertEqual(up.fetch_candidate_listings(conn), [])
 
