@@ -17,7 +17,13 @@ prijsonderzoek voor de Cube (`flips_import/cube_prijsonderzoek.md` +
 de reservelijst Onderdelen op /racefietsen (`spares.py`), dezelfde
 weergaven op elke pagina (Te beoordelen / Weggezet bij computers en
 horloges, Mijn flips op /racefietsen), snel verkocht ook bij computers en
-horloges, en de fout "database is locked" (WAL-modus).
+horloges, de fout "database is locked" (WAL-modus), de pagina's op de
+telefoon, en daarna kleine verbeteringen: /racefietsen bouwt in 4,1 in
+plaats van 6,5 s op en laadt in 0,6 in plaats van 1,7 s (de
+vergelijkingslijst komt pas bij openklappen), `u` maakt in Te beoordelen de
+laatste markering ongedaan, en een paar fouten (javascript:-links, oneindige
+bedragen, spatie opende de verkeerde klapper). Details per commit in het
+logboek van weekend.md.
 
 **Nakijken na de eerste rondes:**
 - `logs/koopjes.log`: "Bouwjaren opzoeken" — vindt het jaren, geen 403?
@@ -25,6 +31,31 @@ horloges, en de fout "database is locked" (WAL-modus).
   (Marktprijzen, kolom Snel verkocht)? Pas dan verandert de schatting.
 - `flips_sheets.gs` moet één keer opnieuw in de Sheet geplakt worden voor
   het tabblad Aanbiedingen (SHEETS.md).
+
+**Voorstellen — vragen jouw keuze, dus niet gebouwd:**
+- *Meer onderdelen in de reservelijst.* Nu alleen wat de rondes al
+  tegenkomen (jouw keuze), dus weinig. Eén zoekopdracht in de categorie
+  fietsonderdelen in de nachtronde (1-2 pagina's, `category:
+  fietsonderdelen`) zou de lijst vullen; dat zijn 1-2 verzoeken extra per
+  nacht.
+- *De drempel voor snel verkocht.* 3 snel verkochte (≤ 7 dagen) is
+  overgenomen van /racefietsen. Bij de fietscomputers zijn er veel meer
+  advertenties per model; na een maand nachtrondes is te zien of 5 beter
+  past (Marktprijzen, kolom Snel verkocht, naast Patronen → gemeten
+  afdingfactor).
+- *Telefoon via de thuiswifi.* De pagina's passen nu op een telefoon, maar
+  de server luistert alleen op 127.0.0.1. Op het thuisnetwerk luisteren
+  vraagt een wachtwoord in plaats van alleen het token (iedereen op de wifi
+  kan anders je biedingen en flips zien en wijzigen).
+- *Alle computers sneller sorteren.* Duizenden tabelrijen opnieuw opmaken
+  kost de browser 1-2 s; alleen de zichtbare rijen tekenen (zoals de kaarten
+  op /racefietsen) maakt dat direct, maar verandert hoe de tabel werkt
+  (zoeken met Ctrl+F vindt dan alleen wat getekend is).
+- *Wegzetten ongedaan maken in Onderdelen.* De toets `u` maakt op
+  /racefietsen de laatste markering ongedaan; in de weergave Onderdelen (een
+  tabel, geen kaarten) moet je daarvoor naar Weggezet. Een knop "ongedaan"
+  in de melding zou dat op elke pagina kunnen — een nieuwe knop, dus eerst
+  vragen.
 
 ## Sneller zonder iets weg te laten (30-09-2026)
 
