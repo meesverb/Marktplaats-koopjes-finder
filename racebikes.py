@@ -65,6 +65,7 @@ import distance as dm
 import marks as mr
 import own_bids as ob
 import racefiets_jev as mp
+import spares as sp
 import upgrade as up
 import valuation as val
 import views as vw
@@ -79,6 +80,7 @@ FLIP_MARKET = "fietsen"
 # Waar de pagina een eigen koppeling en een regel heen stuurt (dashboard.py).
 MODEL_PATH = PATH + "/model"
 RULE_PATH = PATH + "/regel"
+RESERVE_PATH = PATH + "/reserves"
 # Snel verkocht: binnen zoveel dagen na de eerste keer gezien verdwenen, of
 # gereserveerd en daarna verdwenen (de eigenaar, 01-10-2026). Verdwenen
 # wordt pas na een complete crawl vastgesteld (de zondagronde), dus de
@@ -141,6 +143,10 @@ class Base:
     own_models: dict = field(default_factory=dict)
     names: dict = field(default_factory=dict)
     rules: list = field(default_factory=list)  # db.list_bike_rules()
+    # Losse onderdelen als reserve (spares.py, weergave Onderdelen): de
+    # goedkoopste per soort, en hoeveel er per soort te koop zijn.
+    spares: list = field(default_factory=list)
+    spare_counts: dict = field(default_factory=dict)
     # Een correctie werkt deze Base bij terwijl een ander verzoek hem kan
     # lezen of ook bijwerken: allebei met dit slot vast.
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
@@ -498,6 +504,9 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
     base.patterns = vw.load_patterns(db_path, (CATEGORY,))
     base.own_models = _own_models(read.models)
     base.rules = read.rules
+    parts = sp.load(db_path)
+    base.spares = sp.cheapest(parts)
+    base.spare_counts = {key: sum(1 for p in parts if key in p.kinds) for key, _, _ in sp.KINDS}
     if not listings:
         base.names = _names(base, ())
         return base
@@ -819,6 +828,7 @@ class Fresh:
     home: Optional[dm.Home]
     distances: dict
     bought: dict  # item_id -> datum
+    db_path: Optional[str] = None
 
 
 def load_fresh(db_path) -> Fresh:
@@ -831,7 +841,7 @@ def load_fresh(db_path) -> Fresh:
         finally:
             conn.close()
     return Fresh(mr.load_marks(db_path), mr.load_notes(db_path), ob.load(db_path), vw.load_latest(db_path),
-                 home, distances, bought)
+                 home, distances, bought, str(db_path))
 
 
 def price_kind(l: mp.Listing) -> str:
@@ -971,6 +981,13 @@ details.desc div { white-space: pre-wrap; font-size: .88rem; margin-top: 4px; ma
 #modellist .row input { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--card); color: var(--text); }
 .fast { color: var(--good); font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.chips button.chip { border-radius: 14px; }
+.chips button.chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.chips button.chip .n { opacity: .7; font-size: .8em; }
+table.spares img.thumb { width: 64px; height: 48px; object-fit: cover; border-radius: 4px; display: block; }
+table.spares td { vertical-align: top; }
+table.spares .row { margin-top: 0; }
 #newmodel, .picker input[name=nieuw] { flex: 1 1 16em; min-width: 0; max-width: 30em; box-sizing: border-box; }
 @media (max-width: 760px) { .bike { grid-template-columns: minmax(0, 1fr); } .photos { height: 200px; } }
 """
@@ -983,7 +1000,8 @@ window.addEventListener('error', e => {
 const BIKES = JSON.parse(document.getElementById('bikes').textContent);
 const MODELS = JSON.parse(document.getElementById('models').textContent);
 let RULES = JSON.parse(document.getElementById('rules').textContent);
-const MODEL_PATH = '/racefietsen/model', RULE_PATH = '/racefietsen/regel';
+const MODEL_PATH = '/racefietsen/model', RULE_PATH = '/racefietsen/regel', RESERVE_PATH = '/racefietsen/reserves';
+const SPARES = JSON.parse(document.getElementById('spares').textContent);
 const GONE = JSON.parse(document.getElementById('gone').textContent);
 const REASONS = JSON.parse(document.getElementById('reasons').textContent);
 const STATUSES = JSON.parse(document.getElementById('statuses').textContent);
@@ -1116,6 +1134,54 @@ function mergeModels(items) {
   if (view === 'models') drawModelRows();
 }
 
+// --- Onderdelen: reserves voor het flippen (spares.py) ---
+function passesPart(p) {
+  const q = $('q').value.trim().toLowerCase();
+  if (q && !(p.t + ' ' + p.c).toLowerCase().includes(q)) return false;
+  const pmax = parseFloat($('pmax').value);
+  if (!isNaN(pmax) && p.p != null && p.p > pmax) return false;
+  if (HOME) {
+    const km = parseFloat($('km').value);
+    if (km < parseFloat($('km').max) && (p.km == null ? !$('nokm').checked : p.km > km)) return false;
+  }
+  return true;
+}
+function sparesShown() {
+  const on = new Set(SPARES.on);
+  return SPARES.parts.filter(p => p.m !== 'weg' && p.k.some(k => on.has(k)) && passesPart(p));
+}
+function partRow(p) {
+  const img = p.img.length ? `<a href="${esc(p.u)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(p.img[0])}" alt="" loading="lazy"></a>` : '';
+  const km = p.km == null ? '' : `${p.kma ? 'ca. ' : ''}${p.km < 10 ? String(p.km).replace('.', ',') : Math.round(p.km)} km`;
+  const last = p.b.length ? p.b[p.b.length - 1] : null;
+  const fav = p.m === 'favoriet' ? '<button class="quiet" data-part="geen">★ uit favorieten</button>' : '<button class="quiet" data-part="fav">☆ favoriet</button>';
+  return `<tr data-part-id="${esc(p.id)}"><td>${img}</td>`
+    + `<td><a href="${esc(p.u)}" target="_blank" rel="noopener">${esc(p.t)}</a>${p.m === 'favoriet' ? ' <span class="badge fav">★</span>' : ''}${p.res ? ' <span class="badge reserved">gereserveerd</span>' : ''}`
+    + `<div class="muted">${esc(p.c)} · ${esc(p.cat)} · sinds ${esc((p.fs || '').slice(0, 10))}${last ? ` · jouw bod ${euro(last.a)} (${esc(last.s)})` : ''}</div></td>`
+    + `<td class="num"><strong>${euro(p.p)}</strong><div class="muted">${esc(p.pk)}</div></td><td class="num">${km}</td>`
+    + `<td><div class="row">${fav}<button class="quiet" data-part="weg" title="niet waard">weg</button>`
+    + `<label>€<input name="bod" size="4" inputmode="decimal" aria-label="Bod"></label><button class="quiet" data-part="bod">ik heb geboden</button></div></td></tr>`;
+}
+function drawSpares() {
+  const on = new Set(SPARES.on);
+  const shownParts = sparesShown();
+  const chips = SPARES.kinds.map(([k, label, n]) => `<button class="quiet chip${on.has(k) ? ' on' : ''}" data-kind="${esc(k)}" aria-pressed="${on.has(k)}">${esc(label)} <span class="n">${n}</span></button>`).join('');
+  const groups = SPARES.kinds.filter(([k]) => on.has(k)).map(([k, label, n]) => {
+    const parts = shownParts.filter(p => p.k.includes(k)).sort((a, b) => (a.p ?? 1e9) - (b.p ?? 1e9));
+    return `<h3>${esc(label)} <span class="muted">${parts.length}${n > parts.length ? ` van ${n}` : ''}</span></h3>`
+      + (parts.length ? `<div class="table-wrap"><table class="spares"><tbody>${parts.map(partRow).join('')}</tbody></table></div>`
+                      : '<p class="empty">Nu niets te koop in wat de rondes vinden.</p>');
+  }).join('');
+  $('spareview').innerHTML = '<p class="explain">Losse onderdelen die de rondes toch al tegenkomen, als reserve of extra voor je flips. Zet aan waar je reserves van wilt; per soort de goedkoopste (hooguit 40), met favoriet, weg en je bod zoals bij de fietsen. Weggezette staan er niet bij. De rondes zoeken vooral hele racefietsen, dus het zijn er weinig.</p>'
+    + `<div class="chips">${chips}</div>${groups || '<p class="empty">Zet hierboven een soort aan.</p>'}`;
+}
+function updatePart(p) {
+  const i = SPARES.parts.findIndex(x => x.id === p.id);
+  if (i >= 0) SPARES.parts[i] = p; else SPARES.parts.push(p);
+  if (view === 'spares') drawSpares();
+  counts();
+}
+
 function card(b) {
   const imgs = b.img.length ? b.img.map(u => `<a href="${esc(b.u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`).join('')
     : '<div class="empty"></div>';
@@ -1173,6 +1239,7 @@ function counts() {
   document.querySelectorAll('.views button[data-view]').forEach(bt => {
     const k = bt.dataset.view; if (k in n) bt.textContent = bt.dataset.label + ' (' + n[k] + ')';
     if (k === 'models') bt.textContent = bt.dataset.label + (RULES.p.length ? ` (${RULES.p.length} voorstel${RULES.p.length === 1 ? '' : 'len'})` : '');
+    if (k === 'spares') bt.textContent = bt.dataset.label + ` (${sparesShown().length})`;
   });
 }
 // De lijst met alle modellen: eigen, referentie en herkend, ook zonder
@@ -1253,8 +1320,9 @@ document.addEventListener('click', e => {
   document.querySelectorAll('.views button').forEach(x => x.classList.toggle('on', x.dataset.view === view));
   draw(); window.scrollTo(0, 0);
 });
+const NO_CARDS = ['models', 'patterns', 'spares'];
 function draw() {
-  shown = view === 'models' ? [] : BIKES.filter(b => inView(b) && passes(b)).sort(SORTS[$('sort').value] || SORTS.newest);
+  shown = NO_CARDS.includes(view) ? [] : BIKES.filter(b => inView(b) && passes(b)).sort(SORTS[$('sort').value] || SORTS.newest);
   list.innerHTML = ''; drawn = 0; cur = -1;
   $('modellist').hidden = view !== 'models';
   $('modelchip').hidden = !modelFilter;
@@ -1263,14 +1331,15 @@ function draw() {
   if (modelFilter) $('nomodel').onclick = () => { modelFilter = ''; draw(); };
   $('patterns').hidden = view !== 'patterns';
   $('gonebids').hidden = view !== 'bids' || !GONE.length;
-  list.hidden = view === 'patterns' || view === 'models';
-  $('count').textContent = view === 'patterns' || view === 'models' ? '' : shown.length + ' fietsen';
-  if (view === 'models') drawModels(); else drawMore();
+  list.hidden = NO_CARDS.includes(view);
+  $('spareview').hidden = view !== 'spares';
+  $('count').textContent = NO_CARDS.includes(view) ? '' : shown.length + ' fietsen';
+  if (view === 'models') drawModels(); else if (view === 'spares') { drawSpares(); more.hidden = true; } else drawMore();
   counts(); remember();
 }
 function drawMore() {
   if (view === 'models') { drawMoreModels(); return; }
-  if (view === 'patterns') { more.hidden = true; return; }
+  if (view === 'patterns' || view === 'spares') { more.hidden = true; return; }
   const html = shown.slice(drawn, drawn + BATCH).map(card).join('');
   list.insertAdjacentHTML('beforeend', html);
   drawn = Math.min(drawn + BATCH, shown.length);
@@ -1321,6 +1390,8 @@ function post(path, fields, box) {
       say(data.message);
       if (data.rules) { RULES = data.rules; if (view === 'models') drawRules(); counts(); }
       if (data.models) mergeModels(data.models);
+      if (data.part) updatePart(data.part);
+      if (data.on) SPARES.on = data.on;
       update(data.bike); (data.bikes || []).forEach(update);
       return data;
     })
@@ -1393,6 +1464,31 @@ document.querySelectorAll('.views button[data-view]').forEach(bt => bt.addEventL
   document.querySelectorAll('.views button').forEach(x => x.classList.toggle('on', x === bt));
   draw();
 }));
+$('spareview').addEventListener('click', e => {
+  const chip = e.target.closest('button[data-kind]');
+  if (chip) {
+    const on = new Set(SPARES.on), k = chip.dataset.kind;
+    if (on.has(k)) on.delete(k); else on.add(k);
+    SPARES.on = SPARES.kinds.map(x => x[0]).filter(x => on.has(x));
+    drawSpares(); counts();
+    post(RESERVE_PATH, {soorten: SPARES.on.join(',')});
+    return;
+  }
+  const bt = e.target.closest('button[data-part]'); if (!bt) return;
+  const tr = bt.closest('tr'), id = tr.dataset.partId;
+  if (bt.dataset.part === 'fav') post('/markeer', {item_id: id, soort: 'favoriet'}, tr);
+  else if (bt.dataset.part === 'geen') post('/markeer', {item_id: id, soort: 'geen'}, tr);
+  else if (bt.dataset.part === 'weg') post('/markeer', {item_id: id, soort: REASONS[0]}, tr);
+  else if (bt.dataset.part === 'bod') {
+    const input = tr.querySelector('input[name=bod]');
+    if (!input.value.trim()) { input.focus(); return; }
+    post('/bod', {item_id: id, bedrag: input.value.trim()}, tr);
+  }
+});
+$('spareview').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target.name !== 'bod') return;
+  e.preventDefault(); e.target.closest('tr').querySelector('button[data-part=bod]').click();
+});
 const kmOut = $('kmval');
 function kmLabel() { if (!kmOut) return; const v = +$('km').value; kmOut.textContent = v >= +$('km').max ? 'alles' : 'max ' + v + ' km'; }
 ['q', 'sort', 'fmin', 'fmax', 'unk', 'pmax', 'km', 'nokm', 'res', 'new'].forEach(id => $(id) && $(id).addEventListener('input', () => { kmLabel(); draw(); }));
@@ -1429,6 +1525,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         bikes = [bike_json(r, fresh) for r in base.rows]
         models = model_list(base)
         rules = rules_json(base)
+        spares = spares_json(base, fresh, fresh.db_path)
     gone = gone_bids(base, fresh)
     lo, hi = ((base.target_cm - 2, base.target_cm + 2) if base.target_cm else (54, 58))
     notices = ""
@@ -1456,7 +1553,8 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     views_bar = "".join(
         f"<button data-view='{k}' data-label='{esc(label)}'>{esc(label)}</button>"
         for k, label in (("open", "Te beoordelen"), ("fav", "Favorieten"), ("bids", "Mijn biedingen"),
-                         ("all", "Alle"), ("away", "Weggezet"), ("models", "Modellen"), ("patterns", "Patronen")))
+                         ("all", "Alle"), ("away", "Weggezet"), ("models", "Modellen"), ("spares", "Onderdelen"),
+                         ("patterns", "Patronen")))
     sort = ("<select id='sort' aria-label='Volgorde'>"
             "<option value='newest'>Nieuwste eerst</option><option value='flip'>Beste flip eerst</option>"
             "<option value='value'>Beste waardescore eerst</option><option value='upgrade'>Beste upgrade eerst</option>"
@@ -1497,12 +1595,13 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         "<kbd>Esc</kbd> uit een invulveld</div>"
         "</div>"
         "<div id='modelchip' class='row' hidden></div>"
-        f"<div id='list' data-home='{1 if home else 0}'></div><section id='modellist' hidden></section><div id='more'></div>"
+        f"<div id='list' data-home='{1 if home else 0}'></div><section id='modellist' hidden></section><section id='spareview' hidden></section><div id='more'></div>"
         f"<div id='gonebids' hidden><h3>Biedingen op fietsen die niet meer online zijn</h3><ul>{gone_html}</ul></div>"
         f"<section id='patterns' hidden>{vw.patterns_html(base.patterns or vw.ViewPatterns(), 'racefietsen')}</section>"
         f"<script type='application/json' id='bikes'>{page_json(bikes)}</script>"
         f"<script type='application/json' id='models'>{page_json(models)}</script>"
         f"<script type='application/json' id='rules'>{page_json(rules)}</script>"
+        f"<script type='application/json' id='spares'>{page_json(spares)}</script>"
         f"<script type='application/json' id='gone'>{page_json(gone)}</script>"
         f"<script type='application/json' id='reasons'>{page_json(list(mr.BIKE_REASONS))}</script>"
         f"<script type='application/json' id='statuses'>{page_json(list(ob.STATUSES))}</script>"
@@ -1510,10 +1609,49 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         "</body></html>")
 
 
+def part_json(p: sp.Part, f: Fresh) -> dict:
+    """Een los onderdeel in de weergave Onderdelen; korte sleutels zoals bike_json()."""
+    l = p.listing
+    mark = f.marks.get(l.item_id)
+    dismissed = mr.is_dismissed(mark, l)
+    trail = f.bids.get(l.item_id)
+    dist = f.distances.get(l.item_id)
+    return {
+        "id": l.item_id, "t": l.title, "u": l.url, "p": l.price_eur, "pk": price_kind(l), "c": l.city,
+        "k": p.kinds, "img": (l.image_urls or "").split()[:1], "fs": l.first_seen, "res": l.reserved,
+        "km": None if dist is None else round(dist.km, 1), "kma": bool(dist and dist.approx),
+        "m": (mr.FAVORITE if mark and mark.favorite else "weg" if dismissed else ""),
+        "b": [{"a": b.amount_eur, "at": b.bid_at[:10], "s": b.status} for b in trail.bids] if trail else [],
+        "cat": "onderdelen" if p.category in sp.PARTS_CATEGORIES else p.category.replace("fietsen-", ""),
+    }
+
+
+def spares_json(base: Base, f: Fresh, db_path=None) -> dict:
+    return {"kinds": [[key, label, base.spare_counts.get(key, 0)] for key, label, _ in sp.KINDS],
+            "on": sp.load_choice(db_path) if db_path else list(sp.DEFAULT_ON),
+            "parts": [part_json(p, f) for p in base.spares]}
+
+
 def bike_update(base: Base, fresh: Fresh, item_id: str, message: str) -> dict:
     with base.lock:
         row = base.row(item_id)
-        return {"message": message, "bike": bike_json(row, fresh) if row else None}
+        data = {"message": message, "bike": bike_json(row, fresh) if row else None}
+        if row is None:
+            part = next((p for p in base.spares if p.listing.item_id == item_id), None)
+            if part is not None:
+                data["part"] = part_json(part, fresh)
+        return data
+
+
+def reserve_update(db_path, form: dict) -> dict:
+    """De soorten onderdelen waar de eigenaar reserves van wil (spares.py)."""
+    kinds = [k for k in (form.get("soorten") or "").split(",") if k]
+    unknown = [k for k in kinds if k not in sp.LABELS]
+    if unknown:
+        return {"message": f"Niet opgeslagen: onbekende soort {unknown[0]!r}."}
+    on = sp.save_choice(db_path, kinds)
+    names = ", ".join(sp.LABELS[k].lower() for k in on) or "geen"
+    return {"message": f"Reserves: {names}.", "on": on}
 
 
 def model_update(base: Base, db_path, form: dict) -> dict:

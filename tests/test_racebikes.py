@@ -23,6 +23,7 @@ import racebikes as rb
 
 BIKE_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/{}-x"
 COMPUTER_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsaccessoires-fietscomputers/{}-x"
+PART_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsonderdelen/{}-x"
 
 
 def bike(item_id, price, title="Cube Attain racefiets", **kw):
@@ -96,6 +97,52 @@ class LoadTest(Case):
         # geen tekst uit een advertentie kan het script afsluiten.
         self.assertIn("<b>koopje<\\/b>", html)
         self.assertNotIn("<b>koopje</b>", html)
+
+
+class SparesTest(Case):
+    """Reserves: losse onderdelen die de rondes al tegenkomen (spares.py),
+    weergave Onderdelen op /racefietsen."""
+
+    def setUp(self):
+        super().setUp()
+        conn = db.connect(self.db)
+        parts = [make_listing(item_id="p1", title="Shimano 105 cassette 11-28", price_eur=18.0, url=PART_URL.format("p1")),
+                 make_listing(item_id="p2", title="Ultegra cassette 12-25", price_eur=25.0, url=PART_URL.format("p2")),
+                 make_listing(item_id="p3", title="Look Keo pedalen", price_eur=30.0, url=PART_URL.format("p3")),
+                 make_listing(item_id="p4", title="Gezocht: cassette 10 speed", price_eur=1.0, url=PART_URL.format("p4")),
+                 make_listing(item_id="p5", title="Selle Italia zadel", price_eur=15.0, url=BIKE_URL.format("p5")),
+                 make_listing(item_id="p6", title="KMC ketting", price_eur=9.0, url=COMPUTER_URL.format("p6"))]
+        db.sync_listings(conn, "x", parts + [bike("rb", 400.0, title="Giant Defy racefiets met nieuwe cassette")],
+                         self.now.isoformat())
+        db.sync_listings(conn, "x", [make_listing(item_id="old", title="Cassette 11-32", price_eur=5.0,
+                                                  url=PART_URL.format("old"))],
+                         (self.now - timedelta(days=20)).isoformat())
+        conn.close()
+
+    def test_what_counts_as_a_spare(self):
+        import spares as sp
+        found = {p.listing.item_id: p.kinds for p in sp.load(self.db)}
+        # Geen gezocht, geen hele fiets, geen fietscomputer-categorie, niet te oud;
+        # een zadel tussen de racefietsen wel.
+        self.assertEqual(found, {"p1": ["cassette"], "p2": ["cassette"], "p3": ["pedalen"], "p5": ["zadel"]})
+        self.assertEqual([p.listing.item_id for p in sp.cheapest(sp.load(self.db), per_kind=1)], ["p5", "p1", "p3"])
+        self.assertEqual(sp.kinds_of("Zadelpen carbon", "fietsonderdelen"), ["zadelpen"])
+        self.assertEqual(sp.kinds_of("Kettingslot Abus", "fietsonderdelen"), [])
+
+    def test_the_owner_chooses_the_kinds(self):
+        import spares as sp
+        self.assertEqual(sp.load_choice(self.db), list(sp.DEFAULT_ON))
+        self.assertEqual(sp.save_choice(self.db, ["pedalen", "onzin", "cassette"]), ["cassette", "pedalen"])
+        self.assertEqual(sp.load_choice(self.db), ["cassette", "pedalen"])
+
+    def test_on_the_page(self):
+        base = rb.build_base(self.db, self.dir / "geen_fiets.md")
+        html = rb.render(base, rb.load_fresh(self.db), "tok")
+        data = json.loads(re.search(r"id='spares'>(.*?)</script>", html).group(1).replace("<\\/", "</"))
+        self.assertEqual({p["id"] for p in data["parts"]}, {"p1", "p2", "p3", "p5"})
+        self.assertIn(["cassette", "Cassettes", 2], data["kinds"])
+        self.assertEqual(data["on"], ["cassette", "ketting", "zadel", "pedalen"])
+        self.assertIn("data-view='spares'", html)
 
 
 class FindOneTest(Case):
@@ -664,6 +711,20 @@ class LiveTest(Case):
         self.assertEqual(data["message"], dashboard.DB_BUSY)
         with mock.patch.object(rb, "model_update", side_effect=sqlite3.OperationalError("database is locked")):
             self.assertEqual(self.live(rb.MODEL_PATH, {"item_id": "c", "confirm": "1"})["message"], dashboard.DB_BUSY)
+
+    def test_spares_choice_and_marking_a_part(self):
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "x", [make_listing(item_id="p1", title="Shimano cassette 11-28", price_eur=18.0,
+                                                  url=PART_URL.format("p1"))], self.now.isoformat())
+        conn.close()
+        self.request("GET", rb.PATH)
+        data = self.live(rb.RESERVE_PATH, {"soorten": "pedalen,cassette"})
+        self.assertEqual(data["on"], ["cassette", "pedalen"])
+        self.assertIn("Niet opgeslagen", self.live(rb.RESERVE_PATH, {"soorten": "raketten"})["message"])
+        data = self.live("/markeer", {"item_id": "p1", "soort": "favoriet"})
+        self.assertEqual((data["bike"], data["part"]["m"]), (None, "favoriet"))
+        data = self.live("/bod", {"item_id": "p1", "bedrag": "12"})
+        self.assertEqual(data["part"]["b"][0]["a"], 12.0)
 
     def test_computer_page_has_the_bid_control_and_tab(self):
         conn = db.connect(self.db)

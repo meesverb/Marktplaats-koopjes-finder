@@ -39,7 +39,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - [x] **2. Fietsmodellen stap 2 G — bouwjaar ophalen voor kanshebbers** (→ G; `schedule.json`: 20 in `overdag` en `nacht`, standaard 0)
 - [x] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
 - [x] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
-- [ ] **4b. Reservelijst onderdelen op /racefietsen** (keuzes hierboven)
+- [x] **4b. Reservelijst onderdelen op /racefietsen** (keuzes hierboven)
 - [ ] **4c. Zelfde knoppen en weergaven** op racefietsen, fietscomputers, horloges (keuzes hierboven)
 - [ ] **4d. Snel verkocht** ook bij fietscomputers en horloges
 - [ ] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
@@ -97,3 +97,11 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   geautomatiseerde verzoeken (403): hun prijzen komen uit de lijst van de
   eigenaar. Niet nagezocht: Action/bouwmarkt-spullen, AliExpress-retour,
   Marktplaats (geen verzoeken).
+- **02-10 ~10:00 — punt 4b (reservelijst) af.** `spares.py` + weergave
+  Onderdelen op /racefietsen: 16 soorten herkend op de titel, aan/uit per
+  soort (bewaard in `setting`, eerst cassettes/kettingen/zadels/pedalen),
+  per soort de 40 goedkoopste met foto, prijs, plaats, afstand, favoriet,
+  weg en bod (dezelfde acties; `/markeer` vindt nu ook een onderdeel buiten
+  de racefietsen). Geen nieuwe zoekopdracht (keuze eigenaar): er zijn er
+  weinig; README zegt hoe er een bij kan. In Chromium op 1300 en 390 px
+  zonder JS-fouten.

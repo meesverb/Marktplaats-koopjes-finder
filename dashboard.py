@@ -65,6 +65,7 @@ import distance as dm
 import own_bids as ob
 import patterns as pt
 import racebikes as rb
+import spares as sp
 import recheck as rc
 import report
 import trades as tr
@@ -3577,7 +3578,8 @@ def action_mark(db_path, form: dict) -> str:
     if choice != mr.FAVORITE and choice not in mr.ALL_REASONS:
         raise FormError(f"Onbekende keuze '{choice}'.")
     if form.get("markt") == rb.MARKET_KEY:
-        listing = rb.find_listing(db_path, item_id)
+        # Een racefiets, of een los onderdeel uit de weergave Onderdelen (spares.py).
+        listing = rb.find_listing(db_path, item_id) or sp.find_listing(db_path, item_id)
     else:
         market = mk.by_key(form.get("markt"))
         config = pc.default_config()
@@ -4065,6 +4067,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._send(413, "Te groot")
             raw = self.rfile.read(length).decode("utf-8", errors="replace")
             return self._flip_post(path, {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()})
+        if path == rb.RESERVE_PATH:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_FORM_BYTES:
+                return self._send(413, "Te groot")
+            form = {k: v[0] for k, v in parse_qs(self.rfile.read(length).decode("utf-8", errors="replace"),
+                                                 keep_blank_values=True).items()}
+            if not hmac.compare_digest(form.get("token", ""), self.token):
+                return self._json({"message": "De pagina was verouderd; er is niets opgeslagen.", "reload": True})
+            return self._json(rb.reserve_update(self.db_path, form))
         if path in (rb.MODEL_PATH, rb.RULE_PATH):
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_FORM_BYTES:

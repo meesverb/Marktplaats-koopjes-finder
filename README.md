@@ -1370,6 +1370,23 @@ round. The views and saves on the page are stored too (see *Views and
 saves*). By hand: `python racebikes.py plan 20` shows which bikes it would
 be, `python racebikes.py jaar 20` fetches them (at most 20).
 
+**Onderdelen** (view): spare parts for your flips. Loose parts the rounds come
+across anyway, by kind — cassettes, chains, saddles, pedals, tyres, inner
+tubes, wheels, chainrings/cranks, derailleurs, shifters, brakes, groupsets,
+bars/stems, seatposts, bar tape, bottle cages (`spares.KINDS`). Switch on the
+kinds you want spares of (stored in `koopjes.db`, table `setting`; at first
+cassettes, chains, saddles and pedals); per kind the cheapest that are for
+sale now (at most 40), with photo, price, place, distance, and favourite /
+put away / your bid as for the bikes. A kind counts when the title names it
+("zadel", not "zadelpen"); outside the category fietsonderdelen a title that
+is a whole bike ("racefiets", "maat 56") doesn't count, and neither does a
+wanted ad. **No search was added** (the owner's choice, 02-10-2026): the
+parts come from what the rounds find anyway — between the road bikes, the
+`category: alle` searches (giant-defy) and the powermeter search — so there
+are few. For more, add a search in the category `fietsonderdelen` to
+`schedule.json` (a night slot with `pages: 2` is ~2 requests per search per
+night); that is more requests to Marktplaats, so weigh it first.
+
 **Modellen** (view) is the list of all models: your own (also without
 listings), the reference models and the recognised ones, with *te koop*,
 *gekoppeld* (180 days, gone ones included), *snel verkocht*, the median of
