@@ -213,3 +213,8 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   UTC-12: één fout in de code gevonden — "dagen in deze fase" op /flips telde
   een fasewissel op de UTC-dag, dus 's nachts tussen 00:00 en 02:00 meteen
   "1 dag". Nu de lokale dag; overal groen.
+- **02-10 — eerste start nagelopen** (lege database, nieuwe computer): alle
+  pagina's laden, met "Nog geen … in de database" en op /start de eerste
+  ronde om te draaien; het vooruitrekenen geeft geen fout. Python 3.14 met
+  waarschuwingen als fout en de rookproef in Chromium op de laatste commit:
+  schoon.
