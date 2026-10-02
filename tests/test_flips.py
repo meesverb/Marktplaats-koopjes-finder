@@ -451,6 +451,29 @@ class ServeTest(FlipTest):
         (tool,) = fl.load_book(self.db).tools  # de losse investering blijft
         self.assertEqual(tool.title, "Kettingpons")
 
+    def test_the_buttons_on_a_row(self):
+        token = self.token()
+
+        def live(fields):
+            return json.loads(self.request("POST", "/flips/klus", {"token": token, **fields}, {"X-Live": "1"})[2])
+
+        trip = fl.add_task(self.conn, self.trade, kind="reis", title="OV heen", fare_eur=10.0, discount="vol")
+        self.assertEqual(live({"item_id": trip, "doe": "prijs", "tarief": "10", "korting": "40"})["message"],
+                         "OV heen: €6,00 (40% korting).")
+        self.assertIn("Onbekende korting", live({"item_id": trip, "doe": "prijs", "tarief": "10",
+                                                 "korting": "half"})["message"])
+        live({"item_id": self.task, "doe": "prijs", "prijs": "27,50"})
+        self.assertIn("schatting telt weer", live({"item_id": self.task, "doe": "prijs", "prijs": ""})["message"])
+        self.assertIn("investering", live({"item_id": self.task, "doe": "investering"})["message"])
+        book = fl.load_book(self.db)
+        self.assertEqual([k.title for k in book.tools], ["Cassette"])
+        self.assertIsNone(book.tools[0].price_eur)
+        live({"item_id": self.task, "doe": "investering"})  # en terug
+        self.assertIn("Onbekende knop", live({"item_id": self.task, "doe": "iets"})["message"])
+        self.assertEqual(live({"item_id": trip, "doe": "weg"})["message"], "Weggehaald: OV heen.")
+        self.assertIn("Onbekende regel", live({"item_id": trip, "doe": "gedaan"})["message"])
+        self.assertEqual([k.title for k in fl.load_book(self.db).get(self.trade).tasks], ["Cassette"])
+
     def test_stage_and_sale_reload_the_page(self):
         token = self.token()
         status, where, _ = self.request("POST", "/flips/fase", {"token": token, "item_id": self.trade,
