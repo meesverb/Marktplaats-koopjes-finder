@@ -198,9 +198,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"\nZonder prijs, bied maximaal (quitte bij de lage verkoopschatting): {len(d.open_bids)}")
         for l in d.open_bids[:args.flips]:
             print(f"  {pc._euro(l.computer.max_bid_eur):>6}  {l.computer.model.label[:22]:<22} {l.title[:50]}")
-    print("\nLet op: de 0,875 is dezelfde heuristiek als bij de fietscomputers, geen meting. Varianten "
-          "(S/X, Solar, Sapphire, Music) delen een rij; een flip rekent met dezelfde uitvoering als die er "
-          "genoeg heeft, anders met het hele model (zie tussen haakjes).")
+    print(f"\nLet op: vanaf {pc.MIN_FAST} snel verkochte (≤ {pc.FAST_DAYS} dagen weg) is de verwachte verkoop "
+          "hun mediaan; anders de mediaan-vraagprijs × 0,875, dezelfde heuristiek als bij de fietscomputers, "
+          "geen meting. Varianten (S/X, Solar, Sapphire, Music) delen een rij; een flip rekent met dezelfde "
+          "uitvoering als die er genoeg heeft, anders met het hele model (zie tussen haakjes).")
     return 0
 
 

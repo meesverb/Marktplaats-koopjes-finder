@@ -120,9 +120,12 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `report.py` | rapportpanelen (fase 6): Biedpaneel, Upgrade, Mijn fiets, plus de waardescore-kolom; alleen lezen uit `koopjes.db` |
 | `report_template.html` | HTML-sjabloon van het rapport (`string.Template`), wordt runtime ingelezen |
 | `db.py` | SQLite-schema, migraties, import van de oude bestanden, CSV-export; sinds fase 1b aangesloten op het script (`--db`/`--no-db`) |
+| `scoring.py` + `scoring_config.json` | kwaliteitsscore van een fiets los van de prijs (fase 4, §7): vijf dimensies met redenen, gewichten in de JSON. Niet `deal_score` en niet de waardescore |
 | `valuation.py` | waarderingsmotor (fase 3): E1/E2/E3 op de comps in `koopjes.db`, schrijft naar `valuation` + `valuation_evidence`. Leest `mijn_fiets.md` |
 | `tests/` | stdlib-unittests; `helpers.py` heeft `make_listing()` en een `FakeSession` |
 | `PLAN_FIETSWAARDE.md` | actief werkplan, gefaseerd |
+| `opdrachten/` | uitgeschreven opdrachten van de eigenaar (`fietsmodellen.md`, `goedkoopste_onderdelen.md`) en de werklijst van het weekend (`weekend.md`, met zijn keuzes en een logboek) |
+| `taxatie_2026-09-22.md` | de eerste handmatige taxatie van de eigen fiets, met bewijsregels (voorloper van fase 3) |
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |
 | `NEXT_STEPS.md` | stand van zaken en losse eindjes |
 | `reference_prices.csv` | handmatig onderzochte modellen (43, alleen luidsprekers) |
