@@ -43,8 +43,11 @@ Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
    the searches marked `"report": false` (see below). A search can have its
    own `"bid_lookup"`, which goes before the slot's (the sport watches use
    `"fast"`, also by day, see "Sport watches"); it then runs in a call of its own;
-4. with a `"views_budget"`, runs `views.py meet <budget>`: at most that many
-   listing pages to measure views and saves (see "Views and saves" below);
+4. with a `"year_budget"`, runs `racebikes.py jaar <budget>`: at most that
+   many listing pages to find the year of road bikes that look cheap but
+   don't say their year (see "Racefietsen" below); with a `"views_budget"`,
+   runs `views.py meet <budget>`: at most that many listing pages to measure
+   views and saves (see "Views and saves" below);
    with `"valuation": true`, runs `valuation.py`, so the valuation history
    builds up by itself;
 5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
@@ -102,7 +105,10 @@ ones can be deleted). Slots take `searches`, `pages` (0 = everything), `sort`, `
 `times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation`,
 `views_budget` (0-200, default 0: listing pages the round may fetch to
 measure views and saves; the shipped schedule has 40 at night, 15 per
-`overdag` round and 10 per `computers` round, ~125 requests a day) and
+`overdag` round and 10 per `computers` round, ~125 requests a day),
+`year_budget` (0-20, default 0: listing pages the round may fetch to find
+the year of cheap road bikes; the shipped schedule has 20 in `overdag` and
+`nacht`, at most ~80 requests a day, fewer once the cheap ones are done) and
 `open_browser` (and a `note`, which is ignored). With `open_browser` `auto`,
 `overzicht.html` opens when a search *with* a report found new listings, and
 `dashboard.html` opens when the round found a new **flip** — a bike computer
@@ -1341,6 +1347,20 @@ says *eigen model via een regel*); **nee** is remembered, so it isn't asked
 again. Your own link on a single listing still goes before a rule. Applied
 rules are listed under the proposals, each with **weghalen**. *klopt* on the
 recognised model is not a correction and never makes a proposal.
+
+**The year for the likely bargains.** The year is rarely in the title (about
+6 in 100), and without it a bike stays on a coarse step. After the searches,
+the `overdag` and `nacht` rounds (`"year_budget": 20` in `schedule.json`)
+fetch the listing page of at most 20 road bikes that are active, have a
+price, are not reserved or put away, don't have a known year, look cheap —
+at least 15% below the estimate of their step, or below the median on the
+*onzeker* step — and whose page was never fetched before; cheapest first,
+with the usual 1,5 s between requests, stopping at a 403. The full
+description is stored (the same column `--detail-lookup` fills), and
+`/racefietsen` and the upgrade verdict read the year from it after the next
+round. The views and saves on the page are stored too (see *Views and
+saves*). By hand: `python racebikes.py plan 20` shows which bikes it would
+be, `python racebikes.py jaar 20` fetches them (at most 20).
 
 **Modellen** (view) is the list of all models: your own (also without
 listings), the reference models and the recognised ones, with *te koop*,

@@ -60,7 +60,11 @@ Stap 2 F (regels leren) is gebouwd op 02-10-2026: `bike_rule` (migratie
 (onthouden) / weghalen. `Identity.recognized` is wat de advertentie zelf
 zegt; `bike_identity.resolve()` legt koppeling of regel erop zonder de tekst
 opnieuw te lezen, zodat een regel ook verdwenen fietsen in de pool raakt.
-G (bouwjaar ophalen voor kanshebbers) staat in `opdrachten/weekend.md`.
+G (bouwjaar ophalen voor kanshebbers) ook: `python racebikes.py jaar N`,
+in `overdag` en `nacht` via `year_budget: 20` (schedule.json). **Nakijken
+na de eerste rondes:** staat er in `logs/koopjes.log` "Bouwjaren opzoeken"
+met gevonden jaren, en geen 403? Vinden de meeste pagina's geen jaar, dan
+is 20 per ronde zonde van de verzoeken; omlaag kan in schedule.json.
 
 ## Alle racefietsen en vergelijken op model (30-09-2026)
 

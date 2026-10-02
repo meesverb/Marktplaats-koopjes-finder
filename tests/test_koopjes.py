@@ -345,6 +345,41 @@ class ViewsBudgetTest(TempDirTest):
         self.assertLessEqual(config.slots["overdag"].views_budget, 15)
         self.assertEqual(config.slots["week"].views_budget, 0)
 
+class YearBudgetTest(TempDirTest):
+    """year_budget: hoeveel advertentiepagina's een ronde ophaalt om het
+    bouwjaar van goedkope racefietsen zonder jaar op te zoeken
+    (racebikes.lookup_years()). Standaard 0; hooguit 20 (de eigenaar)."""
+
+    def slots(self, budget):
+        return {"slots": {"overdag": {"searches": ["racefietsen"], "pages": 8, "times": ["08:30"],
+                                      "year_budget": budget}}}
+
+    def test_looked_up_after_the_searches_only_with_a_budget(self):
+        for budget, expected in ((0, ["racefiets_jev.py"]), (20, ["racefiets_jev.py", "racebikes.py"])):
+            config = koopjes.load_config(write_config(self.dir, **self.slots(budget)))
+            calls = []
+
+            def runner(command, log, cwd):
+                calls.append(command)
+                return 0
+
+            with koopjes.working_directory(self.dir):
+                koopjes.run_slot(config, "overdag", runner=runner, echo=False)
+            self.assertEqual([Path(c[1]).name for c in calls], expected, budget)
+            if budget:
+                self.assertEqual(calls[-1][2:4], ["jaar", "20"])
+
+    def test_at_most_twenty(self):
+        for bad in (-1, 21, "20", True):
+            with self.assertRaisesRegex(koopjes.ConfigError, "year_budget"):
+                koopjes.load_config(write_config(self.dir, **self.slots(bad)))
+
+    def test_the_shipped_schedule(self):
+        config = koopjes.load_config(Path(repo_file("schedule.json")))
+        self.assertEqual({k: s.year_budget for k, s in config.slots.items() if s.year_budget},
+                         {"overdag": 20, "nacht": 20})
+
+
 class RoundRecordTest(TempDirTest):
     """Every round leaves a line in rondes.jsonl, whatever its outcome."""
 

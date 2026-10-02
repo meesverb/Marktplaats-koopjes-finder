@@ -84,6 +84,11 @@ class SlotTime:
         return f"{self.day} {clock}" if self.day else clock
 
 
+# At most this many listing pages per round for the year lookup: the owner
+# agreed to 20 per round (opdrachten/fietsmodellen.md, G); more needs asking.
+YEAR_BUDGET_MAX = 20
+
+
 @dataclass(frozen=True)
 class Slot:
     name: str
@@ -97,6 +102,10 @@ class Slot:
     # How many listing pages this round may fetch to measure views and saves
     # (views.py). 0: none — every request here is one on top of the search.
     views_budget: int = 0
+    # How many listing pages this round may fetch to find the year of road
+    # bikes that look cheap but don't say their year in the search results
+    # (racebikes.lookup_years()). 0: none.
+    year_budget: int = 0
 
 
 @dataclass(frozen=True)
@@ -226,6 +235,11 @@ def load_config(path: Path) -> Config:
         views_budget = spec.get("views_budget", 0)
         if not isinstance(views_budget, int) or isinstance(views_budget, bool) or not 0 <= views_budget <= 200:
             raise ConfigError(f"tijdslot {name!r}: 'views_budget' moet een geheel getal van 0 tot 200 zijn")
+        year_budget = spec.get("year_budget", 0)
+        if (not isinstance(year_budget, int) or isinstance(year_budget, bool)
+                or not 0 <= year_budget <= YEAR_BUDGET_MAX):
+            raise ConfigError(f"tijdslot {name!r}: 'year_budget' moet een geheel getal van 0 tot "
+                              f"{YEAR_BUDGET_MAX} zijn")
         slots[name] = Slot(
             name=name,
             searches=tuple(names),
@@ -236,6 +250,7 @@ def load_config(path: Path) -> Config:
             valuation=bool(spec.get("valuation", False)),
             open_browser=open_browser,
             views_budget=views_budget,
+            year_budget=year_budget,
         )
     if not slots:
         raise ConfigError(f"{path} heeft geen 'slots'")
@@ -335,6 +350,10 @@ def search_commands(config: Config, slot: Slot) -> list[list[str]]:
     ordered = sorted(groups.items(), key=lambda kv: not kv[0][0])
     return [search_command(config, slot, tuple(names), html=report, bid_lookup=bid_lookup)
             for (report, bid_lookup), names in ordered]
+
+
+def year_command(config: Config, budget: int) -> list[str]:
+    return [sys.executable, str(HERE / "racebikes.py"), "jaar", str(budget), "--db", config.db]
 
 
 def views_command(config: Config, budget: int) -> list[str]:
@@ -454,6 +473,14 @@ def _run_locked(config: Config, slot: Slot, log: Log, runner, started: str) -> i
         if code != 0:
             failed = True
             log.line(f"FOUT: het zoeken stopte met code {code}")
+
+    # After the searches, so the bikes they just found are candidates, and a
+    # separate process like they are: its lines land in the same log.
+    if slot.year_budget:
+        code = runner(year_command(config, slot.year_budget), log, config.base_dir)
+        if code != 0:
+            failed = True
+            log.line(f"FOUT: het opzoeken van bouwjaren stopte met code {code}")
 
     # After the searches, so a listing they just found can be measured, and
     # a separate process like they are: its lines land in the same log.

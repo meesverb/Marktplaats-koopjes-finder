@@ -34,7 +34,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 ## Werklijst
 
 - [x] **1. Fietsmodellen stap 2 F — regels leren** (`opdrachten/fietsmodellen.md` → F)
-- [ ] **2. Fietsmodellen stap 2 G — bouwjaar ophalen voor kanshebbers** (→ G; `schedule.json`: 20 in `overdag` en `nacht`, standaard 0)
+- [x] **2. Fietsmodellen stap 2 G — bouwjaar ophalen voor kanshebbers** (→ G; `schedule.json`: 20 in `overdag` en `nacht`, standaard 0)
 - [ ] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
 - [ ] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
 - [ ] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
@@ -53,3 +53,14 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   testfietsen: regel toepassen 76 ms (35 fietsen). Onderweg: een test in
   `test_dashboard.py` verkocht op de vaste datum 01-10-2026 en faalde sinds
   02-10 (aparte commit, de test verkoopt nu op de aankoopdag).
+- **02-10 ~04:45 — punt 2 (G) af.** `python racebikes.py jaar N` (en `plan
+  N`): actieve racefietsen zonder bouwjaar, met prijs, niet gereserveerd of
+  weggezet, nooit eerder opgehaald, ≥ 15% onder de schatting (of in de
+  onzekere trede onder de mediaan); goedkoopste eerst, hooguit 20,
+  `recheck._get()` (1,5 s ertussen), stopt bij 403 / gewijzigde pagina / 3
+  mislukte. Bewaart de volledige omschrijving (`db.save_listing_details()`)
+  en lift weergaven/likes mee. `koopjes.py`: `year_budget` per tijdslot
+  (0-20, standaard 0), in `schedule.json` 20 bij `overdag` en `nacht`.
+  Niet tegen Marktplaats getest (geen verzoeken vanuit de sandbox); de
+  eigenaar ziet het eerste resultaat in `logs/koopjes.log` ("Bouwjaren
+  opzoeken: …").

@@ -2,7 +2,7 @@
   "_uitleg": [
     "Dit bestand beschrijft alle automatische zoekrondes. Pas het hier aan; koopjes.py zet het bij elke ronde door naar de watchlists in koopjes.db.",
     "searches: per zoekopdracht een 'query' plus filters. Toegestaan: min_price, max_price, min_frame_height, max_frame_height, strict_frame_height, bargain_ratio, reference_file, category (een of meer categorieën met een komma, of 'alle': elke categorie), bids_only, min_score, split (true: een volledige crawl van meer dan ~5000 resultaten in delen, zie racefiets_jev.collect_split). Verder 'report' (false: geen rapport, alleen het dashboard) en 'bid_lookup' (fast, all, none: gaat vóór die van het tijdslot). Een 'note' mag ook, als geheugensteun.",
-    "slots: per ronde welke zoekopdrachten, hoe diep (pages, 0 = alles tot ~5000), sortering (newest of optimized), bid_lookup (fast, all, none), tijden ('HH:MM' of 'zo HH:MM'), of er getaxeerd wordt (valuation), hoeveel advertentiepagina's de ronde mag ophalen om weergaven en likes te meten (views_budget, 0-200, standaard 0; zie views.py) en of het overzicht opent (open_browser: auto, always, never). Bij auto opent het overzicht als er nieuwe advertenties zijn in een zoekopdracht met rapport, en het dashboard als er een nieuwe flip is.",
+    "slots: per ronde welke zoekopdrachten, hoe diep (pages, 0 = alles tot ~5000), sortering (newest of optimized), bid_lookup (fast, all, none), tijden ('HH:MM' of 'zo HH:MM'), of er getaxeerd wordt (valuation), hoeveel advertentiepagina's de ronde mag ophalen om weergaven en likes te meten (views_budget, 0-200, standaard 0; zie views.py), hoeveel om het bouwjaar op te zoeken van racefietsen zonder jaar die goedkoop lijken (year_budget, 0-20, standaard 0; zie racebikes.lookup_years()) en of het overzicht opent (open_browser: auto, always, never). Bij auto opent het overzicht als er nieuwe advertenties zijn in een zoekopdracht met rapport, en het dashboard als er een nieuwe flip is.",
     "Na een wijziging: 'python koopjes.py status' controleert het bestand, 'python koopjes.py schedule' geeft de inplan-commando's opnieuw."
   ],
   "searches": {
@@ -83,6 +83,7 @@
       "bid_lookup": "fast",
       "times": ["08:30", "13:30", "19:30"],
       "views_budget": 15,
+      "year_budget": 20,
       "open_browser": "auto"
     },
     "nacht": {
@@ -93,6 +94,7 @@
       "times": ["03:00"],
       "valuation": true,
       "views_budget": 40,
+      "year_budget": 20,
       "note": "views_budget: weergaven en likes (views.py) van je eigen advertenties, favorieten, lopende biedingen en een steekproef van nieuwe advertenties op 1, 3 en 7 dagen. 40 's nachts, 15 per overdagronde, 10 per computerronde: samen ~125 verzoeken per dag bovenop de zoekrondes (de eigenaar, 29-09-2026: 'gericht + steekproef', richtwaarde 40 per ronde, overdag minder)."
     },
     "computers": {

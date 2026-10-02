@@ -473,6 +473,83 @@ class RuleTest(Case):
                                                                              "answer": "toepassen"})["message"])
 
 
+class YearLookupTest(Case):
+    """Bouwjaar opzoeken voor kanshebbers (stap 2 G): racefietsen zonder jaar
+    die goedkoop lijken, hooguit `budget` per ronde, nooit twee keer."""
+
+    PAGE = ('<html><body><div class="Description-module-description"><div data-collapsable="description">'
+            "Mooie Cube Attain.<br />Bouwjaar 2016, carbon, Shimano 105.</div></div></body></html>")
+
+    def setUp(self):
+        super().setUp()
+        import recheck as rc
+        patcher = mock.patch.object(rc, "MIN_INTERVAL_S", 0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def session(self, pages):
+        from helpers import FakeSession
+        return FakeSession(pages)
+
+    def test_only_cheap_bikes_without_a_year(self):
+        (target,) = rb.plan_years(self.db, 20)
+        self.assertEqual((target.item_id, target.price), ("c", 300.0))
+        self.assertIn("% onder de schatting", target.why)
+        self.assertEqual(rb.plan_years(self.db, 0), [])
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "racefiets", [bike("c", 300.0, title="Cube Attain 2015 racefiets")],
+                         self.now.isoformat())
+        conn.close()
+        self.assertEqual(rb.plan_years(self.db, 20), [])  # het jaar staat er nu in
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "racefiets", [bike("c", 300.0, title="Cube Attain racefiets")], self.now.isoformat())
+        db.set_mark(conn, "c", mr.DISMISSED, reason="niet waard", price_eur=300.0)
+        conn.close()
+        self.assertEqual(rb.plan_years(self.db, 20), [])  # weggezet
+
+    def test_fetch_stores_the_description_and_the_year_counts(self):
+        session = self.session({BIKE_URL.format("c"): self.PAGE})
+        lines = []
+        self.assertEqual(rb.lookup_years(self.db, 20, session=session, log=lines.append), 1)
+        self.assertEqual(session.requested, [BIKE_URL.format("c")])
+        self.assertIn("bouwjaar 2016", lines[-1])
+        row = rb.build_base(self.db, self.dir / "geen_fiets.md").row("c")
+        self.assertEqual(row.identity.year, 2016)
+        self.assertIn("Bouwjaar 2016", row.text)
+        # Nooit twee keer dezelfde.
+        self.assertEqual(rb.plan_years(self.db, 20), [])
+        self.assertEqual(rb.lookup_years(self.db, 20, session=session, log=lines.append), 0)
+        self.assertEqual(len(session.requested), 1)
+
+    def test_gone_forbidden_and_a_changed_page(self):
+        from helpers import FakeResponse
+        lines = []
+        rb.lookup_years(self.db, 20, session=self.session({BIKE_URL.format("c"): FakeResponse("", status_code=410)}),
+                        log=lines.append)
+        self.assertIn("weg", lines[-1])
+        conn = db.connect(self.db)
+        self.assertIsNotNone(conn.execute("SELECT disappeared_at FROM listing WHERE item_id = 'c'").fetchone()[0])
+        conn.execute("UPDATE listing SET disappeared_at = NULL, days_online = NULL WHERE item_id = 'c'")
+        conn.commit()
+        conn.close()
+        lines = []
+        rb.lookup_years(self.db, 20, session=self.session({BIKE_URL.format("c"): FakeResponse("", status_code=403)}),
+                        log=lines.append)
+        self.assertIn("403", lines[-1])
+        lines = []
+        rb.lookup_years(self.db, 20, session=self.session({BIKE_URL.format("c"): "<html>iets anders</html>"}),
+                        log=lines.append)
+        self.assertIn("paginastructuur gewijzigd", lines[-1])
+        self.assertEqual([t.item_id for t in rb.plan_years(self.db, 20)], ["c"])  # niets opgeslagen: volgende keer weer
+
+    def test_by_hand_at_most_twenty(self):
+        import io
+        from contextlib import redirect_stderr
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(rb.main(["jaar", "21", "--db", self.db]), 2)
+        self.assertIn("Hooguit 20", err.getvalue())
+
+
 class PermanentReasonTest(unittest.TestCase):
     def test_no_road_bike_stays_away_when_the_price_drops(self):
         listing = make_listing(price_eur=100.0)

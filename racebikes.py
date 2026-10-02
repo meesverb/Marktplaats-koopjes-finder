@@ -51,10 +51,11 @@ import json
 import math
 import sqlite3
 import statistics
+import sys
 import threading
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -1561,3 +1562,180 @@ def resale_for(db_path, item_id: str) -> Optional[float]:
                    load_pool(db_path, _read_result=read),
                    val.NEGOTIATION_DEFAULT[1])
     return None if est.resale is None else round(est.resale, 2)
+
+
+# --- Bouwjaar opzoeken voor kanshebbers (stap 2 G) ------------------------------------
+#
+# Het bouwjaar staat zelden in de titel (op 100 echte titels ~6, 30-09-2026),
+# en zonder jaar blijft een fiets op een grove trede of "onzeker". Voor de
+# fietsen die op het eerste gezicht goedkoop lijken haalt een ronde de
+# advertentiepagina op (koopjes.py, year_budget in schedule.json): de
+# volledige omschrijving noemt het jaar vaak wel. Hooguit 20 per ronde (de
+# eigenaar, 01-10-2026), nooit een advertentie twee keer, met de gewone
+# wachttijd ertussen (recheck._get()). Alleen lezen; bieden of reageren doet
+# de eigenaar zelf.
+YEAR_CHEAP = 0.85  # goedkoop: prijs ≤ 85% van de schatting van de trede
+
+
+@dataclass
+class YearTarget:
+    item_id: str
+    url: str
+    title: str
+    price: float
+    why: str
+    ratio: float  # prijs / schatting (of / mediaan in de onzekere trede); laagste eerst
+
+
+def _details_fetched(db_path) -> set:
+    """De advertenties waarvan de pagina al eens is opgehaald (ook zonder omschrijving)."""
+    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        return {r[0] for r in conn.execute("SELECT item_id FROM listing WHERE details_fetched_at IS NOT NULL")}
+    except sqlite3.Error:
+        return set()
+    finally:
+        conn.close()
+
+
+def plan_years(db_path, budget: int) -> list[YearTarget]:
+    """Welke racefietsen een ronde opzoekt: actief, met een prijs, niet
+    gereserveerd of weggezet, zonder bekend bouwjaar, nooit eerder
+    opgehaald, en goedkoop: ≥ 15% onder de schatting van hun trede, of in de
+    onzekere trede onder de mediaan. De goedkoopste eerst, hooguit `budget`."""
+    if budget <= 0 or not Path(db_path).exists():
+        return []
+    read = _read(db_path)
+    listings, _, _ = load_listings(db_path, _read_result=read)
+    if not listings:
+        return []
+    pool = load_pool(db_path, _read_result=read)
+    fetched = _details_fetched(db_path)
+    marks = mr.load_marks(db_path)
+    rules = read.rule_map
+    factor = val.NEGOTIATION_DEFAULT[1]
+    out = []
+    for l in listings:
+        if l.item_id in fetched or l.detail_text or l.reserved or not l.price_eur or l.price_eur <= 0:
+            continue
+        if mr.is_dismissed(marks.get(l.item_id), l):
+            continue
+        ident = pool.identity_of.get(l.item_id) or bi.identify(l, read.links.get(l.item_id), rules)
+        if ident.year is not None:
+            continue
+        est = estimate(l, ident, pool, factor)
+        if est.resale is None:
+            continue
+        if est.level in bi.UNCERTAIN_LEVELS:
+            if not est.median or l.price_eur >= est.median:
+                continue
+            ratio = l.price_eur / est.median
+            why = f"{round((1 - ratio) * 100)}% onder de mediaan, onzeker"
+        else:
+            ratio = l.price_eur / est.resale
+            if ratio > YEAR_CHEAP:
+                continue
+            why = f"{round((1 - ratio) * 100)}% onder de schatting"
+        out.append(YearTarget(l.item_id, l.url, l.title, l.price_eur, why, ratio))
+    out.sort(key=lambda t: (t.ratio, t.item_id))
+    return out[:budget]
+
+
+def year_in(title: str, text: str) -> Optional[int]:
+    """Het bouwjaar zoals de rest het leest (upgrade.listing_specs()): eerst
+    een gelabeld jaar in de tekst, dan een jaartal in de titel."""
+    year = mp.extract_specs(f"{title} {text}").get("model_year")
+    if year and str(year).isdigit():
+        return int(year)
+    return val.title_year(title)
+
+
+def lookup_years(db_path, budget: int, session=None, log=print) -> int:
+    """Wat een ronde doet (koopjes.py): plannen, de pagina's ophalen, de
+    volledige omschrijving bewaren (db.save_listing_details(); daar lezen
+    /racefietsen en de upgrade het jaar uit). De weergaven en likes op de
+    pagina gaan mee (views.py: meeliften). Geeft het aantal verzoeken. Stopt
+    bij een 403, bij een pagina die niet meer te lezen is en bij drie
+    mislukte verzoeken achter elkaar."""
+    import recheck as rc
+    import requests
+
+    targets = plan_years(db_path, budget)
+    if not targets:
+        return 0
+    log(f"Bouwjaren opzoeken: {len(targets)} racefiets(en) zonder jaar die goedkoop lijken (max {budget} per ronde)")
+    session = session or rc.make_session()
+    conn = db.connect(str(db_path))
+    done = failures = 0
+    try:
+        for t in targets:
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            done += 1
+            try:
+                resp = rc._get(session, t.url)
+            except requests.RequestException as exc:
+                result = f"niet opgehaald ({exc})"
+            else:
+                if resp.status_code in rc.GONE_STATUSES:
+                    db.record_listing_gone(conn, t.item_id, now)
+                    result = "weg"
+                elif resp.status_code == 403:
+                    log(f"  {t.item_id}: Marktplaats weigert (HTTP 403) — gestopt; de volgende ronde gaat verder")
+                    break
+                elif resp.status_code >= 400:
+                    result = f"niet opgehaald (HTTP {resp.status_code})"
+                else:
+                    parsed = mp.parse_listing_page(resp.text)
+                    if parsed is None:
+                        log(f"  {t.item_id}: de omschrijving staat niet waar hij stond — Marktplaats heeft "
+                            "waarschijnlijk zijn paginastructuur gewijzigd; gestopt")
+                        break
+                    text, _ = parsed
+                    db.save_listing_details(conn, {t.item_id: text}, now)
+                    try:
+                        stats = mp.page_stats(mp.listing_page_data(resp.text))
+                    except mp.ListingPageError:
+                        stats = None  # de omschrijving is waar het om ging
+                    if stats:
+                        db.record_stats(conn, t.item_id, now, stats, price_eur=t.price, source="omschrijving")
+                    year = year_in(t.title, text)
+                    result = f"bouwjaar {year}" if year else "geen bouwjaar in de omschrijving"
+            log(f"  {t.item_id} (€{t.price:.0f}, {t.why}): {result}")
+            failures = failures + 1 if result.startswith("niet opgehaald") else 0
+            if failures >= 3:
+                log("  gestopt: drie keer achter elkaar niet gelukt")
+                break
+    finally:
+        conn.close()
+    return done
+
+
+def main(argv=None) -> int:
+    """`python racebikes.py jaar 20`: een ronde bouwjaren opzoeken met de hand
+    (hooguit 20); `plan 20` toont alleen welke het zouden zijn."""
+    import argparse
+
+    from koopjes import YEAR_BUDGET_MAX
+
+    parser = argparse.ArgumentParser(
+        description="Racefietsen: het bouwjaar opzoeken van fietsen zonder jaar die goedkoop lijken.")
+    parser.add_argument("actie", choices=["jaar", "plan"])
+    parser.add_argument("aantal", type=int, nargs="?", default=10)
+    parser.add_argument("--db", default="koopjes.db")
+    args = parser.parse_args(argv)
+    if not Path(args.db).exists():
+        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+        return 1
+    if not 0 <= args.aantal <= YEAR_BUDGET_MAX:
+        print(f"Hooguit {YEAR_BUDGET_MAX} per keer: elke fiets is een verzoek bij Marktplaats.", file=sys.stderr)
+        return 2
+    if args.actie == "plan":
+        for t in plan_years(args.db, args.aantal):
+            print(f"{t.item_id}  €{t.price:>5.0f}  {t.why:34}  {t.title}")
+        return 0
+    lookup_years(args.db, args.aantal)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
