@@ -40,7 +40,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - [x] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
 - [x] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
 - [x] **4b. Reservelijst onderdelen op /racefietsen** (keuzes hierboven)
-- [ ] **4c. Zelfde knoppen en weergaven** op racefietsen, fietscomputers, horloges (keuzes hierboven)
+- [x] **4c. Zelfde knoppen en weergaven** op racefietsen, fietscomputers, horloges (keuzes hierboven)
 - [ ] **4d. Snel verkocht** ook bij fietscomputers en horloges
 - [ ] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
 - [ ] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
@@ -105,3 +105,13 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   de racefietsen). Geen nieuwe zoekopdracht (keuze eigenaar): er zijn er
   weinig; README zegt hoe er een bij kan. In Chromium op 1300 en 390 px
   zonder JS-fouten.
+- **02-10 ~08:30 — punt 4c (zelfde knoppen en weergaven) af.** Fietscomputers
+  en horloges kregen **Te beoordelen** en **Weggezet** (tabknoppen die Alle
+  openen met Toon op dat filter: geen tweede tabel van duizenden rijen; ook
+  via `#beoordelen`/`#weggezet` en live bijgewerkt na favoriet/weg), Toon
+  "te beoordelen" en een filter **Max €** in Alle. `/racefietsen` kreeg
+  **Mijn flips** (de fietsen van /flips: fase, gekocht, erin, doel, winst;
+  bewerken op /flips). Wat er al overal was: Favorieten, Mijn biedingen,
+  Alle, Patronen, favoriet/weg/notitie/bod/controleer, afstand. Niet gedaan
+  (keuze eigenaar): sneltoetsen en Modellen bij computers/horloges. In
+  Chromium op 1300 en 390 px zonder JS-fouten of horizontaal scrollen.

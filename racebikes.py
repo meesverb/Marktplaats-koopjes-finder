@@ -1316,11 +1316,11 @@ document.addEventListener('click', e => {
   const a = e.target.closest('a[data-model]'); if (!a) return;
   e.preventDefault();
   modelFilter = a.dataset.model;
-  if (view === 'models' || view === 'patterns') view = 'all';
+  if (NO_CARDS.includes(view)) view = 'all';
   document.querySelectorAll('.views button').forEach(x => x.classList.toggle('on', x.dataset.view === view));
   draw(); window.scrollTo(0, 0);
 });
-const NO_CARDS = ['models', 'patterns', 'spares'];
+const NO_CARDS = ['models', 'patterns', 'spares', 'flips'];
 function draw() {
   shown = NO_CARDS.includes(view) ? [] : BIKES.filter(b => inView(b) && passes(b)).sort(SORTS[$('sort').value] || SORTS.newest);
   list.innerHTML = ''; drawn = 0; cur = -1;
@@ -1333,13 +1333,14 @@ function draw() {
   $('gonebids').hidden = view !== 'bids' || !GONE.length;
   list.hidden = NO_CARDS.includes(view);
   $('spareview').hidden = view !== 'spares';
+  $('flipview').hidden = view !== 'flips';
   $('count').textContent = NO_CARDS.includes(view) ? '' : shown.length + ' fietsen';
   if (view === 'models') drawModels(); else if (view === 'spares') { drawSpares(); more.hidden = true; } else drawMore();
   counts(); remember();
 }
 function drawMore() {
   if (view === 'models') { drawMoreModels(); return; }
-  if (view === 'patterns' || view === 'spares') { more.hidden = true; return; }
+  if (view === 'patterns' || view === 'spares' || view === 'flips') { more.hidden = true; return; }
   const html = shown.slice(drawn, drawn + BATCH).map(card).join('');
   list.insertAdjacentHTML('beforeend', html);
   drawn = Math.min(drawn + BATCH, shown.length);
@@ -1518,6 +1519,54 @@ def page_json(data) -> str:
                       allow_nan=False).replace("</", "<\\/")
 
 
+def own_flips_html(db_path) -> tuple[int, str]:
+    """(aantal, html) van Mijn flips op /racefietsen: de eigen fietsen van
+    /flips (`trade.market` "fietsen"), kort. Bewerken gebeurt op /flips; hier
+    staat wat erin zit en wat het oplevert, zodat elke pagina dezelfde
+    weergaven heeft (de eigenaar, 02-10-2026). Gelezen bij elk verzoek: het
+    zijn er een handvol."""
+    import dashboard as dash
+    import flips as fl
+
+    book = fl.load_book(db_path, with_market_check=False) if db_path and Path(db_path).exists() else None
+    bikes = [f for f in (book.flips if book else []) if (f.trade.market or "") == "fietsen"]
+    if not bikes:
+        return 0, ("<p class='explain'>Nog geen fietsflips. Een fiets die je koopt (een bod op "
+                   "<em>geaccepteerd</em>, of zelf toevoegen op <a href='/flips'>/flips</a>) komt hier te staan.</p>")
+    # Lopende eerst, de langst lopende bovenaan; dan de verkochte.
+    bikes.sort(key=lambda f: (f.sold, f.trade.bought_at or ""))
+    sold = [f for f in bikes if f.sold]
+    earned = sum(f.profit_eur or 0.0 for f in sold)
+    rows = []
+    for f in bikes:
+        t = f.trade
+        title = (f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
+                 if t.url else esc(t.title))
+        low, high = f.target
+        target = ("—" if low is None else dash.flip_money(low) if high == low
+                  else f"{dash.flip_money(low)}–{dash.flip_money(high)}")
+        profit = f.profit_eur if f.sold else f.expected_profit(f.target_mid_eur)
+        days = None if f.sold else f.days_in_stage
+        rows.append(
+            f"<tr><td>{title}</td><td>{esc(fl.STAGE_LABELS.get(f.stage, f.stage))}"
+            f"{'' if days is None else f' <span class=muted>{days} d</span>'}</td>"
+            f"<td class='num'>{dash.flip_money(t.cost_basis_eur)}</td>"
+            f"<td class='num'>{dash.flip_money(f.spent_eur)}"
+            f"{f' <span class=muted>+{dash.flip_money(f.planned_eur)} gepland</span>' if f.planned_eur else ''}</td>"
+            f"<td class='num'>{target}</td>"
+            f"<td class='num'>{dash.flip_signed(profit)}{'' if f.sold or profit is None else ' <span class=muted>verwacht</span>'}</td>"
+            f"<td><a href='/flips#flip-{f.id}'>op /flips</a></td></tr>")
+    summary = (f"{len(bikes)} fiets{'en' if len(bikes) != 1 else ''}, {len(sold)} verkocht"
+               + (f", verdiend {dash.flip_signed(earned)}" if sold else ""))
+    return len(bikes), (
+        f"<p class='explain'>Je eigen fietsflips van <a href='/flips'>/flips</a>: {summary}. "
+        "Erin = aankoop plus wat je aan onderdelen en klussen uitgaf; de winst van een lopende flip is "
+        "op het midden van je doelprijs. Klussen, foto's en verkopen doe je op /flips.</p>"
+        "<div class='table-wrap'><table><thead><tr><th>Fiets</th><th>Fase</th><th class='num'>Gekocht</th>"
+        "<th class='num'>Erin</th><th class='num'>Doel</th><th class='num'>Winst</th><th></th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>")
+
+
 def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     import dashboard as dash
 
@@ -1527,6 +1576,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         rules = rules_json(base)
         spares = spares_json(base, fresh, fresh.db_path)
     gone = gone_bids(base, fresh)
+    flip_count, flips_html = own_flips_html(fresh.db_path)
     lo, hi = ((base.target_cm - 2, base.target_cm + 2) if base.target_cm else (54, 58))
     notices = ""
     if message:
@@ -1553,6 +1603,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     views_bar = "".join(
         f"<button data-view='{k}' data-label='{esc(label)}'>{esc(label)}</button>"
         for k, label in (("open", "Te beoordelen"), ("fav", "Favorieten"), ("bids", "Mijn biedingen"),
+                         ("flips", f"Mijn flips ({flip_count})" if flip_count else "Mijn flips"),
                          ("all", "Alle"), ("away", "Weggezet"), ("models", "Modellen"), ("spares", "Onderdelen"),
                          ("patterns", "Patronen")))
     sort = ("<select id='sort' aria-label='Volgorde'>"
@@ -1595,7 +1646,8 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         "<kbd>Esc</kbd> uit een invulveld</div>"
         "</div>"
         "<div id='modelchip' class='row' hidden></div>"
-        f"<div id='list' data-home='{1 if home else 0}'></div><section id='modellist' hidden></section><section id='spareview' hidden></section><div id='more'></div>"
+        f"<div id='list' data-home='{1 if home else 0}'></div><section id='modellist' hidden></section><section id='spareview' hidden></section>"
+        f"<section id='flipview' hidden>{flips_html}</section><div id='more'></div>"
         f"<div id='gonebids' hidden><h3>Biedingen op fietsen die niet meer online zijn</h3><ul>{gone_html}</ul></div>"
         f"<section id='patterns' hidden>{vw.patterns_html(base.patterns or vw.ViewPatterns(), 'racefietsen')}</section>"
         f"<script type='application/json' id='bikes'>{page_json(bikes)}</script>"

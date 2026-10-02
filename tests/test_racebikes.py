@@ -145,6 +145,42 @@ class SparesTest(Case):
         self.assertIn("data-view='spares'", html)
 
 
+class OwnFlipsViewTest(Case):
+    """Mijn flips op /racefietsen: de fietsen van /flips, niet de
+    fietscomputers of spullen (elke pagina dezelfde weergaven, 02-10-2026)."""
+
+    def test_only_bikes_with_cost_and_profit(self):
+        self.assertEqual(rb.own_flips_html(self.db)[0], 0)
+        conn = db.connect(self.db)
+        running = fl.create_flip(conn, title="Cube Peloton Pro", market="fietsen", bought_at="2026-09-20",
+                                 buy_price_eur=250.0, target_low_eur=400.0, target_high_eur=450.0)
+        fl.add_task(conn, running, kind="onderdeel", title="ketting", est_eur=20.0)
+        done = fl.create_flip(conn, title="Trek 1.2", market="fietsen", bought_at="2026-08-01", buy_price_eur=200.0)
+        fl.sell(conn, done, sold_at="2026-08-20", price_eur=320.0)
+        fl.create_flip(conn, title="Garmin Edge 530", market="fietscomputers", bought_at="2026-09-01",
+                       buy_price_eur=90.0)
+        fl.create_flip(conn, title="Fietsdrager", market="spullen", bought_at="2026-09-01", buy_price_eur=30.0)
+        conn.close()
+
+        count, html = rb.own_flips_html(self.db)
+        self.assertEqual(count, 2)
+        self.assertIn("Cube Peloton Pro", html)
+        self.assertNotIn("Garmin", html)
+        self.assertNotIn("Fietsdrager", html)
+        # Lopend: winst op het midden van de doelprijs, min aankoop en de geplande ketting (425 − 250 − 20).
+        self.assertIn("+€155,00 <span class=muted>verwacht", html)
+        self.assertIn("+€20,00 gepland", html)
+        self.assertIn("verdiend +€120,00", html)
+        self.assertIn(f"href='/flips#flip-{running}'", html)
+        self.assertLess(html.index("Cube Peloton Pro"), html.index("Trek 1.2"))  # lopend eerst
+        self.assertNotIn("verkocht <span class=muted>0 d", html)
+
+        base = rb.build_base(self.db, self.dir / "geen_fiets.md")
+        page = rb.render(base, rb.load_fresh(self.db), "tok")
+        self.assertIn("data-view='flips' data-label='Mijn flips (2)'", page)
+        self.assertIn("<section id='flipview' hidden>", page)
+
+
 class FindOneTest(Case):
     def test_one_bike_as_the_whole_list_gives_it(self):
         listings, _, _ = rb.load_listings(self.db)

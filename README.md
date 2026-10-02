@@ -376,11 +376,13 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 | Tab | What |
 | --- | --- |
 | **Flips** | every computer below its expected selling price, biggest profit first; reserved listings are left out (they're in Alle computers, marked "gereserveerd"), and so are listings you put away yourself (below) until their price drops. Per listing: the profit, the band around it, what it costs and what kind of price that is (fixed price / asking price, bidding possible / current bid, still rising), the expected selling price with n, and a photo. Below that: listings without a price, with the **maximum bid** at which you still break even at the low estimate |
+| **Te beoordelen** | Alle computers with **Toon** set to *te beoordelen*: no mark, no bid of yours, not bought, not reserved — mark one and it leaves this view, so you work down the list, as on `/racefietsen`. A tab button, not a second table: it opens Alle computers with that filter |
 | **Favorieten** | the listings you marked ★ favoriet (below), with your note and the price when you marked them if it has changed since; below that, favourites that are no longer online ("verdwenen" or "laatst gezien") |
 | **Mijn biedingen** | the bids you placed yourself on Marktplaats, running ones first (see "Your own bids" below), with the listing, or "verdwenen" when it's gone |
 | **Mijn flips** | what you bought and sold yourself: realised profit, what's in stock and what it should bring now, average days to sell, how far the dashboard's estimate was off, and profit per month. Entered in the live version (below) |
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
-| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box (also searches your notes), brand filter, "alleen nieuw", sortable columns (Afstand too, see "Distance"). **Toon** hides the listings you put away (the default); set it to *favorieten*, *weggezet* (to put one back), *met notitie* or *alles* |
+| **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box (also searches your notes), brand filter, "alleen nieuw", sortable columns (Afstand too, see "Distance"), **Max €**. **Toon** hides the listings you put away (the default); set it to *te beoordelen*, *favorieten*, *weggezet* (to put one back), *met notitie* or *alles* |
+| **Weggezet** | Alle computers with **Toon** set to *weggezet*: what you put away, to put one back. Like Te beoordelen a tab button; the tab Alle computers itself sets Toon back to the default |
 | **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
 | **Vinted** | once you've read in a Vinted export (below; until then the tab says how, and which database it reads): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
 | **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. Gone listings that were reserved when a round last saw them are counted apart ("eerst gereserveerd"): those were almost certainly sold. Only reservations a round actually saw count, so it's a lower bound. The hour of posting isn't in the search results: Marktplaats only says "Vandaag"/"Gisteren". Below all that: **Weergaven en likes** (see "Views and saves") |
@@ -972,8 +974,8 @@ different market and not followed (yet); they land in Uitgefilterd as
   older models without a source (Polar M400, V800, M600, Loop; Suunto Core,
   Traverse) that show as "horloge, model onbekend".
 - **The dashboard** `dashboard_horloges.html`: the same page as the bike
-  computers' — tabs Flips, Favorieten, Mijn flips, Alle horloges, Marktprijzen,
-  Patronen and Uitgefilterd — without Upgrades (there is no own watch to
+  computers' — tabs Flips, Te beoordelen, Favorieten, Mijn biedingen, Mijn
+  flips, Alle horloges, Weggezet, Marktprijzen, Patronen and Uitgefilterd — without Upgrades (there is no own watch to
   compare with), Vinted and the feature score. `koopjes.py` writes it after
   every round; `python dashboard.py --markt sporthorloges` (or `--markt alle`)
   by hand. `python dashboard.py --serve` shows it live at
@@ -1396,9 +1398,12 @@ scroll, and a field to **add a new model**. Click a model to see its bikes.
 
 Views: **Te beoordelen** (no mark, no bid, not bought, not reserved — mark a
 bike and it leaves this view, so you work down the list), **Favorieten**,
-**Mijn biedingen** (with bids on bikes that are gone below), **Alle**
-(without the ones you put away), **Weggezet**, **Modellen** and **Patronen** (views and
-saves of road bikes, see below). Filters: search (title, specs, place, your
+**Mijn biedingen** (with bids on bikes that are gone below), **Mijn flips**
+(your own bikes from `/flips`: stage, bought for, what's in it, target price,
+profit — expected at the middle of the target for a running one; editing is
+on `/flips`), **Alle** (without the ones you put away), **Weggezet**,
+**Modellen**, **Onderdelen** (above) and **Patronen** (views and saves of road
+bikes, see below). Filters: search (title, specs, place, your
 note), order (newest, best flip, best waardescore, best upgrade, nearest,
 cheapest), frame size (default your size ± 2 cm, with *maat onbekend* on),
 maximum price, maximum distance, *gereserveerd*, *alleen nieuw*. The page

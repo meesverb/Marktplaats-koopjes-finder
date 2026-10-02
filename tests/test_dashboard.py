@@ -1,5 +1,6 @@
 """dashboard.py: één pagina met alle fietscomputers, gebouwd uit koopjes.db."""
 import io
+import re
 import shutil
 import tempfile
 import unittest
@@ -178,6 +179,27 @@ class MarksTest(DatabaseCase):
         # Zijn vraagprijs is net zo echt als een andere: hij blijft vergelijkingsprijs.
         comps = dashboard.pc.db_comparables(self.db, dashboard.pc._default_catalog(), 180)
         self.assertIn("c", comps["Garmin Edge 530"])
+
+    def test_the_same_views_as_on_racefietsen(self):
+        # Te beoordelen en Weggezet zijn tabknoppen die Alle met een filter
+        # openen (de eigenaar, 02-10-2026: elke pagina dezelfde weergaven).
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0), computer("f", "Garmin Edge 530", 95.0)])
+        self.mark("c", "weg", "niet waard", 90.0)
+        self.mark("f", "favoriet")
+        d = dashboard.load_dashboard(self.db)
+        review = sum(1 for l, _, _ in d.all_rows if d.to_review(l))
+        self.assertEqual(review, len(d.all_rows) - 2)
+        page = dashboard.render(d)
+        self.assertIn(f"data-tab='beoordelen' data-mark='beoordelen'>Te beoordelen ({review})</button>", page)
+        self.assertIn("data-tab='weggezet' data-mark='weg'>Weggezet (1)</button>", page)
+        self.assertLess(page.index("data-tab='beoordelen'"), page.index("data-panel='favorieten'"))
+        all_html = dashboard.all_panel(d)
+        self.assertIn(f"Toon: te beoordelen ({review})", all_html)
+        self.assertIn("id='all-pmax'", all_html)
+        row = lambda item: re.search(rf"<tr data-item='{item}'[^>]*>", all_html).group(0)
+        self.assertIn("data-review='0'", row("c"))
+        self.assertIn("data-review='0'", row("f"))
+        self.assertIn("data-price='95.0'", row("f"))
 
     def test_a_dismissed_listing_comes_back_when_its_price_drops(self):
         self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
@@ -505,6 +527,8 @@ class LiveServerTest(unittest.TestCase):
         self.assertIn("weggezet (niet waard)", item["badge"])
         self.assertIn("terugzetten", item["mine"])
         self.assertEqual(data["tabs"]["flips"], "Flips (1)")
+        self.assertEqual(data["tabs"]["weggezet"], "Weggezet (1)")
+        self.assertEqual(item["review"], 0)
         self.assertIn("1 flip weggezet", data["away"])
         # Weg is een rij verbergen; het hele tabblad komt pas mee bij terugzetten.
         self.assertEqual(set(data["panels"]), {"favorieten"})

@@ -157,6 +157,14 @@ class Dashboard:
         mark = self.marks.get(listing.item_id)
         return mark is not None and mark.favorite
 
+    def to_review(self, listing) -> bool:
+        """Te beoordelen, zoals op /racefietsen: geen markering, geen bod van
+        jou, niet gekocht en niet gereserveerd. Elke pagina dezelfde
+        weergaven (de eigenaar, 02-10-2026)."""
+        return (not self.is_favorite(listing) and not self.is_dismissed(listing)
+                and listing.item_id not in self.bought and not listing.reserved
+                and listing.item_id not in self.bids)
+
     @property
     def all_rows(self) -> list:
         """(advertentie, modellabel, signalen) voor alles in Alle computers."""
@@ -986,12 +994,29 @@ def mark_state(listing, d: Dashboard) -> str:
     return mr.DISMISSED if d.is_dismissed(listing) else ""
 
 
+def view_counts(d: Dashboard) -> tuple[int, int]:
+    """(te beoordelen, weggezet) in Alle, voor de tabknoppen en Toon."""
+    items = d.all_rows
+    return sum(1 for l, _, _ in items if d.to_review(l)), sum(1 for l, _, _ in items if d.is_dismissed(l))
+
+
+# Tabknoppen die Alle openen met een filter (Toon): dezelfde weergaven als op
+# /racefietsen, zonder een tweede tabel van duizenden rijen in de pagina.
+VIEW_TABS = (("beoordelen", "Te beoordelen", "beoordelen"), ("weggezet", "Weggezet", mr.DISMISSED))
+
+
+def view_tab_labels(d: Dashboard) -> dict:
+    review, away = view_counts(d)
+    return {"beoordelen": f"Te beoordelen ({review})", "weggezet": f"Weggezet ({away})"}
+
+
 def mark_options(d: Dashboard) -> str:
     """De keuzes van Toon in Alle computers, met hun aantallen."""
     items = d.all_rows
-    away = sum(1 for l, _, _ in items if d.is_dismissed(l))
+    review, away = view_counts(d)
     notes = sum(1 for l, _, _ in items if l.item_id in d.notes)
     return ("<option value=''>Toon: zonder weggezette</option>"
+            f"<option value='beoordelen'>Toon: te beoordelen ({review})</option>"
             f"<option value='{mr.FAVORITE}'>Toon: favorieten ({len(d.favorites)})</option>"
             f"<option value='{mr.DISMISSED}'>Toon: weggezet ({away})</option>"
             f"<option value='notitie'>Toon: met notitie ({notes})</option>"
@@ -1009,6 +1034,7 @@ def all_panel(d: Dashboard) -> str:
         f"<select id='all-brand' aria-label='Merk'><option value=''>Alle merken</option>{options}"
         "<option value='model onbekend'>Model onbekend</option></select>"
         f"<select id='all-mark' aria-label='Toon'>{mark_options(d)}</select>"
+        "<label>Max €<input type='number' id='all-pmax' min='0' step='5' aria-label='Maximale prijs'></label>"
         "<label><input type='checkbox' id='all-new'> alleen nieuw</label>"
         "<span class='muted' id='all-count'></span></div>"
     ]
@@ -1024,6 +1050,7 @@ def all_panel(d: Dashboard) -> str:
             f"<tr data-item='{esc(l.item_id, quote=True)}' "
             f"data-brand='{esc(brand, quote=True)}' data-new='{int(l.item_id in d.new_ids)}' "
             f"data-mark='{mark_state(l, d)}' data-note='{int(l.item_id in d.notes)}' "
+            f"data-review='{int(d.to_review(l))}' data-price='{'' if l.price_eur is None else l.price_eur}' "
             f"data-text='{esc(search_text(l, d, label), quote=True)}'>"
             f"<td class='pic'>{thumb(l)}</td>"
             f"{price_cell(l)}"
@@ -1619,15 +1646,27 @@ svg.chart text.val { fill: var(--text); font-weight: 600; }
 
 JS = """
 const buttons = document.querySelectorAll('nav.tabs button');
+// Te beoordelen en Weggezet zijn Alle met een filter (data-mark): de knop
+// zet Toon zodra de tabel er is; Alle zelf zet hem terug.
+let presetMark = null;
+function applyPreset() {
+  if (presetMark === null || !markFilter) return;
+  markFilter.value = presetMark; presetMark = null; filterAll();
+}
 function show(name) {
+  const view = Array.from(buttons).find(b => b.dataset.tab === name);
+  const button = view || Array.from(buttons).find(b => b.dataset.panel === name && !b.dataset.tab);
+  if (view) { presetMark = view.dataset.mark; name = view.dataset.panel; }
+  else if (name === 'alle' && presetMark === null) presetMark = '';
   const target = document.getElementById('panel-' + name);
   if (!target) return;
   document.querySelectorAll('.panel').forEach(p => p.hidden = p !== target);
-  buttons.forEach(b => b.classList.toggle('active', b.dataset.panel === name));
-  if (target.dataset.lazy) loadPanel(target, name);
+  buttons.forEach(b => b.classList.toggle('active', b === button));
+  if (target.dataset.lazy) loadPanel(target, name); else applyPreset();
 }
 buttons.forEach(b => b.addEventListener('click', () => {
-  show(b.dataset.panel); history.replaceState(null, '', '#' + b.dataset.panel);
+  const name = b.dataset.tab || b.dataset.panel;
+  show(name); history.replaceState(null, '', '#' + name);
 }));
 window.addEventListener('hashchange', () => show(location.hash.slice(1)));
 
@@ -1650,6 +1689,7 @@ function loadPanel(panel, name) {
       panel.innerHTML = html;
       initSortable(panel);
       initAll();
+      applyPreset();
       pendingItems.splice(0).forEach(applyItem);
       if (pendingOptions !== null) { setMarkOptions(pendingOptions); pendingOptions = null; }
       if (search) filterAll();
@@ -1758,18 +1798,22 @@ function initSortable(root) {
 initSortable(document);
 
 // De filters van Alle computers; op de live pagina pas als die tab geladen is.
-let search = null, brand = null, markFilter = null, onlyNew = null, count = null;
+let search = null, brand = null, markFilter = null, onlyNew = null, count = null, maxPrice = null;
 function filterAll() {
   if (!search) return;
   const q = search.value.trim().toLowerCase();
+  const pmax = parseFloat(maxPrice ? maxPrice.value : '');
   const which = markFilter.value;
   let shown = 0;
   document.querySelectorAll('#all-table tbody tr').forEach(r => {
     // Standaard zonder weggezette; 'alles' toont ze erbij, 'notitie' alles met een notitie.
     const markOk = which === 'alles' || (which === 'notitie' ? r.dataset.note === '1'
+      : which === 'beoordelen' ? r.dataset.review === '1'
       : which ? r.dataset.mark === which : r.dataset.mark !== 'weg');
+    const price = r.dataset.price === '' ? null : parseFloat(r.dataset.price);
     const ok = (!q || r.dataset.text.includes(q)) && (!brand.value || r.dataset.brand === brand.value)
-      && (!onlyNew.checked || r.dataset.new === '1') && markOk;
+      && (!onlyNew.checked || r.dataset.new === '1') && markOk
+      && (Number.isNaN(pmax) || price === null || price <= pmax);
     r.classList.toggle('hidden', !ok);
     if (ok) shown++;
   });
@@ -1782,12 +1826,13 @@ function initAll() {
   brand = document.getElementById('all-brand');
   markFilter = document.getElementById('all-mark');
   onlyNew = document.getElementById('all-new');
+  maxPrice = document.getElementById('all-pmax');
   count = document.getElementById('all-count');
   restoreFilters();
   // Typen filtert als je even stopt: elke toets liep anders alle rijen langs.
   let typing = null;
   search.addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(filterAll, 150); });
-  [brand, markFilter, onlyNew].forEach(el => el.addEventListener('input', filterAll));
+  [brand, markFilter, onlyNew, maxPrice].filter(Boolean).forEach(el => el.addEventListener('input', filterAll));
   filterAll();
 }
 function setMarkOptions(html) {
@@ -1809,6 +1854,7 @@ function applyItem(it) {
   document.querySelectorAll('.mine' + sel).forEach(el => { el.innerHTML = it.mine; });
   document.querySelectorAll('#all-table tr' + sel).forEach(r => {
     r.dataset.mark = it.mark; r.dataset.note = String(it.note); r.dataset.text = it.text;
+    if (it.review !== undefined) r.dataset.review = String(it.review);
   });
 }
 function applyMark(data) {
@@ -1817,7 +1863,8 @@ function applyMark(data) {
     if (panel) { panel.innerHTML = html; initSortable(panel); filterKm(panel); }
   });
   Object.entries(data.tabs || {}).forEach(([name, label]) => {
-    const button = document.querySelector(`nav.tabs button[data-panel="${name}"]`);
+    const button = document.querySelector(`nav.tabs button[data-tab="${name}"]`)
+      || document.querySelector(`nav.tabs button[data-panel="${name}"]:not([data-tab])`);
     if (button) button.textContent = label;
   });
   Object.entries(data.tiles || {}).forEach(([name, html]) => {
@@ -1990,10 +2037,16 @@ def render(d: Dashboard, overview_link: Optional[str] = None, lazy: Sequence[str
     computers = len(d.items) + len(d.unknown_items)
     tabs = [(name, label, None if i and name in lazy else panel(d))
             for i, (name, label, panel) in enumerate(tab_list(d))]
-    nav = "".join(
-        f"<button data-panel='{name}'{' class=active' if i == 0 else ''}>{esc(label)}</button>"
-        for i, (name, label, _) in enumerate(tabs)
-    )
+    view_labels = view_tab_labels(d)
+    nav = ""
+    for i, (name, label, _) in enumerate(tabs):
+        if name == "favorieten":
+            nav += (f"<button data-panel='alle' data-tab='beoordelen' data-mark='beoordelen'>"
+                    f"{esc(view_labels['beoordelen'])}</button>")
+        nav += f"<button data-panel='{name}'{' class=active' if i == 0 else ''}>{esc(label)}</button>"
+        if name == "alle":
+            nav += (f"<button data-panel='alle' data-tab='weggezet' data-mark='{mr.DISMISSED}'>"
+                    f"{esc(view_labels['weggezet'])}</button>")
     panels = "".join(
         f"<section class='panel' id='panel-{name}'{'' if i == 0 else ' hidden'}"
         f"{' data-lazy=1' if body is None else ''}>{body or ''}</section>"
@@ -2048,17 +2101,19 @@ def live_update(d: Dashboard, item_id: str, message: str, choice: Optional[str] 
     if row is None and item_id in d.bids:
         # Een bod op een advertentie die niet meer online is (alleen in Mijn biedingen).
         out["item"] = {"id": item_id, "badge": "", "mine": bid_control(item_id, d), "mark": "", "note": 0,
-                       "text": "", "available": False}
+                       "text": "", "available": False, "review": 0}
     if row is not None:
         listing, label = row
         out["item"] = {"id": item_id, "badge": mark_badges(listing, d), "mine": own_controls(listing, d),
                        "mark": mark_state(listing, d), "note": int(item_id in d.notes),
-                       "text": search_text(listing, d, label), "available": d._available(listing)}
+                       "text": search_text(listing, d, label), "available": d._available(listing),
+                       "review": int(d.to_review(listing))}
         if choice == "geen" and d._available(listing):
             if any(l is listing for l in d.flips) or any(l is listing for l in d.open_bids):
                 wanted.add("flips")
             if any(l is listing for l in d.upgrades):
                 wanted.add("upgrades")
+    out["tabs"].update(view_tab_labels(d))
     for name, label, panel in tab_list(d):
         if name in ("flips", "upgrades", "favorieten", "biedingen"):
             out["tabs"][name] = label
