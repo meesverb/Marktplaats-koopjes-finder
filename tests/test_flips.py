@@ -180,6 +180,71 @@ class ImportTest(FlipTest):
         self.assertEqual(fl.load_book(self.db).get(t).tasks[0].est_eur, 30.0)
 
 
+class OfferTest(FlipTest):
+    """Aanbiedingen bij een onderdeel (flip_offer, migratie 21): een link
+    plakken met de prijs die je zag, en er een kiezen."""
+
+    def setUp(self):
+        super().setUp()
+        self.trade = self.bike()
+        self.task = fl.add_task(self.conn, self.trade, kind="onderdeel", title="Ketting KMC X10", est_eur=13.0,
+                                shop="AliExpress", price_source="schatting")
+
+    def test_add_choose_and_remove(self):
+        cheap = fl.add_offer(self.conn, self.task, url="https://www.bike24.nl/p/7753?utm_source=x", price_eur=17.28,
+                             shipping_eur=4.95)
+        dear = fl.add_offer(self.conn, self.task, url="https://www.futurumshop.nl/kmc-x10", price_eur=24.95)
+        (k,) = fl.load_book(self.db).get(self.trade).tasks
+        self.assertEqual([o.id for o in k.offers], [cheap, dear])  # goedkoopste (met verzending) eerst
+        self.assertEqual((k.offers[0].shop, k.offers[0].url, k.offers[0].total_eur),
+                         ("Bike24", "https://www.bike24.nl/p/7753", 22.23))
+        fl.choose_offer(self.conn, cheap)
+        (k,) = fl.load_book(self.db).get(self.trade).tasks
+        self.assertEqual((k.shop, k.url, k.est_eur, k.price_source),
+                         ("Bike24", "https://www.bike24.nl/p/7753", 22.23, "gecontroleerd"))
+        self.assertIsNone(k.price_eur)  # gekozen is nog niet gekocht
+        fl.delete_offer(self.conn, dear)
+        self.assertEqual(len(fl.load_book(self.db).get(self.trade).tasks[0].offers), 1)
+        self.assertIsNone(fl.delete_offer(self.conn, dear))
+
+    def test_links(self):
+        with self.assertRaisesRegex(ValueError, "http"):
+            fl.add_offer(self.conn, self.task, url="bike24.nl/p/1", price_eur=10.0)
+        with self.assertRaisesRegex(ValueError, "notitie"):
+            fl.add_offer(self.conn, self.task, url="", price_eur=10.0)
+        self.assertEqual(fl.clean_url("https://nl.aliexpress.com/item/1005001234567890.html?spm=a2g0&algo_pvid=b"),
+                         "https://www.aliexpress.com/item/1005001234567890.html")
+        self.assertEqual(fl.clean_url("https://a.aliexpress.com/_mKxyz"), "https://a.aliexpress.com/_mKxyz")
+        self.assertEqual(fl.clean_url("https://shop.example/p?id=7&gclid=1&_gl=2*x&utm_medium=y"),
+                         "https://shop.example/p?id=7")
+        # Zonder link mag het, met een notitie: AliExpress uit de app.
+        offer = fl.add_offer(self.conn, self.task, price_eur=12.5, shop="AliExpress",
+                             note="KMC Official Store, zoek 'KMC X10'", source="schatting")
+        fl.choose_offer(self.conn, offer)
+        (k,) = fl.load_book(self.db).get(self.trade).tasks
+        self.assertEqual((k.url, k.est_eur, k.price_source), ("", 12.5, "schatting"))
+
+    def test_read_from_a_file_once(self):
+        path = self.dir / "aanbod.json"
+        path.write_text(json.dumps({"flips": [{"flip": "Cube", "klussen": [{"titel": "Ketting KMC X10", "aanbiedingen": [
+            {"url": "https://www.bike24.nl/p/7753", "prijs": 17.28, "verzending": 4.95, "bekeken": "2026-10-02"},
+            {"winkel": "AliExpress", "prijs": 12.5, "notitie": "KMC Official Store", "bron": "schatting"}]}]}]}),
+            encoding="utf-8")
+        self.assertEqual(fl.update_file(self.conn, path), ["2 aanbiedingen bij: Ketting KMC X10"])
+        self.assertEqual(fl.update_file(self.conn, path), ["0 aanbiedingen bij: Ketting KMC X10"])
+        (k,) = fl.load_book(self.db).get(self.trade).tasks
+        self.assertEqual((k.est_eur, len(k.offers), k.offers[1].checked_at), (13.0, 2, "2026-10-02"))
+
+    def test_a_database_from_before_migration_21(self):
+        self.conn.execute("DROP TABLE flip_offer")
+        self.conn.execute("DELETE FROM schema_version WHERE version >= 21")
+        self.conn.commit()
+        self.assertEqual(fl.load_book(self.db).get(self.trade).tasks[0].offers, [])
+        db.connect(self.db).close()  # migreert weer
+        fl.add_offer(self.conn, self.task, url="https://x.nl/a", price_eur=1.0)
+        self.assertEqual(len(fl.load_book(self.db).get(self.trade).tasks[0].offers), 1)
+
+
 class ServeTest(FlipTest):
     def setUp(self):
         super().setUp()
@@ -226,6 +291,34 @@ class ServeTest(FlipTest):
         self.request("POST", "/flips/klus", {"token": token, "item_id": self.task, "doe": "gedaan"}, {"X-Live": "1"})
         (k,) = fl.load_book(self.db).get(self.trade).tasks
         self.assertEqual((k.price_eur, k.done), (27.5, True))
+
+    def test_offers_on_the_page_without_reloading(self):
+        token = self.token()
+        status, _, data = self.request("POST", "/flips/aanbod", {
+            "token": token, "item_id": self.task, "link": "https://www.bike-components.de/nl/p/1?gclid=x",
+            "prijs": "24,95", "verzending": "3,95"}, {"X-Live": "1"})
+        data = json.loads(data)
+        self.assertEqual((status, data["flip"]), (200, self.trade))
+        self.assertIn("Aanbiedingen (1)", data["card"])
+        self.assertIn("https://www.bike-components.de/nl/p/1'", data["card"])
+        (offer,) = fl.load_book(self.db).get(self.trade).tasks[0].offers
+        data = json.loads(self.request("POST", "/flips/aanbod-kies", {"token": token, "item_id": offer.id},
+                                       {"X-Live": "1"})[2])
+        self.assertIn("geplande kosten", data["message"])
+        self.assertIn("€28,90", data["card"])  # de nieuwe geschatte prijs: 24,95 + 3,95
+        self.assertIn("gekozen", data["card"])
+        data = json.loads(self.request("POST", "/flips/aanbod", {"token": token, "item_id": self.task,
+                                                                 "link": "geen link", "prijs": "5"},
+                                       {"X-Live": "1"})[2])
+        self.assertIn("Niet opgeslagen", data["message"])
+        data = json.loads(self.request("POST", "/flips/klus", {"token": token, "item_id": self.task, "doe": "winkel",
+                                                               "winkel": "", "url": "https://www.futurumshop.nl/a?_gl=1"},
+                                       {"X-Live": "1"})[2])
+        (k,) = fl.load_book(self.db).get(self.trade).tasks
+        self.assertEqual((k.shop, k.url), ("FuturumShop", "https://www.futurumshop.nl/a"))
+        data = json.loads(self.request("POST", "/flips/aanbod-weg", {"token": token, "item_id": offer.id},
+                                       {"X-Live": "1"})[2])
+        self.assertIn("Aanbiedingen (0)", data["card"])
 
     def test_stage_and_sale_reload_the_page(self):
         token = self.token()
@@ -326,9 +419,16 @@ class SheetsTest(FlipTest):
 
     def test_first_round_writes_every_tab(self):
         self.assertEqual(self.sheet.calls, ["pull", "push"])
-        self.assertEqual(set(self.sheet.sheets), {"Flips", "Klussen", "Investeringen", "Totalen"})
+        self.assertEqual(set(self.sheet.sheets), {"Flips", "Klussen", "Investeringen", "Totalen", "Aanbiedingen"})
         (row,) = self.sheet.rows("Klussen")
         self.assertEqual((row["titel"], row["geschat"], row["flip_naam"]), ("Cassette", 29.95, "Cube"))
+
+    def test_offers_go_to_a_read_only_tab(self):
+        fl.add_offer(self.conn, self.task, url="https://www.bike24.nl/p/7753", price_eur=17.28, shipping_eur=4.95)
+        fs.sync(self.db, self.config, self.sheet)
+        (row,) = self.sheet.rows("Aanbiedingen")
+        self.assertEqual((row["regel"], row["winkel"], row["totaal"], row["link"]),
+                         ("Cassette", "Bike24", 22.23, "https://www.bike24.nl/p/7753"))
 
     def test_an_edit_in_the_sheet_comes_over(self):
         self.sheet.edit("Klussen", self.task, self.later(), prijs="27,50", gedaan="ja")

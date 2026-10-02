@@ -14,9 +14,9 @@ Een ronde (knop op /flips, en vanzelf bij het openen van de pagina):
    gewijzigd, dan wint de laatste wijziging en zegt de melding wat er
    overschreven is;
 3. alles opnieuw naar de Sheet schrijven (Flips, Klussen, Investeringen,
-   Totalen), met getallen als getallen, zodat je er eigen formules en
-   grafieken op kunt bouwen. Maak die op een eigen tabblad: deze vier
-   worden elke ronde overschreven.
+   Totalen, en alleen-lezen Aanbiedingen), met getallen als getallen, zodat
+   je er eigen formules en grafieken op kunt bouwen. Maak die op een eigen
+   tabblad: deze vijf worden elke ronde overschreven.
 
 Wat vanuit de Sheet te wijzigen is: bij klussen en investeringen alles
 behalve id, flip, kost en bijgewerkt; bij flips de fase (niet verkocht:
@@ -127,6 +127,10 @@ def _call(config: dict, payload: dict, session=None) -> dict:
 
 TASK_HEADERS = ["id", "flip", "flip_naam", "soort", "titel", "winkel", "geschat", "prijs", "bron", "investering",
                 "tarief", "korting", "kost", "gedaan", "notitie", "bijgewerkt"]
+# Alleen-lezen: aanbiedingen voeg je toe op /flips (een link plakken met een
+# prijs). De link als gewone tekst: Sheets maakt er zelf een klikbare link van.
+OFFER_HEADERS = ["id", "flip_naam", "regel", "winkel", "prijs", "verzending", "totaal", "link", "notitie", "bron",
+                 "bekeken"]
 FLIP_HEADERS = ["id", "titel", "soort", "fase", "dagen_in_fase", "gekocht_op", "inkoop", "uitgegeven", "gepland",
                 "doel_laag", "doel_hoog", "winst_laag", "winst_hoog", "hoogste_bod", "verkocht_op", "verkocht_voor",
                 "winst", "uren", "per_uur", "zoekwoorden", "verkooplink", "notitie", "bijgewerkt"]
@@ -153,6 +157,13 @@ def flip_row(f: fl.Flip) -> list:
             f.hours, f.per_hour_eur, f.comp_words, f.sale_url, t.notes or "", f.updated_at]
 
 
+def offer_rows(book: fl.FlipBook) -> list:
+    names = {f.id: f.trade.title for f in book.flips}
+    tasks = [k for f in book.flips for k in f.tasks + f.tools] + [k for k in book.tools if k.trade_id is None]
+    return [[o.id, names.get(k.trade_id, "investering"), k.title, o.shop, o.price_eur, o.shipping_eur, o.total_eur,
+             o.url, o.note, o.source, o.checked_at] for k in tasks for o in k.offers]
+
+
 def snapshot(book: fl.FlipBook) -> dict:
     names = {f.id: f.trade.title for f in book.flips}
     tasks = [k for f in book.flips for k in f.tasks + f.tools]
@@ -168,6 +179,7 @@ def snapshot(book: fl.FlipBook) -> dict:
         "Klussen": {"headers": TASK_HEADERS, "rows": [task_row(k, names.get(k.trade_id, "")) for k in tasks]},
         "Investeringen": {"headers": TASK_HEADERS, "rows": [task_row(k) for k in loose]},
         "Totalen": {"headers": ["wat", "waarde"], "rows": totals},
+        "Aanbiedingen": {"headers": OFFER_HEADERS, "rows": offer_rows(book)},
     }
 
 

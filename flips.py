@@ -12,7 +12,11 @@ hier ook een flip. Wat een fiets meer heeft (migratie 17):
   prijs → gedaan), klussen (alleen gedaan) en reizen (OV: vol tarief met
   korting vol / 40% / gratis, de pagina rekent het bedrag uit);
 - een doelprijs (laag-hoog), een marktcheck op zoekwoorden, uren, specs,
-  biedingen die binnenkomen en foto's.
+  biedingen die binnenkomen en foto's;
+- per onderdeel aanbiedingen (`flip_offer`, migratie 21): een link die je
+  plakt met de prijs die je zag, goedkoopste eerst; "kies deze" zet winkel,
+  link en geschatte prijs van de regel. De prijs tik je zelf in: hier wordt
+  niets van een winkelpagina gehaald.
 
 Gereedschap is een investering: het telt niet mee in de kosten van één flip
 (dan lijkt die slechter dan hij is), wel in het netto resultaat bovenaan.
@@ -31,12 +35,13 @@ jóuw advertentie, die je zelf overtypt.
 
     python flips.py                      # het overzicht in de console
     python flips.py import lijst.json    # flips en klussen inlezen (zie flips_import/)
-    python flips.py bijwerken aanbod.json   # bestaande klussen: andere winkel, link, prijs
+    python flips.py bijwerken aanbod.json   # bestaande klussen: andere winkel, link, prijs, aanbiedingen
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import statistics
 import sys
@@ -44,6 +49,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import db
 import trades as tr
@@ -128,6 +134,7 @@ class Task:
     position: int = 0
     notes: str = ""
     updated_at: str = ""
+    offers: list = field(default_factory=list)  # Offer, goedkoopste (met verzending) eerst
 
     @property
     def cost_eur(self) -> Optional[float]:
@@ -164,6 +171,30 @@ class Task:
     @property
     def shop_key(self) -> str:
         return "".join((self.shop or "").lower().split())
+
+
+@dataclass
+class Offer:
+    """Een aanbieding die de eigenaar bij een onderdeel vastlegde."""
+    id: int
+    task_id: int
+    url: str = ""
+    shop: str = ""
+    price_eur: float = 0.0
+    shipping_eur: Optional[float] = None
+    note: str = ""
+    source: str = "gecontroleerd"
+    checked_at: str = ""
+    added_at: str = ""
+
+    @property
+    def total_eur(self) -> float:
+        return round(self.price_eur + (self.shipping_eur or 0.0), 2)
+
+    @property
+    def domain(self) -> str:
+        host = urlsplit(self.url).netloc.lower() if self.url else ""
+        return host[4:] if host.startswith("www.") else host
 
 
 @dataclass
@@ -354,6 +385,10 @@ def load_book(db_path, with_market_check: bool = True) -> FlipBook:
             extra = {r["trade_id"]: dict(r) for r in conn.execute("SELECT * FROM flip")}
             tasks = [task_from_row(r) for r in conn.execute(
                 "SELECT * FROM flip_task WHERE deleted_at IS NULL ORDER BY position, id")]
+            by_task = {t.id: t for t in tasks}
+            for offer in load_offers(conn):
+                if offer.task_id in by_task:
+                    by_task[offer.task_id].offers.append(offer)
             bids = [dict(r) for r in conn.execute("SELECT * FROM flip_bid ORDER BY at DESC, id DESC")]
             photos = [dict(r) for r in conn.execute("SELECT * FROM flip_photo ORDER BY id")]
             for r in conn.execute("SELECT trade_id, stage, at FROM trade_stage ORDER BY at, id"):
@@ -391,6 +426,19 @@ def load_book(db_path, with_market_check: bool = True) -> FlipBook:
                 f.market_check = market_check(db_path, f.comp_words, exclude=own)
     tools = [k for k in tasks if k.investment]
     return FlipBook(flips, tools, totals(flips, tools))
+
+
+def load_offers(conn) -> list:
+    """Alle aanbiedingen die niet weggehaald zijn, goedkoopste (met
+    verzending) eerst; leeg vóór migratie 21."""
+    if "flip_offer" not in _tables(conn):
+        return []
+    rows = conn.execute("SELECT * FROM flip_offer WHERE deleted_at IS NULL "
+                        "ORDER BY price_eur + COALESCE(shipping_eur, 0), id").fetchall()
+    return [Offer(id=r["id"], task_id=r["task_id"], url=r["url"] or "", shop=r["shop"] or "",
+                  price_eur=r["price_eur"], shipping_eur=r["shipping_eur"], note=r["note"] or "",
+                  source=r["source"] or "gecontroleerd", checked_at=r["checked_at"] or "",
+                  added_at=r["added_at"] or "") for r in rows]
 
 
 def totals(flips: list, tools: list) -> Totals:
@@ -655,6 +703,111 @@ def delete_bid(conn, bid_id: int) -> Optional[int]:
     return row[0]
 
 
+# --- Aanbiedingen (migratie 21) ---------------------------------------------------
+
+# Parameters die alleen zeggen waar je vandaan kwam (Google, een nieuwsbrief,
+# AliExpress' eigen volgcodes), niet welk product of welke variant het is.
+TRACKING_PARAMS = re.compile(
+    r"^(utm_\w*|_gl|_ga|gclid|gclsrc|dclid|fbclid|msclkid|igshid|yclid|srsltid|gad_source|gbraid|wbraid"
+    r"|mc_cid|mc_eid|spm|scm|pdp_\w*|algo_\w*|aff_\w*|sk|bdf|terminal_id|_randl_\w*|gatewayadapt"
+    r"|afsmartredirect|utparam|pvid|tt)$", re.I)
+ALIEXPRESS_ITEM_RE = re.compile(r"/item/(\d{6,})\.html")
+# Hoe een winkel heet als de link alleen het domein zegt.
+SHOP_NAMES = {"futurumshop": "FuturumShop", "aliexpress": "AliExpress", "bike24": "Bike24", "bol": "Bol",
+              "decathlon": "Decathlon", "amazon": "Amazon", "rosebikes": "Rose Bikes", "mantel": "Mantel",
+              "action": "Action", "velondo": "Velondo", "marktplaats": "Marktplaats", "bike-components": "bike-components",
+              "12gobiking": "12GoBiking"}
+OFFER_SOURCES = ("gecontroleerd", "schatting")
+
+
+def clean_url(url: str) -> str:
+    """Een geplakte link zonder volgcodes. Een lange AliExpress-link wordt
+    /item/<nummer>.html (de rest is tracking); een deellink uit de app
+    (a.aliexpress.com/_..., s.click.aliexpress.com/...) blijft zoals hij is,
+    want alleen die opent. Bij Marktplaats gaat alles na het vraagteken weg."""
+    url = (url or "").strip()
+    if not re.match(r"https?://", url, re.I):
+        raise ValueError("een link moet met http(s):// beginnen")
+    parts = urlsplit(url)
+    host = parts.netloc.lower()
+    if "aliexpress." in host and not host.startswith(("a.", "s.click.")):
+        item = ALIEXPRESS_ITEM_RE.search(parts.path)
+        if item:
+            return f"https://www.aliexpress.com/item/{item.group(1)}.html"
+    if "marktplaats.nl" in host:
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not TRACKING_PARAMS.match(k)]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+
+
+def shop_from_url(url: str) -> str:
+    """De winkel uit het domein: "www.futurumshop.nl" → "FuturumShop"."""
+    host = urlsplit(url or "").netloc.lower().split(":")[0]
+    labels = [p for p in host.split(".") if p and p not in ("www", "m", "nl", "s", "a", "click")]
+    if not labels:
+        return ""
+    name = labels[-2] if len(labels) >= 2 else labels[0]
+    return SHOP_NAMES.get(name, name[:1].upper() + name[1:])
+
+
+def add_offer(conn, task_id: int, *, price_eur: float, url: str = "", shipping_eur: Optional[float] = None,
+              shop: str = "", note: str = "", source: str = "gecontroleerd", checked_at: Optional[str] = None) -> int:
+    """Een aanbieding bij een regel. Zonder link moet er een notitie staan
+    (winkel + zoekterm), anders weet je later niet meer wat het was."""
+    row = conn.execute("SELECT id FROM flip_task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
+    if row is None:
+        raise ValueError("onbekende regel")
+    url = clean_url(url) if (url or "").strip() else ""
+    note = " ".join((note or "").split())
+    if not url and not note:
+        raise ValueError("plak een link, of zet in de notitie waar het te vinden is (winkel + zoekterm)")
+    if price_eur is None or price_eur < 0 or (shipping_eur is not None and shipping_eur < 0):
+        raise ValueError("een prijs is een bedrag van 0 of meer")
+    if source not in OFFER_SOURCES:
+        raise ValueError(f"onbekende bron {source!r}")
+    shop = " ".join((shop or "").split()) or shop_from_url(url)
+    now = now_iso()
+    cur = conn.execute(
+        "INSERT INTO flip_offer (task_id, url, shop, price_eur, shipping_eur, note, source, checked_at, added_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (task_id, url or None, shop or None, round(price_eur, 2),
+         None if shipping_eur is None else round(shipping_eur, 2), note or None, source,
+         checked_at or date.today().isoformat(), now))
+    conn.commit()
+    return cur.lastrowid
+
+
+def _offer(conn, offer_id: int) -> Optional[Offer]:
+    row = conn.execute("SELECT * FROM flip_offer WHERE id = ? AND deleted_at IS NULL", (offer_id,)).fetchone()
+    if row is None:
+        return None
+    return Offer(id=row["id"], task_id=row["task_id"], url=row["url"] or "", shop=row["shop"] or "",
+                 price_eur=row["price_eur"], shipping_eur=row["shipping_eur"], note=row["note"] or "",
+                 source=row["source"] or "gecontroleerd", checked_at=row["checked_at"] or "")
+
+
+def choose_offer(conn, offer_id: int) -> Optional[Offer]:
+    """"Kies deze": winkel, link en geschatte prijs van de regel worden die
+    van de aanbieding, met de verzending erbij (wat het kost als je het los
+    koopt; bestel je meer bij die winkel, dan valt het mee), en de bron die
+    van de aanbieding. De echte prijs blijft leeg tot je hem koopt."""
+    offer = _offer(conn, offer_id)
+    if offer is None:
+        return None
+    update_task(conn, offer.task_id, shop=offer.shop or None, url=offer.url or None, est_eur=offer.total_eur,
+                price_source=offer.source)
+    return offer
+
+
+def delete_offer(conn, offer_id: int) -> Optional[Offer]:
+    offer = _offer(conn, offer_id)
+    if offer is None:
+        return None
+    conn.execute("UPDATE flip_offer SET deleted_at = ? WHERE id = ?", (now_iso(), offer_id))
+    conn.commit()
+    return offer
+
+
 PHOTO_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/heic": ".heic"}
 MAX_PHOTO_BYTES = 15_000_000
 
@@ -768,13 +921,19 @@ def import_file(conn, path) -> list[str]:
     return done
 
 
-UPDATE_KEYS = {"titel", "winkel", "url", "geschat", "bron", "notitie"}
+UPDATE_KEYS = {"titel", "winkel", "url", "geschat", "bron", "notitie", "aanbiedingen"}
+# Een aanbieding in het bestand; "bekeken" is de datum waarop de prijs gezien is.
+OFFER_KEYS = {"url": "url", "prijs": "price_eur", "verzending": "shipping_eur", "winkel": "shop",
+              "notitie": "note", "bron": "source", "bekeken": "checked_at"}
 
 
 def update_file(conn, path) -> list[str]:
     """Bestaande klussen bijwerken met een beter aanbod: winkel, link,
-    geschatte prijs, bron, notitie (zie flips_import/cube_bike24.json).
-    import_file() kan dat niet: die slaat een flip over die er al is.
+    geschatte prijs, bron, notitie (zie flips_import/cube_bike24.json), en
+    aanbiedingen erbij ("aanbiedingen": [{url, prijs, verzending, winkel,
+    notitie, bron, bekeken}]; dezelfde link met dezelfde prijs komt er geen
+    twee keer bij). import_file() kan dat niet: die slaat een flip over die
+    er al is.
 
     Een regel wordt gevonden aan zijn titel, binnen de flip met de titel
     onder "flip" (of bij "investeringen" onder de losse investeringen). Wat
@@ -798,10 +957,31 @@ def update_file(conn, path) -> list[str]:
             if task.price_eur is not None:
                 done.append(f"al gekocht, niet bijgewerkt: {task.title}")
                 continue
-            values = {IMPORT_TASK_KEYS[k]: v for k, v in item.items() if k != "titel"}
-            update_task(conn, task.id, **values)
-            done.append(f"bijgewerkt: {task.title}"
-                        + (f" → {values['shop']} {euro(values['est_eur'])}" if "est_eur" in values else ""))
+            offers = item.get("aanbiedingen") or []
+            values = {IMPORT_TASK_KEYS[k]: v for k, v in item.items() if k not in ("titel", "aanbiedingen")}
+            if values:
+                update_task(conn, task.id, **values)
+                done.append(f"bijgewerkt: {task.title}"
+                            + (f" → {values['shop']} {euro(values['est_eur'])}" if "est_eur" in values else ""))
+            have = {(o["url"] or "", o["price_eur"]) for o in conn.execute(
+                "SELECT url, price_eur FROM flip_offer WHERE task_id = ? AND deleted_at IS NULL", (task.id,))}
+            added = 0
+            for offer in offers:
+                unknown = set(offer) - set(OFFER_KEYS)
+                if unknown:
+                    raise ValueError(f"onbekende sleutels in een aanbieding bij {task.title!r}: {sorted(unknown)}")
+                fields = {OFFER_KEYS[k]: v for k, v in offer.items()}
+                fields["price_eur"] = float(fields["price_eur"])
+                if fields.get("shipping_eur") is not None:
+                    fields["shipping_eur"] = float(fields["shipping_eur"])
+                url = clean_url(fields["url"]) if fields.get("url") else ""
+                if (url, round(fields["price_eur"], 2)) in have:
+                    continue
+                add_offer(conn, task.id, **fields)
+                have.add((url, round(fields["price_eur"], 2)))
+                added += 1
+            if offers:
+                done.append(f"{added} aanbieding{'en' if added != 1 else ''} bij: {task.title}")
 
     for entry in data.get("flips", []):
         trade_id = trades.get(entry.get("flip", ""))
@@ -840,7 +1020,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub = parser.add_subparsers(dest="command")
     imp = sub.add_parser("import", help="flips en klussen inlezen uit een JSON-bestand")
     imp.add_argument("file")
-    upd = sub.add_parser("bijwerken", help="bestaande klussen bijwerken (winkel, link, prijs) uit een JSON-bestand")
+    upd = sub.add_parser("bijwerken", help="bestaande klussen bijwerken (winkel, link, prijs, aanbiedingen) uit een JSON-bestand")
     upd.add_argument("file")
     args = parser.parse_args(argv)
     if args.command == "bijwerken":

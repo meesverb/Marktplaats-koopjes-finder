@@ -35,7 +35,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 
 - [x] **1. Fietsmodellen stap 2 F — regels leren** (`opdrachten/fietsmodellen.md` → F)
 - [x] **2. Fietsmodellen stap 2 G — bouwjaar ophalen voor kanshebbers** (→ G; `schedule.json`: 20 in `overdag` en `nacht`, standaard 0)
-- [ ] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
+- [x] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
 - [ ] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
 - [ ] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
 - [ ] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
@@ -64,3 +64,13 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   Niet tegen Marktplaats getest (geen verzoeken vanuit de sandbox); de
   eigenaar ziet het eerste resultaat in `logs/koopjes.log` ("Bouwjaren
   opzoeken: …").
+- **02-10 ~05:45 — punt 3 (onderdelen B) af.** Migratie 21 `flip_offer` (met
+  `source`: gecontroleerd/schatting); per onderdeel "Aanbiedingen (n)" op
+  /flips: link plakken + prijs + verzending + winkel + notitie, goedkoopste
+  eerst, "kies deze" (zet winkel, link, geschat = prijs + verzending, bron),
+  weg; winkel en link van de regel zelf aan te passen. `flips.clean_url()`
+  haalt volgcodes weg en maakt van een lange AliExpress-link
+  `/item/<nr>.html`. `python flips.py bijwerken` leest ook "aanbiedingen"
+  in (voor punt 4). Sheet: alleen-lezen tabblad Aanbiedingen; de eigenaar
+  moet `flips_sheets.gs` één keer opnieuw plakken (SHEETS.md). In Chromium
+  op 1300 en 390 px: geen JS-fouten, geen horizontaal scrollen.

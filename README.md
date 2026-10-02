@@ -1542,6 +1542,18 @@ Per flip a card with:
   works out what you paid). A part with only an estimate counts as planned
   (grey); once you enter the real price, that counts. Mark a line as
   **gereedschap** to move it to the investments pot;
+- **offers** per part (*Aanbiedingen (n)* under the line, table
+  `flip_offer`, migration 21): paste a link with the price you saw, plus
+  shipping, shop (taken from the link if empty) and a note; cheapest
+  (with shipping) first. Tracking codes go (`?utm_…`, `_gl`, `gclid`,
+  AliExpress' `spm`/`algo_…`), a long AliExpress link becomes
+  `aliexpress.com/item/<number>.html`, and a share link from the AliExpress
+  app (`a.aliexpress.com/_…`) is kept as it is. No link is fine if the note
+  says where to find it (shop + search term), marked *geen link*.
+  **kies deze** sets the line's shop, link and estimate (price + shipping:
+  what it costs bought on its own) and its source; **weg** removes an offer.
+  The page never fetches a price from a shop: you type it. The line's own
+  shop and link can be changed there too;
 - **shopping basket** per shop, with a warning below free shipping
   (FuturumShop €49, AliExpress €10: `flips.FREE_SHIPPING_FROM`);
 - **specs** and a **draft ad text** built only from what you entered and the
@@ -1566,7 +1578,10 @@ prints the overview. A better offer for lines that are already there — another
 product link, a new estimate — goes in with
 `python flips.py bijwerken flips_import/cube_bike24.json`: it finds each line
 by its title within the flip, leaves lines you already bought alone, and says
-what it couldn't find.
+what it couldn't find. A line in that file can also carry `"aanbiedingen"`:
+`[{"url", "prijs", "verzending", "winkel", "notitie", "bron", "bekeken"}]`
+(`bron`: `gecontroleerd` or `schatting`; the same link at the same price is
+not added twice).
 
 Bike and stock flips use `trade.market` = `fietsen`/`spullen`; they don't
 appear in Mijn flips of the computer or watch dashboard. Database migration 17
@@ -1579,7 +1594,9 @@ or `python flips_sheets.py`) takes over what you changed in the sheet since
 the last round — new rows without an id become new lines, deleted rows are
 deleted, and when the page and the sheet both changed the same line the
 later change wins and the message says what was overwritten — then rewrites
-the tabs Flips, Klussen, Investeringen and Totalen with numbers as numbers.
+the tabs Flips, Klussen, Investeringen and Totalen with numbers as numbers,
+plus a read-only tab Aanbiedingen (after 02-10-2026: paste `flips_sheets.gs`
+again, see `SHEETS.md`).
 Build your own formulas and charts on a tab of your own. No new dependency:
 it uses `requests`.
 

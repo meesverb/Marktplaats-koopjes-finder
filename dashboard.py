@@ -2396,6 +2396,7 @@ def flip_task_row(k: fl.Task) -> str:
         facts.append(f"<a href='{esc(k.url, quote=True)}' target='_blank' rel='noopener'>link</a>")
     if k.notes:
         facts.append(esc(k.notes))
+    offers = flip_offers(k) if k.kind == "onderdeel" else ""
     status = {"gedaan": "gedaan", "gekocht": "gekocht, nog niet gemonteerd", "open": ""}[k.status]
     if k.kind == "onderdeel" and k.status == "open" and k.est_eur is not None:
         status = "nog kopen"
@@ -2406,7 +2407,7 @@ def flip_task_row(k: fl.Task) -> str:
     if status:
         facts.insert(0, f"<strong>{esc(status)}</strong>")
     what = (f"<div class='{'struck' if k.done else ''}'>{esc(k.title)}</div>"
-            f"<div class='note'>{' · '.join(facts)}</div>")
+            f"<div class='note'>{' · '.join(facts)}</div>{offers}")
     if k.kind == "reis":
         cost = (flip_input("tarief", k.fare_eur, "Vol tarief", 5, "euro", "vol tarief")
                 + flip_select("korting", fl.DISCOUNT_LABELS.items(), k.discount or "vol", "Korting")
@@ -2433,6 +2434,41 @@ def flip_task_row(k: fl.Task) -> str:
     menu = act("/flips/klus", item, toggle + "<button class='quiet' name='doe' value='weg'>weg</button>", "menu")
     return (f"<tr data-task='{item}' class='{k.status}'><td class='tickcell'>{check}</td>"
             f"<td class='what'>{what}</td>{money}<td>{act('/flips/klus', item, cost) if cost else ''}</td><td>{menu}</td></tr>")
+
+
+def flip_offers(k: fl.Task) -> str:
+    """Aanbiedingen bij een onderdeel (flip_offer): de links die je plakte met
+    de prijs die je zag, goedkoopste (met verzending) eerst, met "kies deze"
+    en weg; een nieuwe toevoegen; en winkel en link van de regel zelf."""
+    items = []
+    for o in k.offers:
+        chosen = (o.url == k.url) if o.url else (o.shop == k.shop and o.total_eur == k.est_eur)
+        link = (f"<a href='{esc(o.url, quote=True)}' target='_blank' rel='noopener'>{esc(o.domain)}</a>" if o.url
+                else "<span class='badge est'>geen link</span>")
+        ship = (f" + {flip_money(o.shipping_eur)} verzending = {flip_money(o.total_eur)}" if o.shipping_eur
+                else (" incl. verzending" if o.shipping_eur == 0 else ""))
+        source = " <span class='badge est'>schatting</span>" if o.source == "schatting" else ""
+        extra = " · ".join(x for x in (esc(o.note), f"bekeken {esc(nl_date(o.checked_at))}" if o.checked_at else "") if x)
+        pick = ("<span class='badge'>gekozen</span>" if chosen
+                else act("/flips/aanbod-kies", str(o.id), "<button class='quiet'>kies deze</button>", "tiny"))
+        items.append(f"<li><strong>{flip_money(o.price_eur)}</strong>{ship} · {esc(o.shop or '')} {link}{source} "
+                     f"<span class='muted'>{extra}</span> {pick}"
+                     f"{act('/flips/aanbod-weg', str(o.id), '<button class=quiet>weg</button>', 'tiny')}</li>")
+    add = act("/flips/aanbod", str(k.id),
+              flip_input("link", "", "Link plakken", 26, placeholder="link plakken")
+              + flip_input("prijs", "", "Prijs", 5, "euro", "prijs €")
+              + flip_input("verzending", "", "Verzending", 5, "euro", "verzending €")
+              + flip_input("winkel", "", "Winkel", 10, placeholder="winkel (uit de link)")
+              + flip_input("notitie", "", "Notitie", 16, placeholder="notitie, bv. variant")
+              + "<button>toevoegen</button>", "addoffer")
+    own = act("/flips/klus", str(k.id),
+              "<span class='sub'>deze regel:</span>"
+              + flip_input("winkel", k.shop, "Winkel van deze regel", 10, placeholder="winkel")
+              + flip_input("url", k.url, "Link van deze regel", 26, placeholder="link")
+              + "<button class='quiet' name='doe' value='winkel'>opslaan</button>", "addoffer")
+    empty = "<li class='muted'>nog geen — plak een link met de prijs die je zag</li>"
+    return (f"<details class='offers'><summary>Aanbiedingen ({len(k.offers)})</summary>"
+            f"<ul>{''.join(items) or empty}</ul>{add}{own}</details>")
 
 
 def flip_task_table(tasks: list, table_id: str = "") -> str:
@@ -2784,6 +2820,12 @@ textarea.draft { width: 100%; font: inherit; font-size: .88rem; padding: 8px; bo
 .photos img { width: 140px; height: 105px; object-fit: cover; border-radius: 8px; display: block; }
 .photos figcaption { font-size: .75rem; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 ul.bids { margin: 0; padding-left: 18px; }
+.flipcard details.offers, #flip-tools details.offers { border-top: 0; padding: 2px 0 0; }
+details.offers > summary { font-weight: 400; font-size: .8rem; color: var(--text-2); }
+details.offers ul { margin: 4px 0; padding-left: 18px; font-size: .85rem; }
+details.offers li { margin: 2px 0; }
+.act.addoffer { margin-top: 4px; }
+.act.addoffer input { font-size: .82rem; }
 @media (max-width: 640px) {
   .flipcard { padding: 12px; }
   .flipcard header { flex-direction: column; }
@@ -2813,7 +2855,8 @@ function flipUpdate(data) {
     box.querySelectorAll('details').forEach((d, i) => { if (i < open.length) d.open = open[i]; });
   }
 }
-['/flips/klus', '/flips/klus-nieuw', '/flips/gegevens', '/flips/bod', '/flips/bod-weg', '/flips/foto-weg']
+['/flips/klus', '/flips/klus-nieuw', '/flips/gegevens', '/flips/bod', '/flips/bod-weg', '/flips/foto-weg',
+ '/flips/aanbod', '/flips/aanbod-kies', '/flips/aanbod-weg']
   .forEach(a => { LIVE[a] = flipUpdate; });
 // Na een Sheet-ronde die iets overnam kan alles veranderd zijn: herladen.
 LIVE['/flips/sync'] = data => {
@@ -2915,6 +2958,12 @@ def flip_action_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
         elif what == "weg":
             fl.delete_task(conn, task_id)
             message = f"Weggehaald: {task.title}."
+        elif what == "winkel":
+            url = (form.get("url") or "").strip()
+            url = fl.clean_url(url) if url else None
+            shop = " ".join((form.get("winkel") or "").split()) or (fl.shop_from_url(url) if url else None)
+            fl.update_task(conn, task_id, shop=shop, url=url)
+            message = f"{task.title}: {shop or 'winkel onbekend'}{', met link' if url else ''}."
         else:
             raise FormError("Onbekende knop.")
     except ValueError as exc:
@@ -2922,6 +2971,51 @@ def flip_action_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
     finally:
         conn.close()
     return message, task.trade_id
+
+
+def flip_action_offer(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
+    """Een aanbieding bij een regel: een geplakte link en de prijs die je zag."""
+    task_id = _flip_id(form)
+    price = parse_euro(form.get("prijs"), "Prijs")
+    shipping = parse_euro(form.get("verzending"), "Verzending", required=False)
+    conn = db.connect(str(db_path))
+    try:
+        row = conn.execute("SELECT title, trade_id FROM flip_task WHERE id = ? AND deleted_at IS NULL",
+                           (task_id,)).fetchone()
+        if row is None:
+            raise FormError("Onbekende regel.")
+        fl.add_offer(conn, task_id, url=form.get("link", ""), price_eur=price, shipping_eur=shipping,
+                     shop=form.get("winkel", ""), note=form.get("notitie", ""))
+    except ValueError as exc:
+        raise FormError(str(exc)[:1].upper() + str(exc)[1:] + ".") from None
+    finally:
+        conn.close()
+    return f"Aanbieding bij {row['title']}: {flip_money(price)}.", row["trade_id"]
+
+
+def flip_action_offer_choose(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
+    conn = db.connect(str(db_path))
+    try:
+        offer = fl.choose_offer(conn, _flip_id(form))
+        if offer is None:
+            raise FormError("Onbekende aanbieding.")
+        row = conn.execute("SELECT title, trade_id FROM flip_task WHERE id = ?", (offer.task_id,)).fetchone()
+    finally:
+        conn.close()
+    return (f"{row['title']}: {offer.shop or 'deze aanbieding'} voor {flip_money(offer.total_eur)}; "
+            "de geplande kosten zijn bijgewerkt."), row["trade_id"]
+
+
+def flip_action_offer_delete(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
+    conn = db.connect(str(db_path))
+    try:
+        offer = fl.delete_offer(conn, _flip_id(form))
+        if offer is None:
+            raise FormError("Onbekende aanbieding.")
+        trade_id = fl.task_trade(conn, offer.task_id)
+    finally:
+        conn.close()
+    return f"Aanbieding weggehaald ({offer.shop or offer.domain or 'zonder link'}, {flip_money(offer.price_eur)}).", trade_id
 
 
 def flip_action_new_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
@@ -3120,6 +3214,9 @@ def flip_action_sync(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
 FLIP_ACTIONS = {
     "/flips/klus": flip_action_task,
     "/flips/klus-nieuw": flip_action_new_task,
+    "/flips/aanbod": flip_action_offer,
+    "/flips/aanbod-kies": flip_action_offer_choose,
+    "/flips/aanbod-weg": flip_action_offer_delete,
     "/flips/gegevens": flip_action_details,
     "/flips/bod": flip_action_bid,
     "/flips/bod-weg": flip_action_bid_delete,

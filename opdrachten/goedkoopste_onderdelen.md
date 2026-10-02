@@ -1,5 +1,10 @@
 # Opdracht: goedkoopste onderdelen zoeken + "link plakken met prijs" op /flips
 
+> **Stand (02-10-2026): deel B is gebouwd** (tabel `flip_offer` werd migratie
+> 21, niet 18: die was al bezet; met een extra kolom `source`, zodat een
+> geschatte AliExpress-prijs na "kies deze" geen "gecontroleerd" wordt). Zie
+> README → Flips. Deel A: zie `opdrachten/weekend.md`.
+
 Voor een agent die hier los op gaat. Lees eerst `CLAUDE.md` en werk vanaf een
 verse `main`. Twee delen: **A** is onderzoek (prijzen zoeken), **B** is een
 kleine uitbreiding van `/flips`. Ze staan los van elkaar; doe A eerst, want

@@ -17,8 +17,8 @@ alleen antwoordt op wie de geheime sleutel meestuurt. Een ronde:
    ook verwijderd. Is dezelfde regel op de pagina én in de Sheet gewijzigd,
    dan **wint de laatste wijziging**, en de melding zegt wat er overschreven
    is;
-3. de tabbladen **Flips**, **Klussen**, **Investeringen** en **Totalen**
-   opnieuw schrijven.
+3. de tabbladen **Flips**, **Klussen**, **Investeringen**, **Totalen** en
+   **Aanbiedingen** opnieuw schrijven.
 
 Een ronde gebeurt vanzelf bij het openen van `/flips`, met de knop **Nu
 synchroniseren** onderaan de pagina, of met `python flips_sheets.py`.
@@ -57,7 +57,7 @@ synchroniseren** onderaan de pagina, of met `python flips_sheets.py`.
    klikt. `sheets.json` staat in `.gitignore`, want de sleutel hoort niet in
    git.
 7. Start `python dashboard.py --serve`, open `/flips` en klik op **Nu
-   synchroniseren**. De vier tabbladen verschijnen.
+   synchroniseren**. De vijf tabbladen verschijnen.
 
 Heb je `flips_sheets.gs` later aangepast? Kies dan **Implementeren →
 Implementaties beheren → bewerken (potlood) → Versie: nieuwe versie**. Anders
@@ -75,10 +75,16 @@ De grijze kolommen zijn uitkomst en worden elke ronde overschreven.
 - **Investeringen**: net zo, maar zonder flip.
 - **Flips**: fase (niet *verkocht*: dat doe je op de pagina, met een prijs),
   doel_laag, doel_hoog, uren, zoekwoorden, verkooplink en notitie.
+- **Aanbiedingen** is alleen-lezen: elke aanbieding die je op `/flips` bij
+  een onderdeel vastlegde (winkel, prijs, verzending, totaal, link,
+  notitie, bron, wanneer bekeken). Toevoegen en kiezen doe je op de pagina.
+  Dit tabblad kwam er op 02-10-2026 bij: had je de koppeling al, plak dan
+  `flips_sheets.gs` opnieuw in Apps Script en maak een nieuwe versie
+  (hieronder). Tot dan slaat de oude versie het tabblad gewoon over.
 
 ## Eigen formules en grafieken
 
-Zet ze op een **eigen tabblad**, want de vier tabbladen hierboven worden elke
+Zet ze op een **eigen tabblad**, want de vijf tabbladen hierboven worden elke
 ronde leeggemaakt en opnieuw geschreven. Verwijs vanaf je eigen tabblad naar
 de kolommen, bijvoorbeeld:
 

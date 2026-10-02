@@ -4,18 +4,18 @@
  *
  * De laptop roept deze webapp aan (Sheets kan niet bij de laptop):
  *   {secret, action: "pull"}               -> alle rijen van Flips, Klussen, Investeringen
- *   {secret, action: "push", sheets: {...}} -> die tabbladen (en Totalen) opnieuw schrijven
+ *   {secret, action: "push", sheets: {...}} -> die tabbladen (en Totalen, Aanbiedingen) opnieuw schrijven
  *
  * onEdit zet bij elke wijziging met de hand de kolom "bijgewerkt" van die rij
  * op nu. Zo weet flips_sheets.py wat er in de Sheet veranderde sinds de
  * vorige ronde, en wie van de twee het laatst was.
  *
- * De vier tabbladen worden elke ronde overschreven: eigen formules en
+ * De vijf tabbladen worden elke ronde overschreven (Aanbiedingen is alleen-lezen): eigen formules en
  * grafieken op een eigen tabblad, met verwijzingen als =Flips!H2 of
  * =SUMIF(Klussen!D:D;"onderdeel";Klussen!M:M).
  */
 
-var SHEETS = ["Flips", "Klussen", "Investeringen", "Totalen"];
+var SHEETS = ["Flips", "Klussen", "Investeringen", "Totalen", "Aanbiedingen"];
 var EDITABLE = {
   Flips: ["fase", "doel_laag", "doel_hoog", "uren", "zoekwoorden", "verkooplink", "notitie"],
   Klussen: ["flip", "soort", "titel", "winkel", "geschat", "prijs", "bron", "investering", "tarief", "korting",
@@ -32,7 +32,7 @@ var CHOICES = {
   bron: ["gecontroleerd", "schatting"],
 };
 // Als tekst bewaren, anders maakt Sheets er een datum van in de eigen tijdzone.
-var TEXT_COLUMNS = ["bijgewerkt", "gekocht_op", "verkocht_op", "korting"];
+var TEXT_COLUMNS = ["bijgewerkt", "gekocht_op", "verkocht_op", "korting", "bekeken"];
 
 function doPost(e) {
   var lock = LockService.getScriptLock();
@@ -104,7 +104,7 @@ function push(sheets) {
         range.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(CHOICES[h], true)
           .setAllowInvalid(false).build());
       }
-      if (/^(inkoop|uitgegeven|gepland|doel_|winst|hoogste_bod|verkocht_voor|per_uur|geschat|prijs|tarief|kost)/
+      if (/^(inkoop|uitgegeven|gepland|doel_|winst|hoogste_bod|verkocht_voor|per_uur|geschat|prijs|tarief|kost|verzending|totaal)/
           .test(h)) range.setNumberFormat("€ #,##0.00");
     });
     var idCol = headers.indexOf("id");

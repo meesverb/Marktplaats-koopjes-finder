@@ -553,6 +553,30 @@ MIGRATIONS: list[str] = [
         UNIQUE (from_key, model_id)
     );
     """,
+    # 21: aanbiedingen bij een regel van de klussenlijst (/flips): een link die
+    # de eigenaar plakt met de prijs die hij zag, zodat hij per onderdeel
+    # winkels naast elkaar ziet en er een kiest
+    # (opdrachten/goedkoopste_onderdelen.md, deel B). De prijs tikt hij zelf
+    # in; het script haalt niets van een winkelpagina. url mag leeg zijn als
+    # er een notitie staat (AliExpress uit de app: winkel + zoekterm).
+    # source: gecontroleerd (de eigenaar zag de prijs) of schatting (een prijs
+    # uit onderzoek die niet te openen was, zoals bij AliExpress).
+    """
+    CREATE TABLE flip_offer (
+        id INTEGER PRIMARY KEY,
+        task_id INTEGER NOT NULL,
+        url TEXT,
+        shop TEXT,
+        price_eur REAL NOT NULL,
+        shipping_eur REAL,
+        note TEXT,
+        source TEXT NOT NULL DEFAULT 'gecontroleerd',
+        checked_at TEXT,
+        added_at TEXT NOT NULL,
+        deleted_at TEXT
+    );
+    CREATE INDEX flip_offer_task ON flip_offer (task_id);
+    """,
 ]
 
 
@@ -564,6 +588,8 @@ PLACE_TABLES = ("listing_place", "setting", "own_bid", "listing_stats")
 MODEL_TABLES = ("bike_model", "bike_link")
 # And migration 20.
 RULE_TABLES = ("bike_rule",)
+# And migration 21.
+OFFER_TABLES = ("flip_offer",)
 
 # A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
 # the first column's name and makes every row look like it is missing that
