@@ -209,6 +209,14 @@ class OpenEndedFrameTest(Case):
         self.assertEqual(big["fr"], [60.0, 999])
 
 
+class ModelNameTest(unittest.TestCase):
+    def test_a_model_name_starts_with_a_brand(self):
+        self.assertEqual(rb.check_name("  Koga   Kinsei Pro "), "Koga Kinsei Pro")
+        for bad in ("€ 12,50", "Koga", "12 34", "x"):
+            with self.assertRaises(rb.ModelError, msg=bad):
+                rb.check_name(bad)
+
+
 class PageJsonTest(unittest.TestCase):
     def test_nan_and_infinity_become_null_wherever_they_are(self):
         data = {"a": [1.5, float("nan"), {"b": float("inf")}], "t": "</script>", "c": (2, -float("inf"))}

@@ -12,6 +12,8 @@ import urllib.parse
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from helpers import make_listing
+
 import dashboard
 import db
 import flips as fl
@@ -178,6 +180,31 @@ class ImportTest(FlipTest):
         self.assertEqual(lines, ["al gekocht, niet bijgewerkt: Cassette", "niet gevonden in Cube: 'Bestaat niet'",
                                  "flip niet gevonden: 'Andere fiets'"])
         self.assertEqual(fl.load_book(self.db).get(t).tasks[0].est_eur, 30.0)
+
+
+class AmountTest(FlipTest):
+    """Een bedrag is een eindig getal: "1e309" en "nan" zijn voor float() ook
+    getallen, en een oneindige aankoopprijs kwam zo via een formulier in de
+    database (gevonden door de formulieren met onzin te bestoken, 02-10-2026)."""
+
+    def test_not_infinite_and_not_nan(self):
+        for text in ("1e309", "nan", "inf", "-inf"):
+            with self.assertRaises(dashboard.FormError, msg=text):
+                dashboard.parse_euro(text, "Prijs")
+        self.assertEqual(dashboard.parse_euro("€ 12,50", "Prijs"), 12.5)
+        trade = self.bike()
+        task = fl.add_task(self.conn, trade, kind="onderdeel", title="Ketting")
+        with self.assertRaises(ValueError):
+            fl.update_task(self.conn, task, est_eur="1e309")
+        with self.assertRaises(ValueError):
+            fl.add_offer(self.conn, task, price_eur=float("nan"), url="https://x.nl/k")
+        with self.assertRaises(ValueError):
+            fl.add_offer(self.conn, task, price_eur=10.0, shipping_eur=float("inf"), url="https://x.nl/k")
+        import own_bids as ob
+        db.sync_listings(self.conn, "x", [make_listing(item_id="m1", title="Fiets", price_eur=100.0)],
+                         "2026-10-02T10:00:00+00:00")
+        with self.assertRaises(ValueError):
+            ob.place(self.conn, "m1", float("inf"))
 
 
 class OfferTest(FlipTest):

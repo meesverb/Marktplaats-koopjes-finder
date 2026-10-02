@@ -19,6 +19,7 @@ doorging.
 """
 from __future__ import annotations
 
+import math
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import date
@@ -115,7 +116,7 @@ def ordered(trails: dict[str, BidTrail]) -> list[BidTrail]:
 
 
 def place(conn: sqlite3.Connection, item_id: str, amount_eur: float, bid_at: Optional[str] = None) -> int:
-    if amount_eur <= 0:
+    if not math.isfinite(amount_eur) or amount_eur <= 0:
         raise ValueError("een bod moet meer dan €0 zijn")
     if conn.execute("SELECT 1 FROM listing WHERE item_id = ?", (item_id,)).fetchone() is None:
         raise ValueError("onbekende advertentie")

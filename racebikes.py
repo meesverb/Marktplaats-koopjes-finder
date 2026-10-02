@@ -683,7 +683,7 @@ def check_name(value) -> str:
     name = " ".join((value or "").split())
     if not NAME_MIN <= len(name) <= NAME_MAX:
         raise ModelError(f"een modelnaam is {NAME_MIN} tot {NAME_MAX} tekens.")
-    if len(name.split()) < 2:
+    if len(name.split()) < 2 or not any(c.isalpha() for c in name.split()[0]):
         raise ModelError("een modelnaam is merk en minstens één woord, bv. 'Koga Kinsei Pro'.")
     return name
 

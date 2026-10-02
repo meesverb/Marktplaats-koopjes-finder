@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sqlite3
 import statistics
@@ -593,8 +594,17 @@ def _coerce(kind, value):
     if kind is bool:
         return 1 if value in (True, 1, "1", "true", "ja", "on") else 0
     if kind is float:
-        return round(float(value), 2)
+        return round(_finite(value), 2)
     return str(value).strip()
+
+
+def _finite(value) -> float:
+    """Een bedrag als float; "1e309" en "nan" zijn voor float() ook getallen,
+    en een oneindige prijs brak de pagina en de Sheet."""
+    amount = float(value)
+    if not math.isfinite(amount):
+        raise ValueError(f"{value!r} is geen bedrag")
+    return amount
 
 
 def update_flip(conn, trade_id: int, updated_at: Optional[str] = None, **values) -> bool:
@@ -761,7 +771,8 @@ def add_offer(conn, task_id: int, *, price_eur: float, url: str = "", shipping_e
     note = " ".join((note or "").split())
     if not url and not note:
         raise ValueError("plak een link, of zet in de notitie waar het te vinden is (winkel + zoekterm)")
-    if price_eur is None or price_eur < 0 or (shipping_eur is not None and shipping_eur < 0):
+    if (price_eur is None or not math.isfinite(price_eur) or price_eur < 0
+            or (shipping_eur is not None and (not math.isfinite(shipping_eur) or shipping_eur < 0))):
         raise ValueError("een prijs is een bedrag van 0 of meer")
     if source not in OFFER_SOURCES:
         raise ValueError(f"onbekende bron {source!r}")
@@ -901,7 +912,7 @@ def import_file(conn, path) -> list[str]:
             continue
         trade_id = create_flip(
             conn, title=item["titel"], market=item.get("markt", "fietsen"), bought_at=item["gekocht_op"],
-            buy_price_eur=float(item["prijs"]), buy_costs_eur=float(item.get("kosten", 0.0)),
+            buy_price_eur=_finite(item["prijs"]), buy_costs_eur=_finite(item.get("kosten", 0.0)),
             url=item.get("url"), item_id=item.get("advertentie"), stage=item.get("fase", "gekocht"),
             target_low_eur=item.get("doel_laag"), target_high_eur=item.get("doel_hoog"),
             comp_words=item.get("zoekwoorden", ""), specs=item.get("specs"), notes=item.get("notitie", ""))
@@ -971,9 +982,9 @@ def update_file(conn, path) -> list[str]:
                 if unknown:
                     raise ValueError(f"onbekende sleutels in een aanbieding bij {task.title!r}: {sorted(unknown)}")
                 fields = {OFFER_KEYS[k]: v for k, v in offer.items()}
-                fields["price_eur"] = float(fields["price_eur"])
+                fields["price_eur"] = _finite(fields["price_eur"])
                 if fields.get("shipping_eur") is not None:
-                    fields["shipping_eur"] = float(fields["shipping_eur"])
+                    fields["shipping_eur"] = _finite(fields["shipping_eur"])
                 url = clean_url(fields["url"]) if fields.get("url") else ""
                 if (url, round(fields["price_eur"], 2)) in have:
                     continue

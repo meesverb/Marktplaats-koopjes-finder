@@ -41,6 +41,7 @@ import argparse
 import hmac
 import html
 import json
+import math
 import re
 import secrets
 import sqlite3
@@ -3642,6 +3643,8 @@ def parse_euro(value: str, what: str, required: bool = True) -> Optional[float]:
         amount = float(text)
     except ValueError:
         raise FormError(f"{what} '{value}' is geen bedrag.") from None
+    if not math.isfinite(amount):  # "1e309" en "nan" zijn voor float() ook getallen
+        raise FormError(f"{what} '{value}' is geen bedrag.")
     if amount < 0:
         raise FormError(f"{what} kan niet negatief zijn.")
     return round(amount, 2)
