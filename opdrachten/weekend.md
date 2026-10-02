@@ -209,3 +209,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   `time.time()`): vijf tests in `test_upgrade.py` zouden vanaf februari 2027
   falen door een vaste datum. Nu relatief aan vandaag; groen tot vier jaar
   vooruit.
+- **02-10 — tijdzones.** De suite in Europe/Amsterdam, UTC, UTC+14 en
+  UTC-12: één fout in de code gevonden — "dagen in deze fase" op /flips telde
+  een fasewissel op de UTC-dag, dus 's nachts tussen 00:00 en 02:00 meteen
+  "1 dag". Nu de lokale dag; overal groen.
