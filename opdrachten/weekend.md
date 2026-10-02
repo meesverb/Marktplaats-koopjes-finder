@@ -176,3 +176,9 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   - Meer tests waar de dekkingsmeting gaten liet: bouwjaar opzoeken bij
     netwerk- en serverfouten (0db92eb); een open sqlite-verbinding in een
     test (5f9edf1). Nu 1001 tests.
+- **02-10 — de eigenaar zag "database is locked" opnieuw.** Zijn regelnummers
+  (dashboard.py 3962/3485, db.py 1427) zijn die van `main`: daar zit de fix
+  (44b2f79, op de branch) nog niet in. Hem gezegd de branch nu al te mergen
+  (main is niet verder gegaan, dus een fast-forward) of de branch uit te
+  checken. Let op: na de branch heeft koopjes.db migratie 21, en de oude
+  `main` weigert dan een nieuwere database ("werk de code bij").
