@@ -333,8 +333,11 @@ class LiveCache:
             return None
         stamp = data_stamp(db_path)
         where = str(Path(db_path).resolve())
-        with self._lock:
-            cached = self._comps.get(where)
+        # Rekenen onder de bouwsleutel, niet onder _lock: anders wachtte elk
+        # ander verzoek (ook naar een dashboard) tot dit klaar was.
+        with self._build_lock(("comps", where)):
+            with self._lock:
+                cached = self._comps.get(where)
             if cached is not None and stamp is not None and cached[0] == stamp:
                 return cached[1]
             conn = bc.open_readonly(db_path)
@@ -342,7 +345,8 @@ class LiveCache:
                 found = val.fetch_comp_candidates(conn)
             finally:
                 conn.close()
-            self._comps[where] = (stamp, found)
+            with self._lock:
+                self._comps[where] = (stamp, found)
             return found
 
     def racebikes(self, db_path, intake_path) -> "rb.Base":

@@ -710,6 +710,31 @@ class LiveServerTest(unittest.TestCase):
         self.assertEqual(built.call_count, 1)
         self.assertEqual(len({id(d.listings) for d in found}), 1)
 
+    def test_a_long_calculation_does_not_hold_up_other_pages(self):
+        # De vergelijkingskandidaten voor /fiets (en het vooruitrekenen) mogen
+        # een dashboard dat al klaarstaat niet laten wachten.
+        import threading
+        import time
+        from unittest import mock
+        cache = dashboard.LiveCache()
+        cache.dashboard(self.db, dashboard.mk.COMPUTERS)
+        started = threading.Event()
+
+        def slow(conn):
+            started.set()
+            time.sleep(0.6)
+            return []
+
+        with mock.patch.object(dashboard.val, "fetch_comp_candidates", side_effect=slow):
+            worker = threading.Thread(target=cache.comps, args=(self.db,))
+            worker.start()
+            started.wait(5)
+            begin = time.monotonic()
+            cache.dashboard(self.db, dashboard.mk.COMPUTERS)
+            waited = time.monotonic() - begin
+            worker.join()
+        self.assertLess(waited, 0.3)
+
     def test_static_page_has_no_forms(self):
         html = dashboard.render(dashboard.load_dashboard(self.db))
         self.assertNotIn("<form", html)
