@@ -268,6 +268,36 @@ class ModelComparisonTest(Case):
         self.assertIn("model niet herkend", row.flip_basis)
 
 
+class ReferenceIndexTest(unittest.TestCase):
+    """bike_identity.reference_model() slaat patronen over waarvan geen
+    beginwoord in de tekst staat; de uitkomst moet die van alle patronen op
+    volgorde blijven."""
+
+    def test_the_words_a_pattern_needs(self):
+        import bike_identity as bi
+        self.assertEqual(bi.needles(r"Defy.{0,20}Advanced.{0,3}SL"), {"defy"})
+        self.assertEqual(bi.needles(r"Giant.{0,10}Defy\s*[0-5]\b|Defy.{0,10}Aluxx"), {"giant", "defy"})
+        self.assertEqual(bi.needles(r"\bTCR\s*(Composite|Aluxx|SL|[0-3])\b"), {"tcr"})
+        self.assertEqual(bi.needles(r"Aluxx?"), {"alux"})  # de laatste x is optioneel
+        self.assertEqual(bi.needles(r"Emond{0,1}a"), {"emon"})
+        self.assertIsNone(bi.needles(r"(?:Trek|Giant) Domane"))
+        self.assertIsNone(bi.needles(r"[Tt]rek"))
+        self.assertIsNone(bi.needles(r"Trek|(Giant)"))
+        self.assertEqual(bi._alternatives(r"a(b|c)|d[|]|e\|f"), ["a(b|c)", "d[|]", "e\\|f"])
+
+    def test_same_answer_as_every_pattern_in_order(self):
+        import bike_identity as bi
+        rows = bi.reference_rows()
+        texts = [r["label"] for r in rows] + [
+            "Giant Defy Advanced 2 2019 maat M", "GIANT DEFY COMPOSITE 1", "Trek Domane SL6 disc",
+            "Canyon Endurace CF SL Disc 8.0", "racefiets Gazelle", "Specialized S-Works Roubaix",
+            "Cube Attain GTC", "TCR advanced pro", "giant tcr 2", "Émonda ALR 5", "Cervélo R3", ""]
+        for text in texts:
+            listing = make_listing(title=text, description="")
+            slow = next((r["label"] for r in rows if r["regex"].search(f"{text} ")), None)
+            self.assertEqual(bi.reference_model(listing), slow, text)
+
+
 class VariantTest(unittest.TestCase):
     """Model + uitvoering uit de titel (bike_identity.variant_of()), de
     voorbeelden uit opdrachten/fietsmodellen.md."""

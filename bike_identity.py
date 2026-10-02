@@ -62,11 +62,76 @@ def reference_rows(path: str = str(REFERENCE_PATH)) -> tuple:
     return tuple(mp.load_reference_data(path))
 
 
+def _alternatives(pattern: str) -> list[str]:
+    """De delen van een patroon tussen de `|` op het hoogste niveau (niet
+    binnen haakjes of een [klasse])."""
+    parts, depth, in_class, current, i = [], 0, False, "", 0
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "\\":
+            current += pattern[i:i + 2]
+            i += 2
+            continue
+        if in_class:
+            in_class = c != "]"
+        elif c == "[":
+            in_class = True
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        elif c == "|" and depth == 0:
+            parts.append(current)
+            current, i = "", i + 1
+            continue
+        current += c
+        i += 1
+    parts.append(current)
+    return parts
+
+
+def needles(pattern: str) -> Optional[frozenset]:
+    """Woorden waarvan er minstens één (kleine letters) in de tekst moet staan
+    als het patroon past: per alternatief de letters en cijfers waarmee het
+    begint ("Defy.{0,20}Advanced" → "defy"). None als een alternatief niet
+    met zo'n woord begint (een groep, een klasse): dan altijd zoeken. Alleen
+    om sneller over te slaan; de uitkomst blijft die van het patroon."""
+    found = set()
+    for alt in _alternatives(pattern):
+        i = 0
+        while alt.startswith(("\\b", "^"), i):
+            i += 2 if alt.startswith("\\b", i) else 1
+        run = re.match(r"[A-Za-z0-9]+", alt[i:])
+        if not run:
+            return None
+        word, after = run.group(0), alt[i + run.end():]
+        if after[:1] in ("?", "*") or after.startswith(("{0", "{,")):
+            word = word[:-1]  # de laatste letter is optioneel
+        if not word:
+            return None
+        found.add(word.lower())
+    return frozenset(found)
+
+
+@lru_cache(maxsize=None)
+def reference_index(path: str = str(REFERENCE_PATH)) -> tuple:
+    return tuple((row["label"], row["regex"], needles(row["regex"].pattern)) for row in reference_rows(path))
+
+
 def reference_model(listing: mp.Listing) -> Optional[str]:
     """Het eerste referentiemodel waarvan het patroon past, in bestandsvolgorde
-    — dezelfde regel als racefiets_jev.apply_reference_data()."""
+    — dezelfde regel als racefiets_jev.apply_reference_data(). Een patroon
+    waarvan geen beginwoord in de tekst staat, wordt overgeslagen
+    (`needles()`): 339 patronen per advertentie waren een kwart van de
+    opbouw van /racefietsen."""
     haystack = f"{listing.title} {listing.description}"
-    return next((row["label"] for row in reference_rows() if row["regex"].search(haystack)), None)
+    low = haystack.lower()
+    for label, regex, words in reference_index():
+        if words is not None and not any(w in low for w in words):
+            continue
+        if regex.search(haystack):
+            return label
+    return None
 # Eerste woorden van modelnamen die geen model zijn maar een toevoeging of
 # een algemeen woord ("Speed Concept" is wel een model, maar "speed" staat in
 # elke tweede titel).
