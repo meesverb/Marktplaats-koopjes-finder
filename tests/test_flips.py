@@ -235,6 +235,20 @@ class OfferTest(FlipTest):
         (k,) = fl.load_book(self.db).get(self.trade).tasks
         self.assertEqual((k.est_eur, len(k.offers), k.offers[1].checked_at), (13.0, 2, "2026-10-02"))
 
+    def test_the_cube_research_reads_onto_the_cube_list(self):
+        conn = db.connect(self.db)
+        try:
+            fl.import_file(conn, CUBE)
+            lines = fl.update_file(conn, HERE / "flips_import" / "cube_aanbiedingen.json")
+        finally:
+            conn.close()
+        self.assertFalse([l for l in lines if "niet gevonden" in l])
+        self.assertTrue(all("aanbieding" in l for l in lines), lines)
+        cube = next(f for f in fl.load_book(self.db).flips if f.trade.title.startswith("Cube Peloton"))
+        chain = next(k for k in cube.tasks if k.title == "Ketting KMC X10")
+        self.assertEqual(chain.offers[0].shop, "bike-components")  # goedkoopste eerst
+        self.assertTrue(all(o.checked_at == "2026-10-02" and o.url.startswith("https://") for o in chain.offers))
+
     def test_a_database_from_before_migration_21(self):
         self.conn.execute("DROP TABLE flip_offer")
         self.conn.execute("DELETE FROM schema_version WHERE version >= 21")

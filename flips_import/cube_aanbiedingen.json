@@ -1,0 +1,240 @@
+{
+  "_toelichting": "Aanbiedingen uit het prijsonderzoek van 02-10-2026 (flips_import/cube_prijsonderzoek.md). Inlezen met: python flips.py bijwerken flips_import/cube_aanbiedingen.json — dat voegt alleen aanbiedingen toe (twee keer inlezen dubbelt niets) en verandert de regels zelf niet; kies er een met 'kies deze' op /flips. Alle prijzen op de productpagina gelezen op 02-10-2026. bike-components toont Duitse btw: bij levering in NL ~1,7% meer, plus €6,99 verzending per bestelling. Voor 'Ketting', 'Stuurlint' en de kettingmeter: AliExpress rekent sinds 1-7-2026 €3 invoerrecht per productcategorie (zie het onderzoek).",
+  "flips": [
+    {
+      "flip": "Cube Peloton Pro, maat 62",
+      "klussen": [
+        {
+          "titel": "Shimano Tiagra CS-HG500 cassette 11-32T",
+          "aanbiedingen": [
+            {
+              "url": "https://www.bike-components.de/en/Shimano/CS-HG500-10-10-speed-Cassette-p43864/",
+              "prijs": 23.99,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "bike-components",
+              "notitie": "variant 11-32 (12-28: €20,99 — neem die bij een SS-derailleur); prijs met Duitse btw (~1,7% meer bij levering in NL); verzending €6,99 per bestelling"
+            },
+            {
+              "url": "https://www.mantel.com/shimano-hg500-cassette",
+              "prijs": 29.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "Mantel",
+              "notitie": "variant 11/32 (12/28: €27,95); gratis verzending vanaf €49"
+            },
+            {
+              "url": "https://www.futurumshop.nl/shimano-tiagra-cs-hg500-cassette-10-speed.phtml",
+              "prijs": 29.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "FuturumShop",
+              "notitie": "variant 11-32T; gratis verzending vanaf €49"
+            }
+          ]
+        },
+        {
+          "titel": "Shimano derailleurwieltjes 5700 (set)",
+          "aanbiedingen": [
+            {
+              "url": "https://www.bike-components.de/en/Shimano/9-10-speed-Derailleur-Pulleys-1-Pair-p1370/",
+              "prijs": 4.99,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "bike-components",
+              "notitie": "universal, 11 tanden, past op RD-5701; prijs met Duitse btw (~1,7% meer bij levering in NL); verzending €6,99 per bestelling"
+            },
+            {
+              "url": "https://www.mantel.com/shimano-derailleurwieltjes-deore",
+              "prijs": 10.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "Mantel"
+            },
+            {
+              "url": "https://www.futurumshop.nl/shimano-derailleurwieltjes-5700-race-en-mtb.phtml",
+              "prijs": 11.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "FuturumShop"
+            }
+          ]
+        },
+        {
+          "titel": "2× Continental Ultra Sport III 700×25C vouwband",
+          "aanbiedingen": [
+            {
+              "url": "https://www.velondo.nl/continental-ultra-sport-3-e25-25-622-vouwband-zwart.html",
+              "prijs": 29.56,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "Velondo",
+              "verzending": 9.9,
+              "notitie": "2 × €14,78; verzending DHL €9,90, 2-3 werkdagen"
+            },
+            {
+              "url": "https://www.bike-components.de/en/Continental/Ultra-Sport-III-28-Folding-Tyre-p74503/",
+              "prijs": 33.98,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "bike-components",
+              "notitie": "2 × €16,99, variant 25 mm (25-622); prijs met Duitse btw (~1,7% meer bij levering in NL); verzending €6,99 per bestelling"
+            },
+            {
+              "url": "https://www.mantel.com/continental-ultra-sport-iii-racefiets-band",
+              "prijs": 39.9,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "Mantel",
+              "notitie": "2 × €19,95, variant 25 mm (art. 0150457)"
+            },
+            {
+              "url": "https://www.futurumshop.nl/continental-ultra-sport-iii-racefiets-band-zwart.phtml",
+              "prijs": 41.9,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "FuturumShop",
+              "notitie": "2 × €20,95, variant 700 x 25C"
+            }
+          ]
+        },
+        {
+          "titel": "Shimano R55C4 remblokken (inserts, achter)",
+          "aanbiedingen": [
+            {
+              "url": "https://www.bike-components.de/en/Shimano/R55C4-Brake-Pads-for-Dura-Ace-Ultegra-105-2-Pairs-p34057/",
+              "prijs": 5.99,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "bike-components",
+              "notitie": "2 paar; prijs met Duitse btw (~1,7% meer bij levering in NL); verzending €6,99 per bestelling"
+            },
+            {
+              "url": "https://www.mantel.com/shimano-r55c4-remblokken",
+              "prijs": 7.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "Mantel",
+              "notitie": "1 paar (Y8L298060); 2 paar €11,90"
+            },
+            {
+              "url": "https://www.futurumshop.nl/shimano-r55c4-remblokken-inschuif-2-paar.phtml",
+              "prijs": 12.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "FuturumShop",
+              "notitie": "2 paar"
+            }
+          ]
+        },
+        {
+          "titel": "Ketting KMC X10",
+          "aanbiedingen": [
+            {
+              "url": "https://www.bike-components.de/en/KMC/X10-10-speed-Chain-p68898/",
+              "prijs": 15.99,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "bike-components",
+              "notitie": "grijs, 114 schakels; prijs met Duitse btw (~1,7% meer bij levering in NL); verzending €6,99 per bestelling"
+            },
+            {
+              "url": "https://www.mantel.com/kmc-x1073-10s-2019-ketting",
+              "prijs": 19.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "Mantel",
+              "notitie": "zilver, 114 schakels"
+            },
+            {
+              "url": "https://www.12gobiking.nl/kmc-ketting-x10-zilver",
+              "prijs": 19.99,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "12GoBiking",
+              "notitie": "zilver"
+            },
+            {
+              "url": "https://www.futurumshop.nl/kmc-x10-fietsketting-10-speed-grijs.phtml",
+              "prijs": 22.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "FuturumShop",
+              "notitie": "grijs"
+            }
+          ]
+        },
+        {
+          "titel": "Voorblad 50T 110BCD (road 2x, met pinnen)",
+          "aanbiedingen": [
+            {
+              "url": "https://www.futurumshop.nl/sram-kettingblad-compact-buiten-10-speed-110-mm-50t-aluminium-zwart.phtml",
+              "prijs": 31.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "FuturumShop",
+              "notitie": "SRAM compact buitenblad 10-speed 50T (variant 50x34), 5 armen; alleen als het oude versleten is — zie cube_prijsonderzoek.md"
+            }
+          ]
+        },
+        {
+          "titel": "Stuurlint (RockBros / West Biking)",
+          "aanbiedingen": [
+            {
+              "url": "https://www.futurumshop.nl/bbb-raceribbon-bht-01-stuurlint-zwart.phtml",
+              "prijs": 10.95,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "FuturumShop",
+              "notitie": "BBB RaceRibbon BHT-01 zwart"
+            }
+          ]
+        },
+        {
+          "titel": "2× binnenband 700×23/32 presta",
+          "aanbiedingen": [
+            {
+              "url": "https://www.bike-components.de/en/Continental/Race-28-Inner-Tube-2-pieces-p78334/",
+              "prijs": 7.99,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "bike-components",
+              "notitie": "Continental Race 28, 2 stuks, 20-25 mm, presta 60 mm (42 mm uitverkocht); prijs met Duitse btw (~1,7% meer bij levering in NL); verzending €6,99 per bestelling"
+            },
+            {
+              "url": "https://www.futurumshop.nl/hutchinson-presta-binnenband-700x25-30.phtml",
+              "prijs": 11.98,
+              "bekeken": "2026-10-02",
+              "bron": "gecontroleerd",
+              "winkel": "FuturumShop",
+              "notitie": "2 × €5,99, Hutchinson 700x25/30, presta 48 mm"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "investeringen": [
+    {
+      "titel": "Kettingslijtagemeter",
+      "aanbiedingen": [
+        {
+          "url": "https://www.bike-components.de/en/BBB/ChainChecker-BTL-125-Chain-Checker-p61475/",
+          "prijs": 7.99,
+          "bekeken": "2026-10-02",
+          "bron": "gecontroleerd",
+          "winkel": "bike-components",
+          "notitie": "BBB ChainChecker BTL-125; neem mee in de bestelling met de onderdelen; prijs met Duitse btw (~1,7% meer bij levering in NL); verzending €6,99 per bestelling"
+        },
+        {
+          "url": "https://www.bike-components.de/en/KMC/Chain-Checker-10-000km-Chain-Wear-Gauge-p220920/",
+          "prijs": 12.99,
+          "bekeken": "2026-10-02",
+          "bron": "gecontroleerd",
+          "winkel": "bike-components",
+          "notitie": "KMC Chain Checker 10,000km+"
+        }
+      ]
+    }
+  ]
+}

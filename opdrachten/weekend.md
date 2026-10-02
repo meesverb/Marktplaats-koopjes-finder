@@ -38,7 +38,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - [x] **1. Fietsmodellen stap 2 F — regels leren** (`opdrachten/fietsmodellen.md` → F)
 - [x] **2. Fietsmodellen stap 2 G — bouwjaar ophalen voor kanshebbers** (→ G; `schedule.json`: 20 in `overdag` en `nacht`, standaard 0)
 - [x] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
-- [ ] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
+- [x] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
 - [ ] **4b. Reservelijst onderdelen op /racefietsen** (keuzes hierboven)
 - [ ] **4c. Zelfde knoppen en weergaven** op racefietsen, fietscomputers, horloges (keuzes hierboven)
 - [ ] **4d. Snel verkocht** ook bij fietscomputers en horloges
@@ -85,3 +85,15 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   in plaats van alle, en een nette melding (`dashboard.DB_BUSY`) als het toch
   bezet is. Commit 44b2f79. De eigenaar is gezegd hoe hij het nu al in main
   krijgt.
+- **02-10 ~09:00 — punt 4 (onderdelen A) af.** `flips_import/cube_prijsonderzoek.md`
+  + `cube_aanbiedingen.json` (21 aanbiedingen, in te lezen met `flips.py
+  bijwerken`). Belangrijkste: (1) 11-32 cassette alleen op een RD-5701-**GS**
+  (Shimano: SS 25-30T), anders 12-28; (2) origineel 105 FC-5750 50T-blad
+  overal uitverkocht, SRAM 50T/110 €31,95 als het oude echt op is; (3) KMC
+  X10 in NL ±€20, bike-components €16 — AliExpress (±€13) geen voordeel meer
+  met **€3 invoerrecht per productcategorie sinds 1-7-2026** (EC + Douane);
+  (4) goedkoopste mandje bike-components ±€101,50 voor cassette, wieltjes,
+  banden, remrubbers, ketting, binnenbanden. Bike24 en Decathlon weigeren
+  geautomatiseerde verzoeken (403): hun prijzen komen uit de lijst van de
+  eigenaar. Niet nagezocht: Action/bouwmarkt-spullen, AliExpress-retour,
+  Marktplaats (geen verzoeken).

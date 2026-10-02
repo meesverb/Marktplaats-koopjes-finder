@@ -1589,7 +1589,11 @@ by its title within the flip, leaves lines you already bought alone, and says
 what it couldn't find. A line in that file can also carry `"aanbiedingen"`:
 `[{"url", "prijs", "verzending", "winkel", "notitie", "bron", "bekeken"}]`
 (`bron`: `gecontroleerd` or `schatting`; the same link at the same price is
-not added twice).
+not added twice). The price research for the Cube Peloton Pro (02-10-2026:
+offers with links per part, three baskets, AliExpress after the €3 import
+duty of 1 July 2026, the chainring question) is in
+`flips_import/cube_prijsonderzoek.md`; its offers go in with
+`python flips.py bijwerken flips_import/cube_aanbiedingen.json`.
 
 Bike and stock flips use `trade.market` = `fietsen`/`spullen`; they don't
 appear in Mijn flips of the computer or watch dashboard. Database migration 17
