@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import NamedTuple, Optional, Sequence
 from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
@@ -636,6 +636,10 @@ class ComputerSignal:
     comp_scope: str = ""
     model_comp_count: int = 0  # alle andere advertenties van het model
     variant_comp_count: int = 0  # waarvan van dezelfde uitvoering
+    fast_count: int = 0  # waarvan snel verkocht (FAST_DAYS), binnen comp_scope
+    # "snel verkocht": de schatting is de mediaan van de snel verkochte;
+    # "vraagprijzen": mediaan vraagprijs × onderhandelingsfactor; "": geen.
+    comp_basis: str = ""
     # Verwachte verkoopprijs (mediaan) en de band eromheen (kwartielen), alle
     # drie al na onderhandelingsruimte.
     resale_eur: Optional[float] = None
@@ -713,6 +717,40 @@ def _comparable_price(listing) -> Optional[float]:
     return listed_price(listing)
 
 
+# Snel verkocht, zoals op /racefietsen (racebikes.FAST_DAYS en MIN_FAST): weg
+# binnen FAST_DAYS na de eerste keer gezien, of gereserveerd en daarna weg.
+# Vanaf MIN_FAST daarvan rust de verkoopschatting op hun laatste vraagprijs,
+# zonder afdingfactor: dat is ongeveer wat ervoor betaald is (de eigenaar,
+# 02-10-2026: "snel verkocht overal"). Verdwenen is geen bewijs van verkocht
+# (patterns.py), maar snel weg is het beste wat de zoekresultaten zeggen.
+FAST_DAYS = 7
+MIN_FAST = 3
+
+
+def is_fast_sold(disappeared_at, reserved_at, days_online, first_seen) -> bool:
+    """Snel verkocht (FAST_DAYS); dezelfde regel als racebikes.sold_fast()."""
+    if not disappeared_at:
+        return False
+    if reserved_at:
+        return True
+    if days_online is not None:
+        return days_online <= FAST_DAYS
+    try:
+        first, gone = datetime.fromisoformat(first_seen), datetime.fromisoformat(disappeared_at)
+        return gone - first <= timedelta(days=FAST_DAYS)
+    except (TypeError, ValueError):  # ontbreekt, of de een met tijdzone en de ander zonder
+        return False
+
+
+class CompRow(NamedTuple):
+    """Eén vergelijkingsprijs uit koopjes.db (comparable_rows())."""
+    model: ComputerModel
+    item_id: str
+    price: float
+    title: str
+    fast: bool = False  # snel verkocht (is_fast_sold())
+
+
 def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int,
                    categories: Optional[Sequence[str]] = None, rows: Optional[list] = None
                    ) -> dict[str, dict[str, float]]:
@@ -722,14 +760,24 @@ def db_comparables(db_path, catalog: Sequence[ComputerModel], window_days: int,
     found: dict[str, dict[str, float]] = {}
     if rows is None:
         rows = comparable_rows(db_path, catalog, window_days, categories)
-    for model, item_id, price, _title in rows:
-        found.setdefault(model.label, {})[item_id] = price
+    for row in rows:
+        found.setdefault(row.model.label, {})[row.item_id] = row.price
+    return found
+
+
+def fast_sold(rows: list, exclude: frozenset = frozenset()) -> dict[str, list]:
+    """{modellabel: [prijs]} van de snel verkochte onder `rows`
+    (comparable_rows()), zonder `exclude`."""
+    found: dict[str, list] = {}
+    for row in rows:
+        if row.fast and row.item_id not in exclude:
+            found.setdefault(row.model.label, []).append(row.price)
     return found
 
 
 def comparable_rows(db_path, catalog: Sequence[ComputerModel], window_days: int,
-                    categories: Optional[Sequence[str]] = None) -> list[tuple]:
-    """[(model, item_id, prijs, titel)] uit eerdere runs in koopjes.db. Alleen
+                    categories: Optional[Sequence[str]] = None) -> list[CompRow]:
+    """[CompRow(model, item_id, prijs, titel, snel verkocht)] uit eerdere runs in koopjes.db. Alleen
     vraagprijzen (`price_is_asking`, migratie 3; bij oudere rijen waar die
     NULL is beslist `is_bid`, zoals db.py dat ook doet), alleen titels die
     zonder twijfel een computer zijn, niet uit een fietscategorie, en alleen
@@ -756,8 +804,10 @@ def comparable_rows(db_path, catalog: Sequence[ComputerModel], window_days: int,
         columns = {row[1] for row in conn.execute("PRAGMA table_info(listing)")}
         not_reserved = ("AND (reserved_at IS NULL OR disappeared_at IS NOT NULL) "
                         if "reserved_at" in columns else "")
+        reserved = "reserved_at" if "reserved_at" in columns else "NULL"
         rows = conn.execute(
-            "SELECT item_id, title, price_eur, url, description FROM listing "
+            f"SELECT item_id, title, price_eur, url, description, disappeared_at, {reserved}, days_online, "
+            "first_seen FROM listing "
             "WHERE price_eur > 0 "
             "AND COALESCE(price_is_asking, is_bid = 0) = 1 "
             f"{not_reserved}"
@@ -769,14 +819,15 @@ def comparable_rows(db_path, catalog: Sequence[ComputerModel], window_days: int,
     finally:
         conn.close()
     found = []
-    for item_id, title, price, url, description in rows:
+    for item_id, title, price, url, description, gone, reserved_at, days_online, first_seen in rows:
         if in_bike_category(url) or WITHOUT_DEVICE_RE.search(description or ""):
             continue
         if categories is not None and listing_category(url) not in categories:
             continue
         verdict = classify_title(title, catalog)
         if verdict and verdict.kind == "computer":
-            found.append((verdict.model, item_id, price, title))
+            found.append(CompRow(verdict.model, item_id, price, title,
+                                 is_fast_sold(gone, reserved_at, days_online, first_seen)))
     return found
 
 
@@ -829,22 +880,34 @@ def _resale_band(prices: list, factor: float) -> tuple[float, float, float]:
     return round(low * factor, 2), round(median * factor, 2), round(high * factor, 2)
 
 
+def _fast_band(prices: list) -> tuple[float, float, float]:
+    """(laag, midden, hoog) van de snel verkochte: hun laatste vraagprijs,
+    zonder onderhandelingsfactor."""
+    return _resale_band(prices, 1.0)
+
+
 def market_resale(db_path, catalog: Optional[Sequence[ComputerModel]] = None,
                   config: Optional[dict] = None, exclude: frozenset = frozenset(),
                   categories: Optional[Sequence[str]] = None, rows: Optional[list] = None) -> dict[str, float]:
     """{modellabel: verwachte verkoopprijs nu} uit koopjes.db, met dezelfde
-    regels als de flipwinst (mediaan × onderhandelingsfactor, minimaal
-    min_comps advertenties). Voor de voorraad in "Mijn flips". `exclude`:
-    de advertenties waar de eigenaar zelf kocht — zijn eigen koopje zou de
-    schatting van wat hij ervoor terugkrijgt anders omlaag trekken.
-    `categories` en `rows`: zie db_comparables()."""
+    regels als de flipwinst: de mediaan van de snel verkochte als dat er
+    minstens MIN_FAST zijn, anders mediaan × onderhandelingsfactor (minimaal
+    min_comps advertenties). Voor de voorraad in "Mijn flips", Marktprijzen
+    en Vinted. `exclude`: de advertenties waar de eigenaar zelf kocht — zijn
+    eigen koopje zou de schatting van wat hij ervoor terugkrijgt anders
+    omlaag trekken. `categories` en `rows`: zie db_comparables()."""
     catalog = catalog if catalog is not None else _default_catalog()
     flip = (config or default_config())["flip"]
+    if rows is None:
+        rows = comparable_rows(db_path, catalog, flip["comp_window_days"], categories)
     comps = db_comparables(db_path, catalog, flip["comp_window_days"], categories, rows)
+    fast = fast_sold(rows, exclude)
     result = {}
     for label, prices in comps.items():
         kept = [p for item_id, p in prices.items() if item_id not in exclude]
-        if len(kept) >= flip["min_comps"]:
+        if len(fast.get(label, [])) >= MIN_FAST:
+            result[label] = _fast_band(fast[label])[1]
+        elif len(kept) >= flip["min_comps"]:
             result[label] = _resale_band(kept, flip["negotiation_factor"])[1]
     return result
 
@@ -903,9 +966,10 @@ def apply_computer_signals(
     variants: dict[str, Variant] = {}
     if rows is None:
         rows = comparable_rows(db_path, catalog, flip["comp_window_days"], comp_categories)
-    for model, item_id, price, title in rows:
-        comps.setdefault(model.label, {})[item_id] = price
-        variants[item_id] = title_variant(title, model)
+    fast = {row.item_id for row in rows if row.fast}
+    for row in rows:
+        comps.setdefault(row.model.label, {})[row.item_id] = row.price
+        variants[row.item_id] = title_variant(row.title, row.model)
     for listing, model, kind, reason in found:
         variants[listing.item_id] = title_variant(listing.title, model)
     for listing, model, kind, reason in found:
@@ -952,19 +1016,32 @@ def apply_computer_signals(
         signal.variant_comp_count = len(same)
         band_note = f"× {factor:g} (onderhandelingsruimte, heuristiek); de band is het middelste kwart-tot-driekwart"
         if len(same) >= flip["min_comps"] and len(same) < len(others):
-            prices = same
+            scope = {i: p for i, p in others.items() if variant.matches(variants.get(i, Variant()))}
             signal.comp_scope = "uitvoering"
-            signal.comp_note = (f"mediaan van {len(same)} advertenties van dezelfde uitvoering "
-                                f"({variant.label}; het hele model heeft er {len(others)}) {band_note}")
+            where = f"van dezelfde uitvoering ({variant.label}; het hele model heeft er {len(others)})"
+            signal.comp_note = f"mediaan van {len(same)} advertenties {where} {band_note}"
         else:
-            prices = list(others.values())
+            scope = others
             signal.comp_scope = "model"
             differ = (f" (van deze uitvoering, {variant.label}, maar {len(same)})"
                       if len(same) < len(others) else "")
+            where = f"van het model{differ}"
             signal.comp_note = f"mediaan van {len(others)} andere advertenties{differ} {band_note}"
+        prices = list(scope.values())
+        quick = [p for i, p in scope.items() if i in fast]
         signal.comp_count = len(prices)
-        if len(prices) >= flip["min_comps"]:
+        signal.fast_count = len(quick)
+        if len(quick) >= MIN_FAST:
+            signal.comp_basis = "snel verkocht"
+            signal.resale_low_eur, signal.resale_eur, signal.resale_high_eur = _fast_band(quick)
+            signal.comp_note = (f"mediaan van de laatste vraagprijs van {len(quick)} snel verkochte (≤{FAST_DAYS} d) "
+                                f"{where}, zonder afdingfactor — wat er echt betaald is weet je niet; "
+                                "de band is het middelste kwart-tot-driekwart")
+        elif len(prices) >= flip["min_comps"]:
+            signal.comp_basis = "vraagprijzen"
             signal.resale_low_eur, signal.resale_eur, signal.resale_high_eur = _resale_band(prices, factor)
+            signal.comp_note += (f" ({'nog geen snelle verkopen' if not quick else f'nog maar {len(quick)} snel verkocht'}"
+                                 f", vanaf {MIN_FAST} tellen die)")
         else:
             signal.comp_note = f"te weinig vergelijkingsmateriaal ({len(others)} andere, minimaal {flip['min_comps']})"
     return count

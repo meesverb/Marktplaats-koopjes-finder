@@ -383,7 +383,7 @@ in the category (`dashboard` in `computer_scoring.json`). Tabs:
 | **Upgrades** | computers that do more than your own, with the points they add, the **net** cost (price minus what your own computer would sell for) and what you gain or give up ("plannen op het apparaat: volledig i.p.v. beperkt", "touch i.p.v. knoppen") |
 | **Alle computers** | everything, including computers whose model isn't in the file ("model onbekend": Van Rysel GPS 500, Sigma BC 509, ...) — search box (also searches your notes), brand filter, "alleen nieuw", sortable columns (Afstand too, see "Distance"), **Max €**. **Toon** hides the listings you put away (the default); set it to *te beoordelen*, *favorieten*, *weggezet* (to put one back), *met notitie* or *alles* |
 | **Weggezet** | Alle computers with **Toon** set to *weggezet*: what you put away, to put one back. Like Te beoordelen a tab button; the tab Alle computers itself sets Toon back to the default |
-| **Marktprijzen** | per model: how many for sale, lowest and median asking price, expected selling price, original price, score |
+| **Marktprijzen** | per model: how many for sale, lowest and median asking price, how many sold fast (with their median; see "Sold fast first"), expected selling price, original price, score |
 | **Vinted** | once you've read in a Vinted export (below; until then the tab says how, and which database it reads): Vinted listings you could buy and sell on Marktplaats at a profit — what you pay there (asking price + buyer protection + shipping) against the Marktplaats selling price — and per model the Vinted asking prices next to Marktplaats |
 | **Patronen** | long-term patterns from everything the crawl ever saw, gone listings included (`patterns.py`): per model how long listings stay online, how many are gone within 14 days, the median asking price, the last price of the quick ones, and how often the price was lowered; the **measured haggling factor** (last price of listings gone within 14 days ÷ the model's median asking price, shown from 20 such listings — then you can put it in `computer_scoring.json` instead of the assumed 0,875); whether the listings that were flips at first sight went faster than the rest; the median asking price per month; and new listings per weekday. Gone is not sold (a listing can be withdrawn), and a listing is only marked gone by a complete nightly crawl, so this needs a few weeks of `python koopjes.py run nacht`. Gone listings that were reserved when a round last saw them are counted apart ("eerst gereserveerd"): those were almost certainly sold. Only reservations a round actually saw count, so it's a lower bound. The hour of posting isn't in the search results: Marktplaats only says "Vandaag"/"Gisteren". Below all that: **Weergaven en likes** (see "Views and saves") |
 | **Uitgefilterd** | holders, cases, parts, broken ones and wanted ads, each with the reason, to check that no real computer ended up there |
@@ -537,6 +537,19 @@ as `valuation.py`); the band uses the lower and upper quartile instead of the
 median. Only with at least 3 other listings; a running bid is never a
 comparable.
 
+**Sold fast first** (since 02-10-2026, as on `/racefietsen`): when at least 3
+of those listings **sold fast** — gone within 7 days of first being seen, or
+reserved and then gone (`computers.is_fast_sold()`) — the selling price is the
+median of *their* last asking price, without the 0,875: that is roughly what
+was paid, though what was actually paid you never know. The band is their
+quartiles. With fewer, it's the asking prices × 0,875 as above, and the line
+under the selling price says so ("nog maar 2 snel verkocht"). The same rule
+holds for both dashboards (bike computers and watches), for the stock in Mijn
+flips, for Marktprijzen (column **Snel verkocht**: how many, and their median)
+and for the Marktplaats selling price on the Vinted tab. Gone is not sold, and
+a listing is only marked gone by a complete night round, so it takes a few
+weeks of `python koopjes.py run nacht` before models have 3.
+
 **Per variant first.** Variants share a row in the reference file ("Edge 530"
 is also the sensor bundle, "Fenix 7" also the 7S and the 7X Sapphire Solar),
 so one median would mix them. `computers.title_variant()` reads the variant
@@ -548,7 +561,7 @@ listings of the same variant when there are at least 3 of them — a title that
 names none is the plain variant, and a missing mm size fits any size — and
 otherwise with the whole model, as before. The dashboard says which, under the
 selling price ("n=6, zelfde uitvoering: X · Solar · Sapphire" or "n=12, hele
-model; S: 1"), and Marktprijzen lists the variants on sale per model with
+model; S: 1"; "4 snel verkocht" instead of n= when the fast ones set the price), and Marktprijzen lists the variants on sale per model with
 their median asking price. On the full Garmin watch crawl of 28-09-2026, 778
 of 1229 watches had enough of their own variant: a plain Fenix 7 at +€3 and a
 Fenix 8 AMOLED 47 mm at +€29 turned out not to be flips, a Fenix 6 Sapphire

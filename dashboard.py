@@ -121,6 +121,7 @@ class Dashboard:
     # Verwachte verkoopprijs per model (Marktprijzen, model_resale()), één
     # keer per opbouw; None: nog niet uitgerekend.
     resale_by_model: Optional[dict] = None
+    fast_by_model: Optional[dict] = None  # {modellabel: [prijs]} snel verkocht (computers.fast_sold())
 
     # De signalen heten .computer omdat ze uit computers.py komen; bij de
     # sporthorloges zijn het horloges.
@@ -260,6 +261,7 @@ def load_base(db_path, config: dict, market: mk.Market = mk.COMPUTERS) -> Dashbo
     d = _with_trades(_load_market(db_path, config, market, rows), db_path, rows)
     d.resale_by_model = pc.market_resale(db_path, catalog=market.catalog(), config=config,
                                          categories=market.comp_categories, rows=rows)
+    d.fast_by_model = pc.fast_sold(rows)
     d.patterns = pt.load_patterns(db_path, config, market)
     d.view_patterns = vw.load_patterns(db_path, market.categories)
     d.vinted = vn.load_view(db_path, config) if market.has_vinted else None
@@ -485,6 +487,16 @@ def model_resale(d: Dashboard) -> dict[str, float]:
                             categories=d.market.comp_categories)
 
 
+def model_fast(d: Dashboard) -> dict[str, list]:
+    """{modellabel: [prijs]} van de snel verkochte (computers.fast_sold())."""
+    if d.fast_by_model is not None:
+        return d.fast_by_model
+    if not d.db_path:
+        return {}
+    return pc.fast_sold(pc.comparable_rows(d.db_path, d.market.catalog(), d.config["flip"]["comp_window_days"],
+                                           d.market.comp_categories))
+
+
 def market_rows(d: Dashboard) -> list[tuple[str, list, Optional[float]]]:
     """Per model: (label, actieve advertenties, mediaan vraagprijs), meeste
     advertenties eerst. Gereserveerde en lopende biedingen tellen niet mee
@@ -553,12 +565,14 @@ def thumb(listing) -> str:
 
 def comp_text(c) -> str:
     """Waarmee de verkoopprijs is vergeleken, kort: dezelfde uitvoering of het
-    hele model (computers.apply_computer_signals())."""
+    hele model, en of hij op de snel verkochte rust
+    (computers.apply_computer_signals())."""
+    fast = f"{c.fast_count} snel verkocht" if c.comp_basis == "snel verkocht" else ""
     if c.comp_scope == "uitvoering":
-        return f"n={c.comp_count}, zelfde uitvoering: {c.variant.label}"
+        return f"{fast or f'n={c.comp_count}'}, zelfde uitvoering: {c.variant.label}"
     if c.variant is not None and c.variant_comp_count < c.model_comp_count:
-        return f"n={c.comp_count}, hele model; {c.variant.label}: {c.variant_comp_count}"
-    return f"n={c.comp_count} vergelijkbaar"
+        return f"{fast or f'n={c.comp_count}'}, hele model; {c.variant.label}: {c.variant_comp_count}"
+    return fast or f"n={c.comp_count} vergelijkbaar"
 
 
 def variant_summary(items: list) -> str:
@@ -1136,6 +1150,7 @@ def market_panel(d: Dashboard) -> str:
     # Over alle vergelijkingsprijzen van het model; per advertentie rekent de
     # flip zonder die advertentie zelf, en dat hoort niet in een tabel per model.
     per_model = model_resale(d)
+    fast_models = model_fast(d)
     rows = []
     for label, items in sorted(by_model.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         model = items[0].computer.model
@@ -1145,6 +1160,8 @@ def market_panel(d: Dashboard) -> str:
         resale = per_model.get(label, items[0].computer.resale_eur)
         new_price = model.number("nieuwprijs_eur")
         variants = variant_summary(items)
+        fast = fast_models.get(label, [])
+        fast_median = statistics.median(fast) if fast else None
         rows.append(
             "<tr>"
             f"<td class='what'><div class='model'>{esc(label)}</div>"
@@ -1154,6 +1171,8 @@ def market_panel(d: Dashboard) -> str:
             f"<td class='num' data-sort='{len(items)}'>{len(items)}</td>"
             f"<td class='num' data-sort='{min(asking) if asking else ''}'>{euro(min(asking) if asking else None)}</td>"
             f"<td class='num' data-sort='{median if median is not None else ''}'>{euro(median)}</td>"
+            f"<td class='num' data-sort='{len(fast)}'>{len(fast) or ''}"
+            + (f"<div class='sub'>mediaan {euro(fast_median)}</div>" if fast else "") + "</td>"
             f"<td class='num' data-sort='{resale if resale is not None else ''}'>"
             f"{euro(resale) if resale is not None else euro(median * factor) if median else '—'}</td>"
             f"<td class='num' data-sort='{new_price if new_price else ''}'>{euro(new_price)}</td>"
@@ -1161,14 +1180,17 @@ def market_panel(d: Dashboard) -> str:
                if scored else "")
             + "</tr>"
         )
-    intro = ("<p class='explain'>Per model wat er nu te koop staat. <strong>Verwacht verkoop</strong> is de "
+    intro = ("<p class='explain'>Per model wat er nu te koop staat. <strong>Snel verkocht</strong>: binnen "
+             f"{pc.FAST_DAYS} dagen weg, of gereserveerd en daarna weg, met de mediaan van hun laatste vraagprijs. "
+             f"<strong>Verwacht verkoop</strong> is die mediaan als het er minstens {pc.MIN_FAST} zijn (wat er "
+             "echt betaald is weet je niet, maar dichterbij kom je niet), anders de "
              f"mediaan-vraagprijs × {str(factor).replace('.', ',')}, over alle advertenties van de laatste "
              f"{d.config['flip']['comp_window_days']} dagen (ook verkochte); een flip rekent per uitvoering als "
              "die er genoeg heeft. Onder het model staan de uitvoeringen die nu te koop staan, met hun "
              "mediaan-vraagprijs. Nieuwprijs alleen waar een bron "
              f"hem gaf (<code>{esc(d.market.catalog_path.name)}</code>).</p>")
     head = [("Model", "text"), ("Te koop", "num"), ("Laagste", "num"), ("Mediaan vraag", "num"),
-            ("Verwacht verkoop", "num"), ("Nieuwprijs", "num")]
+            ("Snel verkocht", "num"), ("Verwacht verkoop", "num"), ("Nieuwprijs", "num")]
     return intro + table(head + ([("Score", "num")] if scored else []), rows)
 
 

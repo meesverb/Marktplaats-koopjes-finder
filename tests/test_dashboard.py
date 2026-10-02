@@ -152,6 +152,83 @@ class DashboardTest(DatabaseCase):
         self.assertIn("bestaat niet", err.getvalue())
 
 
+class FastSoldTest(DatabaseCase):
+    """Snel verkocht ook bij fietscomputers en horloges (de eigenaar,
+    02-10-2026): vanaf 3 die binnen 7 dagen weggingen rust de verkoopprijs op
+    hun laatste vraagprijs, zonder afdingfactor — zoals op /racefietsen."""
+
+    def gone(self, ids, days_online=3, reserved=False):
+        conn = db.connect(self.db)
+        try:
+            for item_id in ids:
+                conn.execute("UPDATE listing SET disappeared_at = ?, days_online = ?, reserved_at = ? WHERE item_id = ?",
+                             ((self.now - timedelta(days=2)).isoformat(), days_online,
+                              self.now.isoformat() if reserved else None, item_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def setup_market(self):
+        sold = [computer(f"s{i}", "Garmin Edge 530", p) for i, p in enumerate((120.0, 130.0, 140.0))]
+        self.sync(sold, when=self.now - timedelta(days=6))
+        self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
+
+    def test_what_counts_as_fast(self):
+        gone, first = self.now.isoformat(), (self.now - timedelta(days=30)).isoformat()
+        fast = dashboard.pc.is_fast_sold
+        self.assertFalse(fast(None, None, 2, first))  # nog online
+        self.assertTrue(fast(gone, None, 7, first))
+        self.assertFalse(fast(gone, None, 8, first))
+        self.assertTrue(fast(gone, gone, 30, first))  # gereserveerd en daarna weg
+        self.assertFalse(fast(gone, None, None, first))
+        self.assertTrue(fast(gone, None, None, (self.now - timedelta(days=5)).isoformat()))
+        self.assertFalse(fast(gone, None, None, None))
+
+    def test_three_sold_fast_set_the_price(self):
+        self.setup_market()
+        self.gone(["s0", "s1", "s2"])
+        d = dashboard.load_dashboard(self.db)
+        c = next(l for l in d.listings if l.item_id == "c").computer
+        self.assertEqual((c.comp_basis, c.fast_count), ("snel verkocht", 3))
+        self.assertEqual(c.resale_eur, 130.0)  # hun mediaan, zonder × 0,875
+        self.assertEqual((c.resale_low_eur, c.resale_high_eur), (125.0, 135.0))
+        self.assertIn("3 snel verkochte", c.comp_note)
+        self.assertEqual(dashboard.comp_text(c), "3 snel verkocht")
+        # Marktprijzen en de voorraad in Mijn flips rekenen hetzelfde.
+        self.assertEqual(dashboard.model_resale(d)["Garmin Edge 530"], 130.0)
+        self.assertEqual(dashboard.model_fast(d)["Garmin Edge 530"], [120.0, 130.0, 140.0])
+        market = dashboard.market_panel(d)
+        self.assertIn("Snel verkocht", market)
+        self.assertIn("mediaan €130", market)
+
+    def test_reserved_and_then_gone_counts_too(self):
+        self.setup_market()
+        self.gone(["s0", "s1"])
+        self.gone(["s2"], days_online=20, reserved=True)
+        c = next(l for l in dashboard.load_dashboard(self.db).listings if l.item_id == "c").computer
+        self.assertEqual(c.fast_count, 3)
+
+    def test_two_are_not_enough(self):
+        import statistics
+        self.setup_market()
+        self.gone(["s0", "s1"])
+        self.gone(["s2"], days_online=30)  # langzaam weg: telt als vraagprijs, niet als snel
+        c = next(l for l in dashboard.load_dashboard(self.db).listings if l.item_id == "c").computer
+        self.assertEqual((c.comp_basis, c.fast_count), ("vraagprijzen", 2))
+        prices = [120.0, 130.0, 140.0, 160.0, 180.0, 200.0, 220.0]
+        self.assertAlmostEqual(c.resale_eur, round(statistics.median(prices) * 0.875, 2))
+        self.assertIn("nog maar 2 snel verkocht", c.comp_note)
+        self.assertEqual(dashboard.comp_text(c), "n=7 vergelijkbaar")
+
+    def test_own_purchases_do_not_count(self):
+        self.setup_market()
+        self.gone(["s0", "s1", "s2"])
+        resale = dashboard.pc.market_resale(self.db, exclude=frozenset({"s0"}))
+        # Zonder de eigen aankoop nog 2 snel verkocht: terug naar de vraagprijzen
+        # (90, 130, 140, 160, 180, 200, 220: mediaan 160).
+        self.assertAlmostEqual(resale["Garmin Edge 530"], round(160.0 * 0.875, 2))
+
+
 class MarksTest(DatabaseCase):
     """Favoriet en weg (marks.py) in het dashboard."""
 

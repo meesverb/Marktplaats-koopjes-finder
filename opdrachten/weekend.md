@@ -41,7 +41,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - [x] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
 - [x] **4b. Reservelijst onderdelen op /racefietsen** (keuzes hierboven)
 - [x] **4c. Zelfde knoppen en weergaven** op racefietsen, fietscomputers, horloges (keuzes hierboven)
-- [ ] **4d. Snel verkocht** ook bij fietscomputers en horloges
+- [x] **4d. Snel verkocht** ook bij fietscomputers en horloges
 - [ ] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
 - [ ] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
 - [ ] **7. Daarna** — kleine verbeteringen (zie keuzes), elk als eigen commit
@@ -115,3 +115,13 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   Alle, Patronen, favoriet/weg/notitie/bod/controleer, afstand. Niet gedaan
   (keuze eigenaar): sneltoetsen en Modellen bij computers/horloges. In
   Chromium op 1300 en 390 px zonder JS-fouten of horizontaal scrollen.
+- **02-10 ~09:15 — punt 4d (snel verkocht bij computers en horloges) af.**
+  `computers.comparable_rows()` geeft nu per vergelijkingsprijs of hij snel
+  verkocht is (`is_fast_sold()`: ≤ 7 dagen weg, of gereserveerd en weg —
+  dezelfde regel als `racebikes.sold_fast()`). Vanaf 3 snel verkochte (binnen
+  de uitvoering of het model waarmee vergeleken wordt) is de verkoopschatting
+  hun mediaan zonder × 0,875, de band hun kwartielen; anders zoals het was,
+  met "nog maar N snel verkocht" in de onderbouwing. Ook in
+  `market_resale()` (voorraad in Mijn flips, Marktprijzen, Vinted), en
+  Marktprijzen kreeg een kolom Snel verkocht. Zolang de nachtrondes nog
+  weinig verdwenen advertenties hebben, verandert er in de praktijk weinig.

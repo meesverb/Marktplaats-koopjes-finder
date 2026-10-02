@@ -114,6 +114,29 @@ class WatchFlipsTest(WatchDatabaseTest):
         self.assertNotIn(">€0<", dashboard.market_panel(d))
 
 
+class WatchFastSoldTest(WatchDatabaseTest):
+    def test_three_sold_fast_set_the_price_here_too(self):
+        # Snel verkocht overal (de eigenaar, 02-10-2026), en alleen uit de
+        # horlogecategorieën: drie snel verdwenen Fenix 6 Pro-bandjes in een
+        # telefooncategorie tellen niet.
+        now = datetime.now(timezone.utc)
+        sold = [watch(f"s{i}", "Garmin Fenix 6 Pro 47 mm", p) for i, p in enumerate((150.0, 160.0, 170.0))]
+        straps = [make_listing(item_id=f"b{i}", title="Garmin Fenix 6 Pro", price_eur=15.0,
+                               url=PHONE_URL.format(f"b{i}")) for i in range(3)]
+        self.sync(sold + straps, when=now - timedelta(days=5))
+        cheap = watch("c", "Garmin Fenix 6 Pro", 100.0)
+        self.sync(fenix_market() + [cheap])
+        conn = db.connect(self.db)
+        conn.execute("UPDATE listing SET disappeared_at = ?, days_online = 4 WHERE item_id LIKE 's%' OR item_id LIKE 'b%'",
+                     (now.isoformat(),))
+        conn.commit()
+        conn.close()
+        d = self.board()
+        c = next(l for l in d.listings if l.item_id == "c").computer
+        self.assertEqual((c.comp_basis, c.fast_count, c.resale_eur), ("snel verkocht", 3, 160.0))
+        self.assertEqual(dashboard.model_resale(d)["Garmin Fenix 6 Pro"], 160.0)
+
+
 class BidMemoryTest(WatchDatabaseTest):
     """Migratie 11: het opgehaalde bod blijft staan tot de volgende opvraging."""
 

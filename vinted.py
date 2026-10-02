@@ -398,12 +398,11 @@ def load_view(db_path, config: Optional[dict] = None) -> Optional[VintedView]:
     costs = flip.get("costs_eur", 0.0)
 
     catalog = pc._default_catalog()
-    mp_prices = pc.db_comparables(db_path, catalog, flip["comp_window_days"])
-    resale = {
-        label: pc._resale_band(list(prices.values()), flip["negotiation_factor"])[1]
-        for label, prices in mp_prices.items()
-        if len(prices) >= flip["min_comps"]
-    }
+    comp_rows = pc.comparable_rows(db_path, catalog, flip["comp_window_days"])
+    mp_prices = pc.db_comparables(db_path, catalog, flip["comp_window_days"], rows=comp_rows)
+    # Dezelfde verkoopschatting als de flips: de snel verkochte als het er
+    # genoeg zijn, anders vraagprijs × onderhandelingsfactor.
+    resale = pc.market_resale(db_path, catalog=catalog, config=config, rows=comp_rows)
 
     items = []
     for r in rows:
