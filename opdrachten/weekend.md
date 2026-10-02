@@ -33,7 +33,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 
 ## Werklijst
 
-- [ ] **1. Fietsmodellen stap 2 F — regels leren** (`opdrachten/fietsmodellen.md` → F)
+- [x] **1. Fietsmodellen stap 2 F — regels leren** (`opdrachten/fietsmodellen.md` → F)
 - [ ] **2. Fietsmodellen stap 2 G — bouwjaar ophalen voor kanshebbers** (→ G; `schedule.json`: 20 in `overdag` en `nacht`, standaard 0)
 - [ ] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
 - [ ] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
@@ -44,3 +44,12 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 ## Logboek
 
 (per punt: datum/tijd, commit, wat er is gedaan, wat bleef liggen)
+
+- **02-10 ~04:00 — punt 1 (F) af.** Migratie 20 `bike_rule`; voorstel na 3
+  dezelfde correcties bovenaan Modellen (en op de knop: "Modellen (1
+  voorstel)"), toepassen / nee (onthouden) / weghalen; `bike_identity`
+  gesplitst in `recognize()` + `resolve()` zodat een regel ook verdwenen
+  fietsen in de pool raakt zonder ze opnieuw te lezen. In Chromium op 2000
+  testfietsen: regel toepassen 76 ms (35 fietsen). Onderweg: een test in
+  `test_dashboard.py` verkocht op de vaste datum 01-10-2026 en faalde sinds
+  02-10 (aparte commit, de test verkoopt nu op de aankoopdag).

@@ -1,8 +1,8 @@
 # Opdracht: racefietsen koppelen aan fietsmodellen, zelf modellen beheren, en vergelijken met wat snel verkocht werd
 
-> **Stand (01-10-2026): stap 1 (A t/m E) is gebouwd.** Wat er is en welke
-> keuzes daarbij gemaakt zijn staat in `NEXT_STEPS.md` ("Fietsmodellen, stap
-> 1 klaar"). Volgende sessie: stap 2 (F en G).
+> **Stand (02-10-2026): stap 1 (A t/m E) en F zijn gebouwd.** Wat er is en
+> welke keuzes daarbij gemaakt zijn staat in `NEXT_STEPS.md` ("Fietsmodellen,
+> stap 1 klaar"). Nog te doen: G.
 
 Voor een nieuwe sessie die dit bouwt. Lees eerst `CLAUDE.md` (harde regels,
 valkuilen) en werk vanaf een verse `main`. Alles hieronder komt uit gesprekken

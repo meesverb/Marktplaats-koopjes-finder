@@ -1281,12 +1281,13 @@ Every bike hangs on a **model**: brand + model + *uitvoering* (variant), e.g.
 it comes from, first match wins:
 
 1. **your own link** (`bike_link`, migration 19), set on the card;
-2. a **reference model** from `reference_bikes.csv` whose pattern matches —
+2. a **rule** you applied (see *Rules* below);
+3. a **reference model** from `reference_bikes.csv` whose pattern matches —
    unless the title says more: some reference models cover a whole line
    ("Trek Domane", "Giant Defy (overig)"), and then "Trek Domane SL6" from
    the title is the model; a more precise reference model ("Giant Defy
    Composite 1") stays;
-3. brand + model + variant from the title: the brand as the sleepers know
+4. brand + model + variant from the title: the brand as the sleepers know
    it, the model word from `reference_bike_catalog.csv` or the word after the
    brand ("Koga Kinsei"), and as variant the 1-3 words right after it that
    look like one (`sl`, `slr`, `al`, `cf`, `slx`, `advanced`, `pro`, `comp`,
@@ -1329,6 +1330,17 @@ up or invented (CLAUDE.md).
 A correction recomputes only that bike (about 0,1 s, also with 14.000 bikes);
 the comparison of the other bikes of the old and new model is updated after
 the next round, the message says so.
+
+**Rules.** When you link 3 listings that were recognised as the same model
+("Trek Domane") to the same model of yours ("Trek Domane AL 2"), the view
+**Modellen** proposes a rule at the top — "advertenties die als *Trek
+Domane* herkend worden → *Trek Domane AL 2*?" — and the button says
+*Modellen (1 voorstel)*. **toepassen** makes it work for every listing
+recognised that way, gone ones included (`bike_rule`, migration 20; the card
+says *eigen model via een regel*); **nee** is remembered, so it isn't asked
+again. Your own link on a single listing still goes before a rule. Applied
+rules are listed under the proposals, each with **weghalen**. *klopt* on the
+recognised model is not a correction and never makes a proposal.
 
 **Modellen** (view) is the list of all models: your own (also without
 listings), the reference models and the recognised ones, with *te koop*,

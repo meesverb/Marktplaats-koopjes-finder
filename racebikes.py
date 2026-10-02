@@ -75,8 +75,9 @@ ACTIVE_DAYS = 8
 NEW_HOURS = 24
 # Waar een geaccepteerd bod heen gaat: een fiets op /flips (flips.OWN_MARKETS).
 FLIP_MARKET = "fietsen"
-# Waar de pagina een eigen koppeling heen stuurt (dashboard.py).
+# Waar de pagina een eigen koppeling en een regel heen stuurt (dashboard.py).
 MODEL_PATH = PATH + "/model"
+RULE_PATH = PATH + "/regel"
 # Snel verkocht: binnen zoveel dagen na de eerste keer gezien verdwenen, of
 # gereserveerd en daarna verdwenen (de eigenaar, 01-10-2026). Verdwenen
 # wordt pas na een complete crawl vastgesteld (de zondagronde), dus de
@@ -138,6 +139,7 @@ class Base:
     factor: float = val.NEGOTIATION_DEFAULT[1]
     own_models: dict = field(default_factory=dict)
     names: dict = field(default_factory=dict)
+    rules: list = field(default_factory=list)  # db.list_bike_rules()
     # Een correctie werkt deze Base bij terwijl een ander verzoek hem kan
     # lezen of ook bijwerken: allebei met dit slot vast.
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
@@ -204,6 +206,17 @@ class Read:
     places: dict = field(default_factory=dict)
     links: dict = field(default_factory=dict)  # item_id -> eigen koppeling (db.list_bike_links())
     models: list = field(default_factory=list)  # de eigen modellen (db.list_bike_models())
+    rules: list = field(default_factory=list)  # de regels, ook de afgewezen (db.list_bike_rules())
+
+    @property
+    def rule_map(self) -> dict:
+        return active_rules(self.rules)
+
+
+def active_rules(rules: list) -> dict:
+    """{herkende sleutel: eigen model} van de regels die de eigenaar toepaste,
+    in de vorm die bike_identity.resolve() verwacht."""
+    return {r["from_key"]: r for r in rules if r["applied"] and r.get("model")}
 
 
 def _read(db_path) -> Read:
@@ -214,22 +227,22 @@ def _read(db_path) -> Read:
     try:
         rows = conn.execute(SELECT, (f"%/{CATEGORY}/%",)).fetchall()
         return Read(rows, db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE), db.list_places(conn),
-                    db.list_bike_links(conn), db.list_bike_models(conn))
+                    db.list_bike_links(conn), db.list_bike_models(conn), db.list_bike_rules(conn))
     except sqlite3.Error:
         return Read()
     finally:
         conn.close()
 
 
-def read_links(db_path) -> tuple[dict, list]:
-    """Alleen de eigen koppelingen en modellen: klein, voor één correctie."""
+def read_links(db_path) -> tuple[dict, list, list]:
+    """Alleen de eigen koppelingen, modellen en regels: klein, voor één correctie."""
     if not Path(db_path).exists():
-        return {}, []
+        return {}, [], []
     conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
     try:
-        return db.list_bike_links(conn), db.list_bike_models(conn)
+        return db.list_bike_links(conn), db.list_bike_models(conn), db.list_bike_rules(conn)
     except sqlite3.Error:
-        return {}, []
+        return {}, [], []
     finally:
         conn.close()
 
@@ -290,6 +303,7 @@ def load_pool(db_path, _read_result=None) -> bi.Pool:
         return bi.Pool([])
     since = max(seen) - timedelta(days=POOL_DAYS)
     items = []
+    rules = read.rule_map
     for r in rows:
         last = _time(r["last_seen"])
         if last is None or last < since:
@@ -299,7 +313,7 @@ def load_pool(db_path, _read_result=None) -> bi.Pool:
         if not listing.price_is_asking or not listing.price_eur or listing.price_eur <= 0:
             continue
         gone = (r["disappeared_at"] or "")[:10]
-        items.append((bi.identify(listing, read.links.get(listing.item_id)), listing.price_eur,
+        items.append((bi.identify(listing, read.links.get(listing.item_id), rules), listing.price_eur,
                       (listing.item_id, listing.title, listing.url, gone, sold_fast(r))))
     return bi.Pool(items)
 
@@ -482,6 +496,7 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
     base = Base(newest=newest.isoformat(timespec="minutes") if newest else "")
     base.patterns = vw.load_patterns(db_path, (CATEGORY,))
     base.own_models = _own_models(read.models)
+    base.rules = read.rules
     if not listings:
         base.names = _names(base, ())
         return base
@@ -494,7 +509,8 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
         base.owner = owner
         base.baseline, base.target_cm = owner.quality.total, owner.target_size_cm
 
-    idents = {l.item_id: base.pool.identity_of.get(l.item_id) or bi.identify(l, read.links.get(l.item_id))
+    rules = read.rule_map
+    idents = {l.item_id: base.pool.identity_of.get(l.item_id) or bi.identify(l, read.links.get(l.item_id), rules)
               for l in listings}
     base.names = _names(base, list(base.pool.identity_of.values()) + list(idents.values()))
     verdicts = _verdicts(base, listings, _own_years(idents))
@@ -511,35 +527,135 @@ class ModelError(ValueError):
 
 
 def relink(base: Base, db_path, item_id: str) -> tuple[Optional[Row], set]:
-    """Na een eigen koppeling: alleen deze fiets opnieuw herkennen, hem in de
-    pool verplaatsen (bike_identity.Pool.replace()) en zijn eigen rij
-    opnieuw uitrekenen. De andere fietsen van zijn oude en nieuwe model
-    houden hun vergelijking tot de volgende ronde: alles opnieuw duurt met
-    ~14.000 fietsen ~10 s, en de pagina moet snel blijven (de eigenaar).
+    """Na een eigen koppeling: alleen deze fiets opnieuw (refresh()).
     Geeft (nieuwe rij, sleutels van de modellen die veranderden)."""
+    rows, keys = refresh(base, db_path, [item_id])
+    return (rows[0] if rows else None), keys
+
+
+def refresh(base: Base, db_path, item_ids) -> tuple[list, set]:
+    """Na een koppeling of regel: deze fietsen opnieuw aan hun model hangen
+    (bike_identity.resolve() op wat er al herkend was: de tekst hoeft niet
+    opnieuw gelezen), ze in de pool verplaatsen (Pool.replace()) en de rijen
+    van de actieve opnieuw uitrekenen. De andere fietsen van hun oude en
+    nieuwe model houden hun vergelijking tot de volgende ronde: alles
+    opnieuw duurt met ~14.000 fietsen seconden, en de pagina moet snel
+    blijven (de eigenaar). Geeft (nieuwe rijen, sleutels van de modellen die
+    veranderden)."""
     with base.lock:
-        at = base.position(item_id)
-        if at is None:
-            return None, set()
-        links, models = read_links(db_path)
-        base.own_models = _own_models(models)
-        row = base.rows[at]
-        ident = bi.identify(row.listing, links.get(item_id))
-        old = base.pool.replace(item_id, ident) or row.identity
-        keys = {k for k in (old.exact if old else None, ident.exact) if k}
+        links, models, rules = read_links(db_path)
+        base.own_models, base.rules = _own_models(models), rules
+        rule_map = active_rules(rules)
+        keys: set = set()
+        changed = []
+        for item_id in dict.fromkeys(item_ids):
+            at = base.position(item_id)
+            old = base.pool.identity_of.get(item_id) or (base.rows[at].identity if at is not None else None)
+            if old is None:
+                continue
+            ident = bi.resolve(old, links.get(item_id), rule_map)
+            base.pool.replace(item_id, ident)
+            keys.update(k for k in (old.exact, ident.exact) if k)
+            if at is not None:
+                changed.append((at, ident))
         for key in keys:
             members = [c[0] for c in base.pool.by_exact.get(key, ())]
-            members += [r.identity for r in base.rows if r.identity and r.identity.exact == key and
-                        r.listing.item_id != item_id] + [ident]
+            members += [r.identity for r in base.rows if r.identity and r.identity.exact == key]
+            members += [ident for _, ident in changed if ident.exact == key]
             fresh = _names(base, [m for m in members if m.exact == key])
             if key in fresh:
                 base.names[key] = fresh[key]
             elif key not in base.own_models:
                 base.names.pop(key, None)
-        verdict = _verdicts(base, [row.listing], _own_years({item_id: ident})).get(item_id)
-        new_row = _make_row(base, row.listing, ident, row.new, verdict)
-        base.rows[at] = new_row
-        return new_row, keys
+        listings = {base.rows[at].listing.item_id: base.rows[at].listing for at, _ in changed}
+        verdicts = _verdicts(base, list(listings.values()),
+                             _own_years({base.rows[at].listing.item_id: ident for at, ident in changed}))
+        out = []
+        for at, ident in changed:
+            row = base.rows[at]
+            new_row = _make_row(base, row.listing, ident, row.new, verdicts.get(row.listing.item_id))
+            base.rows[at] = new_row
+            out.append(new_row)
+        return out, keys
+
+
+# --- Regels leren (stap 2 F) ------------------------------------------------------
+#
+# Koppelt de eigenaar drie advertenties die als hetzelfde model herkend
+# werden ("Trek Domane Al") aan hetzelfde eigen model ("Trek Domane AL 2"),
+# dan stelt de weergave Modellen een regel voor. Pas na "toepassen" werkt
+# hij; "nee" wordt onthouden (bike_rule, migratie 20).
+MIN_RULE = 3
+
+
+def _all_identities(base: Base):
+    """Elke fiets één keer: de pool en de actieve (die niet in de pool zitten)."""
+    yield from base.pool.identity_of.items()
+    for r in base.rows:
+        if r.identity is not None and r.listing.item_id not in base.pool.identity_of:
+            yield r.listing.item_id, r.identity
+
+
+def rules_json(base: Base) -> dict:
+    """{"p": voorstellen, "r": toegepaste regels}, voor de weergave Modellen."""
+    with base.lock:
+        applied = {r["from_key"] for r in base.rules if r["applied"]}
+        answered = {(r["from_key"], r["model_id"]) for r in base.rules}
+        corrected: dict = {}
+        ruled: Counter = Counter()
+        for _, ident in _all_identities(base):
+            if ident.via_rule:
+                ruled[ident.recognized] += 1
+            elif (ident.own_id is not None and ident.recognized and ident.recognized != ident.exact):
+                entry = corrected.setdefault((ident.recognized, ident.own_id),
+                                             [ident.recognized_name, ident.own, 0])
+                entry[2] += 1
+        proposals = [{"k": k, "kn": name, "id": model_id, "m": model, "n": n}
+                     for (k, model_id), (name, model, n) in corrected.items()
+                     if n >= MIN_RULE and k not in applied and (k, model_id) not in answered]
+        proposals.sort(key=lambda p: (-p["n"], p["kn"] or ""))
+        active = [{"k": r["from_key"], "kn": r["from_name"] or r["from_key"], "id": r["model_id"], "m": r["model"],
+                   "n": ruled.get(r["from_key"], 0)} for r in base.rules if r["applied"] and r.get("model")]
+        return {"p": proposals, "r": active}
+
+
+def apply_rule(base: Base, db_path, form: dict) -> tuple[str, list, set]:
+    """Wat de pagina naar RULE_PATH stuurt: `from_key` + `model_id` met
+    `answer` toepassen, nee of weg (een toegepaste regel weghalen). Geeft
+    (melding, bijgewerkte rijen, sleutels van de modellen die veranderden)."""
+    key = (form.get("from_key") or "").strip()
+    answer = form.get("answer", "")
+    try:
+        model_id = int(form.get("model_id") or "")
+    except ValueError:
+        raise ModelError("onbekend model.") from None
+    if not key or answer not in ("toepassen", "nee", "weg"):
+        raise ModelError("onbekende keuze.")
+    with base.lock:
+        model = next((m for m in base.own_models.values() if m["id"] == model_id), None)
+        if model is None:
+            raise ModelError("dat model bestaat niet (meer).")
+        from_name = next((ident.recognized_name for _, ident in _all_identities(base) if ident.recognized == key), key)
+        conn = db.connect(str(db_path))
+        try:
+            if answer == "weg":
+                if not db.delete_bike_rule(conn, key, model_id):
+                    raise ModelError("die regel bestond niet.")
+            else:
+                db.set_bike_rule(conn, key, model_id, answer == "toepassen", from_name)
+        finally:
+            conn.close()
+        if answer == "nee":
+            base.rules = read_links(db_path)[2]
+            return f"Onthouden: {from_name} wordt niet automatisch {model['name']}.", [], set()
+        affected = [item_id for item_id, ident in _all_identities(base) if ident.recognized == key]
+        rows, keys = refresh(base, db_path, affected)
+        if answer == "weg":
+            return (f"Regel weggehaald: {from_name} hangt weer aan wat de advertentie zegt "
+                    f"({len(affected)} advertenties).{LATER}"), rows, keys
+        moved = sum(1 for _, ident in _all_identities(base) if ident.via_rule and ident.recognized == key)
+        return (f"Regel toegepast: {moved} advertenties die als {from_name} herkend worden, "
+                f"hangen nu aan {model['name']}.{LATER}"), rows, keys
 
 
 def parse_year(value) -> Optional[int]:
@@ -865,7 +981,8 @@ window.addEventListener('error', e => {
 });
 const BIKES = JSON.parse(document.getElementById('bikes').textContent);
 const MODELS = JSON.parse(document.getElementById('models').textContent);
-const MODEL_PATH = '/racefietsen/model';
+let RULES = JSON.parse(document.getElementById('rules').textContent);
+const MODEL_PATH = '/racefietsen/model', RULE_PATH = '/racefietsen/regel';
 const GONE = JSON.parse(document.getElementById('gone').textContent);
 const REASONS = JSON.parse(document.getElementById('reasons').textContent);
 const STATUSES = JSON.parse(document.getElementById('statuses').textContent);
@@ -939,7 +1056,8 @@ const SORTS = {
   cheap: (a, b) => (a.p ?? 1e9) - (b.p ?? 1e9),
 };
 
-const SOURCES = {eigen: 'eigen model', referentie: 'referentiemodel', automatisch: 'herkend uit de titel'};
+const SOURCES = {eigen: 'eigen model', regel: 'eigen model via een regel', referentie: 'referentiemodel',
+                 automatisch: 'herkend uit de titel'};
 function modelLine(b) {
   if (!b.grp) return '<span class="muted">aan geen model gekoppeld</span>';
   return `gekoppeld aan <a href="#" data-model="${esc(b.mk)}">${esc(b.grp)}</a> <span class="muted">(${esc(SOURCES[b.src] || b.src)})</span>`
@@ -1053,6 +1171,7 @@ function counts() {
   n.bids += GONE.length;
   document.querySelectorAll('.views button[data-view]').forEach(bt => {
     const k = bt.dataset.view; if (k in n) bt.textContent = bt.dataset.label + ' (' + n[k] + ')';
+    if (k === 'models') bt.textContent = bt.dataset.label + (RULES.p.length ? ` (${RULES.p.length} voorstel${RULES.p.length === 1 ? '' : 'len'})` : '');
   });
 }
 // De lijst met alle modellen: eigen, referentie en herkend, ook zonder
@@ -1065,6 +1184,7 @@ function drawModels() {
   const box = $('modellist');
   if (!box.dataset.ready) {
     box.innerHTML = '<p class="explain">Elke fiets hangt aan een model: merk + model + uitvoering uit de titel ("Trek Domane SL6"), een referentiemodel uit reference_bikes.csv, of een model dat je zelf koppelde of aanmaakte (<em>eigen</em>). Klik op een model om zijn fietsen te zien. <em>Gekoppeld</em> telt ook verdwenen advertenties van de laatste 180 dagen; <em>snel verkocht</em> is binnen 7 dagen verdwenen of gereserveerd en daarna weg.</p>'
+      + '<div id="rulebox"></div>'
       + '<div class="row"><input id="newmodel" size="40" maxlength="80" placeholder="nieuw model toevoegen: merk model uitvoering, bv. Koga Kinsei Pro" aria-label="Nieuw model"><button class="quiet" id="addmodel">toevoegen</button></div>'
       + '<div class="row"><input type="search" id="msearch" size="30" placeholder="zoek een model" aria-label="Zoek een model"><span class="muted" id="mcount"></span></div>'
       + `<div class="table-wrap"><table><thead><tr>${MODEL_COLS.map(([k, l]) => `<th${k === 'n' ? '' : ' class="num"'} data-sort="${k}">${l}</th>`).join('')}</tr></thead><tbody id="mbody"></tbody></table></div>`;
@@ -1072,13 +1192,25 @@ function drawModels() {
     $('msearch').addEventListener('input', drawModelRows);
     $('addmodel').addEventListener('click', addModel);
     $('newmodel').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addModel(); } });
+    $('rulebox').addEventListener('click', e => {
+      const bt = e.target.closest('button[data-rule]'); if (!bt) return;
+      post(RULE_PATH, {from_key: bt.dataset.k, model_id: bt.dataset.m, answer: bt.dataset.rule}, $('rulebox'));
+    });
     box.querySelector('thead').addEventListener('click', e => {
       const th = e.target.closest('th[data-sort]'); if (!th) return;
       if (modelSort === th.dataset.sort) modelDesc = !modelDesc; else { modelSort = th.dataset.sort; modelDesc = modelSort !== 'n'; }
       drawModelRows();
     });
   }
-  drawModelRows();
+  drawRules(); drawModelRows();
+}
+// Voorstellen (na drie dezelfde correcties) en de regels die je toepaste.
+function drawRules() {
+  const box = $('rulebox'); if (!box) return;
+  const btn = (r, what, label) => `<button class="quiet" data-rule="${what}" data-k="${esc(r.k)}" data-m="${r.id}">${label}</button>`;
+  const p = RULES.p.map(r => `<div class="note">Voorstel: advertenties die als <strong>${esc(r.kn)}</strong> herkend worden → <strong>${esc(r.m)}</strong>? <span class="muted">(${r.n} keer zo gekoppeld)</span> ${btn(r, 'toepassen', 'toepassen')} ${btn(r, 'nee', 'nee')}</div>`).join('');
+  const a = RULES.r.length ? `<details class="desc"><summary>${RULES.r.length} regel${RULES.r.length === 1 ? '' : 's'} toegepast</summary><div>${RULES.r.map(r => `${esc(r.kn)} → ${esc(r.m)} <span class="muted">(${r.n} advertenties)</span> ${btn(r, 'weg', 'weghalen')}`).join('<br>')}</div></details>` : '';
+  box.innerHTML = p + a;
 }
 function drawModelRows() {
   if (!$('mbody')) return;
@@ -1183,7 +1315,14 @@ function post(path, fields, box) {
   if (box) box.classList.add('busy');
   return fetch(path, {method: 'POST', body, headers: {'X-Live': '1'}})
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
-    .then(data => { if (data.reload) { location.reload(); return; } say(data.message); if (data.models) mergeModels(data.models); update(data.bike); return data; })
+    .then(data => {
+      if (data.reload) { location.reload(); return; }
+      say(data.message);
+      if (data.rules) { RULES = data.rules; if (view === 'models') drawRules(); counts(); }
+      if (data.models) mergeModels(data.models);
+      update(data.bike); (data.bikes || []).forEach(update);
+      return data;
+    })
     .catch(() => say('Niet gelukt; ververs de pagina (F5) en probeer het opnieuw.'))
     .finally(() => { if (box) box.classList.remove('busy'); });
 }
@@ -1288,6 +1427,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     with base.lock:
         bikes = [bike_json(r, fresh) for r in base.rows]
         models = model_list(base)
+        rules = rules_json(base)
     gone = gone_bids(base, fresh)
     lo, hi = ((base.target_cm - 2, base.target_cm + 2) if base.target_cm else (54, 58))
     notices = ""
@@ -1361,6 +1501,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         f"<section id='patterns' hidden>{vw.patterns_html(base.patterns or vw.ViewPatterns(), 'racefietsen')}</section>"
         f"<script type='application/json' id='bikes'>{page_json(bikes)}</script>"
         f"<script type='application/json' id='models'>{page_json(models)}</script>"
+        f"<script type='application/json' id='rules'>{page_json(rules)}</script>"
         f"<script type='application/json' id='gone'>{page_json(gone)}</script>"
         f"<script type='application/json' id='reasons'>{page_json(list(mr.BIKE_REASONS))}</script>"
         f"<script type='application/json' id='statuses'>{page_json(list(ob.STATUSES))}</script>"
@@ -1377,14 +1518,30 @@ def bike_update(base: Base, fresh: Fresh, item_id: str, message: str) -> dict:
 def model_update(base: Base, db_path, form: dict) -> dict:
     """Het antwoord op MODEL_PATH: de bijgewerkte fiets en de regels van de
     modellen die veranderden, zodat de pagina zonder herladen klopt."""
+    before = len(rules_json(base)["p"])
     try:
         message, row, keys = apply_model(base, db_path, form)
     except ModelError as exc:
         return {"message": f"Niet opgeslagen: {exc}"}
-    data = {"message": message, "models": model_list(base, keys)}
+    rules = rules_json(base)
+    if len(rules["p"]) > before:
+        message += " Er staat een voorstel voor een regel bij Modellen."
+    data = {"message": message, "models": model_list(base, keys), "rules": rules}
     if row is not None:
         data["bike"] = bike_json(row, load_fresh(db_path))
     return data
+
+
+def rule_update(base: Base, db_path, form: dict) -> dict:
+    """Het antwoord op RULE_PATH: de fietsen die de regel raakt, de
+    modellen die veranderden en de nieuwe voorstellen."""
+    try:
+        message, rows, keys = apply_rule(base, db_path, form)
+    except ModelError as exc:
+        return {"message": f"Niet opgeslagen: {exc}"}
+    fresh = load_fresh(db_path)
+    return {"message": message, "bikes": [bike_json(r, fresh) for r in rows], "models": model_list(base, keys),
+            "rules": rules_json(base)}
 
 
 def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
@@ -1400,6 +1557,7 @@ def resale_for(db_path, item_id: str) -> Optional[float]:
     listing = next((l for l in listings if l.item_id == item_id), None)
     if listing is None:
         return None
-    est = estimate(listing, bi.identify(listing, read.links.get(item_id)), load_pool(db_path, _read_result=read),
+    est = estimate(listing, bi.identify(listing, read.links.get(item_id), read.rule_map),
+                   load_pool(db_path, _read_result=read),
                    val.NEGOTIATION_DEFAULT[1])
     return None if est.resale is None else round(est.resale, 2)

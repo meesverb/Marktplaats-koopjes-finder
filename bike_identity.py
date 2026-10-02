@@ -22,7 +22,8 @@ Ultegra-fiets van 2012 naast een van 2023.
   model alleen is de grovere trede.
 - **Eigen koppeling** (bike_link, migratie 19): wat de eigenaar op
   /racefietsen koppelde gaat altijd voor de herkenning, en zijn bouwjaar voor
-  dat uit de tekst.
+  dat uit de tekst. Daarna een **regel** die hij goedkeurde (bike_rule,
+  migratie 20): "wat als X herkend wordt, is model Y".
 - **Bouwjaar**: uit de tekst ("bouwjaar 2016") of de titel (upgrade.listing_specs()).
 - **Tijdperk** als het bouwjaar ontbreekt: wat de advertentie zelf zegt en
   waarin fietsen van verschillende jaren van elkaar verschillen — schijf- of
@@ -35,9 +36,10 @@ Alleen lezen; geen verzoeken.
 from __future__ import annotations
 
 import csv
+import dataclasses
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Optional
@@ -320,6 +322,14 @@ class Identity:
     confirmed: bool = False  # de eigenaar klikte "klopt" of koos zelf het model
     own_year: bool = False  # het bouwjaar komt van de eigenaar (bike_link.year)
     linked: bool = False  # er is een eigen koppeling (model, jaar of klopt)
+    via_rule: bool = False  # het eigen model komt uit een regel (bike_rule), niet uit een koppeling
+    # Wat de advertentie zelf zegt, zonder koppeling of regel: daaruit leert
+    # de pagina regels ("als X herkend, dan model Y").
+    recognized: Optional[str] = None
+    recognized_name: Optional[str] = None
+    # De herkenning zelf (recognize()), zodat een correctie of regel hem
+    # opnieuw kan toepassen zonder de advertentie opnieuw te lezen.
+    seen: Optional["Identity"] = field(default=None, compare=False, repr=False)
 
     @property
     def model(self) -> Optional[str]:
@@ -367,7 +377,7 @@ class Identity:
     def source(self) -> str:
         """Waar het model vandaan komt, voor de pagina."""
         if self.own:
-            return "eigen"
+            return "regel" if self.via_rule else "eigen"
         name = self.name
         if name and name == self.reference:
             return "referentie"
@@ -385,10 +395,17 @@ class Identity:
         return " ".join(parts)
 
 
-def identify(listing: mp.Listing, link: Optional[dict] = None) -> Identity:
+def identify(listing: mp.Listing, link: Optional[dict] = None, rules: Optional[dict] = None) -> Identity:
     """Merk, model, uitvoering, bouwjaar en tijdperk van een advertentie.
     `link`: de eigen koppeling uit bike_link (db.list_bike_links()), die gaat
-    voor wat de advertentie zegt."""
+    voor wat de advertentie zegt. `rules`: {herkende sleutel: eigen model}
+    van de goedgekeurde regels (bike_rule); een koppeling met een model gaat
+    voor een regel."""
+    return resolve(recognize(listing), link, rules)
+
+
+def recognize(listing: mp.Listing) -> Identity:
+    """Wat de advertentie zelf zegt, zonder koppeling of regel."""
     title, text = listing.title or "", mp.spec_text(listing)
     brand = sleepers.named_brand(title) or sleepers.named_brand(text)
     brand = fold(brand) if brand else None
@@ -416,31 +433,45 @@ def identify(listing: mp.Listing, link: Optional[dict] = None) -> Identity:
     variant = variant_of(title, family)
     specs, _ = up.listing_specs(listing)
     year = specs.get("model_year")
-    year = int(year) if year and str(year).isdigit() else None
-    own = own_id = None
-    confirmed = own_year = False
-    if link:
-        if link.get("model_id") is not None and link.get("model"):
-            # Het merk en de familie van het eigen model: daarop gaat de
-            # grovere trede, ook als de titel iets anders zegt.
-            own, own_id = link["model"], link["model_id"]
-            brand = fold(link["brand"]) if link.get("brand") else brand
-            family = fold(link["family"]) if link.get("family") else family
-            variant = fold(link["variant"]) if link.get("variant") else None
-        if link.get("year"):
-            year, own_year = int(link["year"]), True
-        confirmed = bool(link.get("confirmed"))
     route = up.brake_route(specs.get("brake_type"))
     speeds = specs.get("speeds")
-    return Identity(
-        brand=brand, family=family, material=specs.get("frame_material"), year=year,
+    seen = Identity(
+        brand=brand, family=family, material=specs.get("frame_material"),
+        year=int(year) if year and str(year).isdigit() else None,
         disc=True if route == up.ROUTE_DISC else False if route == up.ROUTE_RIM else None,
         electronic=bool(ELECTRONIC_RE.search(text)),
         speeds=int(speeds) if speeds and str(speeds).isdigit() else None,
-        tier=listing.groupset_tier,
-        reference=reference_model(listing), variant=variant, own=own, own_id=own_id,
-        confirmed=confirmed, own_year=own_year, linked=bool(link),
+        tier=listing.groupset_tier, reference=reference_model(listing), variant=variant,
     )
+    return dataclasses.replace(seen, recognized=seen.exact, recognized_name=seen.name)
+
+
+def resolve(seen: Identity, link: Optional[dict] = None, rules: Optional[dict] = None) -> Identity:
+    """De herkenning (recognize()) met de eigen koppeling of een regel erop.
+    `seen` mag ook een eerder resultaat zijn: dan telt zijn herkenning."""
+    seen = seen.seen or seen
+    changes: dict = {"seen": seen}
+    model = None
+    if link and link.get("model_id") is not None and link.get("model"):
+        model = link
+    elif rules and seen.exact in rules:
+        model = rules[seen.exact]
+        changes["via_rule"] = True
+    if model:
+        # Het merk en de familie van het eigen model: daarop gaat de grovere
+        # trede, ook als de titel iets anders zegt.
+        changes.update(
+            own=model["model"], own_id=model["model_id"],
+            brand=fold(model["brand"]) if model.get("brand") else seen.brand,
+            family=fold(model["family"]) if model.get("family") else seen.family,
+            variant=fold(model["variant"]) if model.get("variant") else None)
+    if link:
+        if link.get("year"):
+            changes.update(year=int(link["year"]), own_year=True)
+        changes.update(confirmed=bool(link.get("confirmed")) and model is link, linked=True)
+    if len(changes) == 1:
+        return seen  # niets van de eigenaar: de herkenning zelf (met zijn al berekende namen)
+    return dataclasses.replace(seen, **changes)
 
 
 # Hoeveel jaar een vergelijkbare fiets mag schelen: de "generatie" van de

@@ -55,13 +55,12 @@ referentiemodel ("Giant Defy Composite 1") gaat nog wel voor
 (`Identity.name`). Ook houden de familietreden (3, 4, 6) het filter op
 materiaal van de oude trap: binnen "Giant Defy" zitten aluminium en carbon.
 
-Laten liggen voor **stap 2** (F en G uit de opdracht): regels leren uit
-herhaalde correcties (migratie 20, `bike_rule`) en het bouwjaar ophalen voor
-kanshebbers (max. 20 per ronde, `schedule.json`). Voor F: `bike_link`
-bewaart niet wat er herkend was; herken de fiets opnieuw zonder koppeling
-(`identify(listing)`) en vergelijk die `exact` met de sleutel van het
-gekoppelde model. `confirmed` staat op 1 bij klopt én bij een zelf gekozen
-model.
+Stap 2 F (regels leren) is gebouwd op 02-10-2026: `bike_rule` (migratie
+20), voorstel na 3 dezelfde correcties bovenaan Modellen, toepassen / nee
+(onthouden) / weghalen. `Identity.recognized` is wat de advertentie zelf
+zegt; `bike_identity.resolve()` legt koppeling of regel erop zonder de tekst
+opnieuw te lezen, zodat een regel ook verdwenen fietsen in de pool raakt.
+G (bouwjaar ophalen voor kanshebbers) staat in `opdrachten/weekend.md`.
 
 ## Alle racefietsen en vergelijken op model (30-09-2026)
 

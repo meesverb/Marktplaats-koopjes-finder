@@ -537,6 +537,22 @@ MIGRATIONS: list[str] = [
         set_at TEXT NOT NULL
     );
     """,
+    # 20: regels die de eigenaar goedkeurde: "advertenties die als from_key
+    # herkend worden, horen bij dit eigen model" (/racefietsen, Modellen). Na
+    # drie dezelfde correcties stelt de pagina er een voor; applied = 0 is
+    # "nee", onthouden zodat hij het niet opnieuw vraagt. Een eigen koppeling
+    # per advertentie (bike_link) gaat nog altijd voor. Eigen tabel (zie 17).
+    """
+    CREATE TABLE bike_rule (
+        id INTEGER PRIMARY KEY,
+        from_key TEXT NOT NULL,
+        from_name TEXT,
+        model_id INTEGER NOT NULL,
+        applied INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (from_key, model_id)
+    );
+    """,
 ]
 
 
@@ -546,6 +562,8 @@ FLIP_TABLES = ("flip", "trade_stage", "flip_task", "flip_bid", "flip_photo")
 PLACE_TABLES = ("listing_place", "setting", "own_bid", "listing_stats")
 # And migration 19.
 MODEL_TABLES = ("bike_model", "bike_link")
+# And migration 20.
+RULE_TABLES = ("bike_rule",)
 
 # A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
 # the first column's name and makes every row look like it is missing that
@@ -1775,3 +1793,36 @@ def list_bike_links(conn: sqlite3.Connection) -> dict[str, dict]:
         "FROM bike_link l LEFT JOIN bike_model m ON m.id = l.model_id")
     names = [c[0] for c in cur.description]
     return {r[0]: dict(zip(names, r)) for r in cur.fetchall()}
+
+
+def set_bike_rule(conn: sqlite3.Connection, from_key: str, model_id: int, applied: bool,
+                  from_name: Optional[str] = None) -> None:
+    """The owner's answer to a proposed rule: applied (the rule works from
+    now on) or not (remembered, so it isn't proposed again). Applying one
+    for a key replaces an earlier applied rule for that key."""
+    if applied:
+        conn.execute("DELETE FROM bike_rule WHERE from_key = ? AND applied = 1", (from_key,))
+    conn.execute(
+        "INSERT INTO bike_rule (from_key, from_name, model_id, applied, created_at) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(from_key, model_id) DO UPDATE SET applied = excluded.applied, "
+        "from_name = excluded.from_name, created_at = excluded.created_at",
+        (from_key, from_name, model_id, 1 if applied else 0, _now()))
+    conn.commit()
+
+
+def delete_bike_rule(conn: sqlite3.Connection, from_key: str, model_id: int) -> bool:
+    cur = conn.execute("DELETE FROM bike_rule WHERE from_key = ? AND model_id = ?", (from_key, model_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def list_bike_rules(conn: sqlite3.Connection) -> list[dict]:
+    """[{from_key, from_name, model_id, applied, model, brand, family, variant}],
+    the model's fields from bike_model."""
+    if not _has_table(conn, "bike_rule"):
+        return []
+    cur = conn.execute(
+        "SELECT r.from_key, r.from_name, r.model_id, r.applied, r.created_at, m.name AS model, m.brand, "
+        "m.family, m.variant FROM bike_rule r LEFT JOIN bike_model m ON m.id = r.model_id ORDER BY r.created_at")
+    names = [c[0] for c in cur.description]
+    return [dict(zip(names, r)) for r in cur.fetchall()]

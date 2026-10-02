@@ -405,6 +405,74 @@ class OwnLinkTest(Case):
         self.assertEqual((attain["a"], attain["lk"], attain["s"]), (6, 7, "referentie"))
 
 
+class RuleTest(Case):
+    """Regels leren (stap 2 F): na drie dezelfde correcties een voorstel,
+    pas na toepassen een regel (bike_rule, migratie 20)."""
+
+    def setUp(self):
+        super().setUp()
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "racefiets", [bike("d9", 640.0, title="Trek Domane racefiets")],
+                         (self.now - timedelta(days=20)).isoformat())
+        db.sync_listings(conn, "racefiets", [bike(f"d{i}", 600.0 + 10 * i, title="Trek Domane racefiets")
+                                             for i in range(5)], self.now.isoformat())
+        conn.close()
+        self.base = rb.build_base(self.db, self.dir / "geen_fiets.md")
+
+    def correct(self, *ids, model="Trek Domane AL 2"):
+        for item_id in ids:
+            data = rb.model_update(self.base, self.db, {"item_id": item_id, "model": model})
+        return data
+
+    def test_three_corrections_make_a_proposal(self):
+        self.correct("d0", "d1")
+        self.assertEqual(rb.rules_json(self.base)["p"], [])
+        data = self.correct("d2")
+        self.assertIn("voorstel voor een regel", data["message"])
+        (proposal,) = data["rules"]["p"]
+        self.assertEqual((proposal["k"], proposal["kn"], proposal["m"], proposal["n"]),
+                         ("trekdomane", "Trek Domane", "Trek Domane AL 2", 3))
+        # Klopt op het herkende model is geen correctie: geen voorstel.
+        rb.model_update(self.base, self.db, {"item_id": "a0", "confirm": "1"})
+        self.assertEqual(len(rb.rules_json(self.base)["p"]), 1)
+
+    def test_apply_moves_every_bike_with_that_recognition(self):
+        self.correct("d0", "d1", "d2")
+        rb.model_update(self.base, self.db, {"item_id": "d3", "model": "Trek Domane SL6"})  # eigen koppeling gaat voor
+        model_id = rb.rules_json(self.base)["p"][0]["id"]
+        data = rb.rule_update(self.base, self.db, {"from_key": "trekdomane", "model_id": str(model_id),
+                                                    "answer": "toepassen"})
+        self.assertIn("Regel toegepast", data["message"])
+        self.assertEqual({b["id"]: b["src"] for b in data["bikes"]},
+                         {"d0": "eigen", "d1": "eigen", "d2": "eigen", "d3": "eigen", "d4": "regel"})
+        self.assertEqual(self.base.row("d4").identity.name, "Trek Domane AL 2")
+        self.assertEqual(self.base.row("d3").identity.name, "Trek Domane SL6")
+        # Ook de verdwenen/oudere fiets in de pool, waar niemand op klikte.
+        self.assertEqual(self.base.pool.identity_of["d9"].own, "Trek Domane AL 2")
+        self.assertEqual(data["rules"], {"p": [], "r": [{"k": "trekdomane", "kn": "Trek Domane", "id": model_id,
+                                                         "m": "Trek Domane AL 2", "n": 2}]})
+        # Een volle herberekening leest de regel uit de database.
+        again = rb.build_base(self.db, self.dir / "geen_fiets.md")
+        self.assertEqual((again.row("d4").identity.source, again.row("d3").identity.name), ("regel", "Trek Domane SL6"))
+
+        data = rb.rule_update(self.base, self.db, {"from_key": "trekdomane", "model_id": str(model_id), "answer": "weg"})
+        self.assertIn("Regel weggehaald", data["message"])
+        self.assertEqual(self.base.row("d4").identity.source, "referentie")
+        self.assertEqual(rb.rules_json(self.base)["r"], [])
+
+    def test_no_is_remembered(self):
+        self.correct("d0", "d1", "d2")
+        model_id = rb.rules_json(self.base)["p"][0]["id"]
+        data = rb.rule_update(self.base, self.db, {"from_key": "trekdomane", "model_id": str(model_id), "answer": "nee"})
+        self.assertIn("Onthouden", data["message"])
+        self.assertEqual(data["rules"], {"p": [], "r": []})
+        self.correct("d4")
+        self.assertEqual(rb.rules_json(self.base)["p"], [])  # vraagt het niet opnieuw
+        self.assertEqual(self.base.row("d3").identity.source, "referentie")
+        self.assertIn("Niet opgeslagen", rb.rule_update(self.base, self.db, {"from_key": "x", "model_id": "999",
+                                                                             "answer": "toepassen"})["message"])
+
+
 class PermanentReasonTest(unittest.TestCase):
     def test_no_road_bike_stays_away_when_the_price_drops(self):
         listing = make_listing(price_eur=100.0)
@@ -483,6 +551,18 @@ class LiveTest(Case):
         built.assert_not_called()
         status, _, text = self.request("POST", rb.MODEL_PATH, {"token": "fout", "item_id": "c", "clear": "1"}, live=True)
         self.assertTrue(json.loads(text)["reload"])
+
+    def test_rule_without_recomputing_the_page(self):
+        for i in range(3):
+            self.live(rb.MODEL_PATH, {"item_id": f"a{i}", "model": "Cube Attain C:62"})
+        _, _, page = self.request("GET", rb.PATH)
+        rules = json.loads(re.search(r"id='rules'>(.*?)</script>", page).group(1).replace("<\\/", "</"))
+        (proposal,) = rules["p"]
+        with mock.patch.object(rb, "build_base", wraps=rb.build_base) as built:
+            data = self.live(rb.RULE_PATH, {"from_key": proposal["k"], "model_id": proposal["id"], "answer": "toepassen"})
+        built.assert_not_called()
+        self.assertEqual({b["id"] for b in data["bikes"] if b["src"] == "regel"}, {"a3", "c"})
+        self.assertEqual(data["rules"]["r"][0]["m"], "Cube Attain C:62")
 
     def test_computer_page_has_the_bid_control_and_tab(self):
         conn = db.connect(self.db)
