@@ -1407,6 +1407,11 @@ function post(path, fields, box) {
       if (data.models) mergeModels(data.models);
       if (data.part) updatePart(data.part);
       if (data.on) SPARES.on = data.on;
+      if (data.flips) {
+        $('flipview').innerHTML = data.flips[1];
+        const bt = document.querySelector('.views button[data-view=flips]');
+        bt.dataset.label = bt.textContent = data.flips[0] ? `Mijn flips (${data.flips[0]})` : 'Mijn flips';
+      }
       update(data.bike); (data.bikes || []).forEach(update);
       return data;
     })

@@ -757,6 +757,10 @@ class LiveTest(Case):
         self.assertTrue(data["bike"]["own"])
         (flip,) = fl.load_book(self.db, with_market_check=False).flips
         self.assertEqual((flip.trade.market, flip.trade.buy_price_eur, flip.stage), ("fietsen", 275.0, "gekocht"))
+        # Mijn flips op de pagina werkt meteen bij.
+        self.assertEqual(data["flips"][0], 1)
+        self.assertIn(f"href='/flips#flip-{flip.id}'", data["flips"][1])
+        self.assertNotIn("flips", self.live("/bod", {"item_id": "c", "bedrag": "280"}))
 
     def test_model_link_updates_one_bike_without_recomputing_the_page(self):
         self.request("GET", rb.PATH)  # de berekening staat nu in de cache

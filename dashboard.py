@@ -4250,7 +4250,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json({"message": message})
         if race:
             base = self.cache.racebikes(self.db_path, self.intake_path)
-            return self._json(rb.bike_update(base, rb.load_fresh(self.db_path), item_id, message))
+            data = rb.bike_update(base, rb.load_fresh(self.db_path), item_id, message)
+            if path == "/bod/status":
+                # Geaccepteerd zet de fiets op /flips: Mijn flips meteen bij.
+                data["flips"] = list(rb.own_flips_html(self.db_path))
+            return self._json(data)
         if back:
             view = load_bike_view(self.db_path, self.intake_path, self.cache)
             return self._json(bike_update(view, item_id, message))
