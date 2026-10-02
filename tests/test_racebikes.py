@@ -849,6 +849,8 @@ class LiveTest(Case):
         self.assertNotIn("cmp", c)
         self.assertGreater(c["nc"], 0)
         self.assertIn(f"const COMPS_PATH = '{rb.COMPS_PATH}', COMPS_SHOWN = {rb.COMPS_SHOWN};", page)
+        # Spatie opent de beschrijving, niet de vergelijking (die staat erboven).
+        self.assertIn("art.querySelector('details.desc:not(.cmp)')", page)
         status, _, text = self.request("GET", rb.COMPS_PATH + "?id=c")
         self.assertEqual(status, 200)
         comps = json.loads(text)["cmp"]

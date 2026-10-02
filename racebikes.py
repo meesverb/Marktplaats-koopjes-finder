@@ -1505,7 +1505,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'o') window.open(byId.get(id).u, '_blank', 'noopener');
   else if (k === 'b') { e.preventDefault(); art.querySelector('input[name=bod]').focus(); }
   else if (k === 'n') { e.preventDefault(); art.querySelector('input[name=notitie]').focus(); }
-  else if (k === ' ') { e.preventDefault(); const d = art.querySelector('details.desc'); d.open = !d.open; }
+  else if (k === ' ') { e.preventDefault(); const d = art.querySelector('details.desc:not(.cmp)'); d.open = !d.open; }
 });
 document.querySelectorAll('.views button[data-view]').forEach(bt => bt.addEventListener('click', () => {
   view = bt.dataset.view;
