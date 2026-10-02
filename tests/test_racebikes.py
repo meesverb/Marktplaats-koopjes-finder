@@ -209,6 +209,16 @@ class OpenEndedFrameTest(Case):
         self.assertEqual(big["fr"], [60.0, 999])
 
 
+class PageJsonTest(unittest.TestCase):
+    def test_nan_and_infinity_become_null_wherever_they_are(self):
+        data = {"a": [1.5, float("nan"), {"b": float("inf")}], "t": "</script>", "c": (2, -float("inf"))}
+        text = rb.page_json(data)
+        self.assertNotIn("</", text)
+        self.assertEqual(json.loads(text.replace("<\\/", "</")),
+                         {"a": [1.5, None, {"b": None}], "t": "</script>", "c": [2, None]})
+        self.assertEqual(rb.page_json({"x": [1, "é"]}), '{"x":[1,"é"]}')
+
+
 class ModelComparisonTest(Case):
     """Vergelijken op merk, model en bouwjaar (bike_identity.py), niet op
     onderdelen alleen: een Ultegra-fiets van 2012 is geen maat voor een van 2023."""

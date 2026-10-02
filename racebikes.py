@@ -1542,9 +1542,14 @@ def _finite(value):
 
 def page_json(data) -> str:
     """JSON veilig in een <script type=application/json>: `</` kan hem niet
-    afsluiten, en er komt geen NaN/Infinity in."""
-    return json.dumps(_finite(data), ensure_ascii=False, separators=(",", ":"),
-                      allow_nan=False).replace("</", "<\\/")
+    afsluiten, en er komt geen NaN/Infinity in. Eerst zonder _finite(): die
+    loopt een miljoen waarden langs (2/3 van een paginaweergave) voor een NaN
+    die er bijna nooit is; weigert json.dumps, dan alsnog."""
+    try:
+        text = json.dumps(data, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    except ValueError:
+        text = json.dumps(_finite(data), ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    return text.replace("</", "<\\/")
 
 
 def own_flips_html(db_path) -> tuple[int, str]:
