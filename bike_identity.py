@@ -160,7 +160,10 @@ ELECTRONIC_RE = re.compile(r"\b(di2|etap|e-tap|axs)\b", re.I)
 
 def fold(text: str) -> str:
     """Kleine letters zonder accenten: "Émonda" en "emonda" zijn hetzelfde woord."""
-    return "".join(c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c)).lower()
+    text = text or ""
+    if text.isascii():  # bijna altijd; normaliseren per teken kostte ~1 s per opbouw
+        return text.lower()
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).lower()
 
 
 def _family_word(model: str) -> Optional[str]:

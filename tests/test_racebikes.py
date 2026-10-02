@@ -268,6 +268,13 @@ class ModelComparisonTest(Case):
         self.assertIn("model niet herkend", row.flip_basis)
 
 
+class FoldTest(unittest.TestCase):
+    def test_accents_case_and_nothing(self):
+        import bike_identity as bi
+        self.assertEqual([bi.fold(t) for t in ("Émonda", "TREK Domane", "Cervélo R3", "", None)],
+                         ["emonda", "trek domane", "cervelo r3", "", ""])
+
+
 class ReferenceIndexTest(unittest.TestCase):
     """bike_identity.reference_model() slaat patronen over waarvan geen
     beginwoord in de tekst staat; de uitkomst moet die van alle patronen op
