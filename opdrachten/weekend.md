@@ -163,3 +163,16 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   - `u` in Te beoordelen maakt de laatste markering ongedaan (3d4e303).
   - Alle 992 tests ook groen op Python 3.14 (rc2; de eigenaar draait 3.14),
     ook met DeprecationWarning als fout.
+  - Fuzzen (4.000 onzin-formulieren op elke POST, 20.000 rare titels, GET
+    met pad-trucs): geen 5xx of traceback, geen pad buiten /bestanden; wel
+    gevonden en gerepareerd: "1e309"/"nan" werden als bedrag opgeslagen
+    (oneindige aankoopprijs) en "€ 12,50" als modelnaam (b22a813).
+  - De server rekent vooruit na het starten en na elke ronde; eerste bezoek
+    aan /racefietsen 4,5 → 0,3 s (2393e41).
+  - Duidelijke meldingen in plaats van tracebacks: `flips.py import/bijwerken`
+    met een verkeerd of ontbrekend bestand (5230c7e); `valuation.py` en
+    `upgrade.py` maakten bij een tikfout in `--db` stil een lege database
+    (4bc9aac).
+  - Meer tests waar de dekkingsmeting gaten liet: bouwjaar opzoeken bij
+    netwerk- en serverfouten (0db92eb); een open sqlite-verbinding in een
+    test (5f9edf1). Nu 1001 tests.
