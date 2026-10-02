@@ -189,3 +189,8 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   (main is niet verder gegaan, dus een fast-forward) of de branch uit te
   checken. Let op: na de branch heeft koopjes.db migratie 21, en de oude
   `main` weigert dan een nieuwere database ("werk de code bij").
+- **02-10 — de eigenaar heeft gemerged.** `main` staat op 3da1e49 (gelijk
+  aan de branch). Verder werk gaat weer op de branch; aan het eind opnieuw
+  een fast-forward. Rookproef op die commit: alle pagina's en tabs in
+  Chromium op 1300 en 390 px zonder fouten; alleen de browser vroeg om
+  `/favicon.ico` en kreeg een 404 (nu 204).

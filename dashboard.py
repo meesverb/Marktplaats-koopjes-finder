@@ -4013,6 +4013,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         is_photo = path.startswith(FLIPS_PHOTO_PATH + "/")
         is_file = path.startswith(FILES_PATH + "/")
         pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH, PANEL_PATH, rb.COMPS_PATH)
+        if path == "/favicon.ico":
+            # De browser vraagt hem zelf bij elke eerste pagina; zonder dit
+            # stond er een 404 in de console van elke pagina.
+            self.send_response(204)
+            self.send_header("Cache-Control", "max-age=86400")
+            return self.end_headers()
         if market is None and path not in pages and not (is_photo or is_file):
             return self._send(404, "Niet gevonden")
         if not self._host_ok():

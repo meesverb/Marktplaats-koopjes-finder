@@ -700,6 +700,10 @@ class StartTest(unittest.TestCase):
         self.assertEqual(self.get("/bestanden/dashboard.html")[:2], (302, "/"))
         self.assertEqual(self.get("/bestanden/dashboard_horloges.html")[:2], (302, "/horloges"))
 
+    def test_no_404_for_the_browser_icon(self):
+        status, _, page = self.get("/favicon.ico")
+        self.assertEqual((status, page), (204, ""))
+
     def test_nothing_else_is_served(self):
         for path in ("/bestanden/koopjes.db", "/bestanden/sheets.json", "/bestanden/../koopjes.db",
                      "/bestanden/..%2Fkoopjes.db", "/bestanden/lijsten/../sheets.json", "/bestanden/dashboard.py",
