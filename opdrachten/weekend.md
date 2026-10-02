@@ -178,6 +178,11 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
     test (5f9edf1); een ronde weergaven/likes meten (9dde511); de knoppen
     op een flipkaart en per regel door de server heen (d0a92d4, 6b6d275).
     Nu 1004 tests.
+  - Generale repetitie van de merge: een database gemaakt met de code van
+    `main` (versie 19, markering, weg, bod, flip met klus) en die geopend
+    met deze branch: migratie 20 en 21 lopen, de database gaat naar WAL,
+    alles staat er nog, en /start, /, /horloges, /racefietsen, /flips,
+    /fiets en de tab Alle laden zonder fout.
 - **02-10 — de eigenaar zag "database is locked" opnieuw.** Zijn regelnummers
   (dashboard.py 3962/3485, db.py 1427) zijn die van `main`: daar zit de fix
   (44b2f79, op de branch) nog niet in. Hem gezegd de branch nu al te mergen
