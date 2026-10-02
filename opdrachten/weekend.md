@@ -13,6 +13,8 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 | Stap 1: referentiemodel | Zo laten: een vangnet-referentiemodel ("Trek Domane") wijkt voor model + uitvoering uit de titel. |
 | Lijst eerder af? | Zelf kleine verbeteringen (bugs, snelheid, tests, documentatie), zonder nieuwe verzoeken naar Marktplaats en zonder nieuwe functies die zijn keuze vragen; ideeën als voorstel in `NEXT_STEPS.md`. |
 | Onderdelen deel B | Het voorstel uit `opdrachten/goedkoopste_onderdelen.md` (tabel `flip_offer`, klapblok Aanbiedingen, "kies deze") mag zo gebouwd worden. Migratie 18 en 19 zijn inmiddels bezet: het wordt de eerstvolgende vrije. |
+| Later op 02-10: "elke pagina minimaal dezelfde functies" | **Zelfde knoppen en weergaven** op `/racefietsen`, fietscomputers (`/`) en horloges (`/horloges`): Te beoordelen / Favorieten / Mijn biedingen / Mijn flips / Alle / Weggezet / Patronen, favoriet/weg/notitie/bod/controleer, afstand, filters — wat ergens ontbreekt komt erbij. Plus **snel verkocht overal**: ook bij computers en horloges vergelijken met wat binnen 7 dagen wegging. Niet gekozen (dus niet doen): sneltoetsen en Modellen/corrigeren bij computers en horloges. |
+| Later op 02-10: knop voor onderdelen als reserve | Een **reservelijst op `/racefietsen`**: een weergave Onderdelen met "hier wil ik reserves van" (cassette, ketting, zadel, pedalen, banden, ...), aan/uit per soort, en per soort de goedkoopste advertenties met prijs, afstand en favoriet/weg/bod. **Alleen wat al binnenkomt**: geen nieuwe zoekopdrachten (dus weinig treffers; zeg in README hoe hij er later een toevoegt). Niet per flip op /flips en geen donorfiets-knop. |
 
 ## Regels die er bovenop gelden
 
@@ -37,6 +39,9 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - [x] **2. Fietsmodellen stap 2 G — bouwjaar ophalen voor kanshebbers** (→ G; `schedule.json`: 20 in `overdag` en `nacht`, standaard 0)
 - [x] **3. Onderdelen B — link plakken met prijs op /flips** (`opdrachten/goedkoopste_onderdelen.md` → B)
 - [ ] **4. Onderdelen A — prijsonderzoek Cube Peloton Pro** (→ A; resultaat als rapport in `opdrachten/` en, nu B er is, als aanbiedingen in een importbestand dat de eigenaar zelf inleest — niet in zijn database schrijven)
+- [ ] **4b. Reservelijst onderdelen op /racefietsen** (keuzes hierboven)
+- [ ] **4c. Zelfde knoppen en weergaven** op racefietsen, fietscomputers, horloges (keuzes hierboven)
+- [ ] **4d. Snel verkocht** ook bij fietscomputers en horloges
 - [ ] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
 - [ ] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
 - [ ] **7. Daarna** — kleine verbeteringen (zie keuzes), elk als eigen commit
