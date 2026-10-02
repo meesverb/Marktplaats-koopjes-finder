@@ -79,3 +79,9 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   in (voor punt 4). Sheet: alleen-lezen tabblad Aanbiedingen; de eigenaar
   moet `flips_sheets.gs` één keer opnieuw plakken (SHEETS.md). In Chromium
   op 1300 en 390 px: geen JS-fouten, geen horizontaal scrollen.
+- **02-10 ~06:30 — tussendoor: fout van de eigenaar opgelost.** "database is
+  locked" bij wegzetten op /racefietsen (traceback in zijn terminal). WAL-modus
+  + 30 s wachten in `db.connect()`, `racebikes.find_listing()` leest één fiets
+  in plaats van alle, en een nette melding (`dashboard.DB_BUSY`) als het toch
+  bezet is. Commit 44b2f79. De eigenaar is gezegd hoe hij het nu al in main
+  krijgt.
