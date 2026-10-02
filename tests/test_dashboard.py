@@ -583,6 +583,13 @@ class LiveServerTest(unittest.TestCase):
             _, location, _ = self.request("POST", "/markeer", {"token": self.token(), "item_id": "c",
                                                                "soort": "favoriet", "tab": tab})
             self.assertNotIn("#", location, tab)
+        # Te beoordelen is een knop op Alle met een filter; de pagina stuurt
+        # zijn naam mee, zodat je na controleer daar terugkomt.
+        _, location, _ = self.request("POST", "/markeer", {"token": self.token(), "item_id": "c",
+                                                           "soort": "favoriet", "tab": "beoordelen"})
+        self.assertTrue(location.endswith("#beoordelen"))
+        _, _, page = self.request("GET")
+        self.assertIn("active.dataset.tab || active.dataset.panel", page)
         # Na Gekocht blijft het Mijn flips, ook als er een tab meekomt.
         _, location, _ = self.request("POST", "/gekocht", {"token": self.token(), "item_id": "c", "prijs": "85",
                                                            "tab": "flips"})

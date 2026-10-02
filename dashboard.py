@@ -1684,11 +1684,12 @@ function applyPreset() {
   if (presetMark === null || !markFilter) return;
   markFilter.value = presetMark; presetMark = null; filterAll();
 }
-function show(name) {
+// preset: zet Toon voor Te beoordelen/Weggezet; niet bij terugkomen na
+// controleer, dan gelden de bewaarde filters.
+function show(name, preset = true) {
   const view = Array.from(buttons).find(b => b.dataset.tab === name);
   const button = view || Array.from(buttons).find(b => b.dataset.panel === name && !b.dataset.tab);
-  if (view) { presetMark = view.dataset.mark; name = view.dataset.panel; }
-  else if (name === 'alle' && presetMark === null) presetMark = '';
+  if (view) { if (preset) presetMark = view.dataset.mark; name = view.dataset.panel; }
   const target = document.getElementById('panel-' + name);
   if (!target) return;
   document.querySelectorAll('.panel').forEach(p => p.hidden = p !== target);
@@ -1696,6 +1697,10 @@ function show(name) {
   if (target.dataset.lazy) loadPanel(target, name); else applyPreset();
 }
 buttons.forEach(b => b.addEventListener('click', () => {
+  // Van Te beoordelen of Weggezet naar Alle: Toon terug op de standaard;
+  // anders houdt Alle wat je zelf koos.
+  const from = document.querySelector('nav.tabs button.active');
+  if (!b.dataset.tab && b.dataset.panel === 'alle' && from && from.dataset.tab) presetMark = '';
   const name = b.dataset.tab || b.dataset.panel;
   show(name); history.replaceState(null, '', '#' + name);
 }));
@@ -1918,7 +1923,7 @@ function applyMark(data) {
 
 restoreFilters();
 initAll();
-if (location.hash) show(location.hash.slice(1));
+if (location.hash) show(location.hash.slice(1), !restore);
 if (restore) {
   // Terug op een tab die nog laadt: pas scrollen als hij er is.
   if (document.querySelector('.panel:not([hidden])[data-lazy]')) pendingScroll = restore.y || 0;
@@ -1951,7 +1956,7 @@ function fields(box, button) {
   if (pageData.markt) body.set('markt', pageData.markt);
   body.set('item_id', box.dataset.item || '');
   const active = document.querySelector('nav.tabs button.active');
-  body.set('tab', active ? active.dataset.panel : '');
+  body.set('tab', active ? active.dataset.tab || active.dataset.panel : '');
   box.querySelectorAll('input[name], select[name]').forEach(el => body.set(el.name, el.value));
   if (button.name) body.set(button.name, button.value);
   return body;
