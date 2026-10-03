@@ -44,7 +44,7 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
 - [x] **4d. Snel verkocht** ook bij fietscomputers en horloges
 - [x] **5. Controle en opruimen** — review van de grote wijzigingen van 29-09 t/m 03-10 (racebikes, bike_identity, flips, dashboard), bugs fixen met een test erbij; README/CLAUDE.md nalopen op wat niet meer klopt
 - [x] **6. Telefoon** — `/racefietsen` en `/flips` op 390 px breed: geen horizontaal scrollen, balk bovenaan inklapbaar, knoppen groot genoeg; nagemeten met Playwright
-- [ ] **7. Daarna** — kleine verbeteringen (zie keuzes), elk als eigen commit
+- [x] **7. Daarna** — kleine verbeteringen (zie keuzes), elk als eigen commit
 
 ## Logboek
 
@@ -218,3 +218,8 @@ wat er mag gebeuren; dit bestand is de werklijst. Een routine stuurt elk uur
   ronde om te draaien; het vooruitrekenen geeft geen fout. Python 3.14 met
   waarschuwingen als fout en de rookproef in Chromium op de laatste commit:
   schoon.
+- **03-10, 13:00 — eindtijd, afgerond.** Niets onaf: de werkmap is schoon,
+  alles staat op de branch, 1007 tests groen. Na de laatste commit van
+  vrijdagavond elk uur alleen nagelopen (tests, branch, `main`); niets meer
+  gevonden. De uurroutine staat uit. Wat jouw keuze vraagt staat in
+  `NEXT_STEPS.md` onder "Voorstellen".
