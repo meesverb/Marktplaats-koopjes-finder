@@ -3411,7 +3411,8 @@ FILES_PATH = "/bestanden"
 
 def site_pages() -> list:
     return ([("Start", START_PATH), ("Racefietsen", rb.PATH)] + [(m.short, m.serve_path) for m in mk.MARKETS.values()]
-            + [("Mijn fiets", BIKE_PATH), ("Flips", FLIPS_PATH), ("Overzicht", f"{FILES_PATH}/overzicht.html")])
+            + [("Mijn fiets", BIKE_PATH), ("Upgrade", ut.PATH), ("Flips", FLIPS_PATH),
+               ("Overzicht", f"{FILES_PATH}/overzicht.html")])
 
 
 def site_nav(current: str) -> str:
@@ -4040,7 +4041,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         market = next((m for m in mk.MARKETS.values() if m.serve_path == path), None)
         is_photo = path.startswith(FLIPS_PHOTO_PATH + "/")
         is_file = path.startswith(FILES_PATH + "/")
-        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH, PANEL_PATH, rb.COMPS_PATH)
+        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH, PANEL_PATH, rb.COMPS_PATH,
+                 ut.PATH, ut.CSV_PATH)
         if path == "/favicon.ico":
             # De browser vraagt hem zelf bij elke eerste pagina; zonder dit
             # stond er een 404 in de console van elke pagina.
@@ -4070,6 +4072,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == rb.COMPS_PATH:
             base = self.cache.racebikes(self.db_path, self.intake_path)
             return self._json(rb.comps_update(base, parse_qs(url.query).get("id", [""])[0]))
+        if path in (ut.PATH, ut.CSV_PATH):
+            return self._upgrade_page(path, message)
         if path == rb.PATH:
             base = self.cache.racebikes(self.db_path, self.intake_path)
             return self._send(200, rb.render(base, rb.load_fresh(self.db_path), self.token, message),
@@ -4088,6 +4092,56 @@ class DashboardHandler(BaseHTTPRequestHandler):
         d.other_links = []  # de balk bovenaan (site_nav) heeft ze allemaal
         d.message = message
         self._send(200, render(d, lazy=LAZY_PANELS), "text/html; charset=utf-8")
+
+    def _upgrade_context(self) -> tuple:
+        """(eigen fiets met de opgeslagen regel, probleem, fietsen) voor /upgrade."""
+        owner, problem = report.load_owner_context(self.intake_path, self.db_path,
+                                                   comps=self.cache.comps(self.db_path))
+        bikes = self.cache.upgrade_bikes(self.db_path, self.intake_path) if owner is not None else []
+        return owner, problem, bikes
+
+    def _upgrade_page(self, path: str, message: str) -> None:
+        owner, problem, bikes = self._upgrade_context()
+        if path == ut.PATH:
+            return self._send(200, ut.render(owner, problem, bikes, ut.load_rule(self.db_path)[1], self.token,
+                                             message), "text/html; charset=utf-8")
+        if owner is None:
+            return self._send(404, f"Geen eigen fiets: {problem}")
+        data = ut.csv_download(owner, bikes, problem).encode("utf-8")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="upgrade_uitdraai.csv"')
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            self.close_connection = True
+
+    def _upgrade_post(self, path: str, form: dict) -> None:
+        """De acties van /upgrade, altijd JSON: een oordeel, een regel
+        doorrekenen, opslaan of terugzetten, zoeken, of één fiets uitleggen."""
+        if not hmac.compare_digest(form.get("token", ""), self.token):
+            return self._json({"message": "De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.",
+                               "reload": True})
+        try:
+            owner, problem, bikes = self._upgrade_context()
+            if owner is None:
+                return self._json({"message": f"Geen eigen fiets: {problem}", "error": True})
+            if path == ut.LABEL_PATH:
+                return self._json(ut.label_action(self.db_path, bikes, form))
+            if path == ut.TRY_PATH:
+                return self._json(ut.try_rule(owner, bikes, form))
+            if path == ut.RULE_PATH:
+                return self._json(ut.rule_action(self.db_path, owner, bikes, form))
+            if path == ut.SEARCH_PATH:
+                return self._json(ut.search_action(owner, bikes, form))
+            return self._json(ut.explain_action(owner, bikes, form))
+        except sqlite3.OperationalError as exc:
+            if not db_busy(exc):
+                raise
+            self._json({"message": DB_BUSY, "error": True})
 
     def _live_dashboard(self, market: mk.Market) -> Dashboard:
         d = self.cache.dashboard(self.db_path, market)
@@ -4286,6 +4340,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if not db_busy(exc):
                     raise
                 return self._json({"message": DB_BUSY})
+        if path in ut.POST_PATHS:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_FORM_BYTES:
+                return self._send(413, "Te groot")
+            raw = self.rfile.read(length).decode("utf-8", errors="replace")
+            return self._upgrade_post(path, {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()})
         if path in (rb.MODEL_PATH, rb.RULE_PATH):
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_FORM_BYTES:

@@ -3,12 +3,16 @@ de regel van de eigenaar, zijn oordelen, de uitslag, het zoeken naar een
 regel die past, de uitdraai, en dat een opgeslagen regel overal doorwerkt."""
 import contextlib
 import copy
+import http.client
 import io
 import json
 import math
+import re
 import shutil
 import tempfile
+import threading
 import unittest
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -487,6 +491,127 @@ class CacheTest(BikesCase):
         self.assertEqual({b.listing.item_id for b in bikes}, {r.listing.item_id for r in cache.racebikes(self.db, self.intake).rows})
         self.label("tcr", "ja")
         self.assertEqual(next(b for b in cache.upgrade_bikes(self.db, self.intake) if b.listing.item_id == "tcr").label, "ja")
+
+
+class ServerTest(BikesCase):
+    track_connections = False
+
+    def setUp(self):
+        super().setUp()
+        self.start(self.intake)
+
+    def start(self, intake):
+        self.httpd = dashboard.make_server(self.db, 0, intake_path=intake)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
+        self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
+
+    def request(self, method, path, fields=None, host=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+        headers = {"Host": host or f"127.0.0.1:{self.port}"}
+        body = None
+        if fields is not None:
+            body = urllib.parse.urlencode(fields)
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        conn.request(method, path, body, headers)
+        r = conn.getresponse()
+        data = r.read()
+        conn.close()
+        return r.status, dict(r.getheaders()), data.decode("utf-8")
+
+    def page_data(self):
+        status, _, page = self.request("GET", ut.PATH)
+        self.assertEqual(status, 200)
+        return page, json.loads(re.search(r"<script type='application/json' id='data'>(.*?)</script>", page, re.S)
+                                .group(1).replace("<\\/", "</"))
+
+    def post(self, path, **fields):
+        token = re.search(r"data-token='([^']+)'", self.request("GET", ut.PATH)[2]).group(1)
+        status, _, text = self.request("POST", path, {"token": token, **fields})
+        self.assertEqual(status, 200)
+        return json.loads(text)
+
+    def test_the_page(self):
+        page, data = self.page_data()
+        self.assertIn("<h1>Upgradetest</h1>", page)
+        self.assertIn("aria-current=page>Upgrade</a>", page)  # in de balk bovenaan
+        # alleen de categorie racefietsen, zoals /racefietsen: het losse frame niet
+        self.assertEqual({b["id"] for b in data["bikes"]}, {"tcr", "emonda", "dura", "staal", "alu", "kaal", "groot"})
+        self.assertEqual(set(data["s"]), {b["id"] for b in data["bikes"]})
+        self.assertEqual(len(data["s"]["tcr"]), 9)
+        self.assertEqual(data["own"]["tot"], 50.8)
+        self.assertNotIn("groot", data["queue"])  # past niet
+        self.assertEqual(data["saved"], "")
+        self.assertIn("data-path='weights.frame'", page)
+        self.assertIn("niveau 5: Shimano Ultegra", page)
+
+    def test_judging_trying_saving_and_back(self):
+        self.assertEqual(self.post(ut.LABEL_PATH, item_id="tcr", oordeel="ja")["lab"], "ja")
+        self.assertIn("kies ja, nee", self.post(ut.LABEL_PATH, item_id="tcr", oordeel="misschien")["message"])
+        self.assertTrue(self.post(ut.LABEL_PATH, item_id="onbekend", oordeel="ja")["error"])
+        _, data = self.page_data()
+        self.assertEqual(next(b for b in data["bikes"] if b["id"] == "tcr")["lab"], "ja")
+        self.assertNotIn("tcr", data["queue"])
+        rule = sc.load_config()
+        rule["upgrade"]["marge"] = -20
+        tried = self.post(ut.TRY_PATH, regel=json.dumps(rule))
+        self.assertEqual(tried["s"]["tcr"][2], 1)
+        self.assertIn("upgrade marge: 5 → -20", tried["changes"])
+        self.assertEqual(ut.load_rule(self.db), (None, None))  # proef slaat niets op
+        self.assertIn("niet te lezen", self.post(ut.TRY_PATH, regel="{kapot")["message"])
+        self.assertIn("tussen", self.post(ut.TRY_PATH, regel=json.dumps({"weights": {"frame": 99}}))["message"])
+        saved = self.post(ut.RULE_PATH, actie="opslaan", regel=json.dumps(rule))
+        self.assertIn("Opgeslagen", saved["message"])
+        self.assertEqual(up.config_margin(ut.load_rule(self.db)[0]), -20)
+        # /racefietsen rekent er meteen mee
+        status, _, race = self.request("GET", rb.PATH)
+        bikes = json.loads(re.search(r"<script type='application/json' id='bikes'>(.*?)</script>", race, re.S).group(1))
+        self.assertTrue(next(b for b in bikes if b["id"] == "tcr")["uo"])
+        back = self.post(ut.RULE_PATH, actie="standaard")
+        self.assertIn("standaard", back["message"])
+        self.assertEqual(ut.load_rule(self.db), (None, None))
+        self.assertEqual(back["s"]["tcr"][2], 0)
+        self.assertEqual(self.post(ut.LABEL_PATH, item_id="tcr", oordeel="")["message"], "Oordeel weggehaald.")
+
+    def test_explain_and_search(self):
+        info = self.post(ut.EXPLAIN_PATH, item_id="emonda")
+        self.assertEqual(len(info["onderdelen"]), 5)
+        self.assertIn("hydraulische schijfremmen", info["d"])
+        self.assertEqual(info["img"], ["https://images.example/emonda.jpg"])
+        rule = sc.load_config()
+        rule["weights"]["brakes"] = 0
+        self.assertNotEqual(self.post(ut.EXPLAIN_PATH, item_id="emonda", regel=json.dumps(rule))["winst"], info["winst"])
+        self.assertTrue(self.post(ut.EXPLAIN_PATH, item_id="nee")["error"])
+        found = self.post(ut.SEARCH_PATH, regel=json.dumps(sc.load_config()))
+        self.assertIn("Eerst meer oordelen", found["note"])
+
+    def test_csv_download(self):
+        status, headers, text = self.request("GET", ut.CSV_PATH)
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("attachment", headers["Content-Disposition"])
+        self.assertTrue(text.startswith("\ufeffitem_id;titel"))
+
+    def test_guards(self):
+        status, _, text = self.request("POST", ut.LABEL_PATH, {"token": "fout", "item_id": "tcr", "oordeel": "ja"})
+        self.assertEqual(json.loads(text)["reload"], True)
+        conn = db.connect(self.db)
+        try:
+            self.assertEqual(db.list_upgrade_labels(conn), {})
+        finally:
+            conn.close()
+        self.assertEqual(self.request("GET", ut.PATH, host="evil.example")[0], 403)
+        self.assertEqual(self.request("POST", ut.TRY_PATH, {"regel": "x" * 20000})[0], 413)
+
+    def test_without_an_own_bike(self):
+        self.start(self.dir / "geen_fiets.md")
+        page = self.request("GET", ut.PATH)[2]
+        self.assertIn("Geen eigen fiets om mee te vergelijken", page)
+        token = re.search(r"data-token='([^']+)'", page).group(1)
+        answer = json.loads(self.request("POST", ut.LABEL_PATH, {"token": token, "item_id": "tcr", "oordeel": "ja"})[2])
+        self.assertTrue(answer["error"])
+        self.assertEqual(self.request("GET", ut.CSV_PATH)[0], 404)
 
 
 if __name__ == "__main__":
