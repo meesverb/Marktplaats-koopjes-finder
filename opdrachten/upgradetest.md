@@ -54,3 +54,7 @@ rekent alles precies als nu.
 ## Logboek
 
 - 05-10 — opzet en plan (dit bestand).
+- 05-10 — kern af (commit "Upgradetest: regel, oordelen, uitslag, zoeken en
+  uitdraai (kern)"): score-knoppen, regel opslaan/toepassen, migratie 22,
+  uitslag, zoeken (1,8 s op 120 oordelen), CSV, console, LiveCache. Nog te
+  doen: de pagina /upgrade, Playwright, bikereviews, documentatie.
