@@ -58,3 +58,6 @@ rekent alles precies als nu.
   uitdraai (kern)"): score-knoppen, regel opslaan/toepassen, migratie 22,
   uitslag, zoeken (1,8 s op 120 oordelen), CSV, console, LiveCache. Nog te
   doen: de pagina /upgrade, Playwright, bikereviews, documentatie.
+- 05-10 — pagina /upgrade af (commit "Upgradetest: de pagina /upgrade"),
+  met servertests en een controle in Chromium. Nog te doen: bikereviews,
+  documentatie (README, CLAUDE.md, NEXT_STEPS, PLAN §12).
