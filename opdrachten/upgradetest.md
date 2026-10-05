@@ -61,3 +61,7 @@ rekent alles precies als nu.
 - 05-10 — pagina /upgrade af (commit "Upgradetest: de pagina /upgrade"),
   met servertests en een controle in Chromium. Nog te doen: bikereviews,
   documentatie (README, CLAUDE.md, NEXT_STEPS, PLAN §12).
+- 05-10 — bikereviews kort bekeken (voorstel in `NEXT_STEPS.md`: niet in de
+  score, hooguit met de hand als informatie op de kaart) en documentatie
+  bijgewerkt (README, CLAUDE.md, NEXT_STEPS.md, PLAN §12). **Af.** 1045 tests.
+

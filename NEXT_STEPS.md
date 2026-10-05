@@ -5,6 +5,43 @@ De code, `reference_prices.csv` en de git-geschiedenis (commit messages)
 bevatten de volledige context; dit bestand is alleen een korte routewijzer
 zodat een nieuwe sessie niet bij nul hoeft te beginnen.
 
+## Upgradetest (05-10-2026)
+
+Op `/upgrade` bepaal je zelf wat een upgrade is: per fiets ja/nee/twijfel,
+de uitslag (hoeveel de regel goed heeft, en waar jullie het oneens zijn),
+alle knoppen van de score met meteen het effect, een zoekknop voor de regel
+die het best bij je oordelen past, en de uitdraai van alle fietsen (ook als
+CSV). Opgeslagen werkt de regel overal. Opdracht en logboek:
+`opdrachten/upgradetest.md`.
+
+**Te doen door jou:** een stuk of 30-50 fietsen beoordelen (meer is beter;
+ook de laag gewaardeerde komen langs), dan Zoek, kijken of de voorgestelde
+regel klopt met je gevoel, en opslaan.
+
+**Voorstel, niet gebouwd — bikereviews.** Kort bekeken (05-10-2026):
+- BikeRadar geeft 0-5 sterren en weegt daarin uitdrukkelijk de prijs en de
+  concurrenten van dat moment mee
+  ([uitleg](https://www.bikeradar.com/news/our-review-ratings-explained)):
+  4 sterren voor een fiets uit 2012 en 4 voor een uit 2022 zeggen niet dat
+  ze even goed zijn.
+- road.cc geeft een cijfer per uitvoering: de TCR Advanced Pro 0 (2016)
+  kreeg 9/10 ([review](https://road.cc/content/review/174726-giant-tcr-advanced-pro-0)),
+  maar op Marktplaats staat vaker een TCR Advanced 2 of 3, waar geen review
+  van is.
+- Voor de Defy Composite 2012 is er geen vakreview gevonden, alleen
+  gebruikersreviews met een handvol stemmen (roadbikereview.com: 4,3/5 uit 4,
+  [link](https://products.roadbikereview.com/product/latest-bikes/road-bike/giant/defy-composite-2.html)).
+- Een advertentie aan de juiste review koppelen is hetzelfde probleem als
+  het model herkennen (uitvoering en jaar staan zelden in de titel), en
+  automatisch ophalen zijn verzoeken naar andere sites.
+
+Daarom geen cijfer in de score. Wat wel kan, met de hand en met bron: een
+kolom `review` (bron, cijfer, schaal, uitvoering, datum) in
+`reference_bike_catalog.csv`, getoond op de kaart als informatie ("road.cc
+9/10, Pro 0 2016") — niet meegeteld. Wat de score wél beter maakt dan
+reviews: de klasse van het frame (Advanced/Pro/SL staat in de modelnamen
+van de catalogus) en het gewicht (`weight_kg`, waar de catalogus het heeft).
+
 ## Weekendwerk (02/03-10-2026)
 
 De eigenaar was weg; de werklijst, zijn keuzes en een logboek per punt staan

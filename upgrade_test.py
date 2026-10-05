@@ -174,7 +174,7 @@ def load_rule(db_path) -> tuple[Optional[dict], Optional[str]]:
         return None, None
     try:
         data = json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):
         return None, None
     if not isinstance(data, dict) or not isinstance(data.get("config"), dict):
         return None, None
@@ -935,7 +935,7 @@ def _form_rule(form: dict) -> dict:
     raw = form.get("regel", "")
     try:
         data = json.loads(raw) if raw else None
-    except ValueError:
+    except (ValueError, RecursionError):  # diep geneste haken geven RecursionError
         raise RuleError("de regel was niet te lezen") from None
     return clean_rule(data, default_config())
 

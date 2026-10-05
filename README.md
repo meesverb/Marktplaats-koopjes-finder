@@ -699,7 +699,7 @@ selling price.
 python koopjes.py run nacht        # includes the "fietscomputer" search: the whole category, all pages
 python koopjes.py run computers    # by day: only the newest 2 pages; opens the dashboard on a new flip
 python dashboard.py --open         # rebuild dashboard.html from koopjes.db and open it
-python dashboard.py --serve        # everything live from http://127.0.0.1:8765/start (Ctrl+C to stop): dashboards, /fiets, /flips, reports
+python dashboard.py --serve        # everything live from http://127.0.0.1:8765/start (Ctrl+C to stop): dashboards, /fiets, /upgrade, /flips, reports
 python computers.py                 # feature score per model, with the difference to your own
 python computers.py --merk wahoo
 ```
@@ -1680,6 +1680,17 @@ The same function scores a listing and your own bike, which is what makes
 "better than mine" a comparison rather than an opinion. Missing information
 scores neutrally and says so, instead of being guessed at.
 
+Four keys in `scoring_config.json` belong to the upgrade test below and are
+off by default, so without a saved rule everything scores as before:
+`drivetrain.age_decay_per_year` / `age_decay_max` (age counts on the
+drivetrain too: "Ultegra" is a 10-speed in 2010 and a 12-speed in 2022, and
+the year is what a listing usually does say), `wheels.eigen_wielen` (a fixed
+score for your own wheels; without it the CSC set scores as branded carbon,
+because CSC is in the wheel-brand list), and `upgrade.marge` /
+`upgrade.onbekend` (the margin, and whether an unknown part scores the fixed
+neutral number or the same as your own bike). The rule you save on
+`/upgrade` overrides the file for everything that scores bikes.
+
 Besides the text, the search results carry some of the seller's own
 structured choices ("Kenmerken" on the listing page): the frame material on
 roughly half the racefietsen, now and then the brake type. Those are read as
@@ -1772,13 +1783,61 @@ comps wins over it. Left empty, it's not used. Everything that falls out comes b
 
 Every candidate prints its full per-dimension breakdown, and the budget prints
 its own sum. Options: `--margin` (points above baseline before something
-counts as an upgrade, default 5), `--query`, `--window-days`, `--limit`,
-`--config` for the scoring weights, `--show-rejected`.
+counts as an upgrade; default: the margin of your rule on `/upgrade`, else 5),
+`--query`, `--window-days`, `--limit`, `--config` for the scoring weights
+(with your own file the saved rule is not applied), `--show-rejected`. With
+the default config it uses the rule you saved on `/upgrade` and prints
+"Jouw regel van /upgrade (opgeslagen …)".
 
 With `component_price` still empty there are no observations of what a loose
 wheelset sells for, so the two budgets come out equal and the output says so
 rather than guessing a number. It also bids on nothing and contacts no seller:
 that is out of scope, by design.
+
+### The upgrade test — `/upgrade` (`upgrade_test.py`)
+
+You decide what an upgrade is, and the score follows you instead of the
+other way round. Open `http://127.0.0.1:8765/upgrade` in
+`python dashboard.py --serve` ("Upgrade" in the bar at the top):
+
+- **Test** — one bike at a time (photos, price, specs, description): "is
+  this an upgrade of your bike — regardless of price and size?" Yes, no or
+  unsure (keys `j`, `n`, `t`; `s` skips, `u` undoes). The rule's verdict only
+  shows after you answer, with per part why, so it doesn't steer you (tick
+  the box to see it first). The order spreads over the whole score range, so
+  the bikes the score rates low come by too. Answers are stored in
+  `koopjes.db` (`upgrade_label`, migration 22) and stay when a bike is sold.
+- **Uitslag** — how many of your answers the rule gets right, and the bikes
+  where you and the rule disagree, with the difference per part. Unsure
+  doesn't count.
+- **Jouw regel** — every knob of the quality score in one place: weights,
+  margin, what "unknown" counts as, material and age, groupset levels,
+  brakes, wheels (including a score for your own wheels), extras. Every
+  change is recalculated at once on your answers and on the bikes for sale
+  now; nothing is stored until **Opslaan**. **Zoek** tries weights (steps of
+  0.1, then 0.05 around the best), the margin and a few options (unknown =
+  like your bike, age on the drivetrain, a steeper frame age, your own wheels
+  as unbranded carbon) and proposes the rule that gets most of your answers
+  right; on a tie, the one that changes least. It needs at least 10 answers
+  with 3 yes and 3 no, and says how far to trust it. **Terug naar de
+  standaard** removes your rule.
+- **Uitdraai** — every bike with its score per part, the difference with
+  your bike, total, gain, whether it's better than yours and whether it's an
+  upgrade on `/racefietsen` (size and budget too); sort, filter (for sale,
+  judged, disagree, better, upgrade), change an answer per row, and
+  **Alles als CSV** for Excel (semicolons, decimal commas).
+
+A saved rule is kept in `setting` (`upgrade_regel`) and used by
+`/racefietsen`, the report, the overview and `upgrade.py`;
+`scoring_config.json` stays the default. "Better than your bike" on this
+page is the quality question alone (gain above the margin); the upgrade
+verdict on `/racefietsen` also needs the size and the budget.
+
+```bash
+python upgrade_test.py                  # how the rule does on your answers, in the console
+python upgrade_test.py uitdraai         # every bike as CSV: lijsten/upgrade_uitdraai.csv (--uit for another path)
+python upgrade_test.py zoek             # the rule that fits your answers best (stores nothing)
+```
 
 ### Report tabs — Slapers, Fietscomputers, Biedpaneel, Upgrade, Mijn fiets
 

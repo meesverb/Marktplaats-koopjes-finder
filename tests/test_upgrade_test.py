@@ -560,6 +560,8 @@ class ServerTest(BikesCase):
         self.assertIn("upgrade marge: 5 → -20", tried["changes"])
         self.assertEqual(ut.load_rule(self.db), (None, None))  # proef slaat niets op
         self.assertIn("niet te lezen", self.post(ut.TRY_PATH, regel="{kapot")["message"])
+        # diep geneste haken: RecursionError in json, geen traceback (9 kB past nog in een formulier)
+        self.assertIn("niet te lezen", self.post(ut.TRY_PATH, regel="[" * 3000)["message"])
         self.assertIn("tussen", self.post(ut.TRY_PATH, regel=json.dumps({"weights": {"frame": 99}}))["message"])
         saved = self.post(ut.RULE_PATH, actie="opslaan", regel=json.dumps(rule))
         self.assertIn("Opgeslagen", saved["message"])
