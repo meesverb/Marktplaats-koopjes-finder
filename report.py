@@ -100,8 +100,14 @@ def load_owner_context(
         config = sc.load_config(str(config_path))
     except FileNotFoundError:
         return None, f"{config_path} niet gevonden — zonder gewichten geen kwaliteitsscore"
+    if db_path is not None and Path(config_path) == SCORING_CONFIG_PATH:
+        # De regel die de eigenaar op /upgrade opsloeg (upgrade_test.py):
+        # daarmee rekenen /racefietsen, het rapport en het overzicht.
+        import upgrade_test as ut
 
-    build = sc.build_from_owner_specs(bike.specs, label=bike.label)
+        config, _ = ut.apply_saved_rule(config, db_path)
+
+    build = sc.owner_build(bike.specs, label=bike.label, config=config)
     context = OwnerContext(
         bike=bike,
         build=build,
@@ -470,8 +476,9 @@ def build_panels(
             config=owner.config,
             budgets=owner.budgets,
             target_size_cm=owner.target_size_cm,
-            owner_wheels=(owner.build.wheel_material, owner.build.wheel_branded),
+            owner_wheels=up.owner_wheels(owner.build),
             owner_already_has=owner.owner_has,
+            owner_build=owner.build,
         )
 
     return Panels(

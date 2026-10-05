@@ -577,6 +577,21 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX flip_offer_task ON flip_offer (task_id);
     """,
+    # 22: de upgradetest (/upgrade, upgrade_test.py): per fiets het oordeel
+    # van de eigenaar of hij een upgrade is van zijn eigen fiets, los van
+    # prijs en maat — ja, nee of twijfel. Daarmee ziet hij hoeveel van zijn
+    # antwoorden de score goed heeft en zoekt de pagina een regel die erbij
+    # past (de eigenaar, 05-10-2026: "zodat ik zelf kan bepalen wat een
+    # upgrade is"). Titel en prijs zoals hij ze zag. Eigen tabel (zie 17).
+    """
+    CREATE TABLE upgrade_label (
+        item_id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        title TEXT,
+        price_eur REAL,
+        labeled_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -590,6 +605,8 @@ MODEL_TABLES = ("bike_model", "bike_link")
 RULE_TABLES = ("bike_rule",)
 # And migration 21.
 OFFER_TABLES = ("flip_offer",)
+# And migration 22.
+LABEL_TABLES = ("upgrade_label",)
 
 # A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
 # the first column's name and makes every row look like it is missing that
@@ -1877,3 +1894,28 @@ def list_bike_rules(conn: sqlite3.Connection) -> list[dict]:
         "m.family, m.variant FROM bike_rule r LEFT JOIN bike_model m ON m.id = r.model_id ORDER BY r.created_at")
     names = [c[0] for c in cur.description]
     return [dict(zip(names, r)) for r in cur.fetchall()]
+
+
+# --- The owner's upgrade judgments (migration 22) ---------------------------------
+
+
+def set_upgrade_label(conn: sqlite3.Connection, item_id: str, label: Optional[str],
+                      title: Optional[str] = None, price_eur: Optional[float] = None) -> None:
+    """The owner's answer for one bike (upgrade_test.LABELS); None removes it."""
+    if label is None:
+        conn.execute("DELETE FROM upgrade_label WHERE item_id = ?", (item_id,))
+    else:
+        conn.execute(
+            "INSERT INTO upgrade_label (item_id, label, title, price_eur, labeled_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(item_id) DO UPDATE SET label = excluded.label, title = excluded.title, "
+            "price_eur = excluded.price_eur, labeled_at = excluded.labeled_at",
+            (item_id, label, title, price_eur, _now()))
+    conn.commit()
+
+
+def list_upgrade_labels(conn: sqlite3.Connection) -> dict[str, dict]:
+    """{item_id: {label, title, price_eur, labeled_at}}. Empty before 22."""
+    if not _has_table(conn, "upgrade_label"):
+        return {}
+    cur = conn.execute("SELECT item_id, label, title, price_eur, labeled_at FROM upgrade_label")
+    return {r[0]: {"label": r[1], "title": r[2], "price_eur": r[3], "labeled_at": r[4]} for r in cur.fetchall()}

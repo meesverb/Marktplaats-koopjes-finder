@@ -35,7 +35,9 @@
         },
         "tier_score_unknown": 30,
         "electronic_bonus": 15,
-        "speeds_bonus_per_speed_above_10": 3
+        "speeds_bonus_per_speed_above_10": 3,
+        "age_decay_per_year": 0,
+        "age_decay_max": 0.30
     },
     "brakes": {
         "score": {
@@ -51,7 +53,8 @@
         "carbon_naamloos": 60,
         "carbon_merk": 85,
         "merk_materiaal_onbekend": 60,
-        "score_unknown": 45
+        "score_unknown": 45,
+        "eigen_wielen": null
     },
     "extras": {
         "powermeter": 35,
@@ -60,5 +63,9 @@
         "extra_wheelset": 20,
         "pedals": 10,
         "max": 100
+    },
+    "upgrade": {
+        "marge": 5,
+        "onbekend": "neutraal"
     }
 }

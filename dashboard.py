@@ -72,6 +72,7 @@ import recheck as rc
 import report
 import trades as tr
 import upgrade as up
+import upgrade_test as ut
 import valuation as val
 import views as vw
 import vinted as vn
@@ -352,19 +353,42 @@ class LiveCache:
     def racebikes(self, db_path, intake_path) -> "rb.Base":
         """Het zware deel van /racefietsen (racebikes.build_base()): flip,
         waardescore en upgrade per fiets. Een markering of bod verandert het
-        niet, een ronde of controleer wel."""
+        niet, een ronde of controleer wel. Een nieuwe regel op /upgrade
+        rekent alleen het upgradeoordeel opnieuw (racebikes.rescore())."""
         stamp = data_stamp(db_path, trades=False)
+        rule = ut.rule_stamp(db_path)
         key = ("racefietsen", str(Path(db_path).resolve()), str(intake_path))
         with self._build_lock(key):
             with self._lock:
                 cached = self._base.get(key)
             if cached is not None and stamp is not None and cached[0] == stamp:
+                if cached[2] != rule:
+                    rb.rescore(cached[1], db_path, intake_path, self.comps(db_path))
+                    with self._lock:
+                        self._base[key] = (stamp, cached[1], rule)
                 return cached[1]
             comps = self.comps(db_path)
             base = rb.build_base(db_path, intake_path, comps)
             with self._lock:
-                self._base[key] = (stamp, base)
+                self._base[key] = (stamp, base, rule)
             return base
+
+    def upgrade_bikes(self, db_path, intake_path) -> list:
+        """De fietsen van /upgrade (upgrade_test.load_bikes()): de actieve
+        van /racefietsen plus wat je beoordeelde en niet meer te koop is. Het
+        lezen van de tekst (Prepared) onthouden zolang de database niet
+        verandert; oordelen en bouwjaren komen altijd vers."""
+        base = self.racebikes(db_path, intake_path)
+        stamp = data_stamp(db_path, trades=False)
+        where = ("upgrade", str(Path(db_path).resolve()))
+        with self._lock:
+            cached = self._base.get(where)
+            if cached is None or cached[0] != stamp or stamp is None:
+                cached = (stamp, {})
+                self._base[where] = cached
+        with base.lock:
+            listings = [r.listing for r in base.rows]
+        return ut.load_bikes(db_path, listings, prepared=cached[1])
 
     def dashboard(self, db_path, market: mk.Market) -> Dashboard:
         config = pc.default_config()

@@ -37,7 +37,7 @@ import re
 import sqlite3
 import statistics
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Sequence
@@ -49,8 +49,34 @@ import valuation as val
 
 # Hoeveel punten een kandidaat boven de baseline moet zitten voordat hij een
 # upgrade heet. Zonder marge is elk afrondingsverschil al "beter", en dan
-# staat de lijst vol fietsen die in de praktijk hetzelfde zijn.
+# staat de lijst vol fietsen die in de praktijk hetzelfde zijn. Staat sinds
+# de upgradetest (05-10-2026) ook in scoring_config.json (`upgrade.marge`),
+# zodat de eigenaar hem met de rest van zijn regel op /upgrade kan zetten.
 DEFAULT_SCORE_MARGIN = 5.0
+
+# `upgrade.onbekend`: wat een onderdeel scoort dat de advertentie niet noemt.
+# "neutraal" = het vaste getal uit de config (groepset onbekend 30, ...);
+# "gelijk" = gelijk aan de eigen fiets (scoring.fill_unknown()), dan telt het
+# in de vergelijking niet mee.
+UNKNOWN_NEUTRAL = "neutraal"
+UNKNOWN_LIKE_OWN = "gelijk"
+UNKNOWN_MODES = (UNKNOWN_NEUTRAL, UNKNOWN_LIKE_OWN)
+
+
+def config_margin(config: dict) -> float:
+    """De marge uit de regel (`upgrade.marge`), anders de standaard."""
+    value = (config.get("upgrade") or {}).get("marge")
+    return DEFAULT_SCORE_MARGIN if value is None else float(value)
+
+
+def config_unknown(config: dict) -> str:
+    value = (config.get("upgrade") or {}).get("onbekend")
+    return value if value in UNKNOWN_MODES else UNKNOWN_NEUTRAL
+
+
+def owner_wheels(build: sc.Build) -> tuple:
+    """De eigen wielen zoals with_owner_wheels() ze meeneemt."""
+    return (build.wheel_material, build.wheel_branded, build.wheel_score)
 
 # mijn_fiets.md noemt "max €250 boven op de opbrengst". Dat bedrag wordt uit
 # dat bestand gelezen; dit is de terugval als het er niet in staat.
@@ -190,21 +216,25 @@ def budgets_from_valuation(
 
 
 def with_owner_wheels(
-    build: sc.Build, owner_wheels: tuple[Optional[str], bool], config: dict
+    build: sc.Build, owner_wheels: tuple, config: dict
 ) -> tuple[sc.Build, Optional[str]]:
     """Bij een velremkandidaat verhuist de eigen wielset mee (§7). Dat is voor
     de score alleen winst als die wielset béter is dan wat er al op zit — een
     kandidaat met Zipp-wielen gaat er niet op vooruit van een CSC-set.
 
+    `owner_wheels`: (materiaal, merk) of, met owner_wheels(), ook de score
+    die de eigenaar zijn wielen zelf gaf (`wheels.eigen_wielen`).
+
     Geeft de (eventueel aangepaste) build terug plus een reden-regel, of None
     als er niets verandert."""
-    material, branded = owner_wheels
-    if material is None:
+    material, branded, *rest = owner_wheels
+    score = rest[0] if rest else None
+    if material is None and score is None:
         return build, None
-    moved = replace(build, wheel_material=material, wheel_branded=branded)
+    moved = replace(build, wheel_material=material, wheel_branded=branded, wheel_score=score)
     if sc.score_wheels(moved, config).score <= sc.score_wheels(build, config).score:
         return build, None
-    return moved, f"eigen {material} wielset verhuist mee (velremkandidaat)"
+    return moved, f"eigen {material + ' ' if material else ''}wielset verhuist mee (velremkandidaat)"
 
 
 # --- Prijzen ---------------------------------------------------------------
@@ -562,6 +592,10 @@ class Rejected:
 class UpgradeResult:
     candidates: tuple[Candidate, ...]
     rejected: tuple[Rejected, ...]
+    # {item_id: Scored} van elke advertentie die tot de score kwam (niet die
+    # al op categorie of maat afviel): de upgradetest toont de score ook
+    # van fietsen die op prijs of budget afvallen.
+    scored: dict = field(default_factory=dict)
 
 
 # How many listing pages --detail-lookup fetches per run at most. Each is one
@@ -613,6 +647,172 @@ def detail_lookup_targets(
     return [listing for _, listing in scored[:limit]]
 
 
+SIZE_UNKNOWN_NOTE = "framemaat staat niet in de advertentie — zelf navragen"
+
+
+@dataclass(frozen=True)
+class Scored:
+    """Eén advertentie gescoord tegen de eigen fiets, zonder de poorten
+    (maat, prijs, budget): wat find_upgrades() en de upgradetest allebei
+    nodig hebben."""
+
+    build: sc.Build
+    route: str
+    quality: sc.QualityScore
+    reasons: tuple
+
+
+@dataclass(frozen=True)
+class Prepared:
+    """Wat van een advertentie vaststaat los van de regel: zijn build zoals
+    de tekst hem geeft (met het bouwjaar van de eigenaar of uit de titel),
+    de route en de reden-regels daarvan. De upgradetest rekent elke regel
+    die de eigenaar probeert op dezelfde Prepared door; de tekst opnieuw
+    lezen is het dure deel."""
+
+    build: sc.Build
+    route: str
+    reasons: tuple
+
+
+def prepare_candidate(listing: mp.Listing, year: Optional[int] = None) -> Prepared:
+    specs, year_note = listing_specs(listing, year)
+    build = sc.build_from_listing(
+        specs=specs,
+        groupset_label=listing.groupset,
+        groupset_tier=listing.groupset_tier,
+        text=mp.spec_text(listing),
+        label=listing.title,
+    )
+    route = brake_route(build.brake_type)
+    return Prepared(build, route, (f"route: {route}",) + ((year_note,) if year_note else ()))
+
+
+def finish_candidate(
+    prepared: Prepared,
+    *,
+    config: dict,
+    owner_wheels: tuple = (None, False),
+    owner_already_has: frozenset = frozenset(),
+    as_of_year: Optional[int] = None,
+    like_owner: Optional[sc.Build] = None,
+    notes: tuple = (),
+) -> Scored:
+    """De score van een voorbereide advertentie onder één regel: de eigen
+    wielset die bij een velremfiets meeverhuist en, met `like_owner`, wat de
+    advertentie niet zegt gelijk aan de eigen fiets. `notes` komen vóór die
+    laatste reden-regel (de maatvlag van find_upgrades())."""
+    build, route = prepared.build, prepared.route
+    reasons = list(prepared.reasons)
+    if route == ROUTE_RIM:
+        build, moved = with_owner_wheels(build, owner_wheels, config)
+        if moved:
+            reasons.append(moved)
+    reasons.extend(notes)
+    if like_owner is not None:
+        build = sc.fill_unknown(build, like_owner)
+        if build.assumed:
+            reasons.append("onbekend, gelijk aan jouw fiets gerekend: " + ", ".join(
+                ASSUMED_LABELS.get(name, name) for name in build.assumed))
+    quality = sc.score_build(build, config, owner_already_has=owner_already_has, as_of_year=as_of_year)
+    return Scored(build, route, quality, tuple(reasons))
+
+
+def score_candidate(
+    listing: mp.Listing,
+    *,
+    config: dict,
+    owner_wheels: tuple = (None, False),
+    owner_already_has: frozenset = frozenset(),
+    as_of_year: Optional[int] = None,
+    year: Optional[int] = None,
+    like_owner: Optional[sc.Build] = None,
+    notes: tuple = (),
+) -> Scored:
+    """De kwaliteitsscore van een advertentie zoals de upgrade-finder hem
+    ziet: bouwjaar uit de tekst, de titel of van de eigenaar (`year`), de
+    eigen wielset die bij een velremfiets meeverhuist, en met `like_owner`
+    wat de advertentie niet zegt gelijk aan de eigen fiets."""
+    return finish_candidate(prepare_candidate(listing, year), config=config, owner_wheels=owner_wheels,
+                            owner_already_has=owner_already_has, as_of_year=as_of_year,
+                            like_owner=like_owner, notes=notes)
+
+
+def precheck(listing: mp.Listing, target_size_cm: float, size_tolerance_cm: float = DEFAULT_SIZE_TOLERANCE_CM,
+             allow_unknown_size: bool = True) -> tuple[str, Optional[str]]:
+    """(maatoordeel, reden om af te wijzen of None): de poorten vóór de
+    score. Gevonden in een echte run: met een powermeter-watchlist in
+    dezelfde database waren de drie beste "upgrades" een crankstel, een
+    powermeter en een kettingblad. Een URL zonder herkenbare categorie mag
+    door — onbekend is niet hetzelfde als "geen fiets"."""
+    size = size_verdict(listing.frame_height, target_size_cm, size_tolerance_cm)
+    category = mp.category_from_url(listing.url)
+    if category is not None and category != mp.ROAD_BIKE_CATEGORY:
+        return size, f"geen complete racefiets (categorie {category})"
+    if size == SIZE_WRONG:
+        return size, f"{SIZE_WRONG} ({listing.frame_height})"
+    if size == SIZE_UNKNOWN and not allow_unknown_size:
+        return size, SIZE_UNKNOWN
+    return size, None
+
+
+def decide(
+    listing: mp.Listing,
+    scored: Scored,
+    *,
+    size: str,
+    baseline: float,
+    margin: float,
+    budgets: Budgets,
+    negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
+) -> "Candidate | Rejected":
+    """De poorten ná de score: beter dan de eigen fiets plus de marge, een
+    bruikbare prijs, en binnen het budget van zijn route."""
+    quality = scored.quality
+    gain = quality.total - baseline
+    if gain <= margin:
+        return Rejected(listing, f"niet beter dan de eigen fiets ({quality.total:.0f} vs {baseline:.0f})")
+    effective = effective_price(listing, negotiation_factor)
+    if effective.amount is None:
+        return Rejected(listing, f"geen bruikbare prijs ({effective.basis})")
+    if effective.amount <= 0:
+        # Een advertentie van €0 is een weggeefactie (priceType FREE), geen
+        # koopje met oneindige upgrade per euro. market_prices() gooit hem
+        # om dezelfde reden uit de benchmarks.
+        return Rejected(listing, "prijs €0 — geen vraagprijs om op te rekenen")
+    budget = budgets.for_route(scored.route)
+    if effective.amount > budget.amount:
+        return Rejected(listing, f"boven budget (€{effective.amount:.0f} > €{budget.amount:.0f}, {budget.route})")
+    return Candidate(
+        listing=listing,
+        quality=quality,
+        gain=gain,
+        effective=effective,
+        budget=budget,
+        upgrade_per_euro=gain / effective.amount,
+        size=size,
+        reasons=scored.reasons,
+    )
+
+
+def needs_year(scored: Scored, config: dict) -> bool:
+    """Zonder bouwjaar rekent de score een fiets als nieuw (geen
+    leeftijdsverval): een oude fiets met goede onderdelen leek dan een
+    upgrade (de eigenaar, 30-09-2026: "upgrade-oordeel raar"). Dan geen
+    upgrade maar "vraag het jaar na" — behalve bij `upgrade.onbekend` =
+    "gelijk": dan telt een onbekend jaar als dat van de eigen fiets."""
+    return scored.build.model_year is None and config_unknown(config) != UNKNOWN_LIKE_OWN
+
+
+def unknown_year_note(why: str) -> str:
+    return f"bouwjaar onbekend — als hij nieuw zou zijn {why}; vraag het jaar na"
+
+
+ASSUMED_LABELS = {"frame_material": "materiaal", "frame_class": "frameklasse", "model_year": "bouwjaar",
+                  "groupset_tier": "groepset", "speeds": "versnellingen", "brake_type": "remmen",
+                  "wheels": "wielen"}
+
+
 def find_upgrades(
     listings: Sequence[mp.Listing],
     *,
@@ -620,14 +820,15 @@ def find_upgrades(
     config: dict,
     budgets: Budgets,
     target_size_cm: float,
-    margin: float = DEFAULT_SCORE_MARGIN,
+    margin: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
-    owner_wheels: tuple[Optional[str], bool] = (None, False),
+    owner_wheels: tuple = (None, False),
     owner_already_has: frozenset = frozenset(),
     size_tolerance_cm: float = DEFAULT_SIZE_TOLERANCE_CM,
     allow_unknown_size: bool = True,
     as_of_year: Optional[int] = None,
     years: Optional[dict] = None,
+    owner_build: Optional[sc.Build] = None,
 ) -> UpgradeResult:
     """Kandidaten uit §7: `past_qua_maat` ∧ `kwaliteitsscore > baseline +
     marge` ∧ `effectieve_prijs ≤ budget`, gerangschikt op upgrade per euro.
@@ -640,96 +841,38 @@ def find_upgrades(
     zonder die lijst is "hij staat er niet bij" niet te onderscheiden van een
     bug in de maatpoort.
 
-    `years`: {item_id: bouwjaar} dat de eigenaar zelf invulde; gaat voor de tekst."""
+    `years`: {item_id: bouwjaar} dat de eigenaar zelf invulde; gaat voor de tekst.
+
+    `margin` None: uit de regel (config_margin()). Met `owner_build` en
+    `upgrade.onbekend` = "gelijk" scoort wat de advertentie niet zegt als de
+    eigen fiets (scoring.fill_unknown()); de route (velrem/schijfrem) rekent
+    dan nog steeds op wat de advertentie zelf zegt."""
     candidates: list[Candidate] = []
-    years = years or {}
     rejected: list[Rejected] = []
+    scored_by_id: dict = {}
+    years = years or {}
+    if margin is None:
+        margin = config_margin(config)
+    like_owner = owner_build if config_unknown(config) == UNKNOWN_LIKE_OWN else None
 
     for listing in listings:
-        category = mp.category_from_url(listing.url)
-        if category is not None and category != mp.ROAD_BIKE_CATEGORY:
-            # Gevonden in een echte run: met een powermeter-watchlist in
-            # dezelfde database waren de drie beste "upgrades" een crankstel,
-            # een powermeter en een kettingblad. Een URL zonder herkenbare
-            # categorie mag door — onbekend is niet hetzelfde als "geen fiets".
-            rejected.append(Rejected(listing, f"geen complete racefiets (categorie {category})"))
+        size, reject = precheck(listing, target_size_cm, size_tolerance_cm, allow_unknown_size)
+        if reject is not None:
+            rejected.append(Rejected(listing, reject))
             continue
-        size = size_verdict(listing.frame_height, target_size_cm, size_tolerance_cm)
-        if size == SIZE_WRONG:
-            rejected.append(Rejected(listing, f"{SIZE_WRONG} ({listing.frame_height})"))
-            continue
-        if size == SIZE_UNKNOWN and not allow_unknown_size:
-            rejected.append(Rejected(listing, SIZE_UNKNOWN))
-            continue
-
-        text = mp.spec_text(listing)
-        specs, year_note = listing_specs(listing, years.get(listing.item_id))
-        build = sc.build_from_listing(
-            specs=specs,
-            groupset_label=listing.groupset,
-            groupset_tier=listing.groupset_tier,
-            text=text,
-            label=listing.title,
-        )
-        route = brake_route(build.brake_type)
-        reasons: list[str] = [f"route: {route}"]
-        if year_note:
-            reasons.append(year_note)
-        if route == ROUTE_RIM:
-            build, moved = with_owner_wheels(build, owner_wheels, config)
-            if moved:
-                reasons.append(moved)
-        if size == SIZE_UNKNOWN:
-            reasons.append("framemaat staat niet in de advertentie — zelf navragen")
-
-        quality = sc.score_build(
-            build, config, owner_already_has=owner_already_has, as_of_year=as_of_year
-        )
-        gain = quality.total - baseline
-        if gain <= margin:
-            rejected.append(
-                Rejected(listing, f"niet beter dan de eigen fiets ({quality.total:.0f} vs {baseline:.0f})")
-            )
-            continue
-
-        effective = effective_price(listing, negotiation_factor)
-        if effective.amount is None:
-            rejected.append(Rejected(listing, f"geen bruikbare prijs ({effective.basis})"))
-            continue
-        if effective.amount <= 0:
-            # Een advertentie van €0 is een weggeefactie (priceType FREE), geen
-            # koopje met oneindige upgrade per euro. market_prices() gooit hem
-            # om dezelfde reden uit de benchmarks.
-            rejected.append(Rejected(listing, "prijs €0 — geen vraagprijs om op te rekenen"))
-            continue
-
-        budget = budgets.for_route(route)
-        if effective.amount > budget.amount:
-            rejected.append(
-                Rejected(
-                    listing,
-                    f"boven budget (€{effective.amount:.0f} > €{budget.amount:.0f}, {budget.route})",
-                )
-            )
-            continue
-
-        candidates.append(
-            Candidate(
-                listing=listing,
-                quality=quality,
-                gain=gain,
-                effective=effective,
-                budget=budget,
-                upgrade_per_euro=gain / effective.amount,
-                size=size,
-                reasons=tuple(reasons),
-            )
-        )
+        scored = score_candidate(
+            listing, config=config, owner_wheels=owner_wheels, owner_already_has=owner_already_has,
+            as_of_year=as_of_year, year=years.get(listing.item_id), like_owner=like_owner,
+            notes=(SIZE_UNKNOWN_NOTE,) if size == SIZE_UNKNOWN else ())
+        scored_by_id[listing.item_id] = scored
+        outcome = decide(listing, scored, size=size, baseline=baseline, margin=margin, budgets=budgets,
+                         negotiation_factor=negotiation_factor)
+        (candidates if isinstance(outcome, Candidate) else rejected).append(outcome)
 
     # Bij gelijke upgrade per euro wint de grootste sprong; item_id sluit af,
     # zodat dezelfde invoer altijd dezelfde volgorde geeft.
     candidates.sort(key=lambda c: (-c.upgrade_per_euro, -c.gain, c.listing.item_id))
-    return UpgradeResult(tuple(candidates), tuple(rejected))
+    return UpgradeResult(tuple(candidates), tuple(rejected), scored_by_id)
 
 
 # --- Database ---------------------------------------------------------------
@@ -966,8 +1109,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"hoe ver terug advertenties meetellen (default: {val.DEFAULT_COMP_WINDOW_DAYS}, 0 = alles)",
     )
     parser.add_argument(
-        "--margin", type=float, default=DEFAULT_SCORE_MARGIN,
-        help=f"punten boven de baseline voordat iets een upgrade heet (default: {DEFAULT_SCORE_MARGIN:.0f})",
+        "--margin", type=float, default=None,
+        help=f"punten boven de baseline voordat iets een upgrade heet (default: uit je regel op /upgrade, "
+             f"anders {DEFAULT_SCORE_MARGIN:.0f})",
     )
     parser.add_argument(
         "--budget-extra", type=float, default=None,
@@ -1008,8 +1152,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     config = sc.load_config(args.config)
-    owner_build = sc.build_from_owner_specs(bike.specs, label=bike.label)
-    baseline = sc.score_build(owner_build, config).total
 
     target_size = args.size if args.size is not None else target_size_from(bike.specs)
     if target_size is None:
@@ -1033,6 +1175,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         # Anders maakte db.connect() bij een tikfout stil een lege database aan.
         print(f"Database {args.db} bestaat niet.", file=sys.stderr)
         return 1
+    if args.config == sc.BUNDLED_CONFIG_PATH:
+        # De regel die de eigenaar op /upgrade opsloeg; met een eigen
+        # --config rekent het script op die en niets anders.
+        import upgrade_test as ut
+
+        config, saved_at = ut.apply_saved_rule(config, args.db)
+        if saved_at:
+            print(f"Jouw regel van /upgrade (opgeslagen {saved_at[:10]})")
+    owner_build = sc.owner_build(bike.specs, label=bike.label, config=config)
+    baseline = sc.score_build(owner_build, config).total
     conn = db.connect(args.db)
     try:
         comps = val.fetch_comp_candidates(conn, window_days=args.window_days, query=args.query)
@@ -1084,10 +1236,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         budgets=budgets,
         target_size_cm=target_size,
         margin=args.margin,
-        owner_wheels=(owner_build.wheel_material, owner_build.wheel_branded),
+        owner_wheels=owner_wheels(owner_build),
         owner_already_has=owner_has,
         size_tolerance_cm=args.size_tolerance,
         allow_unknown_size=not args.strict_size,
+        owner_build=owner_build,
     )
 
     print(f"\nUPGRADE-KANDIDATEN — {len(result.candidates)} binnen budget en maat")

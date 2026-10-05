@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -68,6 +68,14 @@ class Build:
     has_computer: bool = False
     has_extra_wheelset: bool = False
     has_pedals: bool = False
+    # Een vaste wielscore in plaats van materiaal + merk: de eigenaar kan op
+    # /upgrade zelf zeggen wat zijn eigen wielen waard zijn
+    # (`wheels.eigen_wielen`), want "CSC" staat in WHEEL_BRAND_RE en scoort
+    # daardoor als merk-carbon, terwijl mijn_fiets.md die set juist het
+    # zwakste punt van de fiets noemt. Verhuist mee met with_owner_wheels().
+    wheel_score: Optional[float] = None
+    # Velden die fill_unknown() van de eigen fiets overnam, voor de redenen.
+    assumed: tuple = ()
 
 
 # Merken die een carbon wielset uit de "naamloos AliExpress"-categorie tillen
@@ -226,6 +234,54 @@ def build_from_owner_specs(specs: dict[str, str], label: str = "") -> Build:
     )
 
 
+def owner_build(specs: dict[str, str], label: str = "", config: Optional[dict] = None) -> Build:
+    """De eigen fiets zoals de score hem ziet: build_from_owner_specs() plus
+    wat de eigenaar in zijn regel over de fiets zelf zei
+    (`wheels.eigen_wielen`: een vaste score voor zijn eigen wielen)."""
+    build = build_from_owner_specs(specs, label=label)
+    own_wheels = ((config or {}).get("wheels") or {}).get("eigen_wielen")
+    if own_wheels is not None:
+        build = replace(build, wheel_score=float(own_wheels))
+    return build
+
+
+# Wat fill_unknown() overneemt, per groep: wat samen hoort (een onbekende
+# groepset heeft ook geen bekend "elektronisch") gaat samen.
+_FRAME_FIELDS = ("frame_material", "frame_carbon_high_mod")
+
+
+def fill_unknown(build: Build, like: Build) -> Build:
+    """Wat de advertentie niet zegt, gelijk aan `like` (de eigen fiets): de
+    regel "onbekend = gelijk aan mijn fiets" (`upgrade.onbekend` = "gelijk").
+    Dan scoort een onbekend onderdeel precies als dat van de eigen fiets en
+    telt het in de vergelijking niet mee, in plaats van een vast neutraal
+    getal dat bij deze eigen fiets bijna altijd lager uitvalt (een onbekende
+    groepset 30 tegen Ultegra 80). Elektronisch en de extra's blijven zoals
+    de advertentie ze heeft: daar is "niet genoemd" meestal "niet"."""
+    changes: dict = {}
+    assumed: list[str] = []
+    if build.frame_material is None and like.frame_material is not None:
+        changes.update({f: getattr(like, f) for f in _FRAME_FIELDS})
+        assumed.append("frame_material")
+    for name in ("frame_class", "model_year", "groupset_tier", "speeds", "brake_type"):
+        if getattr(build, name) is None and getattr(like, name) is not None:
+            changes[name] = getattr(like, name)
+            assumed.append(name)
+    if "groupset_tier" in assumed:
+        changes["electronic"] = like.electronic
+    if build.wheel_material is None and not build.wheel_branded and build.wheel_score is None and (
+            like.wheel_material is not None or like.wheel_score is not None):
+        changes.update(wheel_material=like.wheel_material, wheel_branded=like.wheel_branded,
+                       wheel_score=like.wheel_score)
+        assumed.append("wheels")
+    if not changes:
+        return build
+    return replace(build, assumed=tuple(build.assumed) + tuple(assumed), **changes)
+
+
+AS_OWN = " — onbekend, gelijk aan jouw fiets"
+
+
 # --- De dimensies (§7) ------------------------------------------------------
 
 
@@ -249,14 +305,16 @@ def score_frame(build: Build, config: dict, *, as_of_year: Optional[int] = None)
     material_scores = cfg["material_score"]
     if material_key and material_key in material_scores:
         base = material_scores[material_key]
-        reasons.append(f"materiaal {build.frame_material} ({base:.0f})")
+        reasons.append(f"materiaal {build.frame_material} ({base:.0f})"
+                       + (AS_OWN if "frame_material" in build.assumed else ""))
     else:
         base = cfg["material_score_unknown"]
         reasons.append(f"materiaal onbekend, neutrale aanname ({base:.0f})")
 
     if build.frame_class and build.frame_class in cfg["tier_multiplier"]:
         multiplier = cfg["tier_multiplier"][build.frame_class]
-        reasons.append(f"frameklasse {build.frame_class} (×{multiplier:.2f})")
+        reasons.append(f"frameklasse {build.frame_class} (×{multiplier:.2f})"
+                       + (AS_OWN if "frame_class" in build.assumed else ""))
     else:
         multiplier = cfg["tier_multiplier_unknown"]
         reasons.append(f"frameklasse onbekend, neutraal (×{multiplier:.2f})")
@@ -265,7 +323,8 @@ def score_frame(build: Build, config: dict, *, as_of_year: Optional[int] = None)
     if build.model_year is not None:
         age = max(0, year - build.model_year)
         decay = min(age * cfg["age_decay_per_year"], cfg["age_decay_max"])
-        reasons.append(f"bouwjaar {build.model_year}, leeftijdsverval -{decay * 100:.0f}%")
+        reasons.append(f"bouwjaar {build.model_year}, leeftijdsverval -{decay * 100:.0f}%"
+                       + (AS_OWN if "model_year" in build.assumed else ""))
     else:
         decay = 0.0
         reasons.append("bouwjaar onbekend, geen verval toegepast")
@@ -274,7 +333,7 @@ def score_frame(build: Build, config: dict, *, as_of_year: Optional[int] = None)
     return DimensionScore(score, tuple(reasons))
 
 
-def score_drivetrain(build: Build, config: dict) -> DimensionScore:
+def score_drivetrain(build: Build, config: dict, *, as_of_year: Optional[int] = None) -> DimensionScore:
     reasons: list[str] = []
     cfg = config["drivetrain"]
 
@@ -282,7 +341,8 @@ def score_drivetrain(build: Build, config: dict) -> DimensionScore:
     tier_key = str(build.groupset_tier) if build.groupset_tier is not None else None
     if tier_key and tier_key in tier_scores:
         score = float(tier_scores[tier_key])
-        reasons.append(f"groepsettier {build.groupset_tier} ({score:.0f})")
+        reasons.append(f"groepsettier {build.groupset_tier} ({score:.0f})"
+                       + (AS_OWN if "groupset_tier" in build.assumed else ""))
     else:
         score = float(cfg["tier_score_unknown"])
         reasons.append(f"groepset niet herkend, neutrale aanname ({score:.0f})")
@@ -296,6 +356,18 @@ def score_drivetrain(build: Build, config: dict) -> DimensionScore:
         score += bonus
         reasons.append(f"{build.speeds}-speed (+{bonus:.0f})")
 
+    # Leeftijd ook op de aandrijving (standaard uit, 0): dezelfde naam
+    # (Ultegra) is in 2010 een 10-speed en in 2022 een 12-speed, en het jaar
+    # is wat de advertentie daarover meestal wél zegt. Zonder dit wint een
+    # oude Dura-Ace van elke nieuwe 105.
+    rate = cfg.get("age_decay_per_year", 0) or 0
+    if rate and build.model_year is not None:
+        age = max(0, (as_of_year or date.today().year) - build.model_year)
+        decay = min(age * rate, cfg.get("age_decay_max", 0.30))
+        if decay:
+            score *= 1 - decay
+            reasons.append(f"bouwjaar {build.model_year}, -{decay * 100:.0f}% op de aandrijving")
+
     return DimensionScore(_clip(score), tuple(reasons))
 
 
@@ -303,7 +375,7 @@ def score_brakes(build: Build, config: dict) -> DimensionScore:
     cfg = config["brakes"]
     if build.brake_type and build.brake_type in cfg["score"]:
         score = float(cfg["score"][build.brake_type])
-        reason = f"{build.brake_type} ({score:.0f})"
+        reason = f"{build.brake_type} ({score:.0f})" + (AS_OWN if "brake_type" in build.assumed else "")
     else:
         score = float(cfg["score_unknown"])
         reason = f"remtype onbekend, neutrale aanname ({score:.0f})"
@@ -312,6 +384,10 @@ def score_brakes(build: Build, config: dict) -> DimensionScore:
 
 def score_wheels(build: Build, config: dict) -> DimensionScore:
     cfg = config["wheels"]
+    suffix = AS_OWN if "wheels" in build.assumed else ""
+    if build.wheel_score is not None:
+        score = float(build.wheel_score)
+        return DimensionScore(_clip(score), (f"jouw eigen wielen, zelf ingesteld ({score:.0f}){suffix}",))
     if build.wheel_material == "aluminium":
         score = float(cfg["aluminium"])
         reason = f"aluminium wielen ({score:.0f})"
@@ -333,7 +409,7 @@ def score_wheels(build: Build, config: dict) -> DimensionScore:
     else:
         score = float(cfg["score_unknown"])
         reason = f"wieltype onbekend, neutrale aanname ({score:.0f})"
-    return DimensionScore(_clip(score), (reason,))
+    return DimensionScore(_clip(score), (reason + suffix,))
 
 
 def score_extras(build: Build, config: dict, *, owner_already_has: frozenset = frozenset()) -> DimensionScore:
@@ -395,7 +471,7 @@ def score_build(
     de herkomst voor deze functie niets uit."""
     dimensions = {
         "frame": score_frame(build, config, as_of_year=as_of_year),
-        "drivetrain": score_drivetrain(build, config),
+        "drivetrain": score_drivetrain(build, config, as_of_year=as_of_year),
         "brakes": score_brakes(build, config),
         "wheels": score_wheels(build, config),
         "extras": score_extras(build, config, owner_already_has=owner_already_has),
@@ -457,7 +533,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     config = load_config(args.config)
-    build = build_from_owner_specs(bike.specs, label=bike.label)
+    build = owner_build(bike.specs, label=bike.label, config=config)
     quality = score_build(build, config)
     print(format_quality_score(quality, label=bike.label))
     return 0

@@ -421,15 +421,20 @@ def _verdicts(base: Base, listings: list, years: dict) -> dict:
         return {}
     result = up.find_upgrades(
         listings, baseline=owner.quality.total, config=owner.config, budgets=owner.budgets,
-        target_size_cm=owner.target_size_cm,
-        owner_wheels=(owner.build.wheel_material, owner.build.wheel_branded),
-        owner_already_has=owner.owner_has, years=years)
+        target_size_cm=owner.target_size_cm, owner_wheels=up.owner_wheels(owner.build),
+        owner_already_has=owner.owner_has, years=years, owner_build=owner.build)
     verdicts = {}
     for c in result.candidates:
-        verdicts[c.listing.item_id] = (
-            True, c.gain,
-            f"+{c.gain:.0f} punten ({c.quality.total:.0f} tegen {owner.quality.total:.0f}), "
-            f"€{c.effective.amount:.0f} binnen {c.budget.route}budget €{c.budget.amount:.0f}")
+        why = (f"+{c.gain:.0f} punten ({c.quality.total:.0f} tegen {owner.quality.total:.0f}), "
+               f"€{c.effective.amount:.0f} binnen {c.budget.route}budget €{c.budget.amount:.0f}")
+        if up.needs_year(result.scored[c.listing.item_id], owner.config):
+            # Zonder bouwjaar rekent de score de fiets als nieuw: een oude
+            # fiets met goede onderdelen leek dan een upgrade (de eigenaar,
+            # 30-09-2026: "upgrade-oordeel raar"). Bij "onbekend = gelijk
+            # aan mijn fiets" niet: dan telt het jaar van de eigen fiets.
+            verdicts[c.listing.item_id] = (False, c.gain, up.unknown_year_note(why))
+        else:
+            verdicts[c.listing.item_id] = (True, c.gain, why)
     for r in result.rejected:
         verdicts[r.listing.item_id] = (False, None, r.reason)
     return verdicts
@@ -446,11 +451,6 @@ def _make_row(base: Base, l: mp.Listing, ident: bi.Identity, new: bool, verdict:
     price = up.effective_price(l, base.factor).amount
     ratio = est.resale / price if est.resale is not None and price else None
     ok, gain, why = verdict or (False, None, base.owner_problem)
-    if ok and ident.year is None:
-        # Zonder bouwjaar rekent de score de fiets als nieuw (geen
-        # leeftijdsverval): een oude fiets met goede onderdelen leek dan
-        # een upgrade (de eigenaar, 30-09-2026: "upgrade-oordeel raar").
-        ok, why = False, f"bouwjaar onbekend — als hij nieuw zou zijn {why}; vraag het jaar na"
     name = base.names.get(ident.exact, (ident.name or "", ""))[0] if ident.exact else ""
     return Row(
         listing=l, frame=mp.frame_height_bounds(l.frame_height),
@@ -527,6 +527,29 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
     verdicts = _verdicts(base, listings, _own_years(idents))
     for l in listings:
         base.rows.append(_make_row(base, l, idents[l.item_id], l.item_id in new_ids, verdicts.get(l.item_id)))
+    return base
+
+
+def rescore(base: Base, db_path, intake_path, comps: Optional[list] = None) -> Base:
+    """Na een nieuwe regel op /upgrade (upgrade_test.py): alleen het
+    upgradeoordeel opnieuw, met de eigen fiets onder die regel. Flip,
+    waardescore en vergelijking hangen niet van de regel af; alles opnieuw
+    zou seconden kosten."""
+    import report
+
+    owner, problem = report.load_owner_context(str(intake_path), str(db_path), comps=comps)
+    with base.lock:
+        if owner is None or owner.budgets is None or owner.target_size_cm is None:
+            base.owner, base.baseline = None, None
+            base.owner_problem = problem or (owner.valuation_problem if owner else "") or "geen eigen fiets"
+        else:
+            base.owner, base.owner_problem = owner, ""
+            base.baseline, base.target_cm = owner.quality.total, owner.target_size_cm
+        idents = {r.listing.item_id: r.identity for r in base.rows if r.identity is not None}
+        verdicts = _verdicts(base, [r.listing for r in base.rows], _own_years(idents))
+        for r in base.rows:
+            r.upgrade_ok, r.upgrade_gain, r.upgrade_why = (
+                verdicts.get(r.listing.item_id) or (False, None, base.owner_problem))
     return base
 
 
