@@ -697,6 +697,28 @@ class YearLookupTest(Case):
         self.assertEqual(rb.lookup_years(self.db, 20, session=session, log=lines.append), 0)
         self.assertEqual(len(session.requested), 1)
 
+    def test_the_kenmerken_are_kept_like_a_round_does(self):
+        # Na het opzoeken haalt geen ronde de pagina nog op (details_fetched_at):
+        # framehoogte, materiaal en rem moeten dus nu bewaard worden.
+        conn = db.connect(self.db)
+        conn.execute("UPDATE listing SET frame_height = '' WHERE item_id = 'c'")
+        conn.commit()
+        conn.close()
+        page = self.PAGE.replace("</body>", '<div class="Attributes-module-label">Framehoogte</div>'
+                                            '<div class="Attributes-module-value">54 tot 57 cm</div>'
+                                            '<div class="Attributes-module-label">Rem</div>'
+                                            '<div class="Attributes-module-value">Velgrem</div></body>')
+        rb.lookup_years(self.db, 20, session=self.session({BIKE_URL.format("c"): page}), log=lambda _: None)
+        conn = db.connect(self.db)
+        try:
+            height = conn.execute("SELECT frame_height FROM listing WHERE item_id = 'c'").fetchone()[0]
+            specs = dict(conn.execute("SELECT key, value FROM spec WHERE listing_id = 'c' AND source = ?",
+                                      (db.SITE_SPEC_SOURCE,)).fetchall())
+        finally:
+            conn.close()
+        self.assertEqual(height, "54 tot 57 cm")
+        self.assertEqual(specs.get("brake_type"), "velrem")
+
     def test_gone_forbidden_and_a_changed_page(self):
         from helpers import FakeResponse
         lines = []

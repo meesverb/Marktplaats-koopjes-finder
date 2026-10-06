@@ -406,6 +406,8 @@ def _evenly(group: list, n: int) -> list:
     """n fietsen gelijkmatig over de prijzen van `group`, goedkoopste tot
     duurste: de spreiding blijft te zien, in plaats van alleen de onderkant."""
     ordered = sorted(group, key=lambda c: (c.price, c.item_id))
+    if n <= 0:
+        return []
     if n >= len(ordered):
         return ordered
     if n == 1:
@@ -415,22 +417,35 @@ def _evenly(group: list, n: int) -> list:
 
 def pick_rows(comps: list, cap: int) -> list:
     """Hooguit `cap` rijen voor de CSV. Eerst de snel verkochte van de
-    schatting (daar rust hij op), dan de andere van de schatting, dan de rest
-    van het model en de familie; past een groep niet meer helemaal, dan een
-    gelijkmatige greep over zijn prijzen. Alleen de goedkoopste 300 gaf een
-    scheef beeld: de duurdere snel verkochte waar de schatting op rustte,
-    vielen eruit (review, 06-10-2026)."""
+    schatting (daar rust hij op); de rest verdeeld over de andere van de
+    schatting, de rest van het model en de familie, naar verhouding en elke
+    groep minstens één als er plek is, per groep gelijkmatig over de prijzen.
+    Alleen de goedkoopste 300 gaf een scheef beeld: de duurdere snel verkochte
+    waar de schatting op rustte, vielen eruit (review, 06-10-2026)."""
     if len(comps) <= cap:
         return comps
-    groups = ([c for c in comps if c.used and c.fast], [c for c in comps if c.used and not c.fast],
-              [c for c in comps if not c.used and c.relation == "model"],
-              [c for c in comps if not c.used and c.relation != "model"])
-    chosen = []
-    for group in groups:
-        room = cap - len(chosen)
-        if room <= 0:
-            break
-        chosen += group if len(group) <= room else _evenly(group, room)
+    fast = [c for c in comps if c.used and c.fast]
+    rest = [g for g in ([c for c in comps if c.used and not c.fast],
+                        [c for c in comps if not c.used and c.relation == "model"],
+                        [c for c in comps if not c.used and c.relation != "model"]) if g]
+    chosen = _evenly(fast, cap)
+    left = cap - len(chosen)
+    if left > 0 and rest:
+        total = sum(len(g) for g in rest)
+        share = [min(len(g), max(1, left * len(g) // total)) for g in rest]
+        # Minstens één per groep kan te veel zijn: eraf bij de groep die naar
+        # verhouding het meest kreeg; wat de afronding liet liggen, naar de
+        # groep met de meeste over.
+        while sum(share) > left:
+            i = max(range(len(rest)), key=lambda i: share[i] / len(rest[i]))
+            share[i] -= 1
+        while sum(share) < left:
+            room = [i for i in range(len(rest)) if share[i] < len(rest[i])]
+            if not room:
+                break
+            share[max(room, key=lambda i: len(rest[i]) - share[i])] += 1
+        for group, n in zip(rest, share):
+            chosen += _evenly(group, n)
     keep = {c.item_id for c in chosen}
     return [c for c in comps if c.item_id in keep]
 
@@ -787,8 +802,8 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
                 + ("die van de schatting (*in_schatting* = ja) en daarnaast " if used
                    else "geen ervan telde voor een schatting (te weinig), hier ")
                 + f"de rest van hetzelfde model en dezelfde modelfamilie (*relatie*). {len(comps)} fietsen"
-                + (f"; in de CSV {len(shown)}: eerst alle snel verkochte van de schatting, dan per groep een "
-                   "gelijkmatige greep over de prijzen (de samenvatting hieronder telt ze alle)"
+                + (f"; in de CSV {len(shown)}: eerst alle snel verkochte van de schatting, dan van elke groep "
+                   "een deel naar verhouding, gelijkmatig over de prijzen (de samenvatting hieronder telt ze alle)"
                    if len(shown) < len(comps) else "") + ".", "",
                 comps_summary(comps), "", fenced(comps_csv(shown, db_path), "csv"), ""]
     return "\n".join(out).rstrip() + "\n"

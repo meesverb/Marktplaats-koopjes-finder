@@ -138,9 +138,13 @@ class FromTheDatabaseTest(Case):
     def test_at_most_max_comps_in_the_csv_spread_over_the_prices(self):
         with mock.patch.object(ds, "MAX_COMPS", 2):
             text = ds.build(self.base(), self.db, "c", self.intake)
-        # Niet de twee goedkoopste: de goedkoopste en de duurste van de schatting.
-        self.assertEqual([r["id"] for r in csv_rows(text)], ["a0", "a4"])
+        # Niet de twee goedkoopste: een uit het midden van de schatting, en
+        # de familie valt er niet helemaal uit.
+        self.assertEqual([r["id"] for r in csv_rows(text)], ["a2", "f1"])
         self.assertIn("in de CSV 2: eerst alle snel verkochte van de schatting", text)
+        with mock.patch.object(ds, "MAX_COMPS", 3):
+            text = ds.build(self.base(), self.db, "c", self.intake)
+        self.assertEqual([r["id"] for r in csv_rows(text)], ["a0", "a4", "f1"])  # de randen van de prijzen
         self.assertIn("n=5, min €500", text)  # de samenvatting telt ze alle
 
     def test_over_the_cap_the_fast_sold_bikes_the_estimate_rests_on_stay(self):
@@ -267,7 +271,8 @@ class FetchTest(Case):
         self.assertIn("| Verkoper | particulier, op Marktplaats sinds 3 jaar |", text)
         self.assertIn("| Verzenden | alleen ophalen |", text)
         self.assertIn("„Moet nu weg”", text)
-        self.assertIn("(sinds 2026-09-20, volgens de advertentiepagina)", text)
+        since = datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc).astimezone()  # op de eigen klok
+        self.assertIn(f"(sinds {since:%Y-%m-%d}, volgens de advertentiepagina)", text)
         self.assertIn("Prijsverloop: €400", text)
         self.assertIn("- Vraagprijs €380 tegen de schatting:", text)
         self.assertNotIn("Jan Verkoper", text)  # de naam van de verkoper heeft Claude niet nodig
@@ -313,7 +318,8 @@ class FetchTest(Case):
                 "bids": [{"id": 1, "value": 33000, "date": "2026-10-04T09:53:05Z", "user": {"nickname": "Piet B"}}]}
         checked, problem, _ = self.fetch("c", listing_page("c", 40000, "MIN_BID", bidsInfo=bids))
         text = ds.build(self.base(), self.db, "c", self.intake, checked, problem)
-        self.assertIn("| Biedingen op de pagina | €330 op 2026-10-04 |", text)
+        bid_day = datetime(2026, 10, 4, 9, 53, 5, tzinfo=timezone.utc).astimezone()
+        self.assertIn(f"| Biedingen op de pagina | €330 op {bid_day:%Y-%m-%d} |", text)
         self.assertIn("1 bieding, hoogste €330, minimumbod €300", text)
         self.assertNotIn("Piet B", text)
         # De vraagprijs blijft de prijs: het minimumbod overschrijft hem niet (CLAUDE.md).

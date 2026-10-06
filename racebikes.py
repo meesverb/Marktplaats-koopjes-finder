@@ -2095,8 +2095,11 @@ def lookup_years(db_path, budget: int, session=None, log=print) -> int:
                         log(f"  {t.item_id}: de omschrijving staat niet waar hij stond — Marktplaats heeft "
                             "waarschijnlijk zijn paginastructuur gewijzigd; gestopt")
                         break
-                    text, _ = parsed
+                    text, attributes = parsed
                     db.save_listing_details(conn, {t.item_id: text}, now)
+                    # De pagina telt nu als opgehaald en geen ronde haalt hem
+                    # nog eens op: wat een ronde eruit bewaart, dus nu.
+                    rc.save_page_specs(conn, t.item_id, attributes)
                     try:
                         stats = mp.page_stats(mp.listing_page_data(resp.text))
                     except mp.ListingPageError:

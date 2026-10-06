@@ -1355,8 +1355,10 @@ note and bids, the part prices from your own flips (`/flips`, kind
 (spread, fast sold, still for sale, per year; over all of them) and a CSV
 with every bike of the estimate's step plus the rest of the same model and
 model family (all years, all materials; `in_schatting`, `relatie`), at most
-300: when there are more, first every fast sale of the estimate, then per
-group an even spread over the prices (not just the cheapest), each with
+300: when there are more, first every fast sale of the estimate, then the
+rest shared over the groups in proportion (each at least one where there is
+room), each group spread evenly over its prices (not just the cheapest),
+each with
 price, year, material, groupset, speeds, brakes, size, condition, first and
 last seen, gone, days online, reserved, sold fast and link. It computes
 nothing new; it only puts more side by side.
@@ -1447,7 +1449,10 @@ at least 15% below the estimate of their step, or below the median on the
 with the usual 1,5 s between requests, stopping at a 403. The full
 description is stored (the same column `--detail-lookup` fills), and
 `/racefietsen` and the upgrade verdict read the year from it after the next
-round. The views and saves on the page are stored too (see *Views and
+round. So is what a round keeps from a listing page: the frame height from
+the *Kenmerken* when the search results had none, and material and brakes
+where they said nothing — a fetched page is never fetched again, so without
+that a bike without a size in the search results stayed "maat onbekend". The views and saves on the page are stored too (see *Views and
 saves*). By hand: `python racebikes.py plan 20` shows which bikes it would
 be, `python racebikes.py jaar 20` fetches them (at most 20).
 
