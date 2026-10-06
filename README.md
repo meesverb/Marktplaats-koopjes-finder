@@ -1324,17 +1324,26 @@ good deal (as a flip and as an upgrade), what needs replacing and roughly
 what that costs (with sources, no made-up prices), an analysis of the
 comparables, and what to ask the seller. Like controleer it first fetches
 the listing page — one request per click, the same rules (`recheck.py`) —
-and stores what controleer stores, plus the full description (as the year
-lookup does, `details_fetched_at`). The page also gives every photo (the
-search results give three; here the largest size the page lists), the
-seller's *Kenmerken*, private seller or not and how long on Marktplaats,
-whether shipping is possible, and the bids with their dates; those go into
-the dossier only, not into the database. The seller's and bidders' names
-don't go in at all. If fetching fails (no connection, gone, page structure
+and stores what controleer stores, plus what a round stores when it fetches
+a listing page: the full description (`details_fetched_at`, as the year
+lookup does), the frame height from the *Kenmerken* when the search results
+had none, and material and brakes from the *Kenmerken* where the search
+results said nothing (`spec`, source `marktplaats`) — without those a fetched
+page would never be fetched again by a round, and a bike without a size in
+the search results would stay "maat onbekend". So the estimate and upgrade
+verdict in the dossier (and on the card after it) already use them. The
+page also gives every photo (the search results give three; here the
+largest size the page lists), the rest of the *Kenmerken*, private seller or
+not and how long on Marktplaats, whether shipping is possible, and the bids
+with their dates; those go into the dossier only, not into the database.
+The seller's and bidders' names don't go in at all. If fetching fails (no connection, gone, page structure
 changed) the dossier still comes, from the database, and says so on top.
 
-What it holds: the listing (price, bids, reserved, place and distance,
-condition, size, days online, price history, views and saves), the
+What it holds: the listing (price with what kind of price it is, the asking
+price only where it is certain — from the page just fetched, or a price
+without bidding; a minimum bid or running bid is never called an asking
+price — bids, reserved, place and distance, condition, size, days online,
+price history, views and saves; times on your own clock), the
 *Kenmerken* and what the finder read from the text, the description, the
 photo links, which bike it is (model and where that came from, year,
 material, groupset, brakes), the estimate exactly as on the card (resale,
@@ -1343,9 +1352,11 @@ upgrade verdict with the quality score per part next to your own bike, the
 table you filled in `mijn_fiets.md` with your size and budget, your mark,
 note and bids, the part prices from your own flips (`/flips`, kind
 *onderdeel*: what you paid or estimated), and the **comparables**: a summary
-(spread, fast sold, still for sale, per year) and a CSV with every bike of
-the estimate's step plus the rest of the same model and model family (all
-years, all materials; `in_schatting`, `relatie`), at most 300, each with
+(spread, fast sold, still for sale, per year; over all of them) and a CSV
+with every bike of the estimate's step plus the rest of the same model and
+model family (all years, all materials; `in_schatting`, `relatie`), at most
+300: when there are more, first every fast sale of the estimate, then per
+group an even spread over the prices (not just the cheapest), each with
 price, year, material, groupset, speeds, brakes, size, condition, first and
 last seen, gone, days online, reserved, sold fast and link. It computes
 nothing new; it only puts more side by side.

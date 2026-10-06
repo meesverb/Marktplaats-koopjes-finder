@@ -1548,7 +1548,11 @@ function copyDossier(message) {
 function closeDossier() { $('dossier').hidden = true; }
 $('dcopy').addEventListener('click', () => copyDossier(''));
 $('dclose').addEventListener('click', closeDossier);
-$('dossier').addEventListener('click', e => { if (e.target.id === 'dossier') closeDossier(); });
+// Alleen een klik die op de achtergrond begon sluit: een selectie in de tekst
+// die je buiten het venster loslaat, telt in Chrome ook als klik daar.
+let downOnBackdrop = false;
+$('dossier').addEventListener('mousedown', e => { downOnBackdrop = e.target.id === 'dossier'; });
+$('dossier').addEventListener('click', e => { if (e.target.id === 'dossier' && downOnBackdrop) closeDossier(); });
 function cmpHtml(comps) {
   return comps.map(c => `<a href="${esc(c[2])}" target="_blank" rel="noopener">${esc(c[0])}</a> — ${euro(c[1])}${c[3] ? ' · ' + c[3] : ''}${c[5] ? ' · <span class="fast">snel verkocht</span> ' + esc(c[4]) : c[4] ? ' · verdwenen ' + esc(c[4]) : ''}`).join('<br>');
 }

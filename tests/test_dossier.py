@@ -135,11 +135,40 @@ class FromTheDatabaseTest(Case):
         self.assertEqual([r["id"] for r in rows[:5]], ["a0", "a1", "a2", "a3", "a4"])
         self.assertIn("Per bouwjaar", text)
 
-    def test_at_most_max_comps_in_the_csv(self):
+    def test_at_most_max_comps_in_the_csv_spread_over_the_prices(self):
         with mock.patch.object(ds, "MAX_COMPS", 2):
             text = ds.build(self.base(), self.db, "c", self.intake)
-        self.assertEqual(len(csv_rows(text)), 2)
-        self.assertIn("hier de eerste 2", text)
+        # Niet de twee goedkoopste: de goedkoopste en de duurste van de schatting.
+        self.assertEqual([r["id"] for r in csv_rows(text)], ["a0", "a4"])
+        self.assertIn("in de CSV 2: eerst alle snel verkochte van de schatting", text)
+        self.assertIn("n=5, min €500", text)  # de samenvatting telt ze alle
+
+    def test_over_the_cap_the_fast_sold_bikes_the_estimate_rests_on_stay(self):
+        conn = db.connect(self.db)
+        # De drie duurste snel verkocht (gereserveerd en weg): de schatting rust op hen.
+        more = [bike(f"s{i}", 800.0 + i * 10) for i in range(3)] + [bike(f"m{i}", 450.0 + i) for i in range(6)]
+        db.sync_listings(conn, "racefiets", more, self.now.isoformat())
+        conn.execute("UPDATE listing SET reserved_at = ?, disappeared_at = ? WHERE item_id LIKE 's%'",
+                     (self.now.isoformat(), self.now.isoformat()))
+        conn.commit()
+        conn.close()
+        with mock.patch.object(ds, "MAX_COMPS", 4):
+            text = ds.build(self.base(), self.db, "c", self.intake)
+        rows = csv_rows(text)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual({r["id"] for r in rows if r["snel_verkocht"] == "ja"}, {"s0", "s1", "s2"})
+        self.assertIn("mediaan van de laatste vraagprijs van 3 snel verkochte", text)
+
+    def test_no_estimate_no_empty_year_table(self):
+        conn = db.connect(self.db)
+        two = [bike(f"t{i}", 300.0 + i, title="Cube Attain GTC 2015 racefiets") for i in range(3)]
+        db.sync_listings(conn, "racefiets", two, self.now.isoformat())
+        conn.close()
+        text = ds.build(self.base(), self.db, "t0", self.intake)
+        self.assertIn("**Geen schatting**", text)
+        self.assertNotIn("Per bouwjaar", text)
+        self.assertIn("geen ervan telde voor een schatting", text)
+        self.assertEqual({r["in_schatting"] for r in csv_rows(text)}, {"nee"})
 
     def test_a_bike_without_a_model_has_no_comparables(self):
         conn = db.connect(self.db)
@@ -202,6 +231,20 @@ class FromTheDatabaseTest(Case):
         self.assertIn("| Prijs | €480 (huidig bod, loopt nog op) |", text)
         self.assertIn("| Vraagprijs | €450 |", text)
 
+    def test_a_minimum_bid_is_not_called_an_asking_price(self):
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "racefiets", [bike("fb", None, price_type="FAST_BID", price_is_bid=True)],
+                         self.now.isoformat())
+        conn.execute("UPDATE listing SET price_eur = 250, bid_minimum = 250, bid_count = 0, bids_checked_at = ? "
+                     "WHERE item_id = 'fb'", (self.now.isoformat(),))
+        conn.commit()
+        conn.close()
+        text = ds.build(self.base(), self.db, "fb", self.intake)
+        self.assertIn("| Prijs | €250 (minimumbod) |", text)
+        self.assertIn("| Vraagprijs | geen: alleen bieden |", text)
+        self.assertIn("- Minimumbod €250 tegen de schatting:", text)
+        self.assertNotIn("- Vraagprijs €", text)
+
 
 class FetchTest(Case):
     def test_fetch_like_controleer_and_keep_the_full_description(self):
@@ -226,15 +269,44 @@ class FetchTest(Case):
         self.assertIn("„Moet nu weg”", text)
         self.assertIn("(sinds 2026-09-20, volgens de advertentiepagina)", text)
         self.assertIn("Prijsverloop: €400", text)
+        self.assertIn("- Vraagprijs €380 tegen de schatting:", text)
         self.assertNotIn("Jan Verkoper", text)  # de naam van de verkoper heeft Claude niet nodig
+        # Materiaal en rem uit de Kenmerken bewaard, zoals een ronde dat doet.
+        conn = sqlite3.connect(self.db)
+        try:
+            specs = dict(conn.execute("SELECT key, value FROM spec WHERE listing_id = 'c' AND source = ?",
+                                      (db.SITE_SPEC_SOURCE,)).fetchall())
+        finally:
+            conn.close()
+        self.assertEqual(specs.get("frame_material"), "carbon")
+        self.assertEqual(row["frame_height"], "56 cm")  # die uit de zoekresultaten blijft
 
     def test_the_frame_size_from_the_page_when_the_search_had_none(self):
         conn = db.connect(self.db)
         db.sync_listings(conn, "racefiets", [bike("z", 450.0, frame_height="")], self.now.isoformat())
         conn.close()
         checked, problem, _ = self.fetch("z", listing_page("z", 45000))
+        # Bewaard, zodat ook de kaart en de upgrade de maat kennen: de ronde
+        # haalt een opgehaalde pagina niet nog eens op.
+        self.assertEqual(self.row("z")["frame_height"], "54 tot 57 cm")
         text = ds.build(self.base(), self.db, "z", self.intake, checked, problem)
-        self.assertIn("| Framemaat | 54 tot 57 cm (Kenmerken) |", text)
+        self.assertIn("| Framemaat | 54 tot 57 cm |", text)
+
+    def test_a_bid_above_the_asking_price_on_the_page(self):
+        bids = {"isBiddingEnabled": True, "currentMinimumBid": 30000,
+                "bids": [{"id": 1, "value": 45000, "date": "2026-10-04T09:53:05Z"}]}
+        checked, problem, _ = self.fetch("c", listing_page("c", 40000, "MIN_BID", bidsInfo=bids))
+        self.assertEqual(self.row("c")["price_eur"], 450.0)  # controleer schrijft het bod als prijs
+        text = ds.build(self.base(), self.db, "c", self.intake, checked, problem)
+        self.assertIn("| Prijs | €450 (huidig bod, loopt nog op) |", text)
+        self.assertIn("| Vraagprijs | €400 |", text)  # van de pagina
+        self.assertIn("- Vraagprijs €400 tegen de schatting:", text)
+        self.assertIn("- Huidig bod, loopt nog op €450 tegen de schatting:", text)
+        self.assertIn("Prijsverloop (bij een biedadvertentie kan een stap het hoogste bod zijn): €400", text)
+        # Later zonder ophalen: de database weet de vraagprijs niet zeker meer, en zegt dat.
+        text = ds.build(self.base(), self.db, "c", self.intake)
+        self.assertIn("| Vraagprijs | niet apart bekend (de prijs hierboven is een bod) |", text)
+        self.assertNotIn("| Vraagprijs | €450 |", text)
 
     def test_bids_without_who_bid(self):
         bids = {"isBiddingEnabled": True, "currentMinimumBid": 30000,
@@ -261,7 +333,7 @@ class FetchTest(Case):
         self.assertIn("niet meer op Marktplaats", message)
         text = ds.build(self.base(), self.db, "c", self.intake, checked, problem)
         self.assertIn("de advertentie staat niet meer op Marktplaats", text)
-        self.assertIn("verdwenen", text)
+        self.assertRegex(text, r"\| Online \| (\d+ dagen, )?verdwenen \d{4}-\d{2}-\d{2} \|")
 
     def test_no_connection_gives_a_dossier_from_the_database(self):
         class Down:
@@ -279,9 +351,15 @@ class FetchTest(Case):
         self.assertIn("## Vergelijkingsfietsen", text)
 
     def test_controleer_itself_does_not_keep_the_description(self):
-        rc.recheck_listing(self.db, "c", session=FakeSession({BIKE_URL.format("c"): listing_page("c", 40000)}),
+        conn = db.connect(self.db)
+        db.sync_listings(conn, "racefiets", [bike("z", 450.0, frame_height="")], self.now.isoformat())
+        conn.close()
+        rc.recheck_listing(self.db, "z", session=FakeSession({BIKE_URL.format("z"): listing_page("z", 45000)}),
                            now=self.later)
-        self.assertIsNone(self.row("c")["full_description"])
+        row = self.row("z")
+        self.assertIsNone(row["full_description"])
+        self.assertIsNone(row["details_fetched_at"])
+        self.assertEqual(row["frame_height"], "")
 
 
 class HelpersTest(unittest.TestCase):
@@ -300,6 +378,17 @@ class HelpersTest(unittest.TestCase):
         block = ds.fenced("ketting ```nieuw``` en ````")
         self.assertTrue(block.startswith("`````text\n"))
         self.assertTrue(block.endswith("\n`````"))
+
+    def test_times_on_the_own_clock_like_the_dashboard(self):
+        utc = "2026-10-06T08:50:00+00:00"
+        local = datetime(2026, 10, 6, 8, 50, tzinfo=timezone.utc).astimezone()
+        self.assertEqual(ds.minute(utc), local.strftime("%Y-%m-%d %H:%M"))
+        self.assertEqual(ds.minute("2026-10-06T08:50:00Z"), local.strftime("%Y-%m-%d %H:%M"))
+        self.assertEqual(ds.day(utc), local.strftime("%Y-%m-%d"))
+        # Zonder tijdzone en een kale datum blijven zoals ze zijn.
+        self.assertEqual(ds.minute("2026-10-05T10:00:00"), "2026-10-05 10:00")
+        self.assertEqual(ds.day("2026-09-30"), "2026-09-30")
+        self.assertEqual(ds.minute(None), "")
 
     def test_table_cells(self):
         self.assertEqual(ds.cell("a | b\nc"), "a \\| b c")

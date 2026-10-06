@@ -12,11 +12,13 @@ bovenaan de vragen, zodat het in één keer te plakken is.
 
 Ophalen gaat als controleer (recheck.py): één verzoek per klik, nooit twee
 tegelijk, met de wachttijd ertussen, en dezelfde vastlegging (prijs,
-gereserveerd, biedingen). De pagina geeft meer dan de zoekresultaten: de
-volledige omschrijving (bewaard, zoals bij het opzoeken van bouwjaren), alle
-foto's in plaats van drie, de Kenmerken, of het een particulier is en of
-verzenden kan. Die laatste gaan alleen in het dossier, niet in de database.
-De naam van de verkoper en van de bieders niet: daar heeft Claude niets aan.
+gereserveerd, biedingen). De pagina geeft meer dan de zoekresultaten. Wat
+een ronde van een opgehaalde pagina bewaart, bewaart dit ook: de volledige
+omschrijving, en framehoogte, materiaal en rem uit de Kenmerken
+(recheck.save_page_specs()). Alle foto's in plaats van drie, de overige
+Kenmerken, of het een particulier is en of verzenden kan, gaan alleen in
+het dossier, niet in de database. De naam van de verkoper en van de
+bieders niet: daar heeft Claude niets aan.
 
 Het dossier rekent niets nieuws: schatting, trede, waardescore en
 upgradeoordeel zijn die van /racefietsen (racebikes.estimate(),
@@ -115,7 +117,7 @@ NOT_A_BIKE = "Die fiets staat niet in de database (alleen racefietsen hebben een
 class Stored:
     """Wat de database over de fiets zelf weet."""
     listing: mp.Listing
-    asking: Optional[float] = None  # de vraagprijs; listing.price_eur kan een bod erboven zijn
+    asking: Optional[float] = None  # de vraagprijs als die zeker is (asking_from_row()); anders None
     posted: str = ""
     first_seen: str = ""
     last_seen: str = ""
@@ -164,10 +166,28 @@ def load_stored(db_path, item_id: str) -> Optional[Stored]:
     finally:
         conn.close()
     listing = rb._listing(row, site, {item_id: tuple(place)} if place else {})
-    return Stored(listing, asking=row["price_eur"], posted=extra["posted_date"] or "", first_seen=row["first_seen"] or "",
+    return Stored(listing, asking=asking_from_row(row), posted=extra["posted_date"] or "", first_seen=row["first_seen"] or "",
                   last_seen=row["last_seen"] or "", disappeared_at=row["disappeared_at"] or "",
                   days_online=row["days_online"], reserved_at=row["reserved_at"] or "",
                   details_at=extra["details_fetched_at"] or "", prices=prices, stats=stats)
+
+
+def asking_from_row(row) -> Optional[float]:
+    """De vraagprijs uit de database, alleen als die zeker is. price_eur is
+    bij een biedadvertentie soms het minimumbod (FAST_BID) of het hoogste bod
+    (MIN_BID met een bod erboven, na controleer of het dossier), en een ronde
+    schrijft price_type niet altijd weg (gezien 06-10-2026: leeg bij bijna
+    alle rijen die eerst via seen_listings.json binnenkwamen). Zonder bieden
+    is de prijs de vraagprijs; bij MIN_BID alleen als hij niet het hoogste
+    bod is. Verder onbekend: liever geen vraagprijs dan een bod onder die naam."""
+    price = row["price_eur"]
+    if price is None:
+        return None
+    if not row["is_bid"]:
+        return price
+    if row["price_type"] == "MIN_BID" and (row["bid_high"] is None or price != row["bid_high"]):
+        return price
+    return None
 
 
 def _comp_rows(db_path, item_ids) -> dict:
@@ -216,12 +236,28 @@ def euro(amount: Optional[float]) -> str:
     return f"€{amount:,.0f}".replace(",", ".")
 
 
+def _local(value: Optional[str]) -> str:
+    """Een tijd op de eigen klok, zoals dashboard.local_time(): de database
+    bewaart UTC ("...+00:00"), de pagina "...Z". Zonder tijdzone (een eigen
+    bod, een datum) blijft hij zoals hij is."""
+    text = value or ""
+    if len(text) <= 10:
+        return text
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text[:16].replace("T", " ")
+    if moment.tzinfo is not None:
+        moment = moment.astimezone()
+    return moment.strftime("%Y-%m-%d %H:%M")
+
+
 def day(value: Optional[str]) -> str:
-    return (value or "")[:10]
+    return _local(value)[:10]
 
 
 def minute(value: Optional[str]) -> str:
-    return (value or "")[:16].replace("T", " ")
+    return _local(value)[:16]
 
 
 def cell(value) -> str:
@@ -366,6 +402,39 @@ def gather_comps(base: rb.Base, ident: bi.Identity, item_id: str) -> tuple[str, 
     return level, few, out
 
 
+def _evenly(group: list, n: int) -> list:
+    """n fietsen gelijkmatig over de prijzen van `group`, goedkoopste tot
+    duurste: de spreiding blijft te zien, in plaats van alleen de onderkant."""
+    ordered = sorted(group, key=lambda c: (c.price, c.item_id))
+    if n >= len(ordered):
+        return ordered
+    if n == 1:
+        return [ordered[len(ordered) // 2]]
+    return [ordered[round(i * (len(ordered) - 1) / (n - 1))] for i in range(n)]
+
+
+def pick_rows(comps: list, cap: int) -> list:
+    """Hooguit `cap` rijen voor de CSV. Eerst de snel verkochte van de
+    schatting (daar rust hij op), dan de andere van de schatting, dan de rest
+    van het model en de familie; past een groep niet meer helemaal, dan een
+    gelijkmatige greep over zijn prijzen. Alleen de goedkoopste 300 gaf een
+    scheef beeld: de duurdere snel verkochte waar de schatting op rustte,
+    vielen eruit (review, 06-10-2026)."""
+    if len(comps) <= cap:
+        return comps
+    groups = ([c for c in comps if c.used and c.fast], [c for c in comps if c.used and not c.fast],
+              [c for c in comps if not c.used and c.relation == "model"],
+              [c for c in comps if not c.used and c.relation != "model"])
+    chosen = []
+    for group in groups:
+        room = cap - len(chosen)
+        if room <= 0:
+            break
+        chosen += group if len(group) <= room else _evenly(group, room)
+    keep = {c.item_id for c in chosen}
+    return [c for c in comps if c.item_id in keep]
+
+
 def _spread(prices: list) -> str:
     if not prices:
         return "geen"
@@ -398,7 +467,7 @@ def comps_summary(comps: list) -> str:
     for c in comps:
         if c.used:
             by_year.setdefault(c.ident.year, []).append(c)
-    if len(by_year) > 1 or None not in by_year:
+    if by_year and (len(by_year) > 1 or None not in by_year):
         years = sorted(by_year, key=lambda y: (y is None, y or 0))
         out += "\n\nPer bouwjaar, alleen de fietsen van de schatting:\n\n" + table(
             [(y or "onbekend", len(by_year[y]), euro(statistics.median(c.price for c in by_year[y])),
@@ -497,6 +566,9 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
         owner, owner_problem, factor = base.owner, base.owner_problem, base.factor
         name = base.names.get(ident.exact, (ident.name or "", ""))[0] if ident.exact else ""
     page = checked.page if checked else None
+    asking = stored.asking
+    if checked and not checked.gone and checked.price_type != "FAST_BID":
+        asking = checked.asking
 
     out = [f"# Dossier: {l.title}", ""]
     status = [f"Gemaakt op {now.astimezone().strftime('%Y-%m-%d %H:%M')} met de koopjesfinder (racefietsen)."]
@@ -520,8 +592,12 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
     # De advertentie.
     rows = [("Titel", l.title), ("Link", l.url), ("Advertentie-id", item_id),
             ("Prijs", f"{euro(l.price_eur)} ({rb.price_kind(l)})")]
-    if stored.asking is not None and stored.asking != l.price_eur:
-        rows.append(("Vraagprijs", euro(stored.asking)))
+    if asking is not None and asking != l.price_eur:
+        rows.append(("Vraagprijs", euro(asking)))
+    elif asking is None and l.price_type == "FAST_BID":
+        rows.append(("Vraagprijs", "geen: alleen bieden"))
+    elif asking is None and l.price_is_bid and l.bid_count:
+        rows.append(("Vraagprijs", "niet apart bekend (de prijs hierboven is een bod)"))
     bids = _bid_line(l)
     if bids:
         rows.append(("Biedingen", bids))
@@ -532,9 +608,7 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
     dist = fresh.distances.get(item_id)
     place = l.city + (f", {dist.label} hemelsbreed" if dist else "")
     attributes = checked.attributes if checked and checked.attributes else {}
-    size = l.frame_height or (f"{attributes[mp.PAGE_FRAME_HEIGHT_LABEL]} (Kenmerken)"
-                              if attributes.get(mp.PAGE_FRAME_HEIGHT_LABEL) else "niet vermeld")
-    rows += [("Plaats", place), ("Staat", l.condition), ("Framemaat", size)]
+    rows += [("Plaats", place), ("Staat", l.condition), ("Framemaat", l.frame_height or "niet vermeld")]
     facts = page_facts(page)
     rows += facts
     if l.promotion and not any(what == "Extra's op Marktplaats" for what, _ in facts):
@@ -547,7 +621,10 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
 
     distinct = [p for i, p in enumerate(stored.prices) if i == 0 or p[1] != stored.prices[i - 1][1]]
     if len(distinct) > 1:
-        out += ["Prijsverloop: " + " → ".join(f"{euro(p)} ({day(at)})" for at, p in distinct), ""]
+        # Bij een biedadvertentie schrijven controleer en de biedopvraging het
+        # hoogste bod als prijs: een stap omhoog is dan geen nieuwe vraagprijs.
+        out += [("Prijsverloop (bij een biedadvertentie kan een stap het hoogste bod zijn)" if l.price_is_bid
+                 else "Prijsverloop") + ": " + " → ".join(f"{euro(p)} ({day(at)})" for at, p in distinct), ""]
     elif stored.prices:
         out += [f"Prijsverloop: sinds {day(stored.prices[0][0])} steeds {euro(stored.prices[0][1])}.", ""]
     if stored.stats:
@@ -558,9 +635,10 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
     # Kenmerken en wat de tekst zegt.
     out += ["## Kenmerken", ""]
     if attributes:
-        out += ["Zoals de verkoper ze op Marktplaats invulde. De schatting en het upgradeoordeel hieronder rekenen "
-                "zoals de kaart op /racefietsen: met wat de zoekresultaten en de tekst zeggen, niet met deze "
-                "Kenmerken. Spreken ze elkaar tegen, ga dan uit van de Kenmerken of vraag het na.", "",
+        out += ["Zoals de verkoper ze op Marktplaats invulde. Materiaal, rem en (als die ontbrak) de framehoogte "
+                "zijn net bewaard en tellen mee in de schatting en het upgradeoordeel hieronder, zoals wanneer een "
+                "ronde de pagina ophaalt; waar de zoekresultaten al iets zeiden, gaat dat voor. Spreken Kenmerken "
+                "en tekst elkaar tegen, vraag het dan na.", "",
                 table(list(attributes.items()), ("Kenmerk", "Waarde")), ""]
     elif l.site_specs:
         out += ["Uit de velden van Marktplaats (zoekresultaten): " + ", ".join(
@@ -615,8 +693,13 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
         lines.append(f"- **Geen schatting**: {est.basis}.")
     else:
         lines.append(f"- **Verwachte verkoopprijs: {euro(est.resale)}** — {est.basis}.")
-        if l.price_eur:
-            lines.append(f"- Vraagprijs tegen de schatting: {round((l.price_eur / est.resale - 1) * 100):+d}%.")
+        if asking:
+            lines.append(f"- Vraagprijs {euro(asking)} tegen de schatting: {round((asking / est.resale - 1) * 100):+d}%.")
+        if l.price_eur and l.price_eur != asking:
+            # Een minimumbod of lopend bod is geen vraagprijs (CLAUDE.md):
+            # het staat er met zijn eigen naam.
+            lines.append(f"- {rb.price_kind(l).capitalize()} {euro(l.price_eur)} tegen de schatting: "
+                         f"{round((l.price_eur / est.resale - 1) * 100):+d}%.")
         entry = up.entry_price(l)
         if entry.amount is not None:
             lines.append(f"- **Flip**: {euro(est.resale)} − {euro(entry.amount)} ({entry.basis}) = "
@@ -686,7 +769,7 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
     if parts:
         out += ["## Onderdeelprijzen uit mijn eigen flips",
                 "",
-                "Wat ik op mijn klussenlijsten (/flips) betaalde of schatte; echte prijzen uit mijn eigen aankopen.",
+                "Wat ik op mijn klussenlijsten (/flips) echt betaalde, of zelf schatte (dat staat erbij).",
                 "",
                 table([(p["title"], euro(p["price_eur"]) if p["price_eur"] is not None else f"{euro(p['est_eur'])} (geschat)",
                         p["shop"] or "", day(p["bought_at"] or p["updated_at"])) for p in parts],
@@ -698,11 +781,15 @@ def build(base: rb.Base, db_path, item_id: str, intake_path=None, checked: Optio
         out += ["Geen: " + (est.basis or "geen vergelijkbare fietsen") + ". Kies op /racefietsen het model "
                 "(knop ander model) en maak het dossier opnieuw.", ""]
     else:
-        shown = comps[:MAX_COMPS]
-        out += [f"Alle racefietsen van de laatste {rb.POOL_DAYS} dagen met een vraagprijs, ook verdwenen: die van "
-                f"de schatting (*in_schatting* = ja) en daarnaast de rest van hetzelfde model en dezelfde "
-                f"modelfamilie (*relatie*). {len(comps)} fietsen"
-                + (f", hier de eerste {MAX_COMPS}" if len(comps) > MAX_COMPS else "") + ".", "",
+        shown = pick_rows(comps, MAX_COMPS)
+        used = any(c.used for c in comps)
+        out += [f"Alle racefietsen van de laatste {rb.POOL_DAYS} dagen met een vraagprijs, ook verdwenen: "
+                + ("die van de schatting (*in_schatting* = ja) en daarnaast " if used
+                   else "geen ervan telde voor een schatting (te weinig), hier ")
+                + f"de rest van hetzelfde model en dezelfde modelfamilie (*relatie*). {len(comps)} fietsen"
+                + (f"; in de CSV {len(shown)}: eerst alle snel verkochte van de schatting, dan per groep een "
+                   "gelijkmatige greep over de prijzen (de samenvatting hieronder telt ze alle)"
+                   if len(shown) < len(comps) else "") + ".", "",
                 comps_summary(comps), "", fenced(comps_csv(shown, db_path), "csv"), ""]
     return "\n".join(out).rstrip() + "\n"
 

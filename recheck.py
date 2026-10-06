@@ -129,12 +129,31 @@ def _structure_error(detail: str) -> RecheckError:
                         "zijn paginastructuur gewijzigd. Er is niets opgeslagen.")
 
 
+def save_page_specs(conn, item_id: str, attributes: dict) -> None:
+    """Wat een ronde bewaart als hij de pagina ophaalt
+    (racefiets_jev.apply_listing_details()): de framehoogte als die leeg was,
+    en materiaal en rem uit de Kenmerken, waar de zoekresultaten voorgaan.
+    save_listing_details() zet de pagina op opgehaald, en dan haalt de ronde
+    hem nooit meer op: zonder dit bleef een fiets zonder maat in de
+    zoekresultaten voorgoed "maat onbekend" (review, 06-10-2026)."""
+    height = attributes.get(mp.PAGE_FRAME_HEIGHT_LABEL, "")
+    if height:
+        conn.execute("UPDATE listing SET frame_height = ? WHERE item_id = ? AND COALESCE(frame_height, '') = ''",
+                     (height, item_id))
+    specs = mp.page_specs(attributes)
+    if specs:
+        site = {r[0]: r[1] for r in conn.execute(
+            "SELECT key, value FROM spec WHERE listing_id = ? AND source = ?", (item_id, db.SITE_SPEC_SOURCE))}
+        db.sync_listing_specs(conn, {item_id: {**specs, **site}}, source=db.SITE_SPEC_SOURCE)
+    conn.commit()
+
+
 def recheck_listing(db_path, item_id: str, session=None, now: Optional[str] = None,
                     details: bool = False) -> Recheck:
     """Haal de advertentiepagina van `item_id` op en leg vast wat erop staat.
-    `details`: ook de volledige omschrijving bewaren (zoals het opzoeken van
-    bouwjaren, racebikes.lookup_years()) en de pagina zelf meegeven, voor
-    het dossier; hetzelfde ene verzoek. `session` en `now` zijn voor de tests."""
+    `details`: ook de volledige omschrijving en de framehoogte, het materiaal
+    en de rem uit de Kenmerken bewaren (zoals een ronde, save_page_specs()) en
+    de pagina zelf meegeven, voor het dossier; hetzelfde ene verzoek. `session` en `now` zijn voor de tests."""
     now = now or datetime.now(timezone.utc).isoformat(timespec="seconds")
     conn = db.connect(str(db_path))
     try:
@@ -200,6 +219,7 @@ def recheck_listing(db_path, item_id: str, session=None, now: Optional[str] = No
             if parsed is not None:
                 result.description, result.attributes = parsed
                 db.save_listing_details(conn, {item_id: result.description}, now)
+                save_page_specs(conn, item_id, result.attributes)
     finally:
         conn.close()
 
