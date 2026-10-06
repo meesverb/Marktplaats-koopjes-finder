@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -65,6 +65,13 @@ class Recheck:
     asking: Optional[float] = None  # de prijs op de pagina, vóór de biedingen
     bid_count: Optional[int] = None  # None: geen biedadvertentie
     bid_high: Optional[float] = None
+    # Alleen met details=True (de knop dossier, dossier.py): wat de pagina
+    # verder zegt. page: het listing-object uit window.__CONFIG__ (foto's,
+    # verkoper, verzenden); description None: de omschrijving stond niet waar
+    # hij stond.
+    page: Optional[dict] = None
+    description: Optional[str] = None
+    attributes: dict = field(default_factory=dict)  # de Kenmerken, {label: waarde}
 
     def summary(self) -> str:
         """Wat de controle vond, in één zin voor de melding bovenaan."""
@@ -122,9 +129,12 @@ def _structure_error(detail: str) -> RecheckError:
                         "zijn paginastructuur gewijzigd. Er is niets opgeslagen.")
 
 
-def recheck_listing(db_path, item_id: str, session=None, now: Optional[str] = None) -> Recheck:
+def recheck_listing(db_path, item_id: str, session=None, now: Optional[str] = None,
+                    details: bool = False) -> Recheck:
     """Haal de advertentiepagina van `item_id` op en leg vast wat erop staat.
-    `session` en `now` zijn voor de tests."""
+    `details`: ook de volledige omschrijving bewaren (zoals het opzoeken van
+    bouwjaren, racebikes.lookup_years()) en de pagina zelf meegeven, voor
+    het dossier; hetzelfde ene verzoek. `session` en `now` zijn voor de tests."""
     now = now or datetime.now(timezone.utc).isoformat(timespec="seconds")
     conn = db.connect(str(db_path))
     try:
@@ -184,6 +194,12 @@ def recheck_listing(db_path, item_id: str, session=None, now: Optional[str] = No
         if stats:
             listing.page_stats = {**stats, "source": "controleer"}
         db.record_listing_check(conn, listing, now)
+        if details:
+            result.page = page
+            parsed = mp.parse_listing_page(resp.text)
+            if parsed is not None:
+                result.description, result.attributes = parsed
+                db.save_listing_details(conn, {item_id: result.description}, now)
     finally:
         conn.close()
 

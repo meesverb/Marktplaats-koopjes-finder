@@ -1315,6 +1315,49 @@ verdicts side by side:
 Plus the **waardescore** (estimated value / price). Not the dealscore: that
 belongs to the report.
 
+#### Dossier for Claude — `dossier.py`
+
+The card shows part of what is known about a bike. The **dossier** button
+next to *controleer* (key **d**) gathers all of it as one Markdown text to
+paste into a conversation with Claude, with the questions on top: is it a
+good deal (as a flip and as an upgrade), what needs replacing and roughly
+what that costs (with sources, no made-up prices), an analysis of the
+comparables, and what to ask the seller. Like controleer it first fetches
+the listing page — one request per click, the same rules (`recheck.py`) —
+and stores what controleer stores, plus the full description (as the year
+lookup does, `details_fetched_at`). The page also gives every photo (the
+search results give three; here the largest size the page lists), the
+seller's *Kenmerken*, private seller or not and how long on Marktplaats,
+whether shipping is possible, and the bids with their dates; those go into
+the dossier only, not into the database. The seller's and bidders' names
+don't go in at all. If fetching fails (no connection, gone, page structure
+changed) the dossier still comes, from the database, and says so on top.
+
+What it holds: the listing (price, bids, reserved, place and distance,
+condition, size, days online, price history, views and saves), the
+*Kenmerken* and what the finder read from the text, the description, the
+photo links, which bike it is (model and where that came from, year,
+material, groupset, brakes), the estimate exactly as on the card (resale,
+step, median, fast sales, flip, waardescore, negotiation factor), the
+upgrade verdict with the quality score per part next to your own bike, the
+table you filled in `mijn_fiets.md` with your size and budget, your mark,
+note and bids, the part prices from your own flips (`/flips`, kind
+*onderdeel*: what you paid or estimated), and the **comparables**: a summary
+(spread, fast sold, still for sale, per year) and a CSV with every bike of
+the estimate's step plus the rest of the same model and model family (all
+years, all materials; `in_schatting`, `relatie`), at most 300, each with
+price, year, material, groupset, speeds, brakes, size, condition, first and
+last seen, gone, days online, reserved, sold fast and link. It computes
+nothing new; it only puts more side by side.
+
+The page copies it to the clipboard and shows it in a window with *kopieer*
+and *bewaar als .md*. The same from the command line:
+
+```bash
+python dossier.py m2449549680                 # from the database, no request
+python dossier.py m2449549680 --ophalen --uit dossier.md   # fetch the page first, write a UTF-8 file
+```
+
 #### Bike models
 
 Every bike hangs on a **model**: brand + model + *uitvoering* (variant), e.g.
@@ -1441,7 +1484,8 @@ it, **1**-**6** put away with a reason, **u** put back (the bike under the curso
 if that has no mark — in Te beoordelen a marked bike leaves the list at once —
 it undoes your last marking and puts that bike back), **b** enter a bid,
 **n** note, **space** description, **o** open on Marktplaats, **c**
-controleer, **m** another model, **Esc** out of a field. The reasons to put a bike away are *niet
+controleer, **d** dossier for Claude (below *Plus the waardescore*), **m**
+another model, **Esc** out of a field. The reasons to put a bike away are *niet
 waard*, *gereserveerd*, *niet doorverkoopbaar*, *te hoge vraagprijs*,
 *slechte staat* and *geen racefiets* (`marks.BIKE_REASONS`), stored in
 `listing_mark` like the computers' marks, so you can look back later at

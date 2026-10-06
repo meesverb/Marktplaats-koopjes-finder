@@ -413,9 +413,11 @@ def specs_line(listing: mp.Listing, year: Optional[int] = None) -> str:
     return " · ".join(parts)
 
 
-def _verdicts(base: Base, listings: list, years: dict) -> dict:
+def _verdicts(base: Base, listings: list, years: dict, scored: Optional[dict] = None) -> dict:
     """{item_id: (upgrade, winst, waarom)} van upgrade.find_upgrades() tegen
-    de eigen fiets; leeg zonder eigen fiets (dan base.owner_problem)."""
+    de eigen fiets; leeg zonder eigen fiets (dan base.owner_problem).
+    `scored`: krijgt de score per onderdeel erbij ({item_id: Scored}), voor
+    het dossier."""
     owner = base.owner
     if owner is None:
         return {}
@@ -423,6 +425,8 @@ def _verdicts(base: Base, listings: list, years: dict) -> dict:
         listings, baseline=owner.quality.total, config=owner.config, budgets=owner.budgets,
         target_size_cm=owner.target_size_cm, owner_wheels=up.owner_wheels(owner.build),
         owner_already_has=owner.owner_has, years=years, owner_build=owner.build)
+    if scored is not None:
+        scored.update(result.scored)
     verdicts = {}
     for c in result.candidates:
         why = (f"+{c.gain:.0f} punten ({c.quality.total:.0f} tegen {owner.quality.total:.0f}), "
@@ -1036,6 +1040,16 @@ table.spares .row { margin-top: 0; }
 #newmodel, .picker input[name=nieuw] { flex: 1 1 16em; min-width: 0; max-width: 30em; box-sizing: border-box; }
 @media (max-width: 760px) { .bike { grid-template-columns: minmax(0, 1fr); } .photos { height: 200px; } }
 #filtersbtn { display: none; }
+#dossier { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .45); display: flex;
+  align-items: center; justify-content: center; padding: 16px; }
+#dossier[hidden] { display: none; }
+#dossier .sheet { background: var(--card); color: var(--text); border-radius: 10px; padding: 12px;
+  width: min(900px, 100%); max-height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
+#dossier .sheet .row { margin-top: 0; }
+#dossier p { margin: 6px 0; font-size: .85rem; }
+#dossier textarea { flex: 1 1 auto; min-height: 50vh; width: 100%; box-sizing: border-box; font: .8rem/1.4 ui-monospace,
+  monospace; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text);
+  padding: 6px; }
 /* Telefoon: de plakkende balk nam 477 van 844 px. Nu één rij weergaven die
    zijwaarts scrollt, zoeken + Filters, en de rest pas na een tik; de
    sneltoetsen zijn er zonder toetsenbord niet. */
@@ -1061,6 +1075,7 @@ const MODELS = JSON.parse(document.getElementById('models').textContent);
 let RULES = JSON.parse(document.getElementById('rules').textContent);
 const MODEL_PATH = '/racefietsen/model', RULE_PATH = '/racefietsen/regel', RESERVE_PATH = '/racefietsen/reserves';
 const COMPS_PATH = '/racefietsen/vergelijk', COMPS_SHOWN = 12;
+const DOSSIER_PATH = '/racefietsen/dossier';
 const SPARES = JSON.parse(document.getElementById('spares').textContent);
 const GONE = JSON.parse(document.getElementById('gone').textContent);
 const REASONS = JSON.parse(document.getElementById('reasons').textContent);
@@ -1284,7 +1299,7 @@ function card(b) {
       ${b.no ? `<div class="mynote">${esc(b.no)}</div>` : ''}
       ${b.nc ? `<details class="desc cmp"><summary>vergeleken met ${b.nc} fietsen${b.nc > COMPS_SHOWN ? ` (hier ${COMPS_SHOWN}: de snel verkochte en de goedkoopste)` : ''}</summary><div>${b.cmp ? cmpHtml(b.cmp) : 'laden…'}</div></details>` : ''}
       <details class="desc"><summary>beschrijving</summary><div>${esc(b.d)}</div></details>
-      <div class="row">${markBtns}<span class="muted">·</span><button class="quiet" data-do="check">controleer</button>${b.ck ? `<span class="muted">gecontroleerd ${esc(b.ck.replace('T', ' '))}</span>` : ''}</div>
+      <div class="row">${markBtns}<span class="muted">·</span><button class="quiet" data-do="check">controleer</button><button class="quiet" data-do="dossier" title="haalt de advertentie op zoals controleer en kopieert alles over deze fiets als tekst voor Claude">dossier</button>${b.ck ? `<span class="muted">gecontroleerd ${esc(b.ck.replace('T', ' '))}</span>` : ''}</div>
       ${bidRow}
       <div class="row"><input name="notitie" value="${esc(b.no)}" maxlength="500" size="34" placeholder="notitie, bv. gevraagd of €300 kan" aria-label="Notitie"><button class="quiet" data-do="note">opslaan</button></div>
     </div></article>`;
@@ -1483,6 +1498,9 @@ function act(id, what, value, art) {
   if (what === 'weg') return post('/markeer', {item_id: id, soort: value}, art);
   if (what === 'geen') return post('/markeer', {item_id: id, soort: 'geen'}, art);
   if (what === 'check') return post('/controleer', {item_id: id}, art);
+  if (what === 'dossier') return post(DOSSIER_PATH, {item_id: id}, art).then(data => {
+    if (data && data.dossier) showDossier(id, data.dossier, data.message);
+  });
   if (what === 'note') return post('/notitie', {item_id: id, notitie: art.querySelector('input[name=notitie]').value}, art);
   if (what === 'bod') {
     const v = art.querySelector('input[name=bod]').value.trim();
@@ -1502,6 +1520,35 @@ function act(id, what, value, art) {
   if (what === 'jaar') return post(MODEL_PATH, {item_id: id, year: art.querySelector('input[name=jaar]').value.trim()}, art);
   if (what === 'ontkoppel') return post(MODEL_PATH, {item_id: id, clear: '1'}, art);
 }
+// Het dossier (dossier.py): alles over één fiets als tekst voor Claude. Meteen
+// naar het klembord; lukt dat niet (de browser wil een klik, en het ophalen
+// duurde even), dan staat het in het venster met een knop kopieer.
+let dossierUrl = null;
+function showDossier(id, text, message) {
+  const box = $('dossier');
+  $('dtext').value = text;
+  $('dsize').textContent = Math.round(text.length / 1000) + ' kB';
+  if (dossierUrl) URL.revokeObjectURL(dossierUrl);
+  dossierUrl = URL.createObjectURL(new Blob([text], {type: 'text/markdown;charset=utf-8'}));
+  $('dsave').href = dossierUrl; $('dsave').download = 'dossier_' + id + '.md';
+  box.hidden = false;
+  copyDossier(message);
+}
+function copyDossier(message) {
+  const text = $('dtext');
+  const done = () => say((message ? message + ' ' : '') + 'Dossier gekopieerd: plak het in een gesprek met Claude.');
+  const fallback = () => {
+    text.focus(); text.select();
+    try { if (document.execCommand('copy')) return done(); } catch (e) { /* hieronder */ }
+    say((message ? message + ' ' : '') + 'Kopiëren lukte niet vanzelf: klik kopieer, of Ctrl+C (alles is al geselecteerd).');
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text.value).then(done, fallback);
+  else fallback();
+}
+function closeDossier() { $('dossier').hidden = true; }
+$('dcopy').addEventListener('click', () => copyDossier(''));
+$('dclose').addEventListener('click', closeDossier);
+$('dossier').addEventListener('click', e => { if (e.target.id === 'dossier') closeDossier(); });
 function cmpHtml(comps) {
   return comps.map(c => `<a href="${esc(c[2])}" target="_blank" rel="noopener">${esc(c[0])}</a> — ${euro(c[1])}${c[3] ? ' · ' + c[3] : ''}${c[5] ? ' · <span class="fast">snel verkocht</span> ' + esc(c[4]) : c[4] ? ' · verdwenen ' + esc(c[4]) : ''}`).join('<br>');
 }
@@ -1536,6 +1583,7 @@ list.addEventListener('keydown', e => {
 });
 list.addEventListener('input', e => { if (e.target.name === 'mq') fillPicker(e.target.closest('.picker'), e.target.value); });
 document.addEventListener('keydown', e => {
+  if (!$('dossier').hidden) { if (e.key === 'Escape') closeDossier(); return; }
   if (e.target.matches('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) {
     if (e.key === 'Escape') e.target.blur();
     return;
@@ -1555,6 +1603,7 @@ document.addEventListener('keydown', e => {
     if (target !== id && done) done.then(data => { if (data && data.bike) reinsert(data.bike, art); });
   }
   else if (k === 'c') act(id, 'check', null, art);
+  else if (k === 'd') act(id, 'dossier', null, art);
   else if (k === 'm') { e.preventDefault(); act(id, 'ander', null, art); }
   else if (k === 'o') window.open(byId.get(id).u, '_blank', 'noopener');
   else if (k === 'b') { e.preventDefault(); art.querySelector('input[name=bod]').focus(); }
@@ -1763,7 +1812,8 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         "<div class='keys'>Toetsen: <kbd>j</kbd>/<kbd>↓</kbd> volgende · <kbd>k</kbd>/<kbd>↑</kbd> vorige · "
         f"<kbd>f</kbd> favoriet · <kbd>w</kbd> niet waard · {reasons_keys} · <kbd>u</kbd> terugzetten (of de laatste ongedaan) · "
         "<kbd>b</kbd> bod invullen · <kbd>n</kbd> notitie · <kbd>spatie</kbd> beschrijving · "
-        "<kbd>o</kbd> openen op Marktplaats · <kbd>c</kbd> controleer · <kbd>m</kbd> ander model · "
+        "<kbd>o</kbd> openen op Marktplaats · <kbd>c</kbd> controleer · <kbd>d</kbd> dossier voor Claude · "
+        "<kbd>m</kbd> ander model · "
         "<kbd>Esc</kbd> uit een invulveld</div>"
         "</div>"
         "<div id='modelchip' class='row' hidden></div>"
@@ -1778,6 +1828,13 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         f"<script type='application/json' id='gone'>{page_json(gone)}</script>"
         f"<script type='application/json' id='reasons'>{page_json(list(mr.BIKE_REASONS))}</script>"
         f"<script type='application/json' id='statuses'>{page_json(list(ob.STATUSES))}</script>"
+        "<div id='dossier' hidden><div class='sheet' role='dialog' aria-label='Dossier voor Claude'>"
+        "<div class='row'><strong>Dossier voor Claude</strong><span class='muted' id='dsize'></span>"
+        "<button id='dcopy'>kopieer</button><a id='dsave' href='#'>bewaar als .md</a>"
+        "<button class='quiet' id='dclose'>sluit (Esc)</button></div>"
+        "<p class='muted'>Plak het in een gesprek met Claude. De vragen staan bovenaan; pas ze gerust aan. "
+        "Kan Claude de foto's niet openen, sleep ze dan in de chat.</p>"
+        "<textarea id='dtext' readonly spellcheck='false'></textarea></div></div>"
         f"</main><div id='toast' role='status' hidden></div><script>{dash.LIVE_JS}{JS}</script>"
         "</body></html>")
 

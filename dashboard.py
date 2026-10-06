@@ -64,6 +64,7 @@ import markets as mk
 import marks as mr
 import racefiets_jev as mp
 import distance as dm
+import dossier as ds
 import own_bids as ob
 import patterns as pt
 import racebikes as rb
@@ -4306,6 +4307,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 raise
             self._json({"message": DB_BUSY})
 
+    def _dossier(self, form: dict) -> None:
+        """De knop dossier op /racefietsen (dossier.py): de advertentie ophalen
+        zoals controleer, dan alles over die ene fiets als tekst om aan Claude
+        te geven, met de bijgewerkte kaart erbij."""
+        if not hmac.compare_digest(form.get("token", ""), self.token):
+            return self._json({"message": "De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw.",
+                               "reload": True})
+        item_id = form.get("item_id", "")
+        try:
+            checked, problem, message = ds.fetch(self.db_path, item_id)
+            # Na het ophalen: controleer veranderde de database, dus dit
+            # rekent opnieuw, net als na de knop controleer.
+            base = self.cache.racebikes(self.db_path, self.intake_path)
+            text = ds.build(base, self.db_path, item_id, self.intake_path, checked, problem)
+            data = rb.bike_update(base, rb.load_fresh(self.db_path), item_id, message)
+        except ds.DossierError as exc:
+            return self._json({"message": f"Geen dossier: {exc}"})
+        except sqlite3.OperationalError as exc:
+            if not db_busy(exc):
+                raise
+            return self._json({"message": DB_BUSY})
+        data["dossier"] = text
+        self._json(data)
+
     def do_POST(self) -> None:
         origin = self.headers.get("Origin")
         if not self._host_ok() or (origin and urlsplit(origin).netloc not in self._origins()):
@@ -4346,6 +4371,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._send(413, "Te groot")
             raw = self.rfile.read(length).decode("utf-8", errors="replace")
             return self._upgrade_post(path, {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()})
+        if path == ds.PATH:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_FORM_BYTES:
+                return self._send(413, "Te groot")
+            raw = self.rfile.read(length).decode("utf-8", errors="replace")
+            return self._dossier({k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()})
         if path in (rb.MODEL_PATH, rb.RULE_PATH):
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_FORM_BYTES:
