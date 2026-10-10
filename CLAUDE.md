@@ -129,6 +129,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `opdrachten/` | uitgeschreven opdrachten van de eigenaar (`fietsmodellen.md`, `goedkoopste_onderdelen.md`) en de werklijst van het weekend (`weekend.md`, met zijn keuzes en een logboek) |
 | `taxatie_2026-09-22.md` | de eerste handmatige taxatie van de eigen fiets, met bewijsregels (voorloper van fase 3) |
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |
+| `fiets_master.md` | masterdocument van de eigen fiets: onderdelen, maten en standaarden, onderhoud, uitgewerkte "past X?"-vragen, meetlijst. Elke regel met status (eigenaar / bron / onbekend); lees het bij elke vraag over wat er op de fiets past |
 | `NEXT_STEPS.md` | stand van zaken en losse eindjes |
 | `reference_prices.csv` | handmatig onderzochte modellen (43, alleen luidsprekers) |
 | `reference_bikes.csv`, `reference_bike_accessories.csv` | fase 7: fietsen resp. fietscomputers/powermeters, met `kind`/`brand`/`source_url`. Ook met `git add -f` toegevoegd. Accessoires niet in het fietsbestand zetten — zie README |

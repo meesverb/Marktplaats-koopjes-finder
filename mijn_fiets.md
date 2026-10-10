@@ -4,6 +4,9 @@ Brondocument voor de taxatie. Ingevuld door de eigenaar; de afgeleide gevolgen
 en de open punten staan eronder. `valuation.py` (fase 3) leest het scoringsblok
 onderaan en zet de fiets in `owned_item`.
 
+Onderdelen, maten, standaarden, onderhoud en antwoorden op "past X?"-vragen
+staan in **`fiets_master.md`**.
+
 ## Vastgesteld door de eigenaar
 
 | Veld | Waarde |
