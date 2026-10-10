@@ -248,6 +248,14 @@ Bronnen: [9] (Topeak), [10] (Ortlieb), [11] (Apidura).
 Een tas met een **taps** profiel (voor hoog, achter laag, zoals de Apidura)
 past beter in de spits toelopende driehoek dan een rechthoekige.
 
+### Bikepacking-uitrusting
+
+Zie **`bikepacking_uitrusting.xlsx`**: tassen per plek (frame, zadel, stuur,
+bovenbuis, stuurpen) met prijs, gewicht, g/L en €/L, bron, en een kolom
+"Past?" die zichzelf invult zodra de maten op het tabblad *Mijn fiets*
+gemeten zijn. Bagagedrager en vorktassen passen niet (aero-zadelpen, carbon
+vork zonder ogen).
+
 ## 6. Onderhoudslogboek
 
 | Datum | km-stand | Wat | Kosten | Bron |
