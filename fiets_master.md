@@ -205,20 +205,48 @@ officieel bevestigd [6].
   derailleur nodig (en een langere ketting).
 - **11-speed: nee.** De shifters zijn 10-speed.
 
-### Past deze frametas?
+### Welke frametassen passen? (10-10-2026)
 
-Nog niet te beantwoorden: daarvoor zijn de **binnenmaten van de driehoek**
-nodig, en die staan nergens online voor deze fiets (de geometrietabel geeft
-buislengtes hart-op-hart, niet de vrije ruimte). Meet ze één keer (§8) en zet
-ze in §4; daarna is elke frametas een kwestie van maten vergelijken:
+**Kort:** een "half-frame" tas die onder de bovenbuis hangt, van ca.
+**30-46 cm lang en 12-13 cm hoog**, past vrijwel zeker. Rond 50 cm is het
+grensgebied, 54 cm en langer waarschijnlijk niet. Een volle driehoektas past
+niet als je bidons wilt houden. Die grenzen zijn een **schatting**: de
+binnenmaten van de driehoek zijn nog niet gemeten (§8, punt 5).
 
-- vrije lengte langs de bovenbuis (van balhoofd tot zitbuis, binnenkant),
-- vrije hoogte bij de voorkant (balhoofd → onderbuis) en bij de zitbuis,
-- waar de bidonhouders zitten en of je een bidon nog kunt pakken,
-- of er kabels over de bovenbuis lopen (velcro om kabels heen gaat meestal).
+**De schatting.** Maat M/L heeft een effectieve bovenbuis van 560 mm (§3).
+De echte bovenbuis loopt schuin af en zit tussen de balhoofdbuis en de
+zitbuis met hun verdikte verbindingen. Daardoor blijft er langs de onderkant
+van de bovenbuis ongeveer **45-50 cm** vrij. Naar achteren loopt de driehoek
+spits toe, en daar zit ook de bidon op de zitbuis. Een tas van 12-13 cm hoog
+die tot achteraan doorloopt, zit dus het eerst in de weg bij die bidon.
 
-Een volle-driehoektas bij een compact/sloping frame als de Defy is krap;
-een "half-frame" tas of toptube-tasje is meestal de veilige keus.
+**Gangbare half-frame tassen** (maten van verkopers, lengte × hoogte × breedte):
+
+| Tas | Inhoud | Maat (cm) | Op deze fiets (schatting) |
+| --- | --- | --- | --- |
+| Apidura Racing Frame Pack 2,4 L | 2,4 L | 29 lang, 5-14 hoog (taps), 6 breed | past |
+| Topeak MidLoader 3 L | 3 L | 37,5 × 12 × 6 | past |
+| Apidura Racing Frame Pack 4 L | 4 L | 42 lang, 5-15 hoog (taps), 6 breed | past waarschijnlijk |
+| Topeak MidLoader 4,5 L | 4,5 L | 46 × 12 × 6 | past waarschijnlijk; bidon zitbuis lastiger te pakken |
+| Ortlieb Frame-Pack RC Toptube 4 L | 4 L | 50 × 13 × 6 | grensgeval: eerst meten |
+| Topeak MidLoader 6 L | 6 L | 54,5 × 13,5 × 6 | waarschijnlijk te lang |
+
+Bronnen: [9] (Topeak), [10] (Ortlieb), [11] (Apidura).
+
+**Zo weet je het zeker:**
+
+1. Meet langs de **onderkant van de bovenbuis** de vrije lengte, van waar de
+   balhoofdbuis begint tot waar de zitbuis begint.
+2. Meet bij een bidon in de zitbuishouder: hoeveel ruimte er tussen de
+   bovenkant van de bidon en de bovenbuis zit (een bidon moet er schuin
+   uit kunnen).
+3. Apidura heeft afdruksjablonen voor beide maten van de Racing Frame Pack
+   (gelinkt op de verkoperspagina [11]): uitprinten en tegen het frame houden.
+4. Let op kabels onder of over de bovenbuis: velcro-banden om de remkabel
+   heen gaan meestal goed, maar de tas mag de kabel niet afknellen.
+
+Een tas met een **taps** profiel (voor hoog, achter laag, zoals de Apidura)
+past beter in de spits toelopende driehoek dan een rechthoekige.
 
 ## 6. Onderhoudslogboek
 
@@ -253,8 +281,10 @@ toekomstige vragen. In volgorde van nut:
 4. **Voorderailleur**: braze-on (vastgeschroefd op een plaatje op de zitbuis)
    of klem (band om de zitbuis); en hoeveel ruimte er onder nog is in het
    gleufje.
-5. **Driehoek binnenmaten** (voor frametassen): vrije lengte bovenbuis, vrije
-   hoogte voor en achter, positie bidonbouten.
+5. **Driehoek binnenmaten** (voor frametassen): vrije lengte langs de
+   onderkant van de bovenbuis, ruimte tussen bidon (zitbuis) en bovenbuis,
+   positie bidonbouten, en of de kabels langs de bovenbuis lopen. Maakt het
+   frametassenantwoord in §5 van schatting tot zekerheid.
 6. **Bandenruimte**: breedte van de huidige band (op de zijkant) en hoeveel mm
    er nog vrij is tot frame/vork/rem, aan elke kant.
 7. ~~Framemaat-letter~~ — M/L, 10-10-2026.
@@ -302,6 +332,17 @@ toekomstige vragen. In volgorde van nut:
    <https://singletrackworld.com/forum/bike-forum/giant-overdrive/>,
    <https://steedcycles.com/products/giant-headset-bearing-1-1-8-road-overdrive-upper-not-od2-for-tcr-propel-not-defy>,
    <https://www.allterraincycles.co.uk/products/giant-od-road-headset>
+
+9. Topeak MidLoader: 3 L 37,5 × 12 × 6 cm, 4,5 L 46 × 12 × 6, 6 L 54,5 × 13,5 × 6
+   (verkopers, onderling gelijk):
+   <https://www.biketart.com/products/topeak-midloader>,
+   <https://www.cyclable.com/16051-sacoche-de-cadre-topeak-midloader-3-a-6l.html>
+10. Ortlieb Frame-Pack RC Toptube 4 L: 50 × 13 × 6 cm, max. 3 kg:
+    <https://www.rabe-bike.de/en/ortlieb-frame-pack-4l-toptube-rc-black-matt>
+11. Apidura Racing Frame Pack 2,4 L (L 29 cm, H 7/14/5 cm, B 6 cm) en 4 L
+    (L 42 cm, H 5/15/7 cm, B 6 cm), plus link naar de afdruksjablonen:
+    <https://www.topgearcycles.co.nz/products/apidura-racing-frame-pack>,
+    <https://sigmasports.com/item/Apidura/Racing-Frame-Pack-4L/NCI1>
 
 Officiële Shimano-documentatie (si.shimano.com) en een Giant-geometrietabel
 van 2012 met URL zijn nog niet gevonden; de Wayback Machine was vanuit deze sessie niet
