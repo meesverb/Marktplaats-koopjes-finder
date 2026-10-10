@@ -20,7 +20,7 @@ bestand aan Claude (of open het zelf) voordat je zo'n vraag stelt.
   aan de fiets dat de taxatie raakt (wielen, groep, schade), werk dan **beide**
   bij.
 
-Laatst bijgewerkt: 10-10-2026 (spec Composite 1, geometrie, korte kooi).
+Laatst bijgewerkt: 10-10-2026 (spec Composite 1, geometrie, korte kooi, maat M/L).
 
 ---
 
@@ -31,7 +31,7 @@ Laatst bijgewerkt: 10-10-2026 (spec Composite 1, geometrie, korte kooi).
 | Merk / model | Giant Defy **Composite**, modeljaar 2012 | ✅ eigenaar |
 | Uitvoering | **Composite 1** — de eigenaar leverde de spec van de Composite 1 (2012) aan; de volle Ultegra-groep past daarbij ("Key Upgrades over Defy Composite 2: 10-speed Shimano Ultegra") | ✅ eigenaar / 📖 [7] |
 | Frame | Carbon ("Giant Composite Technology", de instap-carbon onder Advanced) | ✅ materiaal / 📖 [1] |
-| Framemaat | "56" volgens de eigenaar. Giant gebruikte letters: **M/L** (zitbuis 53,5, bovenbuis 560) of **L** (zitbuis 55,5, bovenbuis 575) liggen allebei bij "56" (§3) | ✅ / ❓ letter — meet de bovenbuis horizontaal (§8) |
+| Framemaat | **M/L** (Giant-maat): zitbuis 53,5 cm, effectieve bovenbuis 560 mm — vandaar de "56" (§3) | ✅ eigenaar (10-10-2026) |
 | Framenummer | Onder de trapas; niet te koppelen aan modeljaar/uitvoering | ✅ eigenaar |
 | Kilometerstand | < 10.000 km | ✅ eigenaar |
 | Kleur | | ❓ |
@@ -85,19 +85,19 @@ kleur White/Black/Blue.
 eigenaar, uit twee geometriesites — één noemt hem "Defy Composite 2013", de
 getallen zijn gelijk) [7]:
 
-| | XS | S | M | **M/L** | **L** | XL |
+| | XS | S | M | **M/L** | L | XL |
 | --- | --- | --- | --- | --- | --- | --- |
-| Maat (zitbuis, cm) | 43,0 | 46,5 | 50,0 | **53,5** | **55,5** | 58,5 |
-| Effectieve bovenbuis | 515 | 530 | 545 | **560** | **575** | 595 |
-| Zitbuishoek | 74,0° | 74,0° | 73,5° | 73,0° | 73,0° | 72,5° |
-| Balhoofdhoek | 71,0° | 72,0° | 72,5° | 72,5° | 72,5° | 72,5° |
-| Balhoofdbuis | 125 | 145 | 165 | 185 | 205 | 225 |
-| Liggende achtervork | 420 | 420 | 420 | 420 | 420 | 420 |
-| Wielbasis | 983 | 990 | 995 | 1007 | 1022 | 1037 |
-| Standover | 737 | 754 | 777 | 790 | 813 | 833 |
+| Maat (zitbuis, cm) | 43,0 | 46,5 | 50,0 | **53,5** | 55,5 | 58,5 |
+| Effectieve bovenbuis | 515 | 530 | 545 | **560** | 575 | 595 |
+| Zitbuishoek | 74,0° | 74,0° | 73,5° | **73,0°** | 73,0° | 72,5° |
+| Balhoofdhoek | 71,0° | 72,0° | 72,5° | **72,5°** | 72,5° | 72,5° |
+| Balhoofdbuis | 125 | 145 | 165 | **185** | 205 | 225 |
+| Liggende achtervork | 420 | 420 | 420 | **420** | 420 | 420 |
+| Wielbasis | 983 | 990 | 995 | **1007** | 1022 | 1037 |
+| Standover | 737 | 754 | 777 | **790** | 813 | 833 |
 
-Stack en reach staan er alleen voor XL (638 / 394). Vetgedrukt: de twee maten
-die bij "56" kunnen horen.
+Stack en reach staan er alleen voor XL (638 / 394). Vetgedrukt: de eigen maat,
+**M/L**.
 
 Andere bronnen, ter vergelijking:
 
@@ -149,8 +149,12 @@ is.
 | Zadelpen | framespecifiek (Vector Composite) | 📖 [2] | Geen gewone ronde pen; vervanging alleen deze vorm |
 | Balhoofd | geïntegreerd, Giant **OverDrive** (vork met aluminium OverDrive-steerer [7]). OverDrive voor de weg is volgens Giant 1⅛" boven / 1¼" onder [8]; welke lagers precies in de Defy zitten ❓ (een lagerverkoper onderscheidt de Defy van TCR/Propel [8]) | 📖 [7][8] / ❓ | Andere vork / stuurpen / lagers |
 | Stuurklem | 31,8 mm | 📖 [2] (stuurpen) / ❓ | Stuur, opzetstuur, houders |
-| Balhoofdbuis | 185 (M/L) of 205 (L) | 📖 [7] | |
-| Effectieve bovenbuis | 560 (M/L) of 575 (L) | 📖 [7] | Ruwe indicatie frametas |
+| Framemaat | M/L | ✅ eigenaar | |
+| Balhoofdbuis | 185 | 📖 [7] (M/L) | Hoogte stuur, spacers |
+| Effectieve bovenbuis | 560 | 📖 [7] (M/L) | Ruwe indicatie frametas; vergelijken met andere fietsen |
+| Zitbuis | 53,5 cm | 📖 [7] (M/L) | |
+| Standover | 790 | 📖 [7] (M/L) | |
+| Wielbasis | 1007 | 📖 [7] (M/L) | |
 | Liggende achtervork | 420 | 📖 [7] | |
 | Banden fabriek | 700×23 | 📖 [7] | Ruimte voor bredere banden is niet opgegeven |
 | Binnenmaten driehoek | | ❓ — **meten**, zie §8 | Frametas |
@@ -253,9 +257,7 @@ toekomstige vragen. In volgorde van nut:
    hoogte voor en achter, positie bidonbouten.
 6. **Bandenruimte**: breedte van de huidige band (op de zijkant) en hoeveel mm
    er nog vrij is tot frame/vork/rem, aan elke kant.
-7. **Framemaat-letter**: sticker op de zitbuis of onder de trapas, óf meet
-   de bovenbuis horizontaal (hart balhoofd → hart zadelpen): ≈ 560 mm = M/L,
-   ≈ 575 mm = L (§3).
+7. ~~Framemaat-letter~~ — M/L, 10-10-2026.
 8. **Stuur en stuurpen**: breedte stuur (hart-hart aan de uiteinden), lengte
    stuurpen (gestempeld).
 9. **Remmen**: typenummer op de remklauw (fabriek Ultegra, dus BR-6700 verwacht).
