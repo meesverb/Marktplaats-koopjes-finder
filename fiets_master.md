@@ -20,6 +20,8 @@ bestand aan Claude (of open het zelf) voordat je zo'n vraag stelt.
   aan de fiets dat de taxatie raakt (wielen, groep, schade), werk dan **beide**
   bij.
 
+Korte versie om in een chat te plakken: **`fiets_kaart.md`** (werk die mee bij).
+
 Laatst bijgewerkt: 10-10-2026 (spec Composite 1, geometrie, korte kooi, maat M/L).
 
 ---
