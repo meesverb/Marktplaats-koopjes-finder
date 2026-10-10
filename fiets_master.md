@@ -58,14 +58,15 @@ zit.
 | Wielen (origineel) | Nog in bezit; fabriek Giant P-SL1 WheelSystem | ✅ in bezit / 📖 [7] |
 | Asstandaard | Snelspanner, 100 mm voor / 130 mm achter (standaard voor een velrem-racefiets uit 2012) | ❓ zelf bevestigen |
 | Freehub achter | Shimano HG (past 10- en 11-speed? hangt van de naaf af) | ❓ |
-| Banden | Pirelli P Zero Race — breedte? | ✅ merk / ❓ maat, leeftijd |
+| Banden | Pirelli P Zero Race, **26c** | ✅ eigenaar / ❓ leeftijd |
 | Binnenbanden / tubeless | Binnenbanden (clinchervelg) | ✅ clincher |
-| Stuur | fabriek Giant Connect SL; breedte? | 📖 [7] / ❓ |
+| Stuur | fabriek Giant Connect SL (42 cm h-h); **binnenmaat tussen de drops 37 cm** | 📖 [7] / ✅ eigenaar |
 | Stuurpen | fabriek Giant Connect SL; lengte, hoek? | 📖 [7] / ❓ |
+| Zichtbare zadelpen | **22 cm** (eerder gemeten) | ✅ eigenaar |
 | Zadelpen | Giant Vector Composite — **framespecifiek** (aero-vorm, geen ronde 27,2/31,6) | 📖 [2] — ❓ zelf bevestigen |
 | Zadel | fabriek Giant Performance Road (heren); nog het origineel? | 📖 [7] / ❓ |
 | Pedalen | | ❓ |
-| Bidonhouders | aantal bevestigingspunten (onderbuis/zitbuis)? | ❓ |
+| Bidonhouders | **1 houder op de onderbuis**; boutgaten op de zitbuis, daar nu geen houder | ✅ eigenaar |
 | Fietscomputer | Wahoo Elemnt Roam (v1) — van de eigenaar, **gaat niet mee bij verkoop** | ✅ eigenaar |
 
 ## 3. Fabrieksspecificaties van het model (ter referentie)
@@ -157,8 +158,11 @@ is.
 | Wielbasis | 1007 | 📖 [7] (M/L) | |
 | Liggende achtervork | 420 | 📖 [7] | |
 | Banden fabriek | 700×23 | 📖 [7] | Ruimte voor bredere banden is niet opgegeven |
-| Binnenmaten driehoek | | ❓ — **meten**, zie §8 | Frametas |
-| Bidonbevestigingen | | ❓ | Frametas vs. bidons |
+| Binnenmaten driehoek | **46 / 38 / 56 cm** — gelezen als bovenbuis 46, zitbuis 38, onderbuis 56 (de hoek die daaruit volgt, ≈ 83° tussen boven- en zitbuis, klopt met een aflopende bovenbuis) | ✅ eigenaar | Frametas: max. ≈ 46 cm lang |
+| Bidonbevestigingen | onderbuis (in gebruik) + zitbuis (vrij) | ✅ eigenaar | Zonder zitbuisbidon mag een frametas de hele hoogte gebruiken |
+| Stuur binnen (drops) | 37 cm | ✅ eigenaar | Stuurrol of -tas moet hiertussen |
+| Zichtbare zadelpen | 22 cm | ✅ eigenaar | Ruim genoeg voor elke zadeltas |
+| Bandenmaat | 26c | ✅ eigenaar | |
 
 ## 5. Snelle antwoorden op compatibiliteitsvragen
 
@@ -207,11 +211,15 @@ officieel bevestigd [6].
 
 ### Welke frametassen passen? (10-10-2026)
 
-**Kort:** een "half-frame" tas die onder de bovenbuis hangt, van ca.
-**30-46 cm lang en 12-13 cm hoog**, past vrijwel zeker. Rond 50 cm is het
+**Gemeten (10-10-2026):** binnendriehoek 46 / 38 / 56 cm (bovenbuis /
+zitbuis / onderbuis), één bidon op de onderbuis, geen op de zitbuis. Dus: een
+half-frame tas tot **46 cm lang** past; hoogte is geen probleem zolang er geen
+zitbuisbidon is. De schatting hieronder is daarmee bevestigd (45-50 → 46).
+
+**Oorspronkelijke schatting:** een "half-frame" tas die onder de bovenbuis hangt, van ca.
+30-46 cm lang en 12-13 cm hoog, past vrijwel zeker. Rond 50 cm is het
 grensgebied, 54 cm en langer waarschijnlijk niet. Een volle driehoektas past
-niet als je bidons wilt houden. Die grenzen zijn een **schatting**: de
-binnenmaten van de driehoek zijn nog niet gemeten (§8, punt 5).
+niet als je bidons wilt houden.
 
 **De schatting.** Maat M/L heeft een effectieve bovenbuis van 560 mm (§3).
 De echte bovenbuis loopt schuin af en zit tussen de balhoofdbuis en de
@@ -226,10 +234,11 @@ die tot achteraan doorloopt, zit dus het eerst in de weg bij die bidon.
 | --- | --- | --- | --- |
 | Apidura Racing Frame Pack 2,4 L | 2,4 L | 29 lang, 5-14 hoog (taps), 6 breed | past |
 | Topeak MidLoader 3 L | 3 L | 37,5 × 12 × 6 | past |
-| Apidura Racing Frame Pack 4 L | 4 L | 42 lang, 5-15 hoog (taps), 6 breed | past waarschijnlijk |
-| Topeak MidLoader 4,5 L | 4,5 L | 46 × 12 × 6 | past waarschijnlijk; bidon zitbuis lastiger te pakken |
-| Ortlieb Frame-Pack RC Toptube 4 L | 4 L | 50 × 13 × 6 | grensgeval: eerst meten |
-| Topeak MidLoader 6 L | 6 L | 54,5 × 13,5 × 6 | waarschijnlijk te lang |
+| Apidura Racing Frame Pack 4 L | 4 L | 42 lang, 5-15 hoog (taps), 6 breed | past |
+| Topeak MidLoader 4,5 L | 4,5 L | 46 × 12 × 6 | **past** (precies 46) |
+| Ortlieb Frame-Pack RC Toptube 4 L | 4 L | 50 × 13 × 6 | past niet (4 cm te lang) |
+| Topeak MidLoader 6 L | 6 L | 54,5 × 13,5 × 6 | past niet |
+| Decathlon half-frame 3 L IPX6 | 3 L | 47 × 12 × 7 | 1 cm te lang — misschien met klittenband, niet zeker |
 
 Bronnen: [9] (Topeak), [10] (Ortlieb), [11] (Apidura).
 
@@ -289,10 +298,10 @@ toekomstige vragen. In volgorde van nut:
 4. **Voorderailleur**: braze-on (vastgeschroefd op een plaatje op de zitbuis)
    of klem (band om de zitbuis); en hoeveel ruimte er onder nog is in het
    gleufje.
-5. **Driehoek binnenmaten** (voor frametassen): vrije lengte langs de
+5. ~~Driehoek binnenmaten~~ — 46 / 38 / 56 cm, 10-10-2026. (Oud: **Driehoek binnenmaten** (voor frametassen): vrije lengte langs de
    onderkant van de bovenbuis, ruimte tussen bidon (zitbuis) en bovenbuis,
    positie bidonbouten, en of de kabels langs de bovenbuis lopen. Maakt het
-   frametassenantwoord in §5 van schatting tot zekerheid.
+   frametassenantwoord in §5 van schatting tot zekerheid.)
 6. **Bandenruimte**: breedte van de huidige band (op de zijkant) en hoeveel mm
    er nog vrij is tot frame/vork/rem, aan elke kant.
 7. ~~Framemaat-letter~~ — M/L, 10-10-2026.
