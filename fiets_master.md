@@ -20,7 +20,7 @@ bestand aan Claude (of open het zelf) voordat je zo'n vraag stelt.
   aan de fiets dat de taxatie raakt (wielen, groep, schade), werk dan **beide**
   bij.
 
-Laatst bijgewerkt: 10-10-2026.
+Laatst bijgewerkt: 10-10-2026 (spec Composite 1, geometrie, korte kooi).
 
 ---
 
@@ -29,9 +29,9 @@ Laatst bijgewerkt: 10-10-2026.
 | Veld | Waarde | Status |
 | --- | --- | --- |
 | Merk / model | Giant Defy **Composite**, modeljaar 2012 | ✅ eigenaar |
-| Uitvoering | Composite 1 of 2 (of 3) — niet vastgesteld | ❓ |
+| Uitvoering | **Composite 1** — de eigenaar leverde de spec van de Composite 1 (2012) aan; de volle Ultegra-groep past daarbij ("Key Upgrades over Defy Composite 2: 10-speed Shimano Ultegra") | ✅ eigenaar / 📖 [7] |
 | Frame | Carbon ("Giant Composite Technology", de instap-carbon onder Advanced) | ✅ materiaal / 📖 [1] |
-| Framemaat | "56" volgens de eigenaar. Giant gebruikte letters (S/M/ML/L/XL); welke letter dit is, is niet vastgesteld | ✅ / ❓ letter |
+| Framemaat | "56" volgens de eigenaar. Giant gebruikte letters: **M/L** (zitbuis 53,5, bovenbuis 560) of **L** (zitbuis 55,5, bovenbuis 575) liggen allebei bij "56" (§3) | ✅ / ❓ letter — meet de bovenbuis horizontaal (§8) |
 | Framenummer | Onder de trapas; niet te koppelen aan modeljaar/uitvoering | ✅ eigenaar |
 | Kilometerstand | < 10.000 km | ✅ eigenaar |
 | Kleur | | ❓ |
@@ -47,29 +47,59 @@ zit.
 | **Groep** | Shimano Ultegra **6700**, mechanisch, **2×10** | ✅ eigenaar |
 | Shifters | Ultegra ST-6700 (aangenomen: hoort bij de groep) | ❓ typenummer nakijken |
 | Voorderailleur | Ultegra FD-6700 — braze-on of klem? | ❓ |
-| Achterderailleur | Ultegra RD-6700 — korte (SS) of middellange (GS) kooi? | ❓ |
-| Crankset | Ultegra FC-6750 (compact, 50/34) of FC-6700 (standaard, 53/39)? Cranklengte? | ❓ — **belangrijk voor voorbladvragen**, zie §5 |
+| Achterderailleur | Ultegra RD-6700, **korte kooi (SS)** | ✅ eigenaar (10-10-2026) |
+| Crankset | Fabriek: Shimano Ultegra **compact 34/50** (dus 110 mm BCD). Typenummer en cranklengte? | 📖 [7] / ❓ nakijken, zie §5 |
 | Cassette | 10-speed, vervangen ca. 1500 km geleden. Tandjes (bv. 11-28)? Merk? | ✅ vervangen / ❓ maat |
 | Ketting | 10-speed, vervangen ca. 1500 km geleden | ✅ eigenaar / ❓ merk |
 | Trapas | Press-fit volgens de modelspecs (BB86) | 📖 [1][2] — ❓ zelf bevestigen |
-| Remmen | Velremmen (dual-pivot), welk type? | ✅ velrem / ❓ type |
+| Remmen | Velremmen (dual-pivot); fabriek Shimano Ultegra | ✅ velrem / 📖 [7] |
+| Voorvork | Advanced-Grade Composite, aluminium OverDrive-balhoofdbuis (steerer) | 📖 [7] |
 | **Wielen (gemonteerd)** | **CSC** carbon clincher, 50 mm hoog, 25 mm buiten / 18 mm binnen, naven AS511SB (voor) / FS522SB (achter), velrem. AliExpress, ca. €300 nieuw | ✅ eigenaar |
-| Wielen (origineel) | Nog in bezit (welke? waarschijnlijk Giant P-SL1, zie §3) | ✅ in bezit / ❓ type |
+| Wielen (origineel) | Nog in bezit; fabriek Giant P-SL1 WheelSystem | ✅ in bezit / 📖 [7] |
 | Asstandaard | Snelspanner, 100 mm voor / 130 mm achter (standaard voor een velrem-racefiets uit 2012) | ❓ zelf bevestigen |
 | Freehub achter | Shimano HG (past 10- en 11-speed? hangt van de naaf af) | ❓ |
 | Banden | Pirelli P Zero Race — breedte? | ✅ merk / ❓ maat, leeftijd |
 | Binnenbanden / tubeless | Binnenbanden (clinchervelg) | ✅ clincher |
-| Stuur | breedte? | ❓ |
-| Stuurpen | lengte, hoek? | ❓ |
+| Stuur | fabriek Giant Connect SL; breedte? | 📖 [7] / ❓ |
+| Stuurpen | fabriek Giant Connect SL; lengte, hoek? | 📖 [7] / ❓ |
 | Zadelpen | Giant Vector Composite — **framespecifiek** (aero-vorm, geen ronde 27,2/31,6) | 📖 [2] — ❓ zelf bevestigen |
-| Zadel | | ❓ |
+| Zadel | fabriek Giant Performance Road (heren); nog het origineel? | 📖 [7] / ❓ |
 | Pedalen | | ❓ |
 | Bidonhouders | aantal bevestigingspunten (onderbuis/zitbuis)? | ❓ |
 | Fietscomputer | Wahoo Elemnt Roam (v1) — van de eigenaar, **gaat niet mee bij verkoop** | ✅ eigenaar |
 
 ## 3. Fabrieksspecificaties van het model (ter referentie)
 
-Er is geen Nederlandse spec-pagina van 2012 gevonden. Wat er wel is:
+**Defy Composite 1, 2012** — door de eigenaar aangeleverd op 10-10-2026 (een
+productpagina "Bikes » Road » Sport/Performance » Giant Defy Composite 1
+(2012)", MSRP $2.400; de URL is niet bewaard) [7]:
+frame Giant Composite Technology; voorvork Advanced-Grade Composite, Alloy
+OverDrive Steerer; shifters, voor- en achterderailleur en remmen **Shimano
+Ultegra**; crankset **Shimano Ultegra 34/50**; cassette **Shimano 105 11×28,
+10-speed**; ketting Shimano 105; trapas Shimano press-fit; stuur en stuurpen
+Giant Connect SL; zadel Giant Performance Road (heren); wielen Giant P-SL1
+WheelSystem; banden Giant P-R3 Flat Guard 700×23. Maten XS, S, M, M/L, L, XL;
+kleur White/Black/Blue.
+
+**Geometrie** (mm en graden, data van de fabrikant; aangeleverd door de
+eigenaar, uit twee geometriesites — één noemt hem "Defy Composite 2013", de
+getallen zijn gelijk) [7]:
+
+| | XS | S | M | **M/L** | **L** | XL |
+| --- | --- | --- | --- | --- | --- | --- |
+| Maat (zitbuis, cm) | 43,0 | 46,5 | 50,0 | **53,5** | **55,5** | 58,5 |
+| Effectieve bovenbuis | 515 | 530 | 545 | **560** | **575** | 595 |
+| Zitbuishoek | 74,0° | 74,0° | 73,5° | 73,0° | 73,0° | 72,5° |
+| Balhoofdhoek | 71,0° | 72,0° | 72,5° | 72,5° | 72,5° | 72,5° |
+| Balhoofdbuis | 125 | 145 | 165 | 185 | 205 | 225 |
+| Liggende achtervork | 420 | 420 | 420 | 420 | 420 | 420 |
+| Wielbasis | 983 | 990 | 995 | 1007 | 1022 | 1037 |
+| Standover | 737 | 754 | 777 | 790 | 813 | 833 |
+
+Stack en reach staan er alleen voor XL (638 / 394). Vetgedrukt: de twee maten
+die bij "56" kunnen horen.
+
+Andere bronnen, ter vergelijking:
 
 **Defy Composite 1, 2012, Amerikaanse uitvoering, maat Medium** [2]:
 frame carbon, voorvork Advanced-Grade Composite; shifters Ultegra ST-6700;
@@ -91,9 +121,11 @@ Integrated", 8,0 kg, adviesprijs €2.299.
 **Nieuwprijs 2012** (Spaanse markt, bikezona): Composite 1 €2.199, Composite 3
 €1.499 [3]. Zie `reference_bike_catalog.csv`.
 
-Let op: de US-uitvoering van 2012 en de NL-uitvoering van 2013 verschillen
-(cassette 11-32 vs 11-28, remmen 105 vs Ultegra, banden). Neem dus niets
-blind over voor déze fiets — kijk na wat er echt op zit (§8).
+Let op: de US-uitvoering van 2012 wijkt af (cassette 11-32, remmen 105,
+bredere banden); de aangeleverde spec [7] en de NL-uitvoering van 2013 [1]
+komen overeen (11-28, Ultegra-remmen, 23 mm). Met de korte kooi die erop zit,
+is 11-28 ook de logische uitvoering. Fabrieksspecs blijven een
+uitgangspunt — kijk na wat er echt op zit (§8).
 
 ## 4. Maten en standaarden — de compatibiliteitstabel
 
@@ -103,22 +135,24 @@ is.
 | Standaard | Waarde | Status | Waarom het ertoe doet |
 | --- | --- | --- | --- |
 | Trapas | BB86 press-fit (Shimano) | 📖 [1][2] | Welke cranks passen (24 mm-as Hollowtech II zonder adapter) |
-| Crank-BCD | 110 mm (compact) óf 130 mm (standaard) | ❓ | Bepaalt welke voorbladen passen |
-| Voorbladen | 50/34 volgens de modelspecs | 📖 [2] / ❓ | |
+| Crank-BCD | 110 mm (compact; fabriek 34/50) | 📖 [7] / ❓ bladen nakijken | Bepaalt welke voorbladen passen |
+| Voorbladen | 50/34 | 📖 [1][7] / ❓ | |
 | Voorderailleur-montage | braze-on of klem (en klemmaat) | ❓ | Hoe ver de derailleur omlaag kan bij een kleiner blad |
-| Cassette | 10-speed, ?–? tanden | ❓ | Bereik, en of de achterderailleur het aankan |
-| Achterderailleur | SS of GS | ❓ | Grootste krans: 28T volgens oudere Shimano-documentatie, mogelijk 30T [6] |
+| Cassette | 10-speed; fabriek 11-28. De huidige (vervangen) ?–? | 📖 [7] / ❓ | Bereik, en of de achterderailleur het aankan |
+| Achterderailleur | RD-6700 **SS (korte kooi)** | ✅ eigenaar | Grootste krans **28T** volgens oudere Shimano-documentatie, mogelijk 30T [6] — zie §5 |
 | Ketting | 10-speed | ✅ | |
-| Remmen | velrem, dual-pivot | ✅ | Bereik (reach) bepaalt welke remmen passen |
+| Remmen | velrem, dual-pivot; fabriek Ultegra | ✅ / 📖 [7] | Bereik (reach) bepaalt welke remmen passen |
 | Wielmaat | 700c (622) | ✅ | |
 | Asstandaard | QR 100 / 130 | ❓ | |
 | Max. bandbreedte frame/vork | | ❓ — meet de ruimte in vork en achtervork | 28 mm? Hangt ook af van de remklauw |
 | Velg binnenbreedte (CSC) | 18 mm | ✅ eigenaar | 25 mm banden passen goed; 28+ wordt ballonnerig |
 | Zadelpen | framespecifiek (Vector Composite) | 📖 [2] | Geen gewone ronde pen; vervanging alleen deze vorm |
-| Balhoofd | geïntegreerd; maat lagers ❓ (1⅛" of 1⅛–1¼" taps?) | 📖 [2] / ❓ | Andere vork / stuurpen |
+| Balhoofd | geïntegreerd, Giant **OverDrive** (vork met aluminium OverDrive-steerer [7]). OverDrive voor de weg is volgens Giant 1⅛" boven / 1¼" onder [8]; welke lagers precies in de Defy zitten ❓ (een lagerverkoper onderscheidt de Defy van TCR/Propel [8]) | 📖 [7][8] / ❓ | Andere vork / stuurpen / lagers |
 | Stuurklem | 31,8 mm | 📖 [2] (stuurpen) / ❓ | Stuur, opzetstuur, houders |
-| Balhoofdbuis | 165 mm (Medium; de eigen maat ❓) | 📖 [2] | |
-| Effectieve bovenbuis | 545 mm bij Medium; de eigen maat ❓ | 📖 [2] | Ruwe indicatie frametas |
+| Balhoofdbuis | 185 (M/L) of 205 (L) | 📖 [7] | |
+| Effectieve bovenbuis | 560 (M/L) of 575 (L) | 📖 [7] | Ruwe indicatie frametas |
+| Liggende achtervork | 420 | 📖 [7] | |
+| Banden fabriek | 700×23 | 📖 [7] | Ruimte voor bredere banden is niet opgegeven |
 | Binnenmaten driehoek | | ❓ — **meten**, zie §8 | Frametas |
 | Bidonbevestigingen | | ❓ | Frametas vs. bidons |
 
@@ -129,15 +163,13 @@ Zet hem erbij.
 
 ### Kan er een 46T voorblad op? (10-10-2026)
 
-**Waarschijnlijk wel, met kanttekeningen — eerst de crank nakijken.**
+**Waarschijnlijk wel; het onzekere punt is de voorderailleur.**
 
-1. **Welke crank?** Staat er "FC-6750" op de binnenkant van de crankarm (of
-   zijn het 50/34-bladen), dan is het een compact met **110 mm BCD** [4].
-   Daar passen 46T-bladen van andere merken (5-gaats, 110 BCD) gewoon op, met
-   34 of 36 binnen. Is het een FC-6700 met 53/39, dan is het **130 mm BCD**
-   en kan er binnen niet kleiner dan 38/39 — 46/36 lukt dan niet zonder andere
-   crank. (De US-spec noemt "FC-6700, 50/34" [2]; 50/34 is in de praktijk de
-   compact-uitvoering — kijk het na.)
+1. **De crank.** De Composite 1 kwam met een Ultegra **compact 34/50** [7],
+   en de Ultegra-compact (FC-6750) heeft **110 mm BCD** [4]. Daar passen
+   46T-bladen van andere merken (5-gaats, 110 BCD) op, met 34 of 36 binnen.
+   Even nakijken of er nog 50/34 op zit: staat er 53/39 op, dan is de crank
+   vervangen door een 130 mm-versie en lukt 46/36 niet zonder andere crank.
 2. **De voorderailleur.** FD-6700 heeft een capaciteit van 16 tanden en is
    bedoeld voor een groot blad van **50 tot 56 tanden** volgens de
    verkopersspecs [5]. 46/34 (12T verschil) valt binnen de capaciteit, maar
@@ -153,7 +185,21 @@ Zet hem erbij.
    paar (50-34) [4]; een 46T van Shimano voor deze crank bestaat voor zover
    gevonden niet. Het wordt een blad van een ander merk.
 
-Te controleren: crank-type (§8), derailleur braze-on of klem.
+Te controleren: dat er nog 50/34 op zit (§8), derailleur braze-on of klem.
+
+### Welke cassette mag erop? (10-10-2026)
+
+De achterderailleur is een RD-6700 met **korte kooi (SS)** (eigenaar). Die is
+gespecificeerd tot een grootste krans van **28T** volgens oudere
+Shimano-documentatie; een latere revisie zou tot 30T gaan, maar dat is niet
+officieel bevestigd [6].
+
+- **11-28 of 12-28 (10-speed): past.** Dat is ook de fabrieksuitvoering [7].
+- **11-30: twijfelgeval.** Werkt bij sommigen met de B-schroef ver ingedraaid,
+  maar valt buiten de zekere spec. Niet kopen zonder het eerst te proberen.
+- **11-32 of groter: nee** met deze derailleur. Dan is een GS-kooi of andere
+  derailleur nodig (en een langere ketting).
+- **11-speed: nee.** De shifters zijn 10-speed.
 
 ### Past deze frametas?
 
@@ -199,8 +245,7 @@ toekomstige vragen. In volgorde van nut:
 1. **Crank**: typenummer op de binnenkant van de crankarm (FC-6750 / FC-6700),
    tandjes op de bladen (gestempeld), cranklengte (gestempeld, bv. 172.5).
 2. **Cassette**: tandjes grootste en kleinste krans (gestempeld op de krans).
-3. **Achterderailleur**: SS of GS (sticker/stempel op de kooi; GS heeft een
-   duidelijk langere kooi).
+3. ~~Achterderailleur SS of GS~~ — korte kooi (SS), 10-10-2026.
 4. **Voorderailleur**: braze-on (vastgeschroefd op een plaatje op de zitbuis)
    of klem (band om de zitbuis); en hoeveel ruimte er onder nog is in het
    gleufje.
@@ -208,10 +253,12 @@ toekomstige vragen. In volgorde van nut:
    hoogte voor en achter, positie bidonbouten.
 6. **Bandenruimte**: breedte van de huidige band (op de zijkant) en hoeveel mm
    er nog vrij is tot frame/vork/rem, aan elke kant.
-7. **Framemaat-letter**: sticker op de zitbuis of onder de trapas (S/M/ML/L).
+7. **Framemaat-letter**: sticker op de zitbuis of onder de trapas, óf meet
+   de bovenbuis horizontaal (hart balhoofd → hart zadelpen): ≈ 560 mm = M/L,
+   ≈ 575 mm = L (§3).
 8. **Stuur en stuurpen**: breedte stuur (hart-hart aan de uiteinden), lengte
    stuurpen (gestempeld).
-9. **Remmen**: typenummer op de remklauw (BR-6700 / BR-5700 / anders).
+9. **Remmen**: typenummer op de remklauw (fabriek Ultegra, dus BR-6700 verwacht).
 10. **Asstandaard**: snelspanner (vrijwel zeker), ter bevestiging.
 11. **Gewicht** van de complete fiets met de CSC-wielen.
 12. **Foto's**: van elk onderdeel met het typenummer, plus het framenummer.
@@ -242,6 +289,18 @@ toekomstige vragen. In volgorde van nut:
    <https://www.roadbikereview.com/threads/confused-trying-to-work-out-if-i-need-a-gs-or-ss-derailleur.262587/>,
    <https://forum.bikeradar.com/discussion/13028977/shimano-6700-rd>
 
+7. Spec en geometrie van de Defy Composite 1 (2012), door de eigenaar in het
+   gesprek geplakt op 10-10-2026: een productpagina (MSRP $2.400, "Key
+   Upgrades over Defy Composite 2") en twee geometrietabellen met
+   fabrikantdata (één noemt hem "Defy Composite 2013", met identieke
+   getallen). URL's niet bewaard — zet ze erbij als je ze terugvindt.
+8. Giant OverDrive voor de weg: 1⅛" boven, 1¼" onder (Giants technologiepagina,
+   geciteerd op een forum); lagerverkoper Steed Cycles verkoopt een
+   OverDrive-bovenlager "for TCR/Propel (not Defy)":
+   <https://singletrackworld.com/forum/bike-forum/giant-overdrive/>,
+   <https://steedcycles.com/products/giant-headset-bearing-1-1-8-road-overdrive-upper-not-od2-for-tcr-propel-not-defy>,
+   <https://www.allterraincycles.co.uk/products/giant-od-road-headset>
+
 Officiële Shimano-documentatie (si.shimano.com) en een Giant-geometrietabel
-van 2012 zijn nog niet gevonden; de Wayback Machine was vanuit deze sessie niet
+van 2012 met URL zijn nog niet gevonden; de Wayback Machine was vanuit deze sessie niet
 bereikbaar. Die twee zouden §4 en §5 hard maken.
