@@ -92,6 +92,17 @@ class BikeTitleMatchingTest(unittest.TestCase):
     FAMILY_CASES = [
         ("Racefiets Giant TCR Advanced SL maat M/L carbon", "Giant TCR Advanced"),
         ("Giant TCR racefiets – opknapper / projectfiets", "Giant TCR (overig)"),
+        # The TCR lines that all landed on "(overig)" (14-10-2026), from the
+        # comparison list of one TCR Composite.
+        ("Mooie Giant TCR Composite Racefiets Carbon Shimano Ultegra", "Giant TCR Composite"),
+        ("Giant TCR Composite 1 M/L racefiets plus Tacx Flux S Smart", "Giant TCR Composite"),
+        ("Giant TCR Alliance 3.0 racefiets – Carbon/Alu – Tiagra – L", "Giant TCR Alliance"),
+        ("Giant TCR Racefiets kind 24”", "Giant TCR Espoir / jeugd"),
+        ("Racefiets 24 inch Giant TCR", "Giant TCR Espoir / jeugd"),
+        ("GIANT TCR JUNIOR mt. 44 CM | CARBON WIELEN SHIMANO ULTEGRA", "Giant TCR Espoir / jeugd"),
+        # An aluminium TCR with a carbon fork is not a TCR Composite.
+        ("Giant TCR met composite voorvork, aluminium frame", "Giant TCR (overig)"),
+        ("Giant TCR Limited racefiets - Maat L - Shimano Ultegra", "Giant TCR (overig)"),
         ("Trek Emonda ALR5", "Trek Émonda ALR"),
         ("Trek emonda Sl-6 maat 58.", "Trek Émonda (overig)"),
         ("Trek Madone 2.1 racefiets", "Trek Madone 2.1-2.5"),

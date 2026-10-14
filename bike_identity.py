@@ -233,12 +233,20 @@ VARIANT_NUMBER_RE = re.compile(r"\d{1,2}(?:\.\d)?")
 VARIANT_CODE_RE = re.compile(r"[a-z]{1,4}\d{1,3}")
 # Letters met een cijfer die schakelen zijn, geen uitvoering.
 NOT_A_VARIANT = frozenset({"di2", "etap", "axs", "e-tap", "11s", "10s", "12s"})
+# Een modeljaar als code ("TCR Advanced MY16") is geen uitvoering.
+MODEL_YEAR_CODE_RE = re.compile(r"my\d{2}")
+# Een getal met een eenheid erachter is een wiel- of framemaat ("Advanced 1
+# 28 inch", "56 cm"), en een kommagetal vanaf 20 ook zonder eenheid ("TCR
+# Team 55.5"): uitvoeringen met een komma zijn "2.0", "8.0".
+SIZE_UNITS = frozenset({"inch", "in", "cm", "zoll"})
 VARIANT_MAX_WORDS = 3
 TOKEN_RE = re.compile(r"[a-z0-9]+(?:[.\-][a-z0-9]+)*")
 
 
 def _is_variant_word(token: str) -> bool:
-    if token in NOT_A_VARIANT:
+    if token in NOT_A_VARIANT or MODEL_YEAR_CODE_RE.fullmatch(token):
+        return False
+    if "." in token and token.split(".")[0].isdigit() and int(token.split(".")[0]) >= 20:
         return False
     if token in VARIANT_WORDS:
         return True
@@ -252,7 +260,9 @@ def variant_of(title: str, family: Optional[str]) -> Optional[str]:
     beschrijving staat na een modelnaam van alles."""
     if not family:
         return None
-    tokens = TOKEN_RE.findall(fold(title))
+    # "Giant Tcr-team": het koppelteken hoort niet bij het model.
+    tokens = [part for token in TOKEN_RE.findall(fold(title))
+              for part in (token.split("-") if token.startswith(family + "-") else (token,))]
     for i, token in enumerate(tokens):
         if token == family:
             found, rest = [], tokens[i + 1:]
@@ -263,10 +273,20 @@ def variant_of(title: str, family: Optional[str]) -> Optional[str]:
             break
     else:
         return None
-    for token in rest:
-        if len(found) >= VARIANT_MAX_WORDS or not _is_variant_word(token):
+    for at, token in enumerate(rest):
+        # "disc" telt niet mee voor het maximum: "Advanced Pro 1 Disc" is
+        # een andere fiets dan de "Advanced Pro 1" met velgremmen.
+        if len([w for w in found if w != "disc"]) >= VARIANT_MAX_WORDS and token != "disc":
             break
-        found.append(token)
+        if not _is_variant_word(token):
+            break
+        if token[:1].isdigit() and rest[at + 1:at + 2] and rest[at + 1] in SIZE_UNITS:
+            break
+        # "TCR 2.0" is "TCR 2".
+        found.append(token[:-2] if token.endswith(".0") else token)
+    # "Advanced Disc 1" en "Advanced 1 Disc" zijn dezelfde fiets: disc achteraan.
+    if "disc" in found:
+        found = [w for w in found if w != "disc"] + ["disc"]
     return " ".join(found) or None
 
 
@@ -485,7 +505,10 @@ def recognize(listing: mp.Listing) -> Identity:
     family = None
     if brand and brand in families():
         known = families()[brand]
-        family = next((w for w in sorted(known) if w in title_words), None) or \
+        # "Giant Tcr-team": ook het deel voor het koppelteken, maar alleen
+        # tegen de modellen van het merk zelf.
+        title_parts = title_words | {part for w in title_words if "-" in w for part in w.split("-")}
+        family = next((w for w in sorted(known) if w in title_parts), None) or \
             next((w for w in sorted(known) if w in text_words), None)
     if family is None:
         # Geen merk (of geen model van dat merk) in de titel: een modelwoord

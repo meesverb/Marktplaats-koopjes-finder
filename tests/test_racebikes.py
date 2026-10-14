@@ -365,6 +365,33 @@ class VariantTest(unittest.TestCase):
         composite = self.ident("Giant Defy Composite 1 maat 56")
         self.assertEqual((composite.name, composite.source), ("Giant Defy Composite 1", "referentie"))
 
+    def test_sizes_years_and_spelling_make_no_new_model(self):
+        # De TCR-lijn van 14-10-2026: elk van deze paren stond als twee
+        # modellen in de lijst op /racefietsen.
+        for a, b in (
+                ("Giant TCR Advanced Disc 1 (2020) Ultegra M/L", "Giant TCR Advanced 1 Disc"),
+                ("Giant TCR Advanced PRO1 Disc", "Giant TCR Advanced Pro 1 Disc"),
+                ("Giant TCR Advanced 1 28 inch S frame Shimano 105 Di2", "Giant TCR Advanced 1 maat M"),
+                ("Giant TCR Team 55.5", "Giant TCR Team racefiets"),
+                ("Giant Tcr-team racefiets", "Giant TCR Team"),
+                ("Giant TCR 2.0 Full Carbon", "Giant TCR 2 maat 49")):
+            self.assertEqual(self.ident(a).exact, self.ident(b).exact, a)
+        self.assertEqual(self.ident("Giant Tcr-team racefiets").coarse, "gianttcr")
+        self.assertEqual(self.ident("Giant TCR Advanced MY16").name, "Giant TCR Advanced")
+        # Disc blijft, ook na drie woorden: met velgremmen is het een andere fiets.
+        self.assertNotEqual(self.ident("Giant TCR Advanced Pro 1 Disc").exact,
+                            self.ident("Giant TCR Advanced Pro 1").exact)
+        # Een uitvoering met een getal vanaf 20 zonder eenheid blijft er een.
+        self.assertEqual(self.ident("Scott Speedster 40 2015").variant, "40")
+
+    def test_the_tcr_lines_have_their_own_model(self):
+        for title, name in (
+                ("Giant TCR Composite 2.0", "Giant TCR Composite"),
+                ("Giant TCR Alliance 1.0 racefiets - Shimano 105 - Maat L", "Giant TCR Alliance"),
+                ("Giant TCR Racefiets - jeugd", "Giant TCR Espoir / jeugd"),
+                ("Giant TCR racefiets - Ultegra afgemonteerd - met ligstuur", "Giant TCR (overig)")):
+            self.assertEqual(self.ident(title).name, name, title)
+
     def test_the_owners_link_goes_first(self):
         link = {"model_id": 7, "model": "Koga Kinsei Pro", "brand": "koga", "family": "kinsei", "variant": "pro",
                 "year": 2016, "confirmed": 1}

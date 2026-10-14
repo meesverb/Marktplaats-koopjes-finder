@@ -1390,7 +1390,11 @@ it comes from, first match wins:
    look like one (`sl`, `slr`, `al`, `cf`, `slx`, `advanced`, `pro`, `comp`,
    `sport`, `elite`, `expert`, `disc`, `team`, `ltd`, a one- or two-digit
    number, letters with a digit like `sl7`) — not "105" (groupset), not a
-   year, and it stops at the first other word.
+   year, and it stops at the first other word. A number with a unit after
+   it ("28 inch", "56 cm"), a decimal from 20 up ("55.5") and a model-year
+   code ("MY16") are sizes or years, not a variant; "2.0" counts as "2",
+   `disc` always goes last and doesn't count towards the three words
+   ("Advanced Disc 1" = "Advanced 1 Disc"), and "Tcr-team" is "TCR Team".
 
 Models compare without spaces and without what is in brackets ("SL 6" =
 "SL6", "Trek Émonda (overig)" = "Trek Emonda"). The year comes from the text
