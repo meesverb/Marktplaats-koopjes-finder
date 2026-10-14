@@ -1211,6 +1211,7 @@ def sweep_disappeared(
     *,
     confirmed: bool = True,
     report_missed: bool = False,
+    skip_unreachable: bool = False,
 ):
     """Mark every listing `query` ever found (listing_query, not the
     overwritten listing.query) that isn't in `seen_item_ids` and isn't
@@ -1224,10 +1225,14 @@ def sweep_disappeared(
     gone. A listing marked disappeared is dated from its first miss, the
     earliest the crawls knew it was gone.
 
+    `skip_unreachable` is for a crawl in parts (racefiets_jev.collect_split):
+    a listing without a condition and without a price is in none of the
+    parts, so not seeing it says nothing; it is left alone.
+
     Returns how many rows were newly marked disappeared; with
     `report_missed`, (newly missed, newly disappeared)."""
     rows = conn.execute(
-        "SELECT l.item_id, l.first_seen, l.missed_at FROM listing l "
+        "SELECT l.item_id, l.first_seen, l.missed_at, l.condition, l.price_eur FROM listing l "
         "JOIN listing_query lq ON lq.listing_id = l.item_id "
         "WHERE lq.query = ? AND l.disappeared_at IS NULL",
         (query,),
@@ -1237,6 +1242,8 @@ def sweep_disappeared(
     missed = 0
     for row in rows:
         if row["item_id"] in seen_item_ids:
+            continue
+        if skip_unreachable and not row["condition"] and row["price_eur"] is None:
             continue
         if not confirmed and not row["missed_at"]:
             conn.execute(

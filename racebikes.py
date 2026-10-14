@@ -163,6 +163,14 @@ class Base:
         return self.rows[at] if at is not None else None
 
 
+def _get(row, key):
+    """Een kolom die een oudere rij (of een test) nog niet heeft, is None."""
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
+
+
 def _time(value) -> Optional[datetime]:
     try:
         return datetime.fromisoformat(value)
@@ -174,7 +182,7 @@ SELECT = (
     "SELECT item_id, title, description, price_eur, price_type, is_bid, price_is_asking, city, "
     "posted_date, condition, frame_height, url, first_seen, last_seen, image_urls, reserved_at, "
     "bid_count, bid_minimum, bid_high, bids_checked_at, checked_at, full_description, disappeared_at, "
-    "days_online FROM listing WHERE url LIKE ?")
+    "days_online, missed_at FROM listing WHERE url LIKE ?")
 # Vergelijkingsfietsen: zo ver terug, ook verdwenen (vaak verkocht) — zelfde
 # venster als de taxatie (valuation.DEFAULT_COMP_WINDOW_DAYS).
 POOL_DAYS = val.DEFAULT_COMP_WINDOW_DAYS
@@ -260,7 +268,11 @@ def load_listings(db_path, active_days: int = ACTIVE_DAYS, _read_result=None) ->
     racefietsen, met alles wat de database erover weet."""
     read = _read_result or _read(db_path)
     rows, site, places = read.rows, read.site, read.places
-    rows = [r for r in rows if r["disappeared_at"] is None]
+    # missed_at: de laatste volledige crawl (de zondagronde) zag hem niet en
+    # daarna ook geen ronde. Pas een tweede gemiste crawl maakt hem
+    # verdwenen (voor de patronen en snel verkocht), maar hier hoort hij al
+    # niet meer tussen de fietsen die te koop staan.
+    rows = [r for r in rows if r["disappeared_at"] is None and not _get(r, "missed_at")]
     seen = [t for t in (_time(r["last_seen"]) for r in rows) if t]
     if not seen:
         return [], None, set()

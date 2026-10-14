@@ -303,6 +303,18 @@ class NearCompleteSweepTest(TempDirTest):
         )
         self.assertEqual(self.row("a")["days_online"], 9)
 
+    def test_a_split_crawl_leaves_what_no_part_reaches_alone(self):
+        # Zonder staat én zonder prijs zit hij in geen enkel deel van een
+        # crawl in delen: niet gezien zegt dan niets, ook niet twee keer.
+        lost = make_listing(item_id="c", title="Giant Defy Composite", price_eur=None, condition="")
+        db.sync_listings(self.conn, "giant defy", [lost], "2026-09-01T03:00:00+00:00")
+        for day in ("10", "17"):
+            db.sweep_disappeared(self.conn, "giant defy", {"b"}, f"2026-09-{day}T03:00:00+00:00",
+                                 confirmed=False, skip_unreachable=True)
+        self.assertIsNone(self.row("c")["missed_at"])
+        self.assertIsNone(self.row("c")["disappeared_at"])
+        self.assertEqual(self.row("a")["disappeared_at"], "2026-09-10T03:00:00+00:00")
+
     def test_a_missed_listing_that_turns_up_again_starts_over(self):
         db.sweep_disappeared(self.conn, "giant defy", {"b"}, "2026-09-10T03:00:00+00:00",
                              confirmed=False)

@@ -1260,8 +1260,13 @@ oldest first) and per price band (€0-150, 150-300, ... for the listings
 without a condition), each filtered by Marktplaats itself (checked
 30-09-2026). Listings without an amount ("bieden") can't be asked for by
 price, and sorting by price leaves them out, which is why the condition goes
-first. It is only complete if the parts together saw every listing
-Marktplaats counts; otherwise nothing is swept as gone. It runs slower than a
+first. It is complete if the parts together saw every listing Marktplaats
+counts. If only a few are missing (at most 2%, as for any full crawl), it is
+*near complete*: what it didn't see gets a `missed_at` and disappears from
+`/racefietsen` straight away, and is marked gone once the next full crawl
+misses it too. A listing without a condition and without a price is in none
+of the parts, so it is never swept that way. With more missing, nothing is
+swept (the log says `verdwijn-sweep overgeslagen`). It runs slower than a
 normal crawl on purpose: on 30-09-2026 Marktplaats answered 403 after ~120
 quick requests of 100 listings, and was fine again a few minutes later. So:
 at least 4 s between requests, a minute's pause every 40, and after a 403 it

@@ -184,10 +184,14 @@ class CrawlResult(list):
         note: str = "",
         near_complete: bool = False,
         cut_off_ids: tuple = (),
+        split: bool = False,
     ):
         super().__init__(listings)
         self.complete = complete
         self.note = note
+        # In delen opgehaald (collect_split): wat geen deel kan bereiken
+        # (zonder staat én zonder prijs) mist elke week, zie db.sweep_disappeared().
+        self.split = split
         # Every page loaded and paging ran to the end, but a handful of the
         # total went unseen — see NEAR_COMPLETE_MAX_MISSING.
         self.near_complete = near_complete
@@ -1406,14 +1410,19 @@ def collect_split(
                       f"prijs €{lo}-{hi or ''}, oudste eerst")
     print(f"  in delen: {requests_made} verzoeken, {len(raw_ids)} van de {int(total)} gezien", file=sys.stderr)
     if fetch_error:
-        return CrawlResult(listings.values(), complete=False, note=fetch_error)
+        return CrawlResult(listings.values(), complete=False, note=fetch_error, split=True)
     if len(raw_ids) < total:
-        # Not near_complete: what the parts miss (no condition and no price)
-        # is missed every week, and would be swept as gone although online.
+        # Near complete when only a few are missing, as for any full crawl:
+        # never complete meant the week round never marked anything as gone,
+        # and sold bikes stayed on /racefietsen for up to 8 days (14-10-2026).
+        # What the parts can't reach (no condition and no price) is missed
+        # every week; the sweep leaves those alone (split=True, see
+        # db.sweep_disappeared).
         return CrawlResult(listings.values(), complete=False,
                            note=f"in delen {len(raw_ids)} van de {int(total)} gezien (zonder staat én zonder prijs "
-                                "is niet apart op te vragen)")
-    return CrawlResult(listings.values(), complete=True)
+                                "is niet apart op te vragen)",
+                           near_complete=total - len(raw_ids) <= near_complete_max_missing(total), split=True)
+    return CrawlResult(listings.values(), complete=True, split=True)
 
 
 def collect_listings(
@@ -3264,6 +3273,7 @@ def sync_database(
     crawl_note: str = "",
     crawl_near_complete: bool = False,
     fetched_details: Optional[dict] = None,
+    crawl_split: bool = False,
 ) -> None:
     """Mirror this run into koopjes.db, alongside the CSV/JSON files that
     stay the ones actually read elsewhere (reference_overview.py etc.) —
@@ -3310,7 +3320,8 @@ def sync_database(
         # mark everything past page 3 as disappeared.
         if args.pages <= 0 and not crawl_complete and crawl_near_complete:
             missed, swept = db.sweep_disappeared(
-                conn, query, crawled_item_ids, finished_at, confirmed=False, report_missed=True
+                conn, query, crawled_item_ids, finished_at, confirmed=False, report_missed=True,
+                skip_unreachable=crawl_split,
             )
             print(
                 f"verdwijn-sweep voorlopig: de crawl van '{query}' was compleet op een paar na "
@@ -3459,6 +3470,7 @@ def run_for_query(
             crawl_note=crawl_note,
             crawl_near_complete=getattr(listings, "near_complete", False),
             fetched_details=fetched_details,
+            crawl_split=getattr(listings, "split", False),
         )
 
     # Captured before --bids-only/--min-score filter the list for the

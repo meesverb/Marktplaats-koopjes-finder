@@ -503,5 +503,10 @@ class SplitCrawlTest(unittest.TestCase):
         result, _ = self.run_split(everything)
         self.assertNotIn("lost", {l.item_id for l in result})
         self.assertFalse(result.complete)
-        self.assertFalse(result.near_complete)  # elke week gemist: nooit als verdwenen vegen
+        # Op een paar na compleet, dus de sweep noteert wat ontbrak. "lost"
+        # mist elke week en wordt nooit als verdwenen geveegd: dat doet
+        # db.sweep_disappeared(skip_unreachable=...) met split (14-10-2026;
+        # tot dan was zo'n crawl nooit bijna compleet en veegde de zondagronde niets).
+        self.assertTrue(result.near_complete)
+        self.assertTrue(result.split)
         self.assertIn("4 van de 5", result.note)

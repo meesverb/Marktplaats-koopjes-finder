@@ -72,6 +72,17 @@ class LoadTest(Case):
         self.assertIn("geen_fiets.md", base.owner_problem)  # zonder eigen fiets geen upgradeoordeel
         self.assertFalse(c.upgrade_ok)
 
+    def test_missed_by_the_last_full_crawl_is_not_for_sale(self):
+        # De zondagronde zag a0 niet meer: één keer gemist is nog niet
+        # verdwenen (patronen, snel verkocht), maar hij staat niet meer te koop.
+        conn = db.connect(self.db)
+        db.sweep_disappeared(conn, "racefiets", {"a1", "a2", "a3", "c", "old", "g"}, self.now.isoformat(),
+                             confirmed=False)
+        conn.close()
+        listings, _, _ = rb.load_listings(self.db)
+        self.assertNotIn("a0", {l.item_id for l in listings})
+        self.assertIn("a1", {l.item_id for l in listings})
+
     def test_with_the_real_owner_bike_there_is_an_upgrade_verdict(self):
         base = rb.build_base(self.db, repo_file("mijn_fiets.md"))
         # mijn_fiets.md heeft verkoopprijs_handmatig, dus een budget, ook zonder comps.
