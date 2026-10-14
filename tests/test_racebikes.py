@@ -439,6 +439,14 @@ class LadderTest(unittest.TestCase):
         self.assertEqual((level, len(found), few), ("familie+jaar", 9, False))
         self.assertEqual(bi.LEVEL_LABELS[level], "modelfamilie, ±2 jaar")
 
+    def test_a_model_never_mixes_rim_with_disc_or_di2(self):
+        # "Giant TCR (overig)" is een hele lijn: een oude velgremfiets
+        # kwam zonder bouwjaar naast Di2 met schijfremmen (14-10-2026).
+        pool = self.pool(("Giant TCR racefiets velgrem", 5), ("Giant TCR racefiets schijfrem Di2", 6))
+        level, found, few = pool.comparables(self.me("Giant TCR racefiets velgrem"), "me")
+        self.assertEqual((level, len(found), few), ("model", 5, False))
+        self.assertTrue(all(c[0].disc is False and not c[0].electronic for c in found))
+
     def test_three_is_few_but_better_than_nothing(self):
         pool = self.pool(("Trek Domane SL6 2019", 3))
         self.assertEqual(pool.comparables(self.me("Trek Domane SL6 2019"), "me")[::2], ("model+jaar", True))

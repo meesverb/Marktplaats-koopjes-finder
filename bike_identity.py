@@ -599,6 +599,19 @@ def same_era(a: Identity, b: Identity) -> bool:
     return a.speeds is None or b.speeds is None or a.speeds == b.speeds
 
 
+def fits_model(a: Identity, b: Identity) -> bool:
+    """Binnen hetzelfde model: niets dat de advertenties zelf zeggen spreekt
+    elkaar tegen — materiaal, remtype en aantal versnellingen gelijk of bij
+    een van beide onbekend, elektronisch schakelen gelijk. Een model is
+    vaak een hele lijn ("Giant TCR (overig)", "Specialized Tarmac", "Giant
+    TCR Advanced 2" over tien jaar), en zonder bouwjaar kwam een 9-speed
+    velgremfiets naast een 12-speed Di2 met schijfremmen (14-10-2026)."""
+    return ((a.material is None or b.material is None or a.material == b.material)
+            and (a.disc is None or b.disc is None or a.disc == b.disc)
+            and (a.speeds is None or b.speeds is None or a.speeds == b.speeds)
+            and a.electronic == b.electronic)
+
+
 def _ladder(me: Identity, exact, coarse, build, minimum: int, exclude=None) -> tuple[str, list]:
     # `exclude` hier in elke trede in plaats van vooraf uit elke lijst: de
     # opbouwlijst heeft er duizenden, en meestal slaagt een fijnere trede al.
@@ -608,10 +621,11 @@ def _ladder(me: Identity, exact, coarse, build, minimum: int, exclude=None) -> t
     year, material = me.year, me.material
     lo, hi = (year - YEAR_WINDOW, year + YEAR_WINDOW) if year is not None else (1, 0)
     if me.exact:
-        by_year = [c for c in exact if c[0].year is not None and lo <= c[0].year <= hi and c[2][0] != exclude]
+        exact = [c for c in exact if c[2][0] != exclude and fits_model(me, c[0])]
+        by_year = [c for c in exact if c[0].year is not None and lo <= c[0].year <= hi]
         if year is not None and len(by_year) >= minimum:
             return "model+jaar", by_year
-        usable = by_year + [c for c in exact if (year is None or c[0].year is None) and c[2][0] != exclude]
+        usable = by_year + [c for c in exact if year is None or c[0].year is None]
         if len(usable) >= minimum:
             return "model", usable
     if me.coarse:
@@ -647,6 +661,7 @@ def comparables(me: Identity, exact, coarse, build, exclude=None) -> tuple[str, 
 
     1. model + uitvoering, bouwjaar ±2 (beide bekend);
     2. model + uitvoering, waarvan een van beide geen bouwjaar heeft, plus die van 1;
+       in 1 en 2 alleen wat er niet mee in tegenspraak is (fits_model());
     3. merk + model, zelfde materiaal, bouwjaar ±2;
     4. merk + model, zelfde materiaal, zelfde tijdperk (same_era()) als een
        van beide geen bouwjaar heeft, plus die van 3;

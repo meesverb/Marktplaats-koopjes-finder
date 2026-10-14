@@ -1404,7 +1404,10 @@ upgrade verdict, so the age discount counts.
 The comparison wants **at least 5** listings per step and otherwise goes one
 step coarser; the card says which step:
 
-1. same model + variant, year ±2 (both known) — *model, ±2 jaar*
+1. same model + variant, year ±2 (both known) — *model, ±2 jaar*. In steps 1
+   and 2 only bikes the listing doesn't contradict: material, brakes and
+   speeds equal or unknown on one side, electronic shifting equal
+   (`fits_model()`; a model can be a whole line, such as "Giant TCR (overig)")
 2. same model + variant where one of the two has no year, plus those of 1 — *model*
 3. same brand + model (any variant), same material, year ±2 — *modelfamilie, ±2 jaar*
 4. same brand + model, same material, same era when a year is missing (disc
