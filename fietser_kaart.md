@@ -1,7 +1,7 @@
 # Fietserkaart — mijzelf (naast `fiets_kaart.md`)
 
 Om in een chat te plakken bij vragen over kleding, maten, uitrusting en cadeaus.
-✅ = vastgesteld, ❓ = nog invullen (niet gokken). Stand: 18-10-2026.
+✅ = vastgesteld, ❓ = nog invullen (niet gokken). Stand: 19-10-2026.
 
 ## Wie / hoe ik fiets
 - Regio Utrecht ❓(postcode staat in de scraper, `distance.py`) · rijdt ook naar Goes
@@ -22,14 +22,14 @@ Om in een chat te plakken bij vragen over kleding, maten, uitrusting en cadeaus.
 | Maat | Waarde |
 | --- | --- |
 | Lengte / gewicht | ❓ / ❓ |
-| Borst / taille / heup (omtrek, cm) | ❓ / ❓ / ❓ |
-| Binnenbeen (schritt tot vloer, op blote voeten) | ❓ |
+| Borst / buik / heup (omtrek, cm) | ~105-109 (109 gemeten, "nu iets minder") / 87 / 90 ✅ |
+| Binnenbeen (schritt tot vloer, op blote voeten) | 91-92 ✅ — vuistregel zadelhoogte (×0,883): ≈ 80-81 cm hart trapas tot bovenkant zadel |
 | Armlengte (schouderpunt tot pols) | ❓ |
-| Schouderbreedte (bot tot bot) | ❓ — bepaalt stuurbreedte |
+| Schouder | 52 ✅ — hoe gemeten? (bot tot bot is meestal 38-46; 52 is eerder over de buitenkant) |
 | Hoofdomtrek (boven wenkbrauwen) | ❓ — helmmaat |
 | Handomtrek (knokkels, zonder duim) / handlengte | ❓ / ❓ — handschoenen |
 | Schoenmaat EU / voetlengte / breed of smal | ❓ / ❓ / ❓ |
-| Zitbotbreedte (karton-test) | ❓ — zadelbreedte |
+| Zitbotbreedte (karton-test) | 115-120 mm ✅ — vuistregel zadel: zitbotten + 20-30 mm ≈ 135-150 mm breed |
 | Zadelhoogte (hart trapas tot bovenkant zadel) | ❓ |
 | Hoogte hoods vanaf vloer, fiets op de Direto | ❓ — nodig voor leunblad/doos |
 | Maattabel: welke maat bij welk merk past (shirt/broek) | ❓ (eigen tabel aanvullen) |
