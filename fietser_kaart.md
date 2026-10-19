@@ -13,7 +13,7 @@ Om in een chat te plakken bij vragen over kleding, maten, uitrusting en cadeaus.
 ## Wat ik al heb
 - Fiets: zie `fiets_kaart.md` · carbon remblokken ✅ · goede lampen ✅ · aero out-front houder ✅
 - Wahoo Elemnt Roam v1 ✅ · Polar-horloge ✅ · Garmin Forerunner 55 ✅
-- Helm ❓ (merk, maat, jaar) · pedalen Shimano PD-R550 = SPD-SL ✅ · schoenen ❓ (merk, maat)
+- Helm ❓ (merk, maat, jaar) · pedalen Shimano PD-R550 = SPD-SL ✅ · schoenen Fizik Tempo Overcurve R5, maat 43 ✅
 - Reparatie onderweg ❓: binnenband · bandenlichters · pomp/CO2 · multitool met kettingpons · 10-sp kettingschakel · zadeltasje
 - Thuis ❓: staande pomp met manometer · kettingslijtagemeter · momentsleutel 2-24 Nm · kettingolie/ontvetter
 - Kleding ❓: per temperatuur wat ik heb (zomer / 10-15° / 5-10° / < 5°)
@@ -28,7 +28,7 @@ Om in een chat te plakken bij vragen over kleding, maten, uitrusting en cadeaus.
 | Schouder | 52 ✅ — hoe gemeten? (bot tot bot is meestal 38-46; 52 is eerder over de buitenkant) |
 | Hoofdomtrek (boven wenkbrauwen) | ❓ — helmmaat |
 | Handomtrek (knokkels, zonder duim) / handlengte | ❓ / ❓ — handschoenen |
-| Schoenmaat EU / voetlengte / breed of smal | ❓ / ❓ / ❓ |
+| Schoenmaat EU / voetlengte / breed of smal | 43 (Fizik Tempo Overcurve R5) ✅ / ❓ / ❓ |
 | Zitbotbreedte (karton-test) | 115-120 mm ✅ — vuistregel zadel: zitbotten + 20-30 mm ≈ 135-150 mm breed |
 | Zadelhoogte (hart trapas tot bovenkant zadel) | ❓ |
 | Hoogte hoods vanaf vloer, fiets op de Direto | ❓ — nodig voor leunblad/doos |
