@@ -11,7 +11,8 @@ Stand: 10-10-2026.
 
 ## Onderdelen
 - Groep Ultegra 6700, 2×10, mechanisch ✅ · achterderailleur korte kooi (SS) ✅
-- Crank Ultegra compact 50/34 = 110 BCD 📖 (bladen nakijken ❓) · trapas press-fit BB86 📖
+- Crank Ultegra FC-6750, 50T buiten (34 aangenomen), 110 BCD, 172,5 mm ✅ · voorderailleur braze-on ✅ · trapas press-fit BB86 📖
+- Pedalen Shimano PD-R550 (SPD-SL) ✅
 - Cassette 10-sp, fabriek 11-28 📖; huidige maat ❓ · cassette + ketting ~1500 km oud ✅
 - Remmen Ultegra velrem 📖
 - Wielen: CSC carbon clincher 50 mm, 25 buiten/18 binnen, Novatec-naven, velrem ✅ · originele Giant P-SL1 nog in bezit ✅
@@ -30,7 +31,7 @@ Stand: 10-10-2026.
 | Stuurrol/-tas max. breedte | < 37 cm |
 | Zadeltas | 22 cm zadelpen = ruim; zadel→band ❓ |
 | Max. grootste krans (SS) | 28T (30T onzeker) |
-| Voorblad | 110 BCD; 46/34 kan, voorderailleur moet ~8 mm omlaag (onzeker) |
+| Voorblad | 110 BCD ✅; 46/34 kan, braze-on voorderailleur moet ~8 mm omlaag (ruimte in plaatje ❓) |
 | Max. bandbreedte | ❓ (nu 26c) |
 
 ## Past niet
@@ -51,4 +52,4 @@ Stand: 10-10-2026.
 - Zelfde fit zoeken op **bovenbuis ≈ 560 / reach**, niet op "maat 56" (andere merken meten de zitbuis)
 
 ## Nog meten
-Typenummer + bladen crank · tandjes cassette · voorderailleur vastgeschroefd of klem · zadel→achterband · bandenruimte · stuurpenlengte · gewicht
+Tandjes cassette · ruimte onder in braze-on plaatje · zadel→achterband · bandenruimte · stuurpenlengte · gewicht

@@ -131,6 +131,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |
 | `fiets_master.md` | masterdocument van de eigen fiets: onderdelen, maten en standaarden, onderhoud, uitgewerkte "past X?"-vragen, meetlijst. Elke regel met status (eigenaar / bron / onbekend); lees het bij elke vraag over wat er op de fiets past |
 | `fiets_kaart.md` | één pagina met alles over de eigen fiets voor een chat (ook buiten de repo): maten, onderdelen, wat past en niet, voorkeuren, budget. Bijwerken samen met `fiets_master.md` |
+| `fietser_kaart.md` | de eigenaar als fietser: rijprofiel, wat hij al heeft, lichaamsmaten (in te vullen), voorkeuren — voor vragen over kleding, maten, uitrusting. Naast `fiets_kaart.md` |
 | `bikepacking_uitrusting.xlsx` | bikepackingtassen voor de eigen fiets: prijs, gewicht, bron per regel, "Past?" als formule op de maten in het tabblad Mijn fiets, totalen in Mijn set. Prijzen zijn momentopnamen met winkel en datum |
 | `NEXT_STEPS.md` | stand van zaken en losse eindjes |
 | `reference_prices.csv` | handmatig onderzochte modellen (43, alleen luidsprekers) |

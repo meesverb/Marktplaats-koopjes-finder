@@ -48,9 +48,9 @@ zit.
 | --- | --- | --- |
 | **Groep** | Shimano Ultegra **6700**, mechanisch, **2×10** | ✅ eigenaar |
 | Shifters | Ultegra ST-6700 (aangenomen: hoort bij de groep) | ❓ typenummer nakijken |
-| Voorderailleur | Ultegra FD-6700 — braze-on of klem? | ❓ |
+| Voorderailleur | Ultegra FD-6700, lijkt **braze-on** (vastgeschroefd op een plaatje aan de zitbuis; foto 19-10-2026) | ✅ foto / bevestigen |
 | Achterderailleur | Ultegra RD-6700, **korte kooi (SS)** | ✅ eigenaar (10-10-2026) |
-| Crankset | Fabriek: Shimano Ultegra **compact 34/50** (dus 110 mm BCD). Typenummer en cranklengte? | 📖 [7] / ❓ nakijken, zie §5 |
+| Crankset | Shimano Ultegra, arm gestempeld "FC-6700/6703/6750", **172,5 mm**; buitenblad "SG-X 50-F" = **50T compact → FC-6750, 110 mm BCD** (binnenblad 34 aangenomen, niet op de foto) | ✅ foto 19-10-2026 |
 | Cassette | 10-speed, vervangen ca. 1500 km geleden. Tandjes (bv. 11-28)? Merk? | ✅ vervangen / ❓ maat |
 | Ketting | 10-speed, vervangen ca. 1500 km geleden | ✅ eigenaar / ❓ merk |
 | Trapas | Press-fit volgens de modelspecs (BB86) | 📖 [1][2] — ❓ zelf bevestigen |
@@ -67,7 +67,7 @@ zit.
 | Zichtbare zadelpen | **22 cm** (eerder gemeten) | ✅ eigenaar |
 | Zadelpen | Giant Vector Composite — **framespecifiek** (aero-vorm, geen ronde 27,2/31,6) | 📖 [2] — ❓ zelf bevestigen |
 | Zadel | fabriek Giant Performance Road (heren); nog het origineel? | 📖 [7] / ❓ |
-| Pedalen | | ❓ |
+| Pedalen | **Shimano PD-R550** — SPD-SL (racepedaal, 3-gaats schoenplaatjes) | ✅ foto 19-10-2026 |
 | Bidonhouders | **1 houder op de onderbuis**; boutgaten op de zitbuis, daar nu geen houder | ✅ eigenaar |
 | Fietscomputer | Wahoo Elemnt Roam (v1) — van de eigenaar, **gaat niet mee bij verkoop** | ✅ eigenaar |
 
@@ -138,9 +138,10 @@ is.
 | Standaard | Waarde | Status | Waarom het ertoe doet |
 | --- | --- | --- | --- |
 | Trapas | BB86 press-fit (Shimano) | 📖 [1][2] | Welke cranks passen (24 mm-as Hollowtech II zonder adapter) |
-| Crank-BCD | 110 mm (compact; fabriek 34/50) | 📖 [7] / ❓ bladen nakijken | Bepaalt welke voorbladen passen |
-| Voorbladen | 50/34 | 📖 [1][7] / ❓ | |
-| Voorderailleur-montage | braze-on of klem (en klemmaat) | ❓ | Hoe ver de derailleur omlaag kan bij een kleiner blad |
+| Crank-BCD | 110 mm (FC-6750, 50T buitenblad gezien) | ✅ foto | Bepaalt welke voorbladen passen |
+| Voorbladen | 50 ✅ / 34 (aangenomen) | ✅ / 📖 | |
+| Voorderailleur-montage | braze-on (volgens foto) | ✅ foto / bevestigen | Hoe ver de derailleur omlaag kan bij een kleiner blad |
+| Pedaalsysteem | SPD-SL (PD-R550) | ✅ foto | Schoenen met 3-gaats racezolen |
 | Cassette | 10-speed; fabriek 11-28. De huidige (vervangen) ?–? | 📖 [7] / ❓ | Bereik, en of de achterderailleur het aankan |
 | Achterderailleur | RD-6700 **SS (korte kooi)** | ✅ eigenaar | Grootste krans **28T** volgens oudere Shimano-documentatie, mogelijk 30T [6] — zie §5 |
 | Ketting | 10-speed | ✅ | |
@@ -195,7 +196,7 @@ Zet hem erbij.
    paar (50-34) [4]; een 46T van Shimano voor deze crank bestaat voor zover
    gevonden niet. Het wordt een blad van een ander merk.
 
-Te controleren: dat er nog 50/34 op zit (§8), derailleur braze-on of klem.
+Bevestigd 19-10-2026: FC-6750 met 50T buitenblad (110 BCD), derailleur braze-on. Nog na te kijken: hoeveel ruimte er onder in het gleufje van het braze-on plaatje is (~8 mm nodig).
 
 ### Welke cassette mag erop? (10-10-2026)
 
@@ -293,13 +294,11 @@ Waarde en verkoopscenario's: zie `taxatie_2026-09-22.md` en `mijn_fiets.md`.
 Eén keer 15 minuten met een rolmaat en een zaklamp beantwoordt de meeste
 toekomstige vragen. In volgorde van nut:
 
-1. **Crank**: typenummer op de binnenkant van de crankarm (FC-6750 / FC-6700),
-   tandjes op de bladen (gestempeld), cranklengte (gestempeld, bv. 172.5).
+1. ~~Crank~~ — FC-6750, 50T buiten, 172,5 mm (foto 19-10-2026).
 2. **Cassette**: tandjes grootste en kleinste krans (gestempeld op de krans).
 3. ~~Achterderailleur SS of GS~~ — korte kooi (SS), 10-10-2026.
-4. **Voorderailleur**: braze-on (vastgeschroefd op een plaatje op de zitbuis)
-   of klem (band om de zitbuis); en hoeveel ruimte er onder nog is in het
-   gleufje.
+4. **Voorderailleur**: braze-on (foto). Nog: hoeveel ruimte er onder in het
+   gleufje van het plaatje is.
 5. ~~Driehoek binnenmaten~~ — 46 / 38 / 56 cm, 10-10-2026. (Oud: **Driehoek binnenmaten** (voor frametassen): vrije lengte langs de
    onderkant van de bovenbuis, ruimte tussen bidon (zitbuis) en bovenbuis,
    positie bidonbouten, en of de kabels langs de bovenbuis lopen. Maakt het
