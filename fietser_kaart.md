@@ -13,7 +13,7 @@ Om in een chat te plakken bij vragen over kleding, maten, uitrusting en cadeaus.
 ## Wat ik al heb
 - Fiets: zie `fiets_kaart.md` · carbon remblokken ✅ · goede lampen ✅ · aero out-front houder ✅
 - Wahoo Elemnt Roam v1 ✅ · Polar-horloge ✅ · Garmin Forerunner 55 ✅
-- Helm ❓ (merk, maat, jaar) · schoenen + pedaalsysteem ❓ (SPD-SL / Look / SPD)
+- Helm ❓ (merk, maat, jaar) · pedalen Shimano PD-R550 = SPD-SL ✅ · schoenen ❓ (merk, maat)
 - Reparatie onderweg ❓: binnenband · bandenlichters · pomp/CO2 · multitool met kettingpons · 10-sp kettingschakel · zadeltasje
 - Thuis ❓: staande pomp met manometer · kettingslijtagemeter · momentsleutel 2-24 Nm · kettingolie/ontvetter
 - Kleding ❓: per temperatuur wat ik heb (zomer / 10-15° / 5-10° / < 5°)
