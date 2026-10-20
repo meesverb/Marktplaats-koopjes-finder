@@ -1,7 +1,7 @@
 # Fietserkaart — mijzelf (naast `fiets_kaart.md`)
 
 Om in een chat te plakken bij vragen over kleding, maten, uitrusting en cadeaus.
-✅ = vastgesteld, ❓ = nog invullen (niet gokken). Stand: 19-10-2026.
+✅ = vastgesteld, ❓ = nog invullen (niet gokken). Stand: 20-10-2026.
 
 ## Wie / hoe ik fiets
 - Regio Utrecht ❓(postcode staat in de scraper, `distance.py`) · rijdt ook naar Goes
@@ -30,8 +30,8 @@ Om in een chat te plakken bij vragen over kleding, maten, uitrusting en cadeaus.
 | Handomtrek (knokkels, zonder duim) / handlengte | ❓ / ❓ — handschoenen |
 | Schoenmaat EU / voetlengte / breed of smal | 43 (Fizik Tempo Overcurve R5) ✅ / ❓ / ❓ |
 | Zitbotbreedte (karton-test) | 115-120 mm ✅ — vuistregel zadel: zitbotten + 20-30 mm ≈ 135-150 mm breed |
-| Zadelhoogte (hart trapas tot bovenkant zadel) | ❓ |
-| Hoogte hoods vanaf vloer, fiets op de Direto | ❓ — nodig voor leunblad/doos |
+| Zadelhoogte (hart trapas tot bovenkant zadel) | ≈ 83 ✅ ("denk ik") — ~2 cm boven de vuistregel; prima zolang knieën/heupen geen klachten geven |
+| Hoogte hoods vanaf vloer, fiets op de Direto | ≈ 102 ✅ — leunblad op ~105-112 cm |
 | Maattabel: welke maat bij welk merk past (shirt/broek) | ❓ (eigen tabel aanvullen) |
 
 ## Voorkeuren
