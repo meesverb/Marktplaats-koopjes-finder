@@ -16,6 +16,7 @@ server.
 
 ```bash
 python -m unittest discover -s tests -t tests    # 1074 tests, moet groen zijn
+python -m unittest discover -s beeld/tests -t beeld/tests   # beeldmodel, 22 tests, zonder torch
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -38,6 +39,10 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
   bij in dezelfde commit.
 - **Geen nieuwe dependencies** zonder goede reden. `requirements.txt` bevat
   alleen `requests`; `sqlite3`, `json` en `unittest` zitten in de stdlib.
+  Uitzondering: `beeld/` heeft een eigen `requirements.txt` (torch,
+  transformers) en een eigen venv. De rest van de repo importeert daar nooit
+  iets uit, en `beeld/` niets uit de repo: los te koppelen (eis van de
+  eigenaar, zie `beeld/README.md`).
 - **Blijf beleefd tegen Marktplaats.** Respecteer `--delay`, geen parallelle
   verzoeken, voer de crawl-frequentie niet op.
 - **Nooit automatisch bieden of reageren op advertenties.** Er is geld en een
@@ -126,7 +131,8 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `valuation.py` | waarderingsmotor (fase 3): E1/E2/E3 op de comps in `koopjes.db`, schrijft naar `valuation` + `valuation_evidence`. Leest `mijn_fiets.md` |
 | `tests/` | stdlib-unittests; `helpers.py` heeft `make_listing()` en een `FakeSession` |
 | `PLAN_FIETSWAARDE.md` | actief werkplan, gefaseerd |
-| `opdrachten/` | uitgeschreven opdrachten van de eigenaar (`fietsmodellen.md`, `goedkoopste_onderdelen.md`) en de werklijst van het weekend (`weekend.md`, met zijn keuzes en een logboek) |
+| `opdrachten/` | uitgeschreven opdrachten van de eigenaar (`fietsmodellen.md`, `goedkoopste_onderdelen.md`, `beeldmodel.md`) en de werklijst van het weekend (`weekend.md`, met zijn keuzes en een logboek) |
+| `beeld/` | het zelf getrainde beeldmodel (`opdrachten/beeldmodel.md`): op de foto's merk, model, groepset, remmen, wielen en staat herkennen, als hint; nooit in taxatie, dealscore of waardescore. Los te koppelen: importeert niets uit de repo en andersom, leest `koopjes.db` alleen, eigen `requirements.txt`, venv en tests; foto's en labels in `beeld/data/` (niet in git). Nu: stap 0, `python beeld/meet.py` meet per model de snelheid op de laptop van de eigenaar en schrijft alleen tijden naar `beeld/metingen/` |
 | `taxatie_2026-09-22.md` | de eerste handmatige taxatie van de eigen fiets, met bewijsregels (voorloper van fase 3) |
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |
 | `fiets_master.md` | masterdocument van de eigen fiets: onderdelen, maten en standaarden, onderhoud, uitgewerkte "past X?"-vragen, meetlijst. Elke regel met status (eigenaar / bron / onbekend); lees het bij elke vraag over wat er op de fiets past |

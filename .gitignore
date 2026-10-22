@@ -18,3 +18,7 @@ lijsten/
 flip_fotos/
 sheets.json
 sheets.json.state.json
+# Beeldmodel (beeld/): foto's, antwoorden, en later vectoren en labels blijven
+# lokaal. Alleen beeld/metingen/ (tijden en tellingen) mag in git. De venv
+# (beeld/.venv) valt al onder .venv/ hierboven.
+beeld/data/

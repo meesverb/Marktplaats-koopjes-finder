@@ -1,0 +1,13 @@
+# Alleen voor beeld/, in een eigen venv (beeld/.venv). De scraper heeft dit
+# niet nodig: die gebruikt requirements.txt in de repo-map (alleen requests).
+#
+# Installeer torch eerst los, de CPU-versie: kleiner, en de laptop heeft geen
+# Nvidia-kaart.
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#
+# Getest op 22-10-2026 met torch 2.14.1+cpu en transformers 5.20.2.
+torch>=2.5
+transformers>=5.20
+pillow>=10
+psutil>=5.9
+requests>=2.31

@@ -2031,6 +2031,17 @@ them, so this goes by the title: "gezocht" at the start, at the end, or in
 brackets ("Gezocht: racefiets", "Garmin Edge 530 gezocht", "(Gezocht)"), but
 not "veel gezocht model".
 
+## Image model (`beeld/`)
+
+A self-trained model that reads the photos of a road-bike listing (brand,
+model, groupset, brakes, wheels, condition) and shows what it sees as a
+hint; it never counts towards the valuation, the deal score or the value
+score. It lives entirely in `beeld/`, with its own `requirements.txt`
+(torch, transformers), virtual environment and tests, and only reads
+`koopjes.db`. Nothing outside `beeld/` imports it, so removing the folder
+leaves the rest working as before. Setup and step 0 (measuring what the
+laptop can run): `beeld/README.md`; the plan: `opdrachten/beeldmodel.md`.
+
 ## Notes
 
 This scrapes Marktplaats' public search result pages directly (no API key
