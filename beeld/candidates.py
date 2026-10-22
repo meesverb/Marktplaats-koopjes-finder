@@ -47,20 +47,21 @@ CANDIDATES = (
     Candidate("siglip2-b", VECTORS, "google/siglip2-base-patch16-224", "Apache 2.0, ook zonder training"),
     Candidate("florence2-b", CROPS, "florence-community/Florence-2-base", "MIT, 230M"),
     Candidate("florence2-l", CROPS, "florence-community/Florence-2-large", "MIT, 770M", default=False),
+    # De leraar is het grootste model dat op de laptop draait (keuze van de
+    # eigenaar, 22-10-2026): qwen3.5:35b, 34,7B parameters in Q4_K_M (~22 GB).
+    # Het is een "mixture of experts" met ~3B actief per woord, dus op de
+    # processor bijna zo snel als een klein model, maar het moet helemaal in
+    # het geheugen: met 32 GB past het als er weinig anders draait. Wat groter
+    # is (122B) past niet; de gewone ("dense") 27B en 31B zijn kleiner en op
+    # de processor veel trager. gemma4:26b (3,8B actief, 16-19 GB) is de
+    # terugval als 35b niet past, qwen3.5:2b de snelle vergelijking.
+    Candidate("qwen3.5:35b", TEACHER, "qwen3.5:35b", "Apache 2.0, Ollama, 35B waarvan ~3B actief, ~22 GB"),
+    Candidate("gemma4:26b", TEACHER, "gemma4:26b", "Apache 2.0, Ollama, 25B waarvan 3,8B actief, ~16-19 GB"),
     Candidate("qwen3.5:2b", TEACHER, "qwen3.5:2b", "Apache 2.0, Ollama, ~3 GB"),
     Candidate("qwen3.5:4b", TEACHER, "qwen3.5:4b", "Apache 2.0, Ollama, ~4 GB", default=False),
-    Candidate("gemma4:e2b", TEACHER, "gemma4:e2b", "Apache 2.0, Ollama, ~5-7 GB"),
-    # Groter. Op de processor is een gewoon ("dense") model ruwweg zo traag
-    # als het groot is. De twee "mixture of experts"-modellen rekenen per
-    # woord maar met een paar miljard parameters, dus bijna zo snel als een
-    # 4B, maar ze moeten helemaal in het geheugen: met 32 GB past gemma4:26b,
-    # qwen3.5:35b alleen als er weinig anders draait.
     Candidate("qwen3.5:9b", TEACHER, "qwen3.5:9b", "Apache 2.0, Ollama, 9B, ~7 GB", default=False),
+    Candidate("gemma4:e2b", TEACHER, "gemma4:e2b", "Apache 2.0, Ollama, ~5-7 GB", default=False),
     Candidate("gemma4:12b", TEACHER, "gemma4:12b", "Apache 2.0, Ollama, 12B, ~8 GB", default=False),
-    Candidate("gemma4:26b", TEACHER, "gemma4:26b",
-              "Apache 2.0, Ollama, 25B waarvan 3,8B actief, ~16-19 GB", default=False),
-    Candidate("qwen3.5:35b", TEACHER, "qwen3.5:35b",
-              "Apache 2.0, Ollama, 35B waarvan 3B actief, ~22 GB: krap in 32 GB", default=False),
 )
 BY_KEY = {c.key: c for c in CANDIDATES}
 
@@ -346,7 +347,14 @@ def measure_teacher(c: Candidate, paths: list[Path], session, base_url: str) -> 
             response = session.post(f"{base_url}/api/chat", json=body, timeout=TEACHER_TIMEOUT_S)
         seconds = time.perf_counter() - start
         if response.status_code != 200:
-            m.status, m.reason = "fout", f"HTTP {response.status_code}: {response.text[:200]}"
+            if "memory" in response.text.lower():
+                # Ollama weigert een model dat niet in het geheugen past
+                # ("model requires more system memory ... than is available").
+                m.status, m.reason = "overgeslagen", (
+                    f"past niet in het geheugen ({response.text[:160]}); herstart de laptop en sluit "
+                    "andere programma's, of neem gemma4:26b")
+            else:
+                m.status, m.reason = "fout", f"HTTP {response.status_code}: {response.text[:200]}"
             return m
         data = response.json()
         content = (data.get("message") or {}).get("content", "")

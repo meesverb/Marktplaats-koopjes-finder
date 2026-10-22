@@ -71,15 +71,19 @@ Loskoppelen is dus: de map `beeld/` weghalen, de regel `beeld/data/` uit
    [ollama.com](https://ollama.com), en dan:
 
    ```powershell
+   ollama pull qwen3.5:35b
+   ollama pull gemma4:26b
    ollama pull qwen3.5:2b
-   ollama pull gemma4:e2b
    ```
 
-   Ollama moet draaien tijdens de meting (het staat na installatie in het
-   systeemvak).
+   `qwen3.5:35b` is de leraar: het grootste model dat in 32 GB past (zie
+   "De leraar" hieronder). `gemma4:26b` is de terugval als het toch niet
+   past, `qwen3.5:2b` de snelle vergelijking. Ollama moet draaien tijdens de
+   meting (het staat na installatie in het systeemvak).
 
 **Schijfruimte:** reken op ongeveer 3 GB voor de modellen via Hugging Face
-en 8 à 10 GB voor de twee leraren in Ollama.
+en ruim 40 GB voor de drie leraren (22 + 16-19 + 3 GB). Wil je dat niet,
+sla `gemma4:26b` dan over tot blijkt dat 35b niet past.
 
 ## Stap 0 draaien
 
@@ -114,29 +118,31 @@ python beeld\meet.py --modellen alle                 # alles, ook de grote lerar
 python beeld\meet.py --map C:\pad\naar\fotos         # eigen foto's, zonder koopjes.db
 ```
 
-### Grotere leraren
+### De leraar: het grootste model dat past
 
-Qua geheugen kan de laptop (32 GB) veel grotere modellen aan; de grens is de
-snelheid, want alles rekent op de processor. Een gewoon model is ruwweg zo
-traag als het groot is. De twee "mixture of experts"-modellen rekenen per
-woord met maar een paar miljard parameters, en zijn daardoor bijna zo snel
-als een 4B-model. Ze moeten wel helemaal in het geheugen passen.
+Keuze van de eigenaar: de leraar is het grootste model dat lokaal draait.
+Qua geheugen kan de laptop (32 GB) veel aan; de grens is de snelheid, want
+alles rekent op de processor. Een gewoon ("dense") model is ruwweg zo traag
+als het groot is. Een "mixture of experts" rekent per woord met maar een
+paar miljard parameters en is daardoor bijna zo snel als een klein model,
+maar moet wel helemaal in het geheugen passen.
 
 | Model | Download | Opmerking |
 | --- | --- | --- |
-| `qwen3.5:9b` | ~7 GB | gewoon model, ~2 keer zo traag als 4b |
-| `gemma4:12b` | ~8 GB | gewoon model |
-| `gemma4:26b` | 16-19 GB | 25B, waarvan 3,8B actief: **de interessantste voor deze laptop** |
-| `qwen3.5:35b` | ~22 GB | 35B, waarvan 3B actief; krap, sluit eerst alles af |
+| **`qwen3.5:35b`** | ~22 GB | **de leraar**: 34,7B, waarvan ~3B actief. Het grootste dat in 32 GB past |
+| `gemma4:26b` | 16-19 GB | terugval: 25B, waarvan 3,8B actief |
+| `qwen3.5:2b` | ~3 GB | snelle vergelijking; was de beste van de kleine in de proef |
+| `qwen3.5:9b`, `gemma4:12b` | 7-8 GB | gewone modellen, alleen met `--modellen` |
 
-```powershell
-ollama pull gemma4:26b
-python beeld\meet.py --modellen qwen3.5:2b,gemma4:26b --leraar-fotos 10
-```
+Groter kan niet: het volgende Qwen-model is 122B. De gewone 27B en 31B zijn
+kleiner dan 35b en op de processor veel trager.
 
-Herstart de laptop eerst: met 25 GB al in gebruik past een model van 16 GB
-niet, en dan gaat Windows naar de schijf wisselen. Dat is tientallen keren
-trager, en de meting zegt dan niets.
+**Herstart de laptop eerst en sluit alles af** (browser, `dashboard.py
+--serve`). Met 25 GB al in gebruik past een model van 22 GB niet. Ollama
+weigert het dan (`meet.py` meldt "past niet in het geheugen"), of Windows
+gaat naar de schijf wisselen. Dat is tientallen keren trager, en de meting
+zegt dan niets. Kijk tijdens de meting in Taakbeheer of het geheugen onder
+de 32 GB blijft.
 
 ## Wat je daarna doet
 

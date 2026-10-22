@@ -1,8 +1,10 @@
 """Stap 0 van het beeldmodel: meten wat deze laptop aankan.
 
     python beeld/meet.py              standaardkeuze: alle vectornetwerken,
-                                      Florence-2 base, leraren qwen3.5:2b en
-                                      gemma4:e2b (als ze in Ollama staan)
+                                      Florence-2 base, leraren qwen3.5:35b
+                                      (de grootste die past), gemma4:26b
+                                      (terugval) en qwen3.5:2b (snel), als
+                                      ze in Ollama staan
     python beeld/meet.py --lijst      welke modellen er te kiezen zijn
     python beeld/meet.py --modellen dinov2-s,siglip2-b
     python beeld/meet.py --map C:\\pad\\naar\\fotos   eigen foto's, zonder koopjes.db

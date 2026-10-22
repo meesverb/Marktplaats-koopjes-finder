@@ -276,6 +276,20 @@ class TestTeacher(unittest.TestCase):
         # Een lus in het antwoord mag niet tot de time-out doorlopen.
         self.assertEqual(session.posts[0]["options"]["num_predict"], cand.TEACHER_MAX_TOKENS)
 
+    def test_largest_model_is_the_default_teacher(self):
+        teachers = [c.key for c in cand.select(None) if c.role == cand.TEACHER]
+        self.assertEqual(teachers[0], "qwen3.5:35b")
+
+    def test_model_too_big_for_memory(self):
+        c = cand.BY_KEY["qwen3.5:35b"]
+        tags = FakeResponse(payload={"models": [{"name": "qwen3.5:35b"}]})
+        refused = FakeResponse(500, text='{"error":"model requires more system memory (24.1 GiB) than is '
+                                         'available (18.0 GiB)"}')
+        m = cand.measure_teacher(c, self.paths, FakeSession(get=[tags], post=[refused]), "http://x")
+        self.assertEqual(m.status, "overgeslagen")
+        self.assertIn("past niet in het geheugen", m.reason)
+        self.assertIn("gemma4:26b", m.reason)
+
     def test_model_without_thinking_mode(self):
         tags = FakeResponse(payload={"models": [{"name": "qwen3.5:2b"}]})
         refused = FakeResponse(400, text='{"error":"model does not support thinking"}')

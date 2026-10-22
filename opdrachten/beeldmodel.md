@@ -53,6 +53,14 @@ vragen.
   met een budget (meer data), en opnieuw trainen gaat met de hand na nieuwe
   labels.
 - **DINOv3**: ja, de eigenaar vraagt toegang aan. **Leraar via Ollama.**
+- **De leraar is het grootste model dat lokaal draait** (eigenaar,
+  22-10-2026, na de proef met de kleine): `qwen3.5:35b`, 34,7B in Q4_K_M
+  (~22 GB, `qwen35moe`, ~3B actief per woord). Terugval als het niet past:
+  `gemma4:26b` (25,2B, 3,8B actief, 16-19 GB). Groter past niet in 32 GB
+  (het volgende Qwen-model is 122B); de gewone 27B/31B zijn kleiner en op de
+  processor veel trager. **Niet getest in de sandbox** (15,7 GB geheugen,
+  te weinig): de meting op de laptop moet laten zien of het past en hoe
+  snel het is.
 
 ## De aanpak
 
@@ -65,9 +73,10 @@ geen nodig. Daarom twee soorten modellen.
 
 ### Leraar en leerling
 
-- **Leraar**: een klein beeld-taalmodel, lokaal via Ollama (Qwen3.5-2B,
-  Gemma 4 E2B). Leest stickers en zegt wat hij ziet, zonder labels. Traag:
-  hij draait 's nachts op een paar honderd fietsen.
+- **Leraar**: een beeld-taalmodel, lokaal via Ollama: het grootste dat op
+  de laptop past, `qwen3.5:35b` (zie "Wat de eigenaar wil"). Leest stickers
+  en zegt wat hij ziet, zonder labels. Traag: hij draait 's nachts op een
+  paar honderd fietsen.
 - **Leerling**: de eigen classifier op vectoren van een voorgetraind netwerk
   (DINOv2/DINOv3/SigLIP 2). Snel; draait op alle racefietsen.
 
@@ -117,12 +126,15 @@ testset.
 | vectoren | DINOv2 small/base | Apache 2.0 | [HF](https://huggingface.co/facebook/dinov2-base) |
 | vectoren + zonder training | SigLIP 2 base/16-224 | Apache 2.0 | [HF](https://huggingface.co/google/siglip2-base-patch16-224) |
 | uitsnede + OCR | Florence-2 base (230M), large (770M) | MIT | [transformers-docs](https://huggingface.co/docs/transformers/model_doc/florence2) |
-| leraar | Qwen3.5-2B (OCRBench 84,5), 4B | Apache 2.0 | [HF](https://huggingface.co/Qwen/Qwen3.5-2B), [Ollama](https://ollama.com/library/qwen3.5) |
-| leraar | Gemma 4 E2B, E4B (instelbaar detail, ook OCR) | Apache 2.0 | [modelkaart](https://ai.google.dev/gemma/docs/core/model_card_4), [Ollama](https://ollama.com/library/gemma4) |
+| **leraar** | **Qwen3.5-35B-A3B** (`qwen3.5:35b`, ~22 GB): het grootste dat past | Apache 2.0 | [HF](https://huggingface.co/Qwen/Qwen3.5-35B-A3B), [Ollama](https://ollama.com/library/qwen3.5:35b) |
+| terugval | Gemma 4 26B A4B (`gemma4:26b`, 16-19 GB; MMMU Pro 73,8% tegen 44,2% voor E2B) | Apache 2.0 | [modelkaart](https://ai.google.dev/gemma/docs/core/model_card_4), [Ollama](https://ollama.com/library/gemma4:26b) |
+| vergelijking | Qwen3.5-2B (OCRBench 84,5), 4B, 9B; Gemma 4 E2B, 12B | Apache 2.0 | [HF](https://huggingface.co/Qwen/Qwen3.5-2B), [Ollama](https://ollama.com/library/qwen3.5) |
 | versnellen (later) | OpenVINO (Intel CPU/iGPU) | Apache 2.0 | [release notes](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino.html) |
 
 Bewust niet: YOLOE (AGPL), Grounding DINO en OWLv2 (te zwaar voor de CPU),
-beeld-taalmodellen van 8B of groter (te traag op deze laptop).
+en gewone ("dense") beeld-taalmodellen van 27B of meer (te traag op de
+processor; de "mixture of experts"-modellen hierboven zijn groter maar
+rekenen per woord met ~3-4B).
 
 ### Laptop
 
