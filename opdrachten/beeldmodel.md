@@ -263,3 +263,15 @@ classifiers. Fine-tunen kan, maar kost avonden.
     4. qwen3.5:2b is hier de beste én de snelste, ~230 foto's per uur op 4
        kernen: op de laptop 's nachts ruim duizend. De keus valt pas na de
        meting op de laptop en de testset.
+- 22-10 — **groter op dezelfde 10 foto's** (op vraag van de eigenaar: "kan ik
+  niet grotere modellen aan?"). qwen3.5:9b: 45,5 s per foto (2b: 15,3 s),
+  merk 4-1-4 goed-fout-weet niet, rem 4-0-4, materiaal 0-0-8. Groter is hier
+  **voorzichtiger en leest meer**: geen verzonnen merk meer (2b maakte van de
+  Brassworks een "Trek"), wel SCOTT (2b miste het), CUBE met EASTON-wielen,
+  "VAN RIJSEL", en als eerste een groepset: **DURA-ACE** op de Canyon. Nog
+  fout: "MMP" voor MMR, "RIVAL" op een Scott met Force AXS, en staat blijft
+  onbruikbaar ("banden versleten" bij fietsen in nieuwstaat). gemma4:12b
+  startte niet in Ollama 0.40.8 ("Gemma4Assistant requires ctx_other to be
+  set"); `meet.py` meldde het en ging door. Daarna koos de eigenaar voor het
+  grootste model dat lokaal past: `qwen3.5:35b` (zie "Wat de eigenaar wil");
+  dat past niet in de 15,7 GB van de sandbox.
