@@ -60,30 +60,41 @@ FLORENCE_TASKS = ("<OCR>", "<OPEN_VOCABULARY_DETECTION>")
 
 # De leraar ziet alleen de foto, nooit de titel of tekst: anders praat hij de
 # verkoper na en zegt "leraar en verkoper zijn het eens" niets meer.
+# Eerste versie (22-10-2026) gaf voorbeelden ("rusty chain, worn tyres") en
+# vrije tekst per veld: qwen3.5:2b schreef de voorbeelden terug bij bijna
+# elke fiets, ook in nieuwstaat, zette de uitlegzin als antwoord bij
+# cosmetic, en verzon modellen en groepsets ("Allez 10" op een Scott, "750mm").
+# Daarom: vaste keuzes met "unknown", en merk/model/groepset alleen als het
+# leesbaar op de fiets staat. Groepsetgeneratie is eruit: daar was elk
+# antwoord onzin.
 TEACHER_PROMPT = (
-    "This is one photo from a used road bike listing. Report only what is actually visible in this "
-    "photo. Copy any text you can read on the frame, fork, wheels, crankset, shifters and derailleurs "
-    "into text_seen, exactly as written. Do not infer specifications from what a bike model usually "
-    "has. Use an empty string when something is not visible. needs_work lists visible things that "
-    "need fixing or replacing (for example rusty chain, worn or flat tyres, torn bar tape or saddle, "
-    "missing parts). cosmetic is none, light or heavy visible paint damage, or empty when the frame "
-    "is not clearly visible.")
+    "This is one photo from a used road bike listing. Answer only from what is visible in this photo; "
+    "never guess from what a bike usually has. text_seen: every word or number printed on the bike that "
+    "you can actually read (frame, fork, wheels, crankset, shifters, derailleurs), copied exactly; an "
+    "empty list if you cannot read any. brand, model, groupset and wheel_brand: only when that name is "
+    "readable on the bike itself, otherwise an empty string. For every other field answer unknown when "
+    "you cannot see it clearly.")
+_UNKNOWN_YES_NO = {"type": "string", "enum": ["yes", "no", "unknown"]}
 TEACHER_SCHEMA = {
     "type": "object",
     "properties": {
+        "text_seen": {"type": "array", "items": {"type": "string"}},
         "brand": {"type": "string"},
         "model": {"type": "string"},
         "groupset": {"type": "string"},
-        "groupset_generation": {"type": "string"},
-        "brake_type": {"type": "string"},
-        "frame_material": {"type": "string"},
-        "wheels": {"type": "string"},
-        "needs_work": {"type": "array", "items": {"type": "string"}},
-        "cosmetic": {"type": "string"},
-        "text_seen": {"type": "array", "items": {"type": "string"}},
+        "wheel_brand": {"type": "string"},
+        "brake_type": {"type": "string", "enum": ["rim", "disc", "unknown"]},
+        "frame_material": {"type": "string", "enum": ["carbon", "aluminium", "steel", "titanium", "unknown"]},
+        "wheel_profile": {"type": "string", "enum": ["deep", "shallow", "unknown"]},
+        "chain_rusty": _UNKNOWN_YES_NO,
+        "tyres_worn": _UNKNOWN_YES_NO,
+        "bar_tape_or_saddle_torn": _UNKNOWN_YES_NO,
+        "parts_missing": _UNKNOWN_YES_NO,
+        "paint_damage": {"type": "string", "enum": ["none", "light", "heavy", "unknown"]},
     },
-    "required": ["brand", "model", "groupset", "groupset_generation", "brake_type", "frame_material",
-                 "wheels", "needs_work", "cosmetic", "text_seen"],
+    "required": ["text_seen", "brand", "model", "groupset", "wheel_brand", "brake_type", "frame_material",
+                 "wheel_profile", "chain_rusty", "tyres_worn", "bar_tape_or_saddle_torn", "parts_missing",
+                 "paint_damage"],
 }
 TEACHER_TIMEOUT_S = 600
 

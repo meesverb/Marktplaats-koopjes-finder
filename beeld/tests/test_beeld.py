@@ -162,6 +162,24 @@ class TestFetchPhoto(unittest.TestCase):
         self.assertEqual(result.status, "ok")
         self.assertEqual(self.dest.read_bytes(), JPEG)
 
+    def test_asks_for_the_large_size(self):
+        session = FakeSession(get=[FakeResponse(body=JPEG)])
+        url = "https://images.marktplaats.com/api/v1/hz-mp-pro-listing/images/ab-12?rule=ecg_mp_eps$_83.jpg"
+        photos.fetch_photo(session, url, self.dest, self.polite)
+        self.assertEqual(session.gets, [url.replace("$_83", "$_85")])
+
+    def test_falls_back_when_large_size_is_gone(self):
+        session = FakeSession(get=[FakeResponse(404), FakeResponse(body=JPEG)])
+        url = "https://images.marktplaats.com/x?rule=ecg_mp_eps$_83.jpg"
+        result = photos.fetch_photo(session, url, self.dest, self.polite)
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(session.gets, [url.replace("$_83", "$_85"), url])
+
+    def test_larger_leaves_other_links_alone(self):
+        self.assertEqual(photos.larger("https://img.example/a$_83.jpg"), "https://img.example/a$_83.jpg")
+        self.assertEqual(photos.larger("https://images.marktplaats.com/x?rule=ecg_mp_eps$_85.jpg"),
+                         "https://images.marktplaats.com/x?rule=ecg_mp_eps$_85.jpg")
+
     def test_already_on_disk_no_request(self):
         self.dest.parent.mkdir(parents=True)
         self.dest.write_bytes(JPEG)

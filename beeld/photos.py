@@ -14,6 +14,7 @@ de tests hiervan draaien zonder torch.
 from __future__ import annotations
 
 import random
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -45,6 +46,13 @@ MIN_DELAY_S = 1.5
 # foto van een advertentie, en hoort niet op de schijf.
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
 TIMEOUT_S = 20
+
+# De zoekresultaten geven de foto als "...?rule=ecg_mp_eps$_83.jpg": gemeten op
+# 22-10-2026 is dat 358x268, te klein om "TREK" op een onderbuis te lezen.
+# Dezelfde link met $_85 (XXL, ook wat dossier.py gebruikt) gaf 726x544: vier
+# keer zoveel pixels, nog steeds één verzoek per foto.
+LARGE_RULE = "85"
+RULE_RE = re.compile(r"\$_\d+(\.jpg)$")
 
 
 class SchemaError(RuntimeError):
@@ -88,6 +96,13 @@ def split_urls(text: Optional[str]) -> list[str]:
     """De foto-URL's zoals racefiets_jev.search_image_urls() ze wegschrijft:
     gescheiden door spaties, alleen https."""
     return [u for u in (text or "").split() if u.startswith("https://")]
+
+
+def larger(url: str) -> str:
+    """De XXL-versie van een Marktplaats-foto; een andere link blijft gelijk."""
+    if "images.marktplaats.com" not in url:
+        return url
+    return RULE_RE.sub(lambda m: f"$_{LARGE_RULE}{m.group(1)}", url)
 
 
 def open_readonly(db_path: Path = DEFAULT_DB) -> sqlite3.Connection:
@@ -137,9 +152,19 @@ def photo_path(item_id: str, index: int, folder: Path = PHOTO_DIR) -> Path:
 
 
 def fetch_photo(session, url: str, dest: Path, polite: Polite) -> Fetch:
-    """Eén foto ophalen naar `dest`. Staat hij er al, dan geen verzoek."""
+    """Eén foto ophalen naar `dest`, in de XXL-maat (`larger()`). Staat hij er
+    al, dan geen verzoek. Bestaat de grote maat niet, dan nog één poging met
+    de link zoals hij in de database staat."""
     if dest.exists() and dest.stat().st_size > 0:
         return Fetch(url, dest, "ok", "al op schijf", dest.stat().st_size)
+    big = larger(url)
+    result = _fetch_once(session, big, dest, polite)
+    if big != url and result.status == "weg":
+        result = _fetch_once(session, url, dest, polite)
+    return result
+
+
+def _fetch_once(session, url: str, dest: Path, polite: Polite) -> Fetch:
     polite.wait()
     try:
         response = session.get(url, timeout=TIMEOUT_S)
