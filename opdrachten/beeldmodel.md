@@ -275,3 +275,26 @@ classifiers. Fine-tunen kan, maar kost avonden.
   set"); `meet.py` meldde het en ging door. Daarna koos de eigenaar voor het
   grootste model dat lokaal past: `qwen3.5:35b` (zie "Wat de eigenaar wil");
   dat past niet in de 15,7 GB van de sandbox.
+- 22-10 — **Claude als leraar** (vraag van de eigenaar: "kan ik niet trainen
+  met jou?", met abonnementen op Claude en Gemini). Haiku, Sonnet en Opus als
+  losse subagents, blind: dezelfde 10 foto's hernoemd naar foto01-10, alleen
+  de foto's, dezelfde vraag en vaste keuzes als de lokale leraar; alle tien
+  in één opdracht per model. Merk / rem / materiaal / wielprofiel als
+  goed-fout-weet niet:
+
+  | Model | Merk | Rem | Materiaal | Wielen | Groepset gelezen |
+  | --- | --- | --- | --- | --- | --- |
+  | Haiku | 6-1-3 | 7-1-0 | 5-1-2 | 7-3-0 | geen |
+  | Sonnet | 7-0-3 | 8-0-0 | 7-0-1 | 9-0-1 | DURA-ACE, ULTEGRA |
+  | Opus | 7-0-3 | 8-0-0 | 7-0-1 | 8-0-2 | DURA-ACE, ULTEGRA, plus EASTON-wielen |
+  | qwen3.5:9b (lokaal) | 4-1-4 | 4-0-4 | 0-0-8 | 2-0-8 | DURA-ACE |
+
+  Sonnet en Opus: geen enkel fout merk; de drie "weet niet" zijn twee foto's
+  zonder leesbaar merk (terecht) en de kleine Brassworks-sierletters. Haiku
+  verwisselde foto's: de MMR kreeg het antwoord van niemand en de stalen
+  Brassworks heette "MMR, carbon, hoge velgen" — één foto per verzoek
+  voorkomt dat. Haiku zei verder overal "ketting niet roestig, banden goed";
+  Sonnet en Opus zeiden bij staat meestal "unknown". Zonder antwoordsleutel
+  voor staat is daar niets over te zeggen. Kosten in tokens: ~80-90k per
+  model voor 10 foto's (inclusief overhead van de subagent). Gemini 4 Argon
+  (13-10-2026) niet getest: geen toegang vanuit de sandbox.
