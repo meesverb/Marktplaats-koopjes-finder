@@ -97,6 +97,10 @@ TEACHER_SCHEMA = {
                  "paint_damage"],
 }
 TEACHER_TIMEOUT_S = 600
+# Een volledig antwoord is zo'n 150 tokens. qwen3.5:2b raakte op 22-10-2026
+# bij één foto in een lus ("R72", "R80", "R90", ...) tot de verbinding het
+# opgaf; met een plafond is dat een onleesbaar antwoord na seconden.
+TEACHER_MAX_TOKENS = 400
 
 
 @dataclass
@@ -319,7 +323,7 @@ def measure_teacher(c: Candidate, paths: list[Path], session, base_url: str) -> 
     for i, path in enumerate(paths):
         body = {
             "model": c.model_id, "stream": False, "think": False, "format": TEACHER_SCHEMA,
-            "options": {"temperature": 0}, "keep_alive": "10m",
+            "options": {"temperature": 0, "num_predict": TEACHER_MAX_TOKENS}, "keep_alive": "10m",
             "messages": [{"role": "user", "content": TEACHER_PROMPT,
                           "images": [base64.b64encode(path.read_bytes()).decode("ascii")]}],
         }

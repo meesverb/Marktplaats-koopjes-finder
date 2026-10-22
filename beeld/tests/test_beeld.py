@@ -273,6 +273,8 @@ class TestTeacher(unittest.TestCase):
         sent = session.posts[0]["messages"][0]
         self.assertEqual(sent["content"], cand.TEACHER_PROMPT)
         self.assertEqual(set(sent), {"role", "content", "images"})
+        # Een lus in het antwoord mag niet tot de time-out doorlopen.
+        self.assertEqual(session.posts[0]["options"]["num_predict"], cand.TEACHER_MAX_TOKENS)
 
     def test_model_without_thinking_mode(self):
         tags = FakeResponse(payload={"models": [{"name": "qwen3.5:2b"}]})

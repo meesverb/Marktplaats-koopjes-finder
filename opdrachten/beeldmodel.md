@@ -206,3 +206,48 @@ classifiers. Fine-tunen kan, maar kost avonden.
   en zette crank en derailleur op een wiel of de hele fiets. DINOv3: geen
   toegang in de sandbox (de melding werkt). Ollama: niet in de sandbox.
   Nog te doen: de eigenaar draait stap 0 op de laptop.
+- 22-10 — **op echte Marktplaats-foto's** (op vraag van de eigenaar). Eén
+  zoekpagina racefietsen (`--pages 1 --bid-lookup none --detail-lookup
+  none`, naar een losse database), 10 foto's, Ollama 0.40.8 in de sandbox
+  (4 kernen, geen GPU). Antwoordsleutel: de titels plus eigen oordeel van de
+  foto's. **n = 10: richting, geen meting.**
+  - **Fotomaat.** De link uit de zoekresultaten (`$_83`) is 358x268: te
+    klein, Florence-2 las er losse letters. Met `$_85` (XXL) 726x544, zelfde
+    aantal verzoeken. `photos.fetch_photo()` vraagt nu `$_85`.
+  - **Florence-2 als lezer**: wisselend. "TREK" en "SCOTT" goed, "VANITELI"
+    voor Van Rysel, maar "FREK" bij een Trek en **"CANNON" bij een Canyon**
+    (Cannondale is een ander merk). Niet geschikt als bron voor het merk.
+  - **Leraren**, merk / rem / materiaal als goed-fout-weet niet:
+
+    | Leraar | s per foto | Merk | Rem | Materiaal |
+    | --- | --- | --- | --- | --- |
+    | qwen3.5:2b | 15,6 | 4-2-4 | 5-0-3 | 2-1-5 |
+    | qwen3.5:4b | 28,1 | 3-3-4 | 3-0-5 | 3-0-5 |
+    | gemma4:e2b | 25,7 | 3-3-4 | 0-0-8 | 0-0-8 |
+
+    Groot merk op het frame (TREK, CUBE, CANYON) lezen ze meestal; bijna
+    goed: MMR als "MMP"/"MNR"/"MMS", Van Rysel als "VANNIPEL"/"VAMVYS".
+    Verzonnen: Brassworks als "Trek" (2b) en "Spumoni" (gemma), Scott als
+    "SIDI" (4b), Canyon als "CANON" (gemma). **Model en groepset las geen
+    van drieën**, ook niet "ULTEGRA" en "DURA-ACE" die leesbaar op twee
+    cranks staan. **Staat is onbruikbaar**: 2b zegt bij 7 van de 9 fietsen
+    "ketting roestig", ook in nieuwstaat. De slaper "Mooie racefiets" was
+    een Cube; 2b en gemma lazen "CUBE".
+  - De eerste vraag aan de leraar (vrije tekst, met voorbeelden) werd
+    nagepraat; de vraag heeft nu vaste keuzes met "unknown"
+    (`candidates.TEACHER_PROMPT`). 2b raakte één keer in een lus ("R72,
+    R80, ..."): het antwoord is nu begrensd (`TEACHER_MAX_TOKENS`).
+  - **Wat dit voor het plan betekent:**
+    1. De leraar is een bron voor **merk, remtype en materiaal**, niet voor
+       model, groepset of staat. Model en groepset komen uit de tekst en
+       uit labels van de eigenaar; staat alleen uit labels van de eigenaar.
+    2. Het merk van de leraar moet tegen een **lijst bekende merken**, met
+       een strenge tolerantie (MMP → MMR mag, CANON/CANNON nooit
+       automatisch naar Canyon of Cannondale). Welke lijst (de catalogus
+       uit de repo als databestand lezen, of een eigen lijst in beeld/) is
+       een keuze bij stap 1: beeld/ mag geen code uit de repo importeren.
+    3. De **eens/oneens-regel** is onmisbaar: "Trek" voor een Brassworks
+       valt alleen weg omdat de titel iets anders zegt.
+    4. qwen3.5:2b is hier de beste én de snelste, ~230 foto's per uur op 4
+       kernen: op de laptop 's nachts ruim duizend. De keus valt pas na de
+       meting op de laptop en de testset.
