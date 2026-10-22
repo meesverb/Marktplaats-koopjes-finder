@@ -110,9 +110,33 @@ Andere mogelijkheden:
 ```powershell
 python beeld\meet.py --lijst                         # alle modellen
 python beeld\meet.py --modellen dinov2-s,siglip2-b   # alleen deze
-python beeld\meet.py --modellen alle                 # ook Florence-2 large en qwen3.5:4b
+python beeld\meet.py --modellen alle                 # alles, ook de grote leraren hieronder
 python beeld\meet.py --map C:\pad\naar\fotos         # eigen foto's, zonder koopjes.db
 ```
+
+### Grotere leraren
+
+Qua geheugen kan de laptop (32 GB) veel grotere modellen aan; de grens is de
+snelheid, want alles rekent op de processor. Een gewoon model is ruwweg zo
+traag als het groot is. De twee "mixture of experts"-modellen rekenen per
+woord met maar een paar miljard parameters, en zijn daardoor bijna zo snel
+als een 4B-model. Ze moeten wel helemaal in het geheugen passen.
+
+| Model | Download | Opmerking |
+| --- | --- | --- |
+| `qwen3.5:9b` | ~7 GB | gewoon model, ~2 keer zo traag als 4b |
+| `gemma4:12b` | ~8 GB | gewoon model |
+| `gemma4:26b` | 16-19 GB | 25B, waarvan 3,8B actief: **de interessantste voor deze laptop** |
+| `qwen3.5:35b` | ~22 GB | 35B, waarvan 3B actief; krap, sluit eerst alles af |
+
+```powershell
+ollama pull gemma4:26b
+python beeld\meet.py --modellen qwen3.5:2b,gemma4:26b --leraar-fotos 10
+```
+
+Herstart de laptop eerst: met 25 GB al in gebruik past een model van 16 GB
+niet, en dan gaat Windows naar de schijf wisselen. Dat is tientallen keren
+trager, en de meting zegt dan niets.
 
 ## Wat je daarna doet
 

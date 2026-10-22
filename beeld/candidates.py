@@ -50,6 +50,17 @@ CANDIDATES = (
     Candidate("qwen3.5:2b", TEACHER, "qwen3.5:2b", "Apache 2.0, Ollama, ~3 GB"),
     Candidate("qwen3.5:4b", TEACHER, "qwen3.5:4b", "Apache 2.0, Ollama, ~4 GB", default=False),
     Candidate("gemma4:e2b", TEACHER, "gemma4:e2b", "Apache 2.0, Ollama, ~5-7 GB"),
+    # Groter. Op de processor is een gewoon ("dense") model ruwweg zo traag
+    # als het groot is. De twee "mixture of experts"-modellen rekenen per
+    # woord maar met een paar miljard parameters, dus bijna zo snel als een
+    # 4B, maar ze moeten helemaal in het geheugen: met 32 GB past gemma4:26b,
+    # qwen3.5:35b alleen als er weinig anders draait.
+    Candidate("qwen3.5:9b", TEACHER, "qwen3.5:9b", "Apache 2.0, Ollama, 9B, ~7 GB", default=False),
+    Candidate("gemma4:12b", TEACHER, "gemma4:12b", "Apache 2.0, Ollama, 12B, ~8 GB", default=False),
+    Candidate("gemma4:26b", TEACHER, "gemma4:26b",
+              "Apache 2.0, Ollama, 25B waarvan 3,8B actief, ~16-19 GB", default=False),
+    Candidate("qwen3.5:35b", TEACHER, "qwen3.5:35b",
+              "Apache 2.0, Ollama, 35B waarvan 3B actief, ~22 GB: krap in 32 GB", default=False),
 )
 BY_KEY = {c.key: c for c in CANDIDATES}
 
