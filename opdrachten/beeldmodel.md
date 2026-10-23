@@ -298,3 +298,85 @@ classifiers. Fine-tunen kan, maar kost avonden.
   voor staat is daar niets over te zeggen. Kosten in tokens: ~80-90k per
   model voor 10 foto's (inclusief overhead van de subagent). Gemini 4 Argon
   (13-10-2026) niet getest: geen toegang vanuit de sandbox.
+- 22/23-10 — **100 advertenties, alle foto's** (vraag van de eigenaar:
+  opnieuw met 100 nieuwe advertenties, racefietsen van €150-500, elke foto,
+  alle modellen van eerder plus de grootste, en de tokens per model).
+  **Tussenstand**: Claude en de modellen zonder taalmodel zijn klaar, de
+  lokale taalmodellen lopen nog (zie onder).
+  - **Testset.** 100 racefietsen van €150-500 uit één crawl naar een losse
+    database (met `--delay`), 910 foto's in `$_85` (mediaan 8 per
+    advertentie, hooguit 24), opgehaald met `photos.Polite`. Niets in git.
+  - **Antwoordsleutel**: merk (en of het op een foto leesbaar is), rem,
+    materiaal, wielprofiel, groep (en of die leesbaar is) en een notitie over
+    de staat. Gemaakt door Claude (Opus: 43 zelf, 57 door Opus-subagents) uit
+    de foto's **én titel, omschrijving en kenmerken**. Dat bevoordeelt
+    Claude, Opus het meest: dezelfde familie las dezelfde foto's. Het is geen
+    oordeel van de eigenaar en telt niet als testset.
+  - **Blind**: neutrale bestandsnamen (`adv###_NN.jpg`), 5 advertenties per
+    Claude-subagent, alle foto's van een advertentie samen, dezelfde vraag en
+    keuzes als lokaal. Lokaal krijgt het model ook alle foto's van een
+    advertentie in één verzoek.
+  - **Uitslag** (goed-fout-weet niet; "zonder training" = alleen de
+    gelijkenis tussen de foto's en een tekst als "a photo of a Gazelle road
+    bike", uit een vaste keuzelijst):
+
+    | Model | Merk leesbaar (94) | Groep leesbaar (54) | Rem (98) | Materiaal (95) | Wielen (100) |
+    | --- | --- | --- | --- | --- | --- |
+    | Claude Haiku | 87-5-2 | 43-2-9 | 95-0-3 | 28-4-63 | 89-1-10 |
+    | Claude Sonnet | 93-1-0 | 51-2-1 | 96-1-1 | 70-0-25 | 100-0-0 |
+    | Claude Opus | 94-0-0 | 50-1-3 | 97-1-0 | 61-0-34 | 99-1-0 |
+    | embeddinggemma-2, zonder training | 93-1-0 | – | 69-29-0 | 63-32-0 | 64-36-0 |
+    | idem, alleen merken van de repo | 68-26-0 | – | | | |
+    | SigLIP 2 base, zonder training | 9-85-0 | – | 97-1-0 | 52-43-0 | 94-6-0 |
+    | qwen3.5:2b (19 van 100, loopt) | 13-4-1 | 2-0-11 | 1-12-5 | 8-3-6 | 4-7-8 |
+    | altijd het vaakste antwoord | | | 94 (velg) | 64 (alu) | 98 (laag) |
+
+  - **Wat opvalt:**
+    1. **Rem en wielen zeggen hier weinig**: 94% velgrem, 98% laag profiel;
+       altijd het vaakste antwoord haalt bijna hetzelfde. Merk, groep en
+       materiaal zijn de echte meting.
+    2. **Sonnet en Opus verzinnen geen merk** en lezen de groep op ~93% van
+       de fietsen waar hij leesbaar is. Materiaal: geen fout, maar vaak
+       "weet niet" (25-34 keer). Haiku maakt 5 merkfouten en zegt bij
+       materiaal meestal "weet niet".
+    3. **embeddinggemma-2 leest merken, zonder training.** 93 van 94 als de
+       keuzelijst alle merken uit de sleutel bevat; de nummers 2 en 3 lijken
+       op het woord (stokvis/stevens, concorde/corano/cornelo), dus het leest
+       echt. Met alleen de merkenlijst van de repo (catalogus +
+       `sleepers.EXTRA_BRANDS`, 44 merken) 68-26: daarin **ontbreken
+       Batavus, Raleigh, Concorde, Stokvis, Carrera, Klein** en meer, en die
+       kan het dan niet goed hebben (raakt ook `sleepers.py`). Het zegt nooit
+       "weet niet": de 4 onleesbare kregen alle 4 een fout merk. De afstand
+       tussen nummer 1 en 2 (mediaan 0,04) is een kandidaat voor een drempel.
+       Rem, materiaal en wielen haalt het niet (onder het vaakste antwoord).
+       1,3 GB, ~5 s per foto op 4 kernen.
+    4. SigLIP 2 base leest geen tekst (merk 9 van 94); rem en wielen gelijk
+       aan het vaakste antwoord, materiaal eronder.
+    5. qwen3.5:2b zegt bij 13 van de 19 "schijfrem" (sleutel: 18 velgrem) en
+       bij 7 "hoge velgen". Merk 13-4-1. Staat: "ketting roestig" bij 13 van
+       de 19, net als in de eerste test.
+  - **Tokens** (Claude via het abonnement, als subagent; Claude Code meldt per
+    subagent één totaal, inclusief systeemprompt en tools. Hoe gecachte
+    tokens daarin tellen staat er niet bij: een factuur per foto is dit
+    niet). Een rechte lijn door de batches scheidt de vaste voet per batch
+    van wat er per foto bij komt:
+
+    | Model | Gemeten | Per advertentie | Per extra foto (lijn) | Vaste voet per batch van 5 |
+    | --- | --- | --- | --- | --- |
+    | Haiku | 20 van 20 batches: 2,90 mln | ~29.000 | ~1.400 | ~81.000 |
+    | Sonnet | 14 van 20: 1,60 mln (70 adv.) | ~22.800 | ~1.140 | ~67.000 |
+    | Opus | 11 van 20: 1,33 mln (55 adv.) | ~24.200 | ~1.020 | ~71.000 |
+    | qwen3.5:2b (Ollama, exact) | 19 adv., 160 foto's | ~4.900 in + ~170 uit | ~580 (gemiddeld) | – |
+    | embeddinggemma-2 (Ollama, exact) | 910 foto's | – | ~235 | – |
+
+    Van 6 Sonnet- en 9 Opus-batches ontbreekt de telling: de sessielimiet
+    van het abonnement sloeg toe (twee keer deze nacht) nadat het antwoord
+    al geschreven was. De Opus-batches 11-20 zijn na de reset opnieuw
+    gedraaid.
+  - **Lokaal loopt nog**: de cloudcontainer van de sessie gaat uit zodra de
+    sessie stil valt en nam de run twee keer mee; hij hervat waar hij was.
+    Volgorde nu: qwen3.5:2b, Florence-2 base, gemma4:12b (start
+    waarschijnlijk niet), qwen3.5:4b, gemma4:e2b, qwen3.5:9b, Florence-2
+    large, bonsai-2:27b, en qwen3.5:35b alleen als proef op 3 advertenties
+    (22 GB past niet in de 15 GB van de sandbox; op de laptop wel). Op vraag
+    van de eigenaar draaien er geen Claude-modellen meer.
