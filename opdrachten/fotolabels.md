@@ -310,15 +310,39 @@ komt dan als voorstel in de wachtrij *oneens met geverifieerd*.
   typen; aanpassen kan per veld.
 - Lokaal, 127.0.0.1, met het bestaande token, zoals de andere pagina's.
 
-## Eerste doel: groepsetgeneratie op oudere fietsen
+## Eerste doel: groepsetgeneratie, met de nadruk op oudere fietsen
 
 Waar de flipwinst zit: een oude fiets met nog een Ultegra 6600 (of iets
 vergelijkbaars) die de verkoper niet noemt. Dit doel gaat vóór de staat van
 onderdelen; het labelschema blijft hetzelfde, alleen de volgorde van werken.
 
+### Uiteindelijk: het hele segment
+
+Het einddoel is elke racefiets op Marktplaats goed plaatsen, nieuw en oud,
+Shimano, SRAM en Campagnolo, mechanisch en elektronisch. De oudere fietsen
+zijn waar het geld zit en waar het moeilijk is; de nieuwere en duurdere zijn
+makkelijk: betere foto's en meestal een kloppende tekst. Dat bepaalt de
+aanpak:
+
+- **De nieuwere zijn de goedkoopste labels.** Veel advertenties, tekst die
+  klopt, scherpe close-ups. Daarmee wordt de keten eerst gebouwd en getest
+  (ophalen, uitsnijden, kenmerken, kop) en leert het model wat een derailleur
+  of shifter überhaupt is.
+- **De oudere krijgen gericht extra.** Anders overstemmen de duizenden
+  nieuwere fietsen ze: het model wordt goed in wat al makkelijk was. Daarom
+  klassegewichten, en gericht verzamelen voor de oude generaties (bron 1 en 2
+  hieronder).
+- **Meten per tijdperk en prijsklasse**, niet één gemiddelde. Een totaalscore
+  van 95% kan 99% op nieuwe fietsen en 70% op oude zijn — en die 70% is waar
+  het model voor bedoeld is. De testset krijgt daarom per tijdperk genoeg
+  voorbeelden (zie "Hoeveel foto's").
+- **Waar de tekst het al zegt, is het model een controle**, geen vervanging:
+  `detect_groupset()` blijft de eerste bron, het model vult aan waar de tekst
+  zwijgt en meldt waar foto en tekst elkaar tegenspreken.
+
 ### Klassen
 
-Alleen de generaties die op Marktplaats echt voorkomen in het flipsegment,
+Alle generaties die op Marktplaats echt voorkomen in het racefietssegment,
 eerst geteld in `koopjes.db` (hoe vaak noemt een omschrijving "6600", "6700",
 "5600", ...). Elke klasse een rij in `reference_groupset_generations.csv` met
 bron. Plus altijd `andere` en `onbekend`, zodat het model niet hoeft te kiezen
