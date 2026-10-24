@@ -128,6 +128,16 @@ label van zo'n foto **niet** uit iemands blik op die foto komen: dan leert het
 model hooguit zo goed te kijken als de labeler. Het label moet van buiten de
 pixels komen, en het model zoekt zelf uit waaraan het te zien is.
 
+Let op het onderscheid: het **model** kijkt alleen naar de foto — vorm,
+geometrie, details — en heeft bij het voorspellen geen tekst nodig. Het gaat
+hier alleen om waar het **antwoord bij de trainingsfoto's** vandaan komt: dat
+moet kloppen, anders leert het model de verkeerde vorm bij het verkeerde
+antwoord. Hetzelfde geldt voor de fiets zelf: een Defy van 2010 en een van
+2020 uit elkaar houden aan de geometrie leert het model van honderden
+Defy-foto's waarvan het **bouwjaar uit de advertentie** bekend is (veld
+`model` en `bouwjaar` bij de advertentie, ook met `bewijs`), niet van foto's
+waarvan iemand het jaar heeft geschat.
+
 Daarom heeft elk identiteitsveld (fabrikant, serie, generatie, nummer) een
 `bewijs`, en voor de generatie telt `oog` niet mee bij het trainen:
 
