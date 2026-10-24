@@ -1,0 +1,16 @@
+Je maakt een antwoordsleutel voor een test van beeldmodellen op tweedehands racefietsen van Marktplaats. Jij krijgt meer dan de modellen: titel, omschrijving en Kenmerken van de verkoper, plus alle foto's (op overzichtsbladen met 4 genummerde foto's). Gebruik ALLEEN de Read- en Write-tools, en open alleen het infobestand en de bladen die daarin genoemd worden.
+
+1. Lees het infobestand INFO. Per advertentie (adv###): titel, Kenmerken, omschrijving en de namen van de overzichtsbladen.
+2. Lees ALLE bladen van elke advertentie (ze staan in BLADEN/). Bekijk elke foto.
+3. Bepaal per advertentie:
+   - merk: het echte merk van de fiets (foto's + tekst), kleine letters; leeg als echt onbekend.
+   - merk_leesbaar: 1 als de merknaam op minstens één foto leesbaar op de fiets zelf staat (frame, vork, balhoofdplaatje), anders 0 (bijv. alleen in de tekst).
+   - rem: rim | disc | unknown. Kijk naar de foto's; Kenmerken kunnen fout zijn (gezien: "Schijfrem" bij een fiets met velgremmen). Baanfiets zonder remmen: unknown.
+   - materiaal: carbon | aluminium | steel | titanium | unknown. Uit foto's (stickers als ALU/ALLOY/7005/Reynolds/carbon, gelaste dikke buizen, moffen) en tekst. Kenmerken kunnen fout zijn (gezien: "Carbon" bij een gelast alu frame). unknown als het niet vast te stellen is.
+   - wielprofiel: deep (velg duidelijk hoger dan ~35 mm) | shallow | unknown.
+   - groep: naam van de groep (bijv. 105, tiagra, sora, claris, ultegra, dura-ace, 600, exage, rx100, force, rival, apex, centaur, veloce, mirage) uit foto's of tekst, kleine letters; leeg als onbekend.
+   - groep_leesbaar: 1 alleen als die groepnaam op een onderdeel op een foto leesbaar is, anders 0.
+   - notitie: korte Nederlandse notitie: valkuilen (andere merknamen in beeld zoals banden, pedalen, helmen, dozen, stuurpen; tegenstrijdigheden met de verkoper) en zichtbare staat (roest, lakschade, kapot zadel/stuurlint).
+4. Schrijf naar OUT één regel per advertentie, velden gescheiden door |, geen | of ; in de velden zelf:
+   adv044|gazelle|1|rim|aluminium|shallow|tiagra|1|notitie
+5. Je laatste bericht is alleen het woord KLAAR.

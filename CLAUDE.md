@@ -16,7 +16,7 @@ server.
 
 ```bash
 python -m unittest discover -s tests -t tests    # 1074 tests, moet groen zijn
-python -m unittest discover -s beeld/tests -t beeld/tests   # beeldmodel, 22 tests, zonder torch
+python -m unittest discover -s beeld/tests -t beeld/tests   # beeldmodel, 27 tests, zonder torch
 python racefiets_jev.py --query luidsprekers --pages 1 --open-browser never
 ```
 
@@ -131,7 +131,7 @@ Werkt er iets niet zoals de README beschrijft, meld dat dan — ga niet raden.
 | `valuation.py` | waarderingsmotor (fase 3): E1/E2/E3 op de comps in `koopjes.db`, schrijft naar `valuation` + `valuation_evidence`. Leest `mijn_fiets.md` |
 | `tests/` | stdlib-unittests; `helpers.py` heeft `make_listing()` en een `FakeSession` |
 | `PLAN_FIETSWAARDE.md` | actief werkplan, gefaseerd |
-| `opdrachten/` | uitgeschreven opdrachten van de eigenaar (`fietsmodellen.md`, `goedkoopste_onderdelen.md`, `beeldmodel.md`) en de werklijst van het weekend (`weekend.md`, met zijn keuzes en een logboek) |
+| `opdrachten/` | uitgeschreven opdrachten van de eigenaar (`fietsmodellen.md`, `goedkoopste_onderdelen.md`, `beeldmodel.md`) en de werklijst van het weekend (`weekend.md`, met zijn keuzes en een logboek); `proef100/` is het archief van de beeldproef op 100 advertenties (scripts, geen data, niet om vanuit de repo te draaien) |
 | `beeld/` | het zelf getrainde beeldmodel (`opdrachten/beeldmodel.md`): op de foto's merk, model, groepset, remmen, wielen en staat herkennen, als hint; nooit in taxatie, dealscore of waardescore. Los te koppelen: importeert niets uit de repo en andersom, leest `koopjes.db` alleen, eigen `requirements.txt`, venv en tests; foto's en labels in `beeld/data/` (niet in git). Nu: stap 0, `python beeld/meet.py` meet per model de snelheid op de laptop van de eigenaar en schrijft alleen tijden naar `beeld/metingen/` |
 | `taxatie_2026-09-22.md` | de eerste handmatige taxatie van de eigen fiets, met bewijsregels (voorloper van fase 3) |
 | `mijn_fiets.md` | intake van de eigen fiets (brondocument voor de taxatie) |

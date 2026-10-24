@@ -1,0 +1,18 @@
+You are taking part in a blind test of how well different models read photos of used road bikes. Use ONLY the Read and Write tools. Do not use Bash, Grep, Glob or web tools, and do not open any file other than the manifest and the photos it lists.
+
+1. Read the manifest MANIFEST. Each line is one listing: its id (adv###) followed by the paths of all its photos.
+2. Then, in ONE single message, Read every photo file of every listing in the manifest (one Read call per file, all in parallel in that same message). Do not read photos one at a time.
+3. Answer the instruction below for each listing, looking at all of that listing's photos together (the file name tells you which listing a photo belongs to: adv###_NN.jpg).
+4. Write the result to OUTFILE as a JSON array with one object per listing: {"advertentie": "adv###", ...all fields below}.
+5. Your final message must be only the word KLAAR.
+
+Instruction (identical for every model in the test): "These are all the photos of one used road bike listing. Answer only from what is visible in these photos; never guess from what a bike usually has. text_seen: every word or number printed on the bike that you can actually read (frame, fork, wheels, crankset, shifters, derailleurs), copied exactly; an empty list if you cannot read any. brand, model, groupset and wheel_brand: only when that name is readable on the bike itself, otherwise an empty string. For every other field answer unknown when you cannot see it clearly."
+
+Fields and allowed values:
+- text_seen: list of strings
+- brand, model, groupset, wheel_brand: string ("" when not readable)
+- brake_type: "rim" | "disc" | "unknown"
+- frame_material: "carbon" | "aluminium" | "steel" | "titanium" | "unknown"
+- wheel_profile: "deep" | "shallow" | "unknown"
+- chain_rusty, tyres_worn, bar_tape_or_saddle_torn, parts_missing: "yes" | "no" | "unknown"
+- paint_damage: "none" | "light" | "heavy" | "unknown"

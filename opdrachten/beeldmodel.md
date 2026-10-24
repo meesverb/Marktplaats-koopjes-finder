@@ -1,9 +1,57 @@
 # Opdracht: een zelf getraind beeldmodel voor racefietsen (`beeld/`)
 
-> **Stand (22-10-2026): stap 0 is gebouwd** (`beeld/meet.py`), nog niet
-> gedraaid op de laptop van de eigenaar. Volgende: de eigenaar draait stap 0
-> (zie `beeld/README.md`) en zet de uitkomst in `beeld/metingen/`; pas
-> daarna worden de modellen gekozen.
+> **Stand (24-10-2026): stap 0 is gebouwd** (`beeld/meet.py`), nog niet
+> gedraaid op de laptop van de eigenaar. Er is **nog niets getraind** en er
+> zijn **nog geen labels van de eigenaar**. Wel twee proeven in de cloud
+> (10 foto's, en 100 advertenties met alle foto's; zie Logboek en
+> `opdrachten/proef100/`). De eigenaar heeft nieuwe gedachten over het
+> trainen: vraag die eerst, voordat je de stappen hieronder volgt.
+
+## Overdracht (voor een nieuwe chat, 24-10-2026)
+
+Alles wat in de eerste chat (22-24 oktober) is besproken en gemeten, staat in
+dit bestand: wat de eigenaar wil (hieronder), de aanpak, en de uitkomsten in
+het Logboek onderaan. Kort:
+
+- **Wat er is**: `beeld/` met stap 0 (`meet.py`, `candidates.py`,
+  `photos.py`, 27 tests zonder torch). De vraag aan een leraar met vaste
+  keuzes en "unknown" staat in `candidates.TEACHER_PROMPT`/`TEACHER_SCHEMA`.
+- **Wat de proef op 100 advertenties liet zien** (antwoordsleutel door
+  Claude Opus gemaakt, met titel en tekst erbij; dat bevoordeelt Claude):
+  1. **Merk lezen kan zonder training.** embeddinggemma-2 (1,3 GB, lokaal)
+     koos uit een merkenlijst 93 van 94 leesbare merken goed, door de
+     gelijkenis tussen foto en "a photo of a {merk} road bike". Met alleen
+     de merkenlijst van de repo 68-26: daar ontbreken o.a. Batavus, Raleigh,
+     Concorde, Stokvis. Het zegt nooit "weet niet". Florence-2-OCR met
+     dezelfde lijst: weinig fouten (42-1-51) maar mist de helft.
+  2. **Claude Sonnet en Opus** lezen merk en groep bijna foutloos en
+     verzinnen niets; bij materiaal vaak "weet niet". Haiku maakt meer
+     fouten. Kosten: ~23-29 duizend tokens per advertentie via het
+     abonnement, tegen de sessielimiet aan.
+  3. **Kleine lokale taalmodellen** (qwen3.5:2b, 4b) lezen merken redelijk
+     (~81% goed van wat ze zeggen) maar verzinnen schijfremmen en hoge
+     velgen; gemma4:12b start niet in Ollama 0.40.8. SigLIP 2 base leest
+     geen tekst.
+  4. **Rem en wielen** zeggen weinig in deze prijsklasse (€150-500): 94%
+     velgrem, 98% laag profiel. **Staat** is door geen model te meten
+     zonder labels van de eigenaar.
+- **Claude als labelbron**: de consumentenvoorwaarden van Anthropic
+  verbieden toegang "through automated or non-human means, whether through a
+  bot, script, or otherwise" behalve via een API-sleutel, en gebruik "to
+  develop any products or services that compete with our Services, including
+  to develop or train any artificial intelligence or machine learning
+  algorithms or models" ([voorwaarden](https://www.anthropic.com/legal/consumer-terms)).
+  Interactief labelen in een sessie is gewoon gebruik; of een eigen
+  fietsfoto-classifier onder de tweede zin valt, is niet uitgezocht.
+- **Loopt nog** in de cloudsessie van de eerste chat: qwen3.5:4b, gemma4:e2b,
+  qwen3.5:9b, Florence-2 large, bonsai-2:27b en een proef met qwen3.5:35b.
+  Uitkomsten komen in het Logboek zolang die sessie leeft. Daarna: niets
+  meer, de cloudmachine verdwijnt met de sessie.
+- **Data**: testset, antwoordsleutel en alle antwoorden per advertentie
+  stonden alleen in die sessie (niet in git). De eigenaar heeft ze als zip
+  gekregen; geef die aan de nieuwe chat als hij ze nodig heeft.
+- **Werk op**: branch `claude/vibrant-volta-wwqoae` (nog niet in `main`
+  gemerged op 24-10).
 
 Voor een agent die hier verder aan werkt. Lees eerst `CLAUDE.md` en werk
 vanaf een verse `main`. **Eén stap per sessie**, net als de fases in het
@@ -380,3 +428,27 @@ classifiers. Fine-tunen kan, maar kost avonden.
     large, bonsai-2:27b, en qwen3.5:35b alleen als proef op 3 advertenties
     (22 GB past niet in de 15 GB van de sandbox; op de laptop wel). Op vraag
     van de eigenaar draaien er geen Claude-modellen meer.
+- 24-10 — **lokaal verder** (zelfde 100 advertenties en sleutel; de run lag
+  ~22 uur stil toen de weeklimiet van het abonnement de sessie stopte).
+  Goed-fout-weet niet:
+
+  | Model | Merk leesbaar (94) | Groep leesbaar (54) | Rem (98) | Materiaal (95) | Wielen (100) | Tijd |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | qwen3.5:2b (99 van 100) | 71-16-6 | 18-0-35 | 11-51-35 | 41-14-39 | 28-28-43 | mediaan 108 s per adv. |
+  | qwen3.5:4b (62 van 100, loopt) | 49-11-0 | 20-2-10 | 12-0-48 | 10-4-43 | 0-10-52 | ~180 s per adv. |
+  | Florence-2 base, OCR + merkenlijst | 42-1-51 | 19-3-32 | – | – | – | 1,8 s per foto |
+  | gemma4:12b | start niet | | | | | |
+
+  - qwen3.5:2b: één advertentie gaf onleesbare uitvoer. Merk ~81% goed van
+    wat hij zegt, maar 16 verzonnen merken; zegt 51 keer "schijfrem" bij een
+    velgrem. Tokens exact (Ollama): 499.007 in + 17.500 uit, ~5.170 per
+    advertentie; 3,7 uur voor alle 100.
+  - qwen3.5:4b (tussenstand): even goed op merk als 2b, leest de groep
+    vaker (20 van 32 tegen 18 van 53 bij 2b, wel 2 fouten), en zegt bij rem
+    "weet niet" in plaats van "schijf". Bij wielen zegt
+    hij alleen "hoge velgen" als hij iets zegt, en dat is steeds fout.
+  - Florence-2 base: als het een merk uit de lijst leest, klopt het bijna
+    altijd (1 fout), maar het vindt er maar 42 van de 94. 910 foto's in 28
+    minuten, 8.263 tokens uitvoer.
+  - gemma4:12b: zelfde fout als op 22-10 ("Gemma4Assistant requires
+    ctx_other"); de pijplijn ging door na de eerste advertentie.
