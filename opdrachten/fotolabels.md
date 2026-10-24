@@ -53,6 +53,35 @@ advertentie  (wat de fiets is: uit tekst, eigenaar, of samengevoegd uit de foto'
 De tekst van de verkoper is een **zwak label**, geen waarheid: verkopers
 vergissen zich of noemen alleen de derailleur. Daarom twee velden.
 
+#### Herkomst: geen foto zonder advertentie
+
+Elke foto hoort bij een bron, anders is hij later niet meer te gebruiken
+(geen tekst, geen jaar, niet te splitsen). Bij het binnenhalen wordt de hele
+advertentie bewaard zoals ze toen was — een **momentopname**, want de
+advertentie verandert of verdwijnt:
+
+| Veld | Waarom |
+| --- | --- |
+| `item_id`, `url`, `opgehaald_op` | sleutel en herkomst |
+| titel, volledige omschrijving, Kenmerken (alles), prijs en prijstype | de tekstlabels en de jaar-/catalogusregel hieronder komen hieruit |
+| `bouwjaar` (als bekend: tekst, `bike_link`, eigen correctie) | idem |
+| alle foto-links in volgorde, plus de sha256 van elk bestand | zelfde foto in twee advertenties (doorverkoop, herplaatsing) herkennen |
+
+Drie manieren om iets toe te voegen, alle drie met die momentopname:
+
+1. **Link plakken** op de labelpagina (of `python fotoset.py toevoegen <url>`):
+   één verzoek naar de advertentiepagina, zoals controleer (`recheck.py`):
+   pagina, alle foto's op `$_57`, tekst. Zo kan de eigenaar zelf zoeken.
+2. **Uit `koopjes.db`**: advertenties die een ronde al zag, met een budget per
+   ronde voor de paginaverzoeken.
+3. **Eigen foto's** (gekochte flips, bezichtigingen, de eigen fiets): geen
+   Marktplaats-id, wel een eigen sleutel (`flip:<id>`, `eigen:defy`) en zo
+   mogelijk het id van de advertentie waar de fiets vandaan kwam — dan hangen
+   de echte close-ups en de advertentiefoto's aan dezelfde fiets.
+
+Dezelfde fiets die opnieuw geplaatst wordt (zelfde foto-hashes, ander id) telt
+als één fiets voor de split: anders lekt hij van training naar test.
+
 ### 2. Foto
 
 | Veld | Waarden |
@@ -90,6 +119,60 @@ Per onderdeel:
 los `onbekend` zijn. Een wazige Ultegra waarvan de generatie niet te zien is,
 is nog steeds een goed voorbeeld voor "Ultegra tegen Tiagra". Het model leert
 dan per niveau wat het kan, in plaats van dat zo'n foto weggegooid wordt.
+
+### Identiteit: het label komt uit bewijs, niet uit het oog
+
+Het hele punt van het model is dat het verschillen leert die een mens niet
+bewust ziet — 6600 tegen 6700 aan de bouw, niet aan een opschrift. Dan kan het
+label van zo'n foto **niet** uit iemands blik op die foto komen: dan leert het
+model hooguit zo goed te kijken als de labeler. Het label moet van buiten de
+pixels komen, en het model zoekt zelf uit waaraan het te zien is.
+
+Daarom heeft elk identiteitsveld (fabrikant, serie, generatie, nummer) een
+`bewijs`, en voor de generatie telt `oog` niet mee bij het trainen:
+
+| `bewijs` | Wat | Sterkte |
+| --- | --- | --- |
+| `in_het_echt` | de eigenaar heeft het onderdeel in handen gehad | goud |
+| `nummer_hier` | onderdeelnummer leesbaar op deze foto | goud |
+| `nummer_elders` | leesbaar op een andere foto van dezelfde advertentie ("FC-6750" op de crank) | sterk — maar alleen voor dát onderdeel, niet voor de hele fiets |
+| `tekst_onderdeel` | verkoper noemt het onderdeel zelf ("achterderailleur Ultegra 6700") | redelijk |
+| `tekst_groepset` | verkoper noemt alleen de groepset | zwak: geldt voor de onderdelen die erbij horen, met lager gewicht |
+| `catalogus` | model + bouwjaar → standaardopbouw uit `reference_bike_catalog.csv` (met bron) | zwak: fietsen worden omgebouwd |
+| `oog` | iemand herkent het op de foto | alleen voor fabrikant/serie, en als controle |
+
+Het oog heeft wel een taak: **tegenspraak** melden. "Tekst zegt Ultegra, dit
+is duidelijk een zwarte 105" zet het label op `spreekt_tegen` en haalt het uit
+de training. Dat vangt de verkoperfouten zonder dat het oog de generatie hoeft
+te raden.
+
+Gemengde groepsets zijn gewoon: 6700-shifters met een 6600-derailleur, een
+andere cassette. Daarom staat de identiteit **per onderdeel**, en loopt een
+groepsetnaam uit de tekst alleen door naar onderdelen die er niet mee in
+tegenspraak zijn.
+
+Ruis in deze labels is onvermijdelijk (een verkoper die 6700 schrijft bij een
+6600). Met honderden voorbeelden per generatie leert een model daar doorheen,
+zolang de fouten willekeurig zijn. Daarom zijn veel zwakke labels hier meer
+waard dan weinig "zekere" labels van het oog.
+
+#### Valkuil: het model leert de verkeerde aanwijzing
+
+6600-fietsen zijn ouder dan 6700-fietsen: ander frame, andere wielen, andere
+foto's. Een model kan dan "oude fiets" leren in plaats van "6600-derailleur",
+en op de testset toch hoog scoren. Drie controles, vast in de evaluatie:
+
+- **Uitsnede:** het model krijgt alleen het `vak` van het onderdeel, niet de
+  hele foto. Zakt de score daar sterk, dan keek het naar de rest.
+- **Losse onderdelen:** een aparte testgroep van losse derailleurs en shifters
+  uit fietsonderdelen — geen fiets, geen frame, geen jaar om op te leunen.
+- **Jaar-baseline:** hoe goed raadt alleen het bouwjaar de generatie? Het model
+  moet daar duidelijk boven zitten, anders heeft het niets geleerd wat het
+  jaar niet al zei.
+
+Of het "beter dan het blote oog" is, wordt zo ook meetbaar: dezelfde testfoto's
+blind door de eigenaar (en door Claude) laten raden, en die score naast die van
+het model zetten.
 
 **Generaties komen uit een bestand met bron, niet uit het hoofd.** Een nieuw
 bestand `reference_groupset_generations.csv` (merk, serie, generatie,
