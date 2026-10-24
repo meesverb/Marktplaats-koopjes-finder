@@ -28,8 +28,9 @@ deze vier. Daarom staan ze voorop.
 4. **De splitsing train/validatie/test is per advertentie, en ligt vast.**
    Foto's van dezelfde fiets in training én test laten het model veel beter
    lijken dan het is. De split volgt uit een hash van het advertentienummer
-   (vast, niet willekeurig per run); de 100 advertenties uit de zip zijn de
-   **vaste testset** en komen nooit in de training.
+   (vast, niet willekeurig per run). De testset wordt opnieuw opgebouwd (zie
+   "De testset"); de 100 advertenties uit de zip zijn daar kandidaten voor,
+   hun oude labels niet. Wat in de testset zit, komt nooit in de training.
 
 ## Drie niveaus
 
@@ -251,6 +252,43 @@ helpen meer foto's; zo niet, dan zitten de fouten in de labels of het model.
 zeldzame waarde misschien een handvol in, en dan zegt de score op die waarde
 niets. Streef naar ≥ 20-30 per waarde in de test; vul de testset daarvoor
 gericht aan (vóór het trainen, en daarna niet meer).
+
+## De testset: hoe hij te vertrouwen wordt
+
+De oude set van 100 advertenties is door Claude gelabeld en gerankt, zonder
+vastgelegd schema of controle. Die labels tellen als `bron: claude`,
+ongecontroleerd — bruikbaar als voorstel, niet als waarheid. Een testset is
+alleen iets waard als het antwoord er **onafhankelijk** van het model in komt.
+Drie soorten bewijs, van sterk naar zwak, en bij elk label staat welke:
+
+| Bewijs | Waar het vandaan komt | Waarde |
+| --- | --- | --- |
+| `in_het_echt` | de eigenaar zag het onderdeel zelf: de eigen fiets, gekochte flips (`/flips`), bezichtigingen | goud |
+| `leesbaar` | onderdeelnummer of serie op de foto te lezen, of de verkoper noemt het en de foto spreekt het niet tegen | sterk |
+| `oordeel` | wat op de foto te zien is, beoordeeld met de ankerfoto's | gewoon |
+
+Werkwijze:
+
+1. **Blind labelen.** Voor de testset ziet de eigenaar Claude's labels níet
+   vooraf (labelpagina in testmodus, geen "klopt"-knop). Wie eerst het antwoord
+   ziet, klikt het meestal goed — dat meet dan niets.
+2. **Twee keer, los van elkaar.** Claude labelt dezelfde foto's apart. Waar ze
+   het eens zijn: vastgezet. Waar niet: de eigenaar beslist met de ankerfoto's
+   ernaast, en de foto krijgt de vlag `lastig`. Het percentage overeenstemming
+   is meteen de bovengrens die een model op die waarde redelijkerwijs haalt.
+3. **Eerst ijken, dan tellen.** De eerste ~20 foto's samen doorlopen en waar
+   het schuurt de definitie in `fotolabels_schema.json` aanscherpen. Die 20
+   gaan daarna opnieuw blind, en pas dan begint de echte testset.
+4. **Goud uit de eigen handen.** Elke fiets die de eigenaar koopt of bezichtigt:
+   de advertentiefoto's bewaren én zelf close-ups maken van aandrijving,
+   banden, stuurlint en frame, met de echte staat erbij. Dat is de enige plek
+   waar de waarheid niet van een foto komt — ook de eigen Defy (Ultegra 6700,
+   `fiets_master.md`) hoort erin.
+5. **Gericht vullen.** Per waarde ≥ 20-30 in de test (zie "Hoeveel foto's");
+   wat ontbreekt gericht zoeken vóór het trainen. Daarna gaat de testset op slot.
+
+Tijd: met sneltoetsen ruwweg 20-40 s per foto, dus 1.000 testfoto's is een
+werkdag of twee — eenmalig, en het is wat alle latere getallen betekenis geeft.
 
 ## Volgorde
 
