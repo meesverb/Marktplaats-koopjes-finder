@@ -132,11 +132,12 @@ Let op het onderscheid: het **model** kijkt alleen naar de foto — vorm,
 geometrie, details — en heeft bij het voorspellen geen tekst nodig. Het gaat
 hier alleen om waar het **antwoord bij de trainingsfoto's** vandaan komt: dat
 moet kloppen, anders leert het model de verkeerde vorm bij het verkeerde
-antwoord. Hetzelfde geldt voor de fiets zelf: een Defy van 2010 en een van
-2020 uit elkaar houden aan de geometrie leert het model van honderden
-Defy-foto's waarvan het **bouwjaar uit de advertentie** bekend is (veld
-`model` en `bouwjaar` bij de advertentie, ook met `bewijs`), niet van foto's
-waarvan iemand het jaar heeft geschat.
+antwoord.
+
+Fietsmodel en bouwjaar herkennen is **geen doel** (eigenaar, 24-10-2026): het
+jaar staat er bijna nooit bij, dus er is te weinig om van te leren voor de
+modellen die geflipt worden. Het eerste doel is de groepsetgeneratie op oudere
+fietsen (zie "Eerste doel" hieronder).
 
 Daarom heeft elk identiteitsveld (fabrikant, serie, generatie, nummer) een
 `bewijs`, en voor de generatie telt `oog` niet mee bij het trainen:
@@ -308,6 +309,78 @@ komt dan als voorstel in de wachtrij *oneens met geverifieerd*.
 - Knop "klopt" zet alle Claude-labels van een foto op gecontroleerd zonder te
   typen; aanpassen kan per veld.
 - Lokaal, 127.0.0.1, met het bestaande token, zoals de andere pagina's.
+
+## Eerste doel: groepsetgeneratie op oudere fietsen
+
+Waar de flipwinst zit: een oude fiets met nog een Ultegra 6600 (of iets
+vergelijkbaars) die de verkoper niet noemt. Dit doel gaat vóór de staat van
+onderdelen; het labelschema blijft hetzelfde, alleen de volgorde van werken.
+
+### Klassen
+
+Alleen de generaties die op Marktplaats echt voorkomen in het flipsegment,
+eerst geteld in `koopjes.db` (hoe vaak noemt een omschrijving "6600", "6700",
+"5600", ...). Elke klasse een rij in `reference_groupset_generations.csv` met
+bron. Plus altijd `andere` en `onbekend`, zodat het model niet hoeft te kiezen
+tussen klassen die het allemaal niet zijn. De **buren** zijn het moeilijkst en
+dus het belangrijkst: dezelfde serie een generatie eerder of later, en een
+andere serie uit hetzelfde tijdperk (die vaak op elkaar lijkt).
+
+### Per onderdeel, niet per fiets
+
+Een generatie is aan het ene onderdeel beter te zien dan aan het andere. Eén
+kop per onderdeelsoort (`shifters`, `achterderailleur`, `voorderailleur`,
+`crankstel`, `remmen`), elk met eigen voorbeelden. Per fiets worden de
+oordelen van alle zichtbare onderdelen op alle foto's samengevoegd; zo telt een
+duidelijke shifter op foto 2 mee bij een wazige derailleur op foto 5. Of dat
+mag (gemengde groepsets) zegt de samenvoeging zelf: onderdelen die het oneens
+zijn, worden apart getoond in plaats van uitgemiddeld.
+
+### Waar de voorbeelden vandaan komen (van best naar minst)
+
+1. **Losse onderdelen** uit fietsonderdelen: de titel noemt bijna altijd het
+   nummer ("RD-6600"), het zijn close-ups, en er zijn er veel. Beste bron voor
+   het antwoord; nadeel is dat ze op tafel liggen in plaats van op een fiets.
+2. **Fietsen waarvan de tekst de generatie noemt** ("Ultegra 6600"): de foto's
+   zoals het model ze later ziet. Antwoord per onderdeel volgens de tabel
+   `bewijs`.
+3. **Leesbare nummers** op een foto (crankarm, achterkant shifter).
+4. **De eigen fiets en de flips**: weinig, maar zeker.
+
+Mengen, met minstens de helft fietsfoto's (bron 2-4), anders leert het model
+"onderdeel op tafel". Eenmalig verzamelen met gewone zoekopdrachten per nummer,
+met `--delay` en over meerdere rondes; niet als vaste zoekopdracht erbij.
+
+### Hoe het model geoptimaliseerd wordt
+
+In deze volgorde; elke stap blijft alleen als hij op de vaste testset wint.
+
+1. **Uitsnijden.** Het onderdeel uit de foto knippen en die uitsnede op hoge
+   resolutie (512-768 px) door DINOv3 halen. Een derailleur op een hele foto
+   is een paar procent van de pixels; als uitsnede is hij het hele beeld. Het
+   `vak` komt eerst uit de labelpagina; later kan een detector (open-vocabulaire
+   modellen als OWLv2 of Grounding DINO: "rear derailleur") de vakken voorstellen
+   en de eigenaar ze alleen corrigeren.
+2. **Bevroren DINOv3 + kleine kop** op de uitsneden. Klassegewichten tegen
+   scheve aantallen (er zijn veel meer 105's dan 6600's).
+3. **Kalibratie.** "90% zeker" moet in 9 van de 10 gevallen kloppen (temperature
+   scaling op de validatieset). Onder een drempel zegt het model `onbekend`
+   — voor flippen is een eerlijk "weet niet" meer waard dan een gok.
+4. **Samenvoegen per fiets** over onderdelen en foto's.
+5. **Actief leren.** Het model loopt over nieuwe advertenties; de eigenaar
+   kijkt alleen naar de gevallen waar het twijfelt of de tekst tegenspreekt.
+   Dat is per uur labelwerk de grootste winst.
+6. **Fine-tunen op Kaggle** (de laatste blokken van DINOv3, met de uitsneden),
+   pas als 1-5 niet meer stijgen.
+
+### Hoe het gemeten wordt
+
+- Verwarringstabel per onderdeel: welke generatie wordt voor welke aangezien.
+- **Dekking bij een vaste precisie**: bij hoeveel procent van de fietsen durft
+  het model een generatie te noemen terwijl het in ≥ 95% van die gevallen
+  klopt? Dat getal zegt wat het waard is voor flippen.
+- De drie controles uit "Valkuil" (uitsnede, losse onderdelen, jaar-baseline).
+- Naast het blote oog: dezelfde testfoto's blind door de eigenaar en Claude.
 
 ## Model (ter oriëntatie; komt na de labels)
 
