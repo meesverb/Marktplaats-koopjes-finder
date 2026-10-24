@@ -120,6 +120,11 @@ labelpagina). Zonder ankers schuift "licht" in een maand ongemerkt op.
 | frame, voorvork | `scheur_of_deuk` | `nee` / `vermoeden` / `ja` — plus `plek` (bovenbuis, onderbuis, trapas, liggende achtervork, staande achtervork, balhoofd, zitbuis) |
 | stuurlint | `staat` | `goed` / `versleten` / `gescheurd` |
 
+Aanvullend, voor schoonmaken: `vuil` (`schoon` / `vuil` / `zwart_aangekoekt`)
+ook bij cassette, crankstel, achterderailleur (wieltjes) en frame; en
+`zadel.staat` (`goed` / `slijtplek` / `gescheurd`), `band.zijwand`
+(`normaal` / `verkleurd_of_uitgedroogd`).
+
 Bewust **niet** gelabeld, omdat het op een foto niet te zien is: kettingrek,
 lagerspeling, de staat van kabels in het frame, en de echte leeftijd. Liever
 een gat dan een gok die eruitziet als een meting.
@@ -127,6 +132,40 @@ een gat dan een gok die eruitziet als een meting.
 Reflecties: een glimstreep die op een kras lijkt is `geen_schade` met
 `zekerheid: waarschijnlijk`, niet `krasjes`. Juist die foto's zijn goud als
 tegenvoorbeeld; markeer ze met de vlag `lastig`.
+
+## Van waarneming naar actie: vervangen, schoonmaken, niets
+
+Het doel van de eigenaar (alleen racefietsen): per fiets zien **wat er
+vervangen en wat er schoongemaakt moet worden**. Dat is een conclusie, dus geen
+label (regel 2), maar een tabel die de waarnemingen omzet, in
+`fotolabels_acties.json` — met de hand aan te passen, en elke wijziging geldt
+meteen voor alle gelabelde foto's zonder iets opnieuw te labelen:
+
+| Waarneming | Actie |
+| --- | --- |
+| ketting `roest: zwaar` | ketting vervangen |
+| ketting `roest: oppervlakkig` of `vuil: zwart_aangekoekt` | aandrijving schoonmaken |
+| cassette `tanden: haaientand` | cassette + ketting vervangen |
+| crankstel `tanden: haaientand` of `tand_kapot` | blad vervangen (+ ketting) |
+| band `slijtage: plat_of_vierkant`, `scheurtjes: diep` of `zijwand: verkleurd_of_uitgedroogd` | band vervangen |
+| stuurlint `versleten` / `gescheurd` | stuurlint vervangen |
+| remmen `blokjes: op` | remblokjes vervangen |
+| velg `remvlak: hol_gesleten` | velg/wiel vervangen |
+| frame `scheur_of_deuk: ja` of `vermoeden` | **niet kopen zonder bezichtiging** |
+
+Dit is een eerste voorzet; de eigenaar bepaalt de regels. Een prijs per actie
+komt uit de echte prijzen van de klussenlijsten op `/flips`, niet uit het
+hoofd. Het resultaat heet `opknaplijst` / `opknapkosten` en is iets anders dan
+`deal_score` en de waardescore.
+
+## Het schema zelf is een bestand
+
+De lijsten hierboven (onderdelen, kenmerken, waarden, definities, ankerfoto's)
+staan in `fotolabels_schema.json`, niet in de code. De labelpagina leest dat
+bestand: een waarde of kenmerk erbij is één regel erbij. Hernoemen of samenvoegen
+van een bestaande waarde gaat via een `hernoem`-lijst in hetzelfde bestand, zodat
+oude labels mee verhuizen in plaats van te verweesen; verwijderen kan niet
+(alleen "niet meer tonen"), zodat geen werk verloren gaat.
 
 ## Wie wat zette: bron en controle
 
@@ -144,6 +183,11 @@ Wijzigingen overschrijven niets: elke wijziging is een nieuwe regel, de
 nieuwste geldt. Zo is altijd te zien wat Claude zei en wat de eigenaar ervan
 maakte — en hoe vaak die het oneens waren, wat precies de betrouwbaarheid van
 Claude-labels meet.
+
+Een veld is **geverifieerd** zodra de eigenaar het heeft aangepast of met
+"klopt" heeft bevestigd; dat is het enige wat `gecontroleerd: ja` zet. Een
+latere wijziging door Claude of het model haalt die status er niet af — die
+komt dan als voorstel in de wachtrij *oneens met geverifieerd*.
 
 **Trainen:** standaard op alles behalve `bron: model`; gewicht hoger voor
 `gecontroleerd: ja`. **Testen:** alleen op `gecontroleerd: ja` uit de testset.
@@ -181,6 +225,33 @@ laatste blokken pas als de probe niet meer beter wordt, op Kaggle.
 Snelheid gemeten op 4 cores (24-10-2026, willekeurige gewichten, zelfde
 architectuur): ViT-B/16 0,5 s per foto op 448 px, 2,3 s op 768 px.
 
+## Hoeveel foto's
+
+Niet het totaal telt, maar het aantal voorbeelden **per waarde, waar het
+onderdeel te beoordelen is**. Richtgetallen voor een bevroren backbone met een
+kleine kop (vuistregels, geen meting — de leercurve hieronder beslist):
+
+| Per waarde | Wat je dan krijgt |
+| --- | --- |
+| ~50 | het werkt, maar wankel |
+| 200-500 | goed; hier vlakt het meestal af |
+| > 1.000 | alleen nog winst bij de lastige gevallen |
+
+Begin met **~300-500 advertenties (~2.000-3.000 bruikbare foto's)**. De gewone
+waarden (`normaal`, `geen`) zijn dan ruim gehaald; de zeldzame (`haaientand`,
+`zwaar` roest, `scheur`) niet — die worden gericht gezocht: losse cassettes en
+kettingbladen uit fietsonderdelen ("versleten", "aan vervanging toe"), en
+fietsen die de tekst al als opknapper beschrijven.
+
+**Meet het, raad het niet:** train op 25%, 50% en 100% van de set en kijk op
+de testset of het nog stijgt. Stijgt het tussen 50 en 100% nog duidelijk, dan
+helpen meer foto's; zo niet, dan zitten de fouten in de labels of het model.
+
+**Ook de testset moet genoeg hebben:** met 100 advertenties zitten er per
+zeldzame waarde misschien een handvol in, en dan zegt de score op die waarde
+niets. Streef naar ≥ 20-30 per waarde in de test; vul de testset daarvoor
+gericht aan (vóór het trainen, en daarna niet meer).
+
 ## Volgorde
 
 1. Dit document goedkeuren / aanpassen. **Daarna** pas labelen.
@@ -195,6 +266,5 @@ architectuur): ViT-B/16 0,5 s per foto op 448 px, 2,3 s op 768 px.
 
 - Wat zit er in de zip: foto's, links, of alleen advertentienummers met een
   rangorde? En waarop is gerankt?
-- Moeten fietscomputers en horloges later in hetzelfde schema (zelfde drie
-  niveaus, andere onderdelenlijst), of blijft dit racefietsen?
+- ~~Fietscomputers en horloges?~~ Nee: alleen racefietsen (eigenaar, 24-10-2026).
 - Mist er een kenmerk dat jij bij een bezichtiging altijd checkt?
