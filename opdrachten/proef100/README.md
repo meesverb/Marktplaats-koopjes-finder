@@ -29,4 +29,9 @@ en de keuzes uit `beeld/candidates.py`.
 | 6 | `prompts.py`, `tekstvectoren.py` | zonder training: tekstprompts per keuze ("a photo of a Gazelle road bike") en hun vectoren |
 | 7 | `scoren.py` | alles tegen de sleutel, goed/fout/weet niet per veld, met het vaakste antwoord als ondergrens; schrijft `uitslag.md` |
 
-`uitslag.md` is de laatste stand van stap 7 toen dit archief gemaakt werd.
+`pijplijn.sh` is de laatste versie (alleen bonsai-2:27b en de proef met
+qwen3.5:35b); de volgorde ervoor staat in het logboek. `start.sh` startte na
+een herstart van de container Ollama (met `OLLAMA_LOAD_TIMEOUT=20m`) en de
+pijplijn, `stop_bonsai.sh` stopte bonsai na 20 advertenties.
+
+`uitslag.md` is de eindstand van stap 7 (25-10-2026).

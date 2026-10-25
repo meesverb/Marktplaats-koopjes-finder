@@ -22,16 +22,20 @@ het Logboek onderaan. Kort:
      koos uit een merkenlijst 93 van 94 leesbare merken goed, door de
      gelijkenis tussen foto en "a photo of a {merk} road bike". Met alleen
      de merkenlijst van de repo 68-26: daar ontbreken o.a. Batavus, Raleigh,
-     Concorde, Stokvis. Het zegt nooit "weet niet". Florence-2-OCR met
-     dezelfde lijst: weinig fouten (42-1-51) maar mist de helft.
+     Concorde, Stokvis. Het zegt nooit "weet niet". Florence-2 large (OCR
+     met dezelfde lijst): 76-3-15; base mist de helft (42-1-51).
   2. **Claude Sonnet en Opus** lezen merk en groep bijna foutloos en
      verzinnen niets; bij materiaal vaak "weet niet". Haiku maakt meer
      fouten. Kosten: ~23-29 duizend tokens per advertentie via het
      abonnement, tegen de sessielimiet aan.
-  3. **Kleine lokale taalmodellen** (qwen3.5:2b, 4b) lezen merken redelijk
-     (~81% goed van wat ze zeggen) maar verzinnen schijfremmen en hoge
-     velgen; gemma4:12b start niet in Ollama 0.40.8. SigLIP 2 base leest
-     geen tekst.
+  3. **qwen3.5:9b is de beste lokale leraar** die in de cloud draaide:
+     merk 79-3-3, groep 43-0-7, rem 62-0-27, ~4 min per advertentie. De
+     kleinere (2b, 4b, gemma4:e2b) verzinnen merken (14-21 fout) en
+     schijfremmen of hoge velgen. Niet gelukt: gemma4:12b start niet in
+     Ollama 0.40.8, qwen3.5:35b (22 GB) is gekild door te weinig geheugen
+     (15 GB; op de laptop met 32 GB nog te proberen), bonsai-2:27b gaf op
+     20 advertenties maar 11 bruikbare antwoorden in ~22 min per stuk.
+     SigLIP 2 base leest geen tekst. Wielen haalt geen enkel lokaal model.
   4. **Rem en wielen** zeggen weinig in deze prijsklasse (€150-500): 94%
      velgrem, 98% laag profiel. **Staat** is door geen model te meten
      zonder labels van de eigenaar.
@@ -43,15 +47,13 @@ het Logboek onderaan. Kort:
   algorithms or models" ([voorwaarden](https://www.anthropic.com/legal/consumer-terms)).
   Interactief labelen in een sessie is gewoon gebruik; of een eigen
   fietsfoto-classifier onder de tweede zin valt, is niet uitgezocht.
-- **Loopt nog** in de cloudsessie van de eerste chat: qwen3.5:4b, gemma4:e2b,
-  qwen3.5:9b, Florence-2 large, bonsai-2:27b en een proef met qwen3.5:35b.
-  Uitkomsten komen in het Logboek zolang die sessie leeft. Daarna: niets
-  meer, de cloudmachine verdwijnt met de sessie.
+- **De proef is af** (25-10). Alle uitkomsten en tokens per model staan in
+  het Logboek (22/23-10, 24-10, 25-10) en in `opdrachten/proef100/uitslag.md`.
 - **Data**: testset, antwoordsleutel en alle antwoorden per advertentie
   stonden alleen in die sessie (niet in git). De eigenaar heeft ze als zip
   gekregen; geef die aan de nieuwe chat als hij ze nodig heeft.
 - **Werk op**: branch `claude/vibrant-volta-wwqoae` (nog niet in `main`
-  gemerged op 24-10).
+  gemerged op 25-10).
 
 Voor een agent die hier verder aan werkt. Lees eerst `CLAUDE.md` en werk
 vanaf een verse `main`. **Eén stap per sessie**, net als de fases in het
@@ -435,7 +437,7 @@ classifiers. Fine-tunen kan, maar kost avonden.
   | Model | Merk leesbaar (94) | Groep leesbaar (54) | Rem (98) | Materiaal (95) | Wielen (100) | Tijd |
   | --- | --- | --- | --- | --- | --- | --- |
   | qwen3.5:2b (99 van 100) | 71-16-6 | 18-0-35 | 11-51-35 | 41-14-39 | 28-28-43 | mediaan 108 s per adv. |
-  | qwen3.5:4b (62 van 100, loopt) | 49-11-0 | 20-2-10 | 12-0-48 | 10-4-43 | 0-10-52 | ~180 s per adv. |
+  | qwen3.5:4b (94 van 100) | 74-14-0 | 38-2-11 | 24-0-68 | 15-11-63 | 0-19-75 | mediaan 170 s per adv. |
   | Florence-2 base, OCR + merkenlijst | 42-1-51 | 19-3-32 | – | – | – | 1,8 s per foto |
   | gemma4:12b | start niet | | | | | |
 
@@ -443,12 +445,51 @@ classifiers. Fine-tunen kan, maar kost avonden.
     wat hij zegt, maar 16 verzonnen merken; zegt 51 keer "schijfrem" bij een
     velgrem. Tokens exact (Ollama): 499.007 in + 17.500 uit, ~5.170 per
     advertentie; 3,7 uur voor alle 100.
-  - qwen3.5:4b (tussenstand): even goed op merk als 2b, leest de groep
-    vaker (20 van 32 tegen 18 van 53 bij 2b, wel 2 fouten), en zegt bij rem
-    "weet niet" in plaats van "schijf". Bij wielen zegt
-    hij alleen "hoge velgen" als hij iets zegt, en dat is steeds fout.
+  - qwen3.5:4b: 3 keer viel Ollama om ("model runner has unexpectedly
+    stopped", bij advertenties met veel foto's), 3 keer onleesbare uitvoer.
+    Merk iets beter dan 2b, leest de groep twee keer zo vaak, en zegt bij
+    rem "weet niet" in plaats van "schijf". Bij wielen zegt hij alleen
+    "hoge velgen" als hij iets zegt, en dat is steeds fout. ~5.210 tokens
+    per advertentie, 5,2 uur.
   - Florence-2 base: als het een merk uit de lijst leest, klopt het bijna
     altijd (1 fout), maar het vindt er maar 42 van de 94. 910 foto's in 28
     minuten, 8.263 tokens uitvoer.
   - gemma4:12b: zelfde fout als op 22-10 ("Gemma4Assistant requires
     ctx_other"); de pijplijn ging door na de eerste advertentie.
+- 24/25-10 — **de rest van de lokale modellen** (zelfde 100 advertenties en
+  sleutel). Goed-fout-weet niet:
+
+  | Model | Merk leesbaar (94) | Groep leesbaar (54) | Rem (98) | Materiaal (95) | Wielen (100) | Tijd | Tokens |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | qwen3.5:9b (91 van 100) | 79-3-3 | 43-0-7 | 62-0-27 | 40-5-42 | 1-13-77 | mediaan 226 s per adv. | ~5.220 per adv. |
+  | gemma4:e2b (92 van 100) | 61-21-4 | 14-0-33 | 0-0-89 | 2-0-85 | 0-0-91 | mediaan 76 s per adv. | ~2.410 per adv. |
+  | Florence-2 large, OCR + merkenlijst | 76-3-15 | 32-4-18 | – | – | – | 5,3 s per foto | 10.703 uit (alle foto's) |
+  | bonsai-2:27b (11 van 20) | 10-0-0 | 3-1-2 | 4-0-6 | 2-0-8 | 0-0-11 | mediaan 22 min per adv. | ~4.030 per adv. |
+  | qwen3.5:35b | gekild (geheugen) | | | | | | |
+
+  - **qwen3.5:9b** is de beste lokale leraar: 3 verzonnen merken (2b: 16,
+    4b: 14), geen foute groep waar die leesbaar is, geen foute rem. 4 keer viel Ollama om, 5 keer
+    onleesbare uitvoer. Eerst haalde hij de standaard laadtijd van Ollama
+    niet (5 minuten, "timed out waiting for llama-server to start"); met
+    `OLLAMA_LOAD_TIMEOUT=20m` wel. Op de laptop waarschijnlijk sneller (10
+    kernen tegen 4), niet gemeten.
+  - **gemma4:e2b** is het zuinigst met tokens (~245 invoertokens per foto tegen
+    ~550 bij qwen), maar verzint 21 merken en zegt bij rem, materiaal en wielen
+    bijna altijd "weet niet".
+  - **Florence-2 large** leest bijna twee keer zoveel merken als base
+    (76 tegen 42), met 3 fouten. Samen met embeddinggemma-2 en qwen3.5:9b
+    zijn er nu drie lokale lezers van het merk die elk weinig fouten maken:
+    waar ze het eens zijn, is het een sterk zilveren label.
+  - **bonsai-2:27b**: op verzoek van de eigenaar gestopt na 20 advertenties
+    (~24 min per stuk, alle 100 had ~36 uur gekost). 2 keer viel Ollama om,
+    1 keer kwam er geen antwoord binnen de tijd, 6 keer onleesbare uitvoer; wat wel binnenkwam klopte. Op dezelfde 20
+    advertenties: qwen3.5:9b 17-1-0 op merk, Florence-2 large 18-1-0,
+    embeddinggemma-2 18-1-0, Opus 19-0-0. Niet de moeite.
+  - **qwen3.5:35b**: "llama-server process has terminated: signal: killed"
+    na 41 s: 22 GB past niet in 15 GB geheugen. Op de laptop (32 GB) is het
+    nog niet geprobeerd.
+  - Invoertokens van SigLIP 2 en Florence-2 zijn niet gemeten (geen
+    tokenteller zoals bij Ollama); alleen de tijd en de uitvoer van Florence.
+  - Onderweg: de schijf van de cloudsessie liep vol met resten van mislukte
+    downloads (11 GB zonder model erbij); daardoor kwamen bonsai en 35b de
+    eerste keer niet binnen. Opgeruimd en opnieuw gedraaid.

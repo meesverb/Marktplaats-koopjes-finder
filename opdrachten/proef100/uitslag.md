@@ -9,12 +9,17 @@ Meerderheidsklasse: rem altijd 'rim': 94/98; materiaal altijd 'aluminium': 64/95
 | claude-haiku | 87/5/2 (94%) | 0/0/4 | 43/2/9 (95%) | 5/0/8 (100%) | 0 | 95/0/3 (100%) | 28/4/63 (87%) | 89/1/10 (98%) |
 | claude-sonnet | 93/1/0 (98%) | 0/0/4 | 51/2/1 (96%) | 8/0/5 (100%) | 0 | 96/1/1 (98%) | 70/0/25 (100%) | 100/0/0 (100%) |
 | claude-opus | 94/0/0 (100%) | 0/0/4 | 50/1/3 (98%) | 8/1/4 (88%) | 0 | 97/1/0 (98%) | 61/0/34 (100%) | 99/1/0 (99%) |
+| bonsai-2_27b | 10/0/0 (100%) +84∅ | 0/0/1 +3∅ | 3/1/2 (75%) +48∅ | 0/0/1 +12∅ | 0 | 4/0/6 (100%) +88∅ | 2/0/8 (100%) +85∅ | 0/0/11 +89∅ |
 | embeddinggemma-2 | 93/1/0 (98%) | 0/4/0 (0%) | 0/0/54 | 0/0/13 | 0 | 69/29/0 (70%) | 63/32/0 (66%) | 64/36/0 (64%) |
 | embeddinggemma-2 (repo-merken) | 68/26/0 (72%) | 0/4/0 (0%) | 0/0/54 | 0/0/13 | 0 | 69/29/0 (70%) | 63/32/0 (66%) | 64/36/0 (64%) |
 | florence2-b | 42/1/51 (97%) | 0/0/4 | 19/3/32 (86%) | 0/0/13 | 0 | 0/0/98 | 0/0/95 | 0/0/100 |
+| florence2-l | 76/3/15 (96%) | 0/0/4 | 32/4/18 (88%) | 0/1/12 (0%) | 0 | 0/0/98 | 0/0/95 | 0/0/100 |
 | gemma4_12b | 0/0/0 +94∅ | 0/0/0 +4∅ | 0/0/0 +54∅ | 0/0/0 +13∅ | 0 | 0/0/0 +98∅ | 0/0/0 +95∅ | 0/0/0 +100∅ |
+| gemma4_e2b | 61/21/4 (74%) +8∅ | 0/1/3 (0%) | 14/0/33 (100%) +7∅ | 1/0/12 (100%) | 0 | 0/0/89 +9∅ | 2/0/85 (100%) +8∅ | 0/0/91 +9∅ |
 | qwen3.5_2b | 71/16/6 (81%) +1∅ | 0/2/2 (0%) | 18/0/35 (100%) +1∅ | 0/1/12 (0%) | 0 | 11/51/35 (17%) +1∅ | 41/14/39 (74%) +1∅ | 28/28/43 (50%) +1∅ |
-| qwen3.5_4b | 49/11/0 (81%) +34∅ | 0/1/1 (0%) +2∅ | 20/2/10 (90%) +22∅ | 1/1/6 (50%) +5∅ | 1 | 12/0/48 (100%) +38∅ | 10/4/43 (71%) +38∅ | 0/10/52 (0%) +38∅ |
+| qwen3.5_35b | 0/0/0 +94∅ | 0/0/0 +4∅ | 0/0/0 +54∅ | 0/0/0 +13∅ | 0 | 0/0/0 +98∅ | 0/0/0 +95∅ | 0/0/0 +100∅ |
+| qwen3.5_4b | 74/14/0 (84%) +6∅ | 0/3/1 (0%) | 38/2/11 (95%) +3∅ | 1/1/11 (50%) | 2 | 24/0/68 (100%) +6∅ | 15/11/63 (57%) +6∅ | 0/19/75 (0%) +6∅ |
+| qwen3.5_9b | 79/3/3 (96%) +9∅ | 0/1/3 (0%) | 43/0/7 (100%) +4∅ | 2/1/8 (66%) +2∅ | 1 | 62/0/27 (100%) +9∅ | 40/5/42 (88%) +8∅ | 1/13/77 (7%) +9∅ |
 | siglip2-b | 9/85/0 (9%) | 0/4/0 (0%) | 0/0/54 | 0/0/13 | 0 | 97/1/0 (98%) | 52/43/0 (54%) | 94/6/0 (94%) |
 | siglip2-b (repo-merken) | 7/87/0 (7%) | 0/4/0 (0%) | 0/0/54 | 0/0/13 | 0 | 97/1/0 (98%) | 52/43/0 (54%) | 94/6/0 (94%) |
 
@@ -25,17 +30,25 @@ Meerderheidsklasse: rem altijd 'rim': 94/98; materiaal altijd 'aluminium': 64/95
 | claude-haiku | 0.16 | 0.54 | 0.04 | 0.27 | 0.35 |
 | claude-sonnet | 0.36 | 0.27 | 0.01 | 0.05 | 0.49 |
 | claude-opus | 0.36 | 0.36 | 0.12 | 0.03 | 0.44 |
+| bonsai-2_27b | 0.36 | 0.73 | 0.45 | 0.82 | 1.0 |
+| gemma4_e2b | 0.98 | 1.0 | 1.0 | 1.0 | 1.0 |
 | qwen3.5_2b | 0.25 | 0.25 | 0.25 | 0.95 | 1.0 |
-| qwen3.5_4b | 0.4 | 0.53 | 0.44 | 0.48 | 1.0 |
+| qwen3.5_4b | 0.39 | 0.52 | 0.41 | 0.46 | 1.0 |
+| qwen3.5_9b | 0.15 | 0.21 | 0.14 | 0.21 | 1.0 |
 
 ## Kosten
 
 - **claude-haiku**: batches met uitkomst: 20, batches met tokentelling: 20, tokens (bekende batches): 2895159, advertenties daarin: 100, foto's daarin: 910, tokens per advertentie: 28952, tokens per foto: 3181, per foto (lijn): 1399, vaste voet per batch (lijn): 81109, seconden per advertentie: 32.5, onbekend: []
 - **claude-sonnet**: batches met uitkomst: 20, batches met tokentelling: 14, tokens (bekende batches): 1595027, advertenties daarin: 70, foto's daarin: 575, tokens per advertentie: 22786, tokens per foto: 2774, per foto (lijn): 1141, vaste voet per batch (lijn): 67052, seconden per advertentie: 17.0, onbekend: ['sonnet_b12', 'sonnet_b13', 'sonnet_b14', 'sonnet_b15', 'sonnet_b18', 'sonnet_b20']
 - **claude-opus**: batches met uitkomst: 20, batches met tokentelling: 11, tokens (bekende batches): 1328717, advertenties daarin: 55, foto's daarin: 540, tokens per advertentie: 24158, tokens per foto: 2461, per foto (lijn): 1019, vaste voet per batch (lijn): 70770, seconden per advertentie: 23.5, onbekend: ['opus_b01', 'opus_b02', 'opus_b03', 'opus_b04', 'opus_b05', 'opus_b06', 'opus_b08', 'opus_b09', 'opus_b10']
+- **bonsai-2_27b**: advertenties: 17, fouten: 3, tokens in (som): 63982, tokens uit (som): 4474, tokens per advertentie: 4027, seconden per advertentie (mediaan): 1337.1, seconden totaal: 25427
 - **embeddinggemma-2**: foto's: 910, seconden totaal: 4546.9, tokens in (som): 213508
 - **florence2-b**: foto's: 910, seconden totaal: 1668, tokens uit (som): 8263
+- **florence2-l**: foto's: 910, seconden totaal: 4832, tokens uit (som): 10703
 - **gemma4_12b**: advertenties: 0
+- **gemma4_e2b**: advertenties: 100, fouten: 0, tokens in (som): 224188, tokens uit (som): 16585, tokens per advertentie: 2408, seconden per advertentie (mediaan): 76.0, seconden totaal: 8283
 - **qwen3.5_2b**: advertenties: 100, fouten: 0, tokens in (som): 499007, tokens uit (som): 17500, tokens per advertentie: 5165, seconden per advertentie (mediaan): 108.5, seconden totaal: 13496
-- **qwen3.5_4b**: advertenties: 64, fouten: 2, tokens in (som): 300799, tokens uit (som): 13132, tokens per advertentie: 4905, seconden per advertentie (mediaan): 171.1, seconden totaal: 11563
+- **qwen3.5_35b**: advertenties: 0
+- **qwen3.5_4b**: advertenties: 97, fouten: 3, tokens in (som): 484994, tokens uit (som): 20165, tokens per advertentie: 5208, seconden per advertentie (mediaan): 169.6, seconden totaal: 18659
+- **qwen3.5_9b**: advertenties: 96, fouten: 4, tokens in (som): 484193, tokens uit (som): 16619, tokens per advertentie: 5217, seconden per advertentie (mediaan): 226.4, seconden totaal: 24122
 - **siglip2-b**: foto's: 910, seconden totaal: 348.5

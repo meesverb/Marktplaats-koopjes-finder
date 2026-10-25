@@ -36,7 +36,7 @@ def main():
     out_path.parent.mkdir(exist_ok=True)
     done = json.loads(out_path.read_text()) if out_path.exists() else {}
     for n, iid in enumerate(test[:limit], 1):
-        if iid in done:
+        if iid in done and "fout" not in done[iid]:  # mislukte opnieuw proberen
             continue
         photos = ads[iid]["photos"][:max_photos]
         images = [base64.b64encode((HERE / "fotos" / p).read_bytes()).decode() for p in photos]
