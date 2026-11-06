@@ -253,6 +253,78 @@ komt uit de echte prijzen van de klussenlijsten op `/flips`, niet uit het
 hoofd. Het resultaat heet `opknaplijst` / `opknapkosten` en is iets anders dan
 `deal_score` en de waardescore.
 
+## Het einddoel: van advertentie naar onderdelenwaarde en een melding
+
+Van de eigenaar (06-11-2026): een klein beeldmodel dat bij elke fiets het
+frame en alle onderdelen eruit haalt; elk onderdeel heeft een waarde
+(bijvoorbeeld alu-frame €50, carbon-frame €100); daar gaan de opknapkosten af;
+levert dat winst op, dan een melding. Liever wat te veel laten zien dan iets
+missen.
+
+Dit is E3 uit het plan ("som der delen", `valuation.py`), maar dan per
+advertentie in plaats van alleen voor de eigen fiets, en gevoed door de foto's
+in plaats van alleen de tekst.
+
+```
+zoekopdracht (schedule.json, bestaande rondes)
+  → nieuwe advertentie in koopjes.db
+  → foto's ophalen op $_57 (één paginaverzoek, binnen een budget per ronde)
+  → herkenning per onderdeel: tekst (detect_groupset, extract_specs) + beeldmodel
+  → onderdelenwaarde  = Σ waarde(onderdeel, soort, staat)
+  → opknapkosten       = Σ acties (fotolabels_acties.json)
+  → winst              = max(verkoopschatting racebikes.py, onderdelenwaarde)
+                         − opknapkosten − vraagprijs
+  → winst ≥ drempel: melding met link naar de kaart op /racefietsen
+```
+
+### De waardetabel
+
+`onderdeelwaarden.csv`: één rij per onderdeel + soort (+ staat waar dat
+uitmaakt), met `waarde_eur` en `bron`:
+
+| onderdeel | soort | waarde_eur | bron |
+| --- | --- | --- | --- |
+| frame | aluminium | 50 | eigenaar |
+| frame | carbon | 100 | eigenaar |
+| achterderailleur | Ultegra 6600 | … | eigenaar / gemeten |
+
+- **De eigenaar zet de getallen**, en past ze aan wanneer hij wil; die
+  gelden direct voor alle advertenties, zonder iets opnieuw te herkennen.
+- **Gemeten gaat voor gegokt zodra het kan:** de rondes zien al losse
+  onderdelen (`spares.py`); hun mediane vraagprijs per soort (en de snel
+  verkochte) wordt per rij naast het getal van de eigenaar gezet, met het
+  aantal. Dat is precies wat `component_price` uit het plan moest worden.
+  Nooit een waarde uit het hoofd van een taalmodel.
+
+### Onzekerheid wordt een bandbreedte, geen gok
+
+Weet het model het niet zeker (Ultegra 6600 óf 105 5600), dan telt de
+onderdelenwaarde als **van–tot** (laagste en hoogste kandidaat), en "niet te
+zien" telt als de goedkoopste soort met de vlag *onbekend*. De melding gaat af
+op de **bovenkant** van de winst (liever te veel laten zien), maar toont de
+onderkant en welke onderdelen onzeker zijn, zodat één blik op de foto genoeg
+is.
+
+### Eerst met tekst, daarna met het model
+
+De keten werkt vanaf dag één op wat de tekst al zegt (`detect_groupset()`,
+`extract_specs()`: frame, groepset, rem, wielen). Het beeldmodel vult later de
+gaten. Zo levert het al op voordat er één label gezet is, en is meteen
+meetbaar wat het model toevoegt: hoeveel advertenties gaan van "onbekend" naar
+een waarde, en hoeveel meldingen komen er alleen door de foto's bij.
+
+### De melding
+
+Telegram via de Bot API (alleen `requests`, sleutel in een bestand buiten
+git, zoals `sheets.json`). Per advertentie hooguit één melding, opnieuw alleen
+als de prijs zakt. Nooit zelf bieden of reageren; de melding linkt naar de
+kaart, de eigenaar doet de rest.
+
+### Scores niet vermengen
+
+`onderdelenwaarde` en `opknapkosten` zijn eigen kolommen, los van
+`deal_score` en de waardescore.
+
 ## Het schema zelf is een bestand
 
 De lijsten hierboven (onderdelen, kenmerken, waarden, definities, ankerfoto's)
