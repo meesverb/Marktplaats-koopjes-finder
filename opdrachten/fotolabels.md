@@ -134,10 +134,17 @@ hier alleen om waar het **antwoord bij de trainingsfoto's** vandaan komt: dat
 moet kloppen, anders leert het model de verkeerde vorm bij het verkeerde
 antwoord.
 
-Fietsmodel en bouwjaar herkennen is **geen doel** (eigenaar, 24-10-2026): het
-jaar staat er bijna nooit bij, dus er is te weinig om van te leren voor de
-modellen die geflipt worden. Het eerste doel is de groepsetgeneratie op oudere
-fietsen (zie "Eerste doel" hieronder).
+**Merk en model van de fiets herkennen is wél een doel** (eigenaar,
+06-11-2026): "het frame etc, merk, model, alles". Het antwoord komt uit wat
+koopjes-finder al weet: het merkveld en de titel, `bike_identity.identify()`,
+en vooral de eigen correcties op `/racefietsen` (`bike_link`: klopt / ander
+model) — dat zijn de sterkste labels die er zijn, want de eigenaar heeft ze
+bekeken. Op de foto helpt het opschrift (logo, "DEFY" op de bovenbuis) en de
+framevorm.
+
+Het **bouwjaar** blijft geen doel (eigenaar, 24-10-2026): het staat er bijna
+nooit bij, dus er is te weinig om van te leren. Het eerste doel is de
+groepsetgeneratie op oudere fietsen (zie "Eerste doel" hieronder).
 
 Daarom heeft elk identiteitsveld (fabrikant, serie, generatie, nummer) een
 `bewijs`, en voor de generatie telt `oog` niet mee bij het trainen:
@@ -304,6 +311,24 @@ zien" telt als de goedkoopste soort met de vlag *onbekend*. De melding gaat af
 op de **bovenkant** van de winst (liever te veel laten zien), maar toont de
 onderkant en welke onderdelen onzeker zijn, zodat één blik op de foto genoeg
 is.
+
+### Tekst en foto samen
+
+De tekst blijft even belangrijk als de foto: wat de verkoper schrijft ("nieuwe
+ketting", "Ultegra 6700", "carbon vork", "framemaat 56") is vaak het enige
+bewijs voor wat niet op de foto staat. Het beeldmodel kijkt bewust **alleen**
+naar foto's (zo is meetbaar wat de foto's toevoegen, en kan het niet leunen op
+de tekst); het samenvoegen gebeurt in koopjes-finder, per veld:
+
+| Situatie | Uitkomst |
+| --- | --- |
+| alleen de tekst zegt iets | tekst |
+| alleen de foto zegt iets | foto, met zijn zekerheid |
+| ze zijn het eens | die waarde, zekerder dan elk apart |
+| ze spreken elkaar tegen | beide tonen met de vlag *tegenspraak*; de waarde telt als bandbreedte |
+
+Een tegenspraak is zelf een signaal: een verkoper die "105" schrijft bij een
+Ultegra is precies de fiets die onder zijn waarde te koop staat.
 
 ### Eerst met tekst, daarna met het model
 
