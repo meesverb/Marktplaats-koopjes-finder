@@ -221,6 +221,9 @@ labelpagina). Zonder ankers schuift "licht" in een maand ongemerkt op.
 | frame, voorvork | `lak` | `geen_schade` / `krasjes` / `chips` / `diep_tot_materiaal` |
 | frame, voorvork | `scheur_of_deuk` | `nee` / `vermoeden` / `ja` — plus `plek` (bovenbuis, onderbuis, trapas, liggende achtervork, staande achtervork, balhoofd, zitbuis) |
 | stuurlint | `staat` | `goed` / `versleten` / `gescheurd` |
+| pedalen | `aanwezig` | `ja` / `nee` (veel fietsen worden zonder pedalen verkocht; scheelt in waarde en in wat er mee moet) |
+| pedalen | `soort` | `platform` / `toeclips` / `SPD` / `SPD-SL` / `Look` / `anders` — identiteit, telt voor de waarde |
+| pedalen | `staat` | `goed` / `schaafplekken` / `kapot` (gebroken body, verbogen as, ontbrekende plaat) |
 
 Aanvullend, voor schoonmaken: `vuil` (`schoon` / `vuil` / `zwart_aangekoekt`)
 ook bij cassette, crankstel, achterderailleur (wieltjes) en frame; en
