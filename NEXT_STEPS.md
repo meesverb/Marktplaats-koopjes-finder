@@ -228,7 +228,7 @@ paar weken data heeft.
   prijssignalen combineert (% van mediaan, % van 2e-hands gemiddelde, % van
   nieuwprijs, plus bonussen voor prijsdaling en beter-dan-referentie).
   Console en HTML zijn erop gesorteerd, er is een `Topdeals`-tab, en bij
-  elke score staat welke signalen erin zaten. Zie README → "Dealscore" voor
+  elke score staat welke signalen erin zaten. Zie `docs/rapport.md` → "Dealscore" voor
   de weging en wat de score expliciet *niet* zegt.
 - **Bied-advertenties**: aantal biedingen en het echte minimumbod worden
   opgehaald (`--bid-lookup fast|all|none`), advertenties waar nog niemand op
@@ -242,15 +242,15 @@ paar weken data heeft.
 - Fietsen staan sinds fase 7 in eigen bestanden: `reference_bikes.csv`
   (Defy-familie + upgradedoelen) en `reference_bike_accessories.csv`
   (fietscomputers, powermeters), elk met een `source_url` per rij. Gebruik
-  ze met `--reference-file`; zie README → "Bikes have their own reference
-  files".
+  ze met `--reference-file`; zie `docs/referentiedata.md` → "Bikes have their own
+  reference files".
 - `reference_bike_catalog.csv` is iets anders: een catalogus met één rij per
   merk/model/modeljaar (Giant, Trek, Cube, Sensa en via bikezona.com ook
   andere merken), met specs, nieuwprijs en bron. Geen referentiebestand: met
   `--reference-file` waarschuwt het script en herkent het niets. Alleen de
   merkkolom wordt gelezen (slapers, lijst niet-herkende advertenties); specs
-  en nieuwprijzen gebruikt de taxatie nog niet. Zie README → "Bike
-  catalogue". Opgebouwd met `catalog_tools/`.
+  en nieuwprijzen gebruikt de taxatie nog niet. Zie `docs/referentiedata.md` →
+  "Bike catalogue". Opgebouwd met `catalog_tools/`.
 - Hulpscripts: `check_hifi_brand.py` (merken-index opzoeken),
   `check_reference_overlaps.py` (patroon-conflicten checken),
   `reference_overview.py` (doorbladerbaar overzicht van de database).

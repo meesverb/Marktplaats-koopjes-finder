@@ -15,8 +15,8 @@ Dit plan is geschreven na een gesprek met de eigenaar; zijn keuzes staan in
 >
 > | Bestaat al | Waar |
 > | --- | --- |
-> | Samengestelde dealscore 0-100 per advertentie, met onderbouwing per signaal | `score_listing()`, README → "Dealscore" |
-> | Bied-overzicht: biedaantal, echt minimumbod, "vrij te bieden", eigen tabs | `enrich_bid_listings()`, `print_bid_overview()`, README → "Bidding listings" |
+> | Samengestelde dealscore 0-100 per advertentie, met onderbouwing per signaal | `score_listing()`, `docs/rapport.md` → "Dealscore" |
+> | Bied-overzicht: biedaantal, echt minimumbod, "vrij te bieden", eigen tabs | `enrich_bid_listings()`, `print_bid_overview()`, `docs/zoeken.md` → "Bidding listings" |
 > | Testsuite (87 tests) | `tests/`, draaien met `python -m unittest discover -s tests -t tests` |
 >
 > Fase 4, 5 en 7 bouwen dáárop voort in plaats van bij nul te beginnen; per
