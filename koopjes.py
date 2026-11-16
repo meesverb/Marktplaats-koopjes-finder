@@ -39,6 +39,7 @@ from typing import Callable, Iterator, Optional
 
 import db
 import racefiets_jev as mp
+import util
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_CONFIG = HERE / "schedule.json"
@@ -643,10 +644,6 @@ def local_time(iso: str) -> str:
         return "?"
 
 
-def euro(value) -> str:
-    return "—" if value is None else f"€{value:,.0f}".replace(",", ".")
-
-
 OVERVIEW_CSS = """
 .dashlink { font-size: 1.05rem; margin: 8px 0 18px; }
 :root { color-scheme: light dark; --bg:#fff; --fg:#1d1d1f; --muted:#6b6b70; --line:#e3e3e6;
@@ -705,8 +702,8 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
     parts.append("<h2>Mijn fiets</h2>")
     if valuations:
         items = "".join(
-            f"<li>Scenario {esc(v['scenario'])}: {euro(v['low_eur'])} – <strong>{euro(v['mid_eur'])}"
-            f"</strong> – {euro(v['high_eur'])} <span class='muted'>(vertrouwen: "
+            f"<li>Scenario {esc(v['scenario'])}: {util.euro(v['low_eur'])} – <strong>{util.euro(v['mid_eur'])}"
+            f"</strong> – {util.euro(v['high_eur'])} <span class='muted'>(vertrouwen: "
             f"{esc(v['confidence'] or '?')}, {esc(local_time(v['created_at'] or ''))})</span></li>"
             for v in valuations
         )
@@ -775,7 +772,7 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
             new = "<span class='badge good'>nieuw</span>" if u.get("new") else ""
             parts.append(
                 f"<li><a href='{esc(u.get('url') or '#')}'>{esc(u.get('title') or '')}</a> — "
-                f"{euro(u.get('price_eur'))} <span class='muted'>({esc(u.get('price_basis') or '')})</span>"
+                f"{util.euro(u.get('price_eur'))} <span class='muted'>({esc(u.get('price_basis') or '')})</span>"
                 f"<span class='badge'>kwaliteit {u.get('quality')} (+{u.get('gain')})</span>"
                 f"<span class='badge'>{u.get('per_100_eur')} punt per €100</span>{new}"
                 f" <span class='muted'>{esc(name)}</span></li>"
@@ -833,7 +830,7 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         for name, items in by_search.items():
             rows = []
             for item in items:
-                price = euro(item.get("price_eur")) if item.get("price_eur") is not None else esc(
+                price = util.euro(item.get("price_eur")) if item.get("price_eur") is not None else esc(
                     item.get("price_type") or "?"
                 )
                 score = item.get("deal_score")
@@ -999,7 +996,7 @@ def unmatched_listings(config: Config) -> list[dict]:
 
 def price_text(price, price_type) -> str:
     if price:
-        return euro(price) + (" (bieden)" if price_type in ("MIN_BID", "FAST_BID") else "")
+        return util.euro(price) + (" (bieden)" if price_type in ("MIN_BID", "FAST_BID") else "")
     return {"FAST_BID": "bieden", "SEE_DESCRIPTION": "zie omschrijving", "FREE": "gratis"}.get(
         price_type or "", "?"
     )
@@ -1052,7 +1049,7 @@ def render_best_deals(config: Config, summaries: dict[str, dict]) -> str:
             if upgrades:
                 lines.append("Upgrades voor jouw fiets (binnen budget en maat, op upgrade per euro):")
                 for u in upgrades:
-                    lines.append(f"  {euro(u.get('price_eur')):>10}  kwaliteit {u.get('quality')} "
+                    lines.append(f"  {util.euro(u.get('price_eur')):>10}  kwaliteit {u.get('quality')} "
                                  f"(+{u.get('gain')})  {u.get('title')}")
                     lines.append(f"  {'':>10}  {u.get('url')}")
             if deals:

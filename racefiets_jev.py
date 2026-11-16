@@ -1981,7 +1981,7 @@ def load_reference_data(path: str) -> list[dict]:
     if rows and "pattern" not in (reader.fieldnames or []):
         print(
             f"warning: {path} heeft geen 'pattern'-kolom en is dus geen referentiebestand "
-            "(reference_bike_catalog.csv is een catalogus, zie README); er wordt niets herkend",
+            "(reference_bike_catalog.csv is een catalogus, zie docs/referentiedata.md); er wordt niets herkend",
             file=sys.stderr,
         )
         return []

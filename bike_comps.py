@@ -253,6 +253,5 @@ def open_readonly(db_path) -> Optional[sqlite3.Connection]:
     """Alleen lezen, zonder de database aan te maken of te migreren."""
     if not db_path or not Path(db_path).exists():
         return None
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = db.connect_readonly(db_path, rows=True)
     return conn

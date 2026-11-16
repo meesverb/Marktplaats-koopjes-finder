@@ -46,6 +46,7 @@ import requests
 
 import db
 import racefiets_jev as mp
+import util
 
 # 1 op zoveel nieuwe advertenties doet mee aan de steekproef. Met ~300
 # nieuwe per dag in de drie markten samen (28/29-09-2026) zijn dat er ~30,
@@ -72,16 +73,6 @@ def in_sample(item_id: str) -> bool:
     return zlib.crc32(item_id.encode("utf-8")) % SAMPLE_EVERY == 0
 
 
-def _time(value) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        t = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
-
-
 @dataclass(frozen=True)
 class Target:
     item_id: str
@@ -97,7 +88,7 @@ def plan(conn: sqlite3.Connection, budget: int, now: Optional[datetime] = None) 
     last: dict[str, datetime] = {}
     measured: dict[str, list[datetime]] = {}
     for item_id, observed in conn.execute("SELECT item_id, observed_at FROM listing_stats"):
-        t = _time(observed)
+        t = util.parse_time_utc(observed)
         if t is None:
             continue
         measured.setdefault(item_id, []).append(t)
@@ -146,7 +137,7 @@ def plan(conn: sqlite3.Connection, budget: int, now: Optional[datetime] = None) 
     for item_id, url, first_seen in rows:
         if not in_sample(item_id):
             continue
-        start = _time(first_seen)
+        start = util.parse_time_utc(first_seen)
         if start is None:
             continue
         age = now - start
@@ -256,7 +247,7 @@ def load_latest(db_path) -> dict[str, Latest]:
     """{item_id: laatste meting}, alleen lezen."""
     if not db_path or not Path(db_path).exists():
         return {}
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         found = db.list_stats(conn)
     except sqlite3.Error:
@@ -329,7 +320,7 @@ def compute(obs_by_item: dict, listings: dict, places: dict, now: Optional[datet
     p = ViewPatterns(measurements=sum(len(v) for v in obs_by_item.values()), listings=len(obs_by_item))
 
     def start_of(item_id: str, o: _Obs) -> Optional[datetime]:
-        return o.since or _time((listings.get(item_id) or (None,))[0])
+        return o.since or util.parse_time_utc((listings.get(item_id) or (None,))[0])
 
     def per_day(item_id: str, o: _Obs, key: str) -> Optional[float]:
         start, value = start_of(item_id, o), getattr(o, key)
@@ -370,7 +361,7 @@ def compute(obs_by_item: dict, listings: dict, places: dict, now: Optional[datet
     for item_id, o in first.items():
         start = start_of(item_id, o)
         rate = per_day(item_id, o, "favorites")
-        gone = _time((listings.get(item_id) or (None, None))[1])
+        gone = util.parse_time_utc((listings.get(item_id) or (None, None))[1])
         if start is None or rate is None:
             continue
         if gone is not None:
@@ -408,7 +399,7 @@ def compute(obs_by_item: dict, listings: dict, places: dict, now: Optional[datet
             if not price:
                 return None
             return (f"goedkoopste derde (< €{cut1:.0f})" if price < cut1 else
-                    f"middelste derde" if price < cut2 else f"duurste derde (≥ €{cut2:.0f})")
+                    "middelste derde" if price < cut2 else f"duurste derde (≥ €{cut2:.0f})")
         p.price = sorted(grouped(band), key=lambda g: (not g.label.startswith("goedkoop"), g.label.startswith("duur")))
 
     def placed(item_id):
@@ -448,7 +439,7 @@ def load_patterns(db_path, categories: tuple) -> ViewPatterns:
     de markt."""
     if not db_path or not Path(db_path).exists():
         return ViewPatterns()
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         if not db._has_table(conn, "listing_stats"):
             return ViewPatterns()
@@ -462,9 +453,9 @@ def load_patterns(db_path, categories: tuple) -> ViewPatterns:
                 "FROM listing_stats s ORDER BY s.item_id, s.observed_at"):
             if r[0] not in listings or r[6] == "eigen advertentie":
                 continue
-            at = _time(r[1])
+            at = util.parse_time_utc(r[1])
             if at is not None:
-                obs.setdefault(r[0], []).append(_Obs(r[0], at, r[2], r[3], _time(r[4]), r[5]))
+                obs.setdefault(r[0], []).append(_Obs(r[0], at, r[2], r[3], util.parse_time_utc(r[4]), r[5]))
         places = db.list_places(conn)
     except sqlite3.Error:
         return ViewPatterns()

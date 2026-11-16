@@ -44,6 +44,8 @@ import racebikes as rb
 import racefiets_jev as mp
 import recheck as rc
 import upgrade as up
+import util
+from util import euro
 import valuation as val
 
 PATH = rb.PATH + "/dossier"  # POST item_id: ophalen en het dossier terug (dashboard.py)
@@ -130,9 +132,7 @@ class Stored:
 
 
 def _readonly(db_path) -> sqlite3.Connection:
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return db.connect_readonly(db_path, rows=True)
 
 
 def _tables(conn) -> set:
@@ -230,12 +230,6 @@ def _own_parts(db_path) -> list:
 # --- Opmaak ----------------------------------------------------------------------------
 
 
-def euro(amount: Optional[float]) -> str:
-    if amount is None:
-        return "—"
-    return f"€{amount:,.0f}".replace(",", ".")
-
-
 def _local(value: Optional[str]) -> str:
     """Een tijd op de eigen klok, zoals dashboard.local_time(): de database
     bewaart UTC ("...+00:00"), de pagina "...Z". Zonder tijdzone (een eigen
@@ -280,17 +274,6 @@ def fenced(text: str, lang: str = "text") -> str:
         longest = max(longest, run)
     fence = "`" * max(3, longest + 1)
     return f"{fence}{lang}\n{text.rstrip()}\n{fence}"
-
-
-def _when(value) -> Optional[datetime]:
-    """Een tijd uit de database of van de pagina ("...Z"), altijd met tijdzone."""
-    if not value:
-        return None
-    try:
-        t = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
 
 
 def _yes(flag) -> str:
@@ -554,7 +537,7 @@ def _online_days(stored: Stored, page: Optional[dict], now: datetime) -> str:
     since = (mp.page_stats(page) or {}).get("since") if page else None
     since = since or next((s[3] for s in reversed(stored.stats) if s[3]), None)
     start, how = (since, "volgens de advertentiepagina") if since else (stored.first_seen, "sinds de eerste ronde die hem zag")
-    first = _when(start)
+    first = util.parse_time_utc(start)
     if first is None:
         return ""
     return f"{(now - first).days} dagen (sinds {day(start)}, {how})"

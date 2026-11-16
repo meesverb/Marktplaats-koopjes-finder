@@ -1,6 +1,6 @@
 """Stap 4: subcategorieën scoren en sorteren (l2_scored.json). De gewichten
 staan in MARKTONDERZOEK.md §5."""
-import json,math,csv,os
+import json,math,os
 S=os.getcwd()
 m=json.load(open(os.path.join(S,'metrics.json')))
 EXCL={167,378,1098,1032,856,1984}  # geen tweedehands spullen

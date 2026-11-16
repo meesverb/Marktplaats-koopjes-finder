@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import Optional
 
 import computers as pc
+import db
 import markets as mk
+import util
 
 # Zelfde grens als valuation.QUICK_SALE_DAYS: wie binnen twee weken weg is,
 # was realistisch geprijsd.
@@ -97,21 +99,13 @@ class Patterns:
         return (self.until - self.since).days
 
 
-def _time(value) -> Optional[datetime]:
-    try:
-        return datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def load_seen(db_path, config: Optional[dict] = None, market: mk.Market = mk.COMPUTERS) -> list[Seen]:
     """Alle computers (geen accessoires) — of horloges — die ooit in de
     categorieën van de markt gezien zijn, ook de verdwenen."""
     if not db_path or not Path(db_path).exists():
         return []
     catalog = market.catalog()
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         # Alleen-lezen migreert niet; een database van vóór migratie 9 heeft
         # reserved_at nog niet.
@@ -134,7 +128,7 @@ def load_seen(db_path, config: Optional[dict] = None, market: mk.Market = mk.COM
         verdict = pc.classify_title(title, catalog)
         if verdict is None or verdict.kind != "computer" or pc.WITHOUT_DEVICE_RE.search(description or ""):
             continue
-        first_t, last_t = _time(first), _time(last)
+        first_t, last_t = util.parse_time(first), util.parse_time(last)
         if first_t is None or last_t is None:
             continue
         seen.append(Seen(item_id, verdict.model.label, first_t, last_t, gone_at is not None, days,

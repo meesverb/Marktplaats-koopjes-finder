@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 import koopjes
+import util
 
 COOLDOWN = timedelta(minutes=30)
 FULL_CRAWL_COOLDOWN = timedelta(hours=6)
@@ -46,14 +47,6 @@ class SlotInfo:
         return self.pages == 0
 
 
-def _time(value) -> Optional[datetime]:
-    try:
-        moment = datetime.fromisoformat(str(value))
-    except (TypeError, ValueError):
-        return None
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
-
-
 def slots(config: koopjes.Config, now: Optional[datetime] = None) -> list[SlotInfo]:
     now = now or datetime.now(timezone.utc)
     rounds = koopjes.load_rounds(config.base_dir / config.rounds_file, limit=500)
@@ -61,7 +54,7 @@ def slots(config: koopjes.Config, now: Optional[datetime] = None) -> list[SlotIn
     for slot in config.slots.values():
         last = next((r for r in rounds if r.get("slot") == slot.name and r.get("status") != "overgeslagen"), None)
         ready = None
-        started = _time(last.get("started_at")) if last else None
+        started = util.parse_time_utc(last.get("started_at")) if last else None
         if started is not None:
             wait = FULL_CRAWL_COOLDOWN if slot.pages == 0 else COOLDOWN
             if started + wait > now:

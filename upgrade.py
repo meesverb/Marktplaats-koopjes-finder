@@ -634,15 +634,7 @@ def detail_lookup_targets(
         effective = effective_price(listing, negotiation_factor)
         if effective.amount is None or effective.amount <= 0 or effective.amount > ceiling:
             continue
-        specs, _ = listing_specs(listing)
-        build = sc.build_from_listing(
-            specs=specs,
-            groupset_label=listing.groupset,
-            groupset_tier=listing.groupset_tier,
-            text=mp.spec_text(listing),
-            label=listing.title,
-        )
-        scored.append((sc.score_build(build, config).total, listing))
+        scored.append((sc.score_build(prepare_candidate(listing).build, config).total, listing))
     scored.sort(key=lambda pair: -pair[0])
     return [listing for _, listing in scored[:limit]]
 

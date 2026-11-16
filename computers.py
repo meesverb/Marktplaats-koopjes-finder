@@ -36,6 +36,9 @@ from pathlib import Path
 from typing import NamedTuple, Optional, Sequence
 from urllib.parse import urlsplit
 
+import db
+import util
+
 HERE = Path(__file__).resolve().parent
 CATALOG_PATH = HERE / "reference_bike_computers.csv"
 CONFIG_PATH = HERE / "computer_scoring.json"
@@ -78,8 +81,6 @@ NUMERIC = ("introductiejaar", "nieuwprijs_eur", "schermgrootte_inch", "batterijd
 # "K-Edge ... Bolt ... mount") of er direct achter zonder koppelwoord
 # ("Hammerhead Karoo 3 houder nieuw", "Wahoo Roam I stuurhouder"). Dat
 # laatste geval is `twijfel`: de prijs beslist (apply_computer_signals()).
-
-KINDS_EXCLUDED = ("accessoire", "onderdeel", "defect", "gevraagd", "e-bike", "overig")
 
 # Staat een van deze woorden vóór de modelnaam, dan gaat de titel over een
 # fiets (of een trainer) die toevallig een computer noemt: "Racefiets Cube +
@@ -500,13 +501,6 @@ def classify_unknown(title: str, description: str = "") -> tuple[str, str]:
     return "computer", "model onbekend"
 
 
-def match_model(title: str, catalog: Sequence[ComputerModel]) -> Optional[ComputerModel]:
-    """Het model als de titel over een computer lijkt te gaan (ook bij twijfel,
-    dan beslist de prijs later), anders None."""
-    found = classify_title(title, catalog)
-    return found.model if found and found.kind in ("computer", "twijfel") else None
-
-
 # --- Functiescore -----------------------------------------------------------
 
 
@@ -675,9 +669,6 @@ class ComputerSignal:
     def profit_high_eur(self) -> Optional[float]:
         return self._profit(self.resale_high_eur)
 
-    # Oude naam, van vóór de kosten en de band; zelfde getal als profit_eur.
-    flip_margin_eur = profit_eur
-
     @property
     def max_bid_eur(self) -> Optional[float]:
         """Het hoogste bedrag waarbij je bij de lage verkoopschatting nog
@@ -794,8 +785,7 @@ def comparable_rows(db_path, catalog: Sequence[ComputerModel], window_days: int,
     if not db_path or not Path(db_path).exists():
         return []
     since = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat(timespec="seconds")
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         # Alleen-lezen migreert niet: een database van vóór migratie 9 (het
         # dashboard gebouwd voordat er een nieuwe ronde draaide) heeft de
@@ -1115,10 +1105,6 @@ def baseline_model(catalog: Optional[Sequence[ComputerModel]] = None, config: Op
 # --- Uitvoer ----------------------------------------------------------------
 
 
-def _euro(amount: Optional[float]) -> str:
-    return "—" if amount is None else f"€{amount:,.0f}".replace(",", ".")
-
-
 def _signed(value: Optional[float], suffix: str = "") -> str:
     if value is None:
         return "—"
@@ -1180,7 +1166,7 @@ def print_computers(listings, limit: int = 10) -> None:
         print("Flips (winst = verwachte verkoopprijs − prijs − verzendkosten):")
         for l in fl:
             c = l.computer
-            print(f"  {_signed(c.profit_eur):>5} ({_euro(c.profit_low_eur)} tot {_euro(c.profit_high_eur)}) "
+            print(f"  {_signed(c.profit_eur):>5} ({util.euro(c.profit_low_eur)} tot {util.euro(c.profit_high_eur)}) "
                   f"{sleepers.price_text(l)[:22]:<22} {c.model.label[:26]:<26} (n={c.comp_count}) {l.url}")
     ups = upgrades(listings)[:limit]
     if ups:
@@ -1233,7 +1219,7 @@ def render_panel(listings, config: Optional[dict] = None) -> tuple[int, str]:
     if fl:
         parts.append(head.format("Winst", "".join(
             row(l, f"{_signed(l.computer.profit_eur)} <span class='muted' title='{esc(l.computer.comp_note, quote=True)}'>"
-                   f"({_euro(l.computer.profit_low_eur)} tot {_euro(l.computer.profit_high_eur)}, n={l.computer.comp_count})</span>")
+                   f"({util.euro(l.computer.profit_low_eur)} tot {util.euro(l.computer.profit_high_eur)}, n={l.computer.comp_count})</span>")
             for l in fl)))
     else:
         parts.append("<p class='muted'>Geen computer die onder de verwachte verkoopprijs staat.</p>")
@@ -1282,7 +1268,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"{'Score':>5} {'Δ eigen':>7}  {'Model':<30} {'Nieuw':>7}  Onderbouwing")
     for m, f in rows:
         delta = f"{f.score - base_score:+.0f}" if base_score is not None else ""
-        price = _euro(m.number("nieuwprijs_eur"))
+        price = util.euro(m.number("nieuwprijs_eur"))
         marker = " ← eigen" if m is baseline else ""
         print(f"{f.score:>5.0f} {delta:>7}  {m.label[:30]:<30} {price:>7}  {f.summary}{marker}")
     return 0

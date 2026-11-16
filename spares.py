@@ -14,7 +14,7 @@ rondes zoeken vooral hele racefietsen; losse onderdelen zijn wat er tussen
 de racefietsen staat en wat de zoekopdrachten met `category: alle`
 (giant-defy) en de powermeter-zoekopdracht vinden. Dat zijn er weinig. Meer
 kan met een zoekopdracht in de categorie fietsonderdelen in schedule.json —
-dat zijn extra verzoeken, dus eerst afwegen (README → Racefietsen).
+dat zijn extra verzoeken, dus eerst afwegen (docs/racefietsen.md).
 
 Herkenning op de titel: een soort als hij het woord noemt ("cassette",
 "pedalen", "zadel" maar niet "zadelpen"). Buiten de categorie
@@ -28,12 +28,13 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
 import db
 import racefiets_jev as mp
+import util
 
 # (sleutel, wat de pagina zegt, patroon op de titel in kleine letters).
 # Volgorde = volgorde op de pagina.
@@ -97,13 +98,6 @@ class Part:
     category: str = ""
 
 
-def _time(value) -> Optional[datetime]:
-    try:
-        return datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-
-
 SELECT = (
     "SELECT item_id, title, description, price_eur, price_type, is_bid, price_is_asking, city, posted_date, "
     "condition, frame_height, url, first_seen, last_seen, image_urls, reserved_at, bid_count, bid_minimum, "
@@ -118,8 +112,7 @@ def load(db_path, item_id: Optional[str] = None) -> list[Part]:
 
     if not Path(db_path).exists():
         return []
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = db.connect_readonly(db_path, rows=True)
     try:
         newest = conn.execute("SELECT MAX(last_seen) FROM listing WHERE disappeared_at IS NULL AND "
                               "url LIKE '%/v/fietsen-en-brommers/%'").fetchone()[0]
@@ -135,7 +128,7 @@ def load(db_path, item_id: Optional[str] = None) -> list[Part]:
         return []
     finally:
         conn.close()
-    newest = _time(newest)
+    newest = util.parse_time(newest)
     if newest is None:
         return []
     since = newest - timedelta(days=ACTIVE_DAYS)
@@ -145,7 +138,7 @@ def load(db_path, item_id: Optional[str] = None) -> list[Part]:
         category = match.group(2) if match else ""
         if category in SKIP_CATEGORIES:
             continue
-        last = _time(r["last_seen"])
+        last = util.parse_time(r["last_seen"])
         if last is None or last < since:
             continue
         kinds = kinds_of(r["title"], category)
@@ -177,7 +170,7 @@ def load_choice(db_path) -> list[str]:
     """De soorten die de eigenaar aanzette (setting), anders DEFAULT_ON."""
     if not Path(db_path).exists():
         return list(DEFAULT_ON)
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         raw = db.get_setting(conn, SETTING_KEY)
     except sqlite3.Error:

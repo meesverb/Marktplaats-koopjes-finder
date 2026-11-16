@@ -1,5 +1,5 @@
 """Stap 3: raw/*.json omzetten naar metrics.json (per hoofd- en subcategorie)."""
-import json, glob, os, re, statistics as st, collections, csv, sys
+import json, os, re, statistics as st, collections
 S=os.getcwd(); RAW=os.path.join(S,'raw')
 def load(n):
     p=os.path.join(RAW,n+'.json'); return json.load(open(p)) if os.path.exists(p) else None
@@ -22,7 +22,6 @@ def metrics(d, listings):
     brand=sum(1 for l in listings if any(a['key'] in('brand','model','merk') and 'Overige' not in a.get('value','') for a in l.get('extendedAttributes',[])+l.get('attributes',[])))
     dagtop=sum(1 for l in listings if any('TOPPER' in t for t in l.get('traits',[])))
     desc=[len(l.get('categorySpecificDescription') or l.get('description') or '') for l in listings]
-    nl=sum(1 for l in listings if (l.get('location') or {}).get('countryAbbreviation')=='NL')
     abroad=sum(1 for l in listings if (l.get('location') or {}).get('abroad'))
     verified=sum(1 for l in listings if l['sellerInformation'].get('isVerified'))
     sellers=collections.Counter(l['sellerInformation'].get('sellerId') for l in listings)

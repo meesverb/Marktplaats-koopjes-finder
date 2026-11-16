@@ -25,6 +25,13 @@ def model(label: str) -> pc.ComputerModel:
     return found
 
 
+def match_model(title: str):
+    """Het model als de titel over een computer lijkt te gaan (ook bij twijfel,
+    dan beslist de prijs later), anders None."""
+    found = pc.classify_title(title, CATALOG)
+    return found.model if found and found.kind in ("computer", "twijfel") else None
+
+
 class CatalogHygieneTest(unittest.TestCase):
     def test_file_loads_with_known_values(self):
         # load_catalog() raises on an unknown value; getting here is the test.
@@ -52,7 +59,7 @@ class CatalogHygieneTest(unittest.TestCase):
             title = f"{m.merk} {m.model}"
             if m.pattern.search(title):
                 with self.subTest(model=m.label):
-                    self.assertIs(pc.match_model(title, CATALOG), m)
+                    self.assertIs(match_model(title), m)
 
     def test_baseline_is_in_the_catalog(self):
         base = CONFIG["baseline"]
@@ -141,14 +148,14 @@ class MatchTest(unittest.TestCase):
     def test_titles(self):
         for title, expected in self.CASES.items():
             with self.subTest(title=title):
-                found = pc.match_model(title, CATALOG)
+                found = match_model(title)
                 self.assertIsNotNone(found)
                 self.assertEqual(found.label, expected)
 
     def test_not_a_computer(self):
         for title in self.NOT_A_COMPUTER:
             with self.subTest(title=title):
-                self.assertIsNone(pc.match_model(title, CATALOG))
+                self.assertIsNone(match_model(title))
 
 
 class FeatureScoreTest(unittest.TestCase):
@@ -204,7 +211,7 @@ class SignalTest(unittest.TestCase):
         few = [self.listing(f"a{i}", "Garmin Edge 530", p) for i, p in enumerate((150.0, 160.0, 170.0))]
         pc.apply_computer_signals(few)
         # Each has only two others: below min_comps (3).
-        self.assertTrue(all(l.computer.flip_margin_eur is None for l in few))
+        self.assertTrue(all(l.computer.profit_eur is None for l in few))
         self.assertIn("te weinig", few[0].computer.comp_note)
 
     def test_flip_margin_is_median_of_others_after_negotiation(self):
@@ -213,7 +220,7 @@ class SignalTest(unittest.TestCase):
         pc.apply_computer_signals(others + [cheap])
         expected = 180.0 * CONFIG["flip"]["negotiation_factor"]
         self.assertAlmostEqual(cheap.computer.resale_eur, expected)
-        self.assertAlmostEqual(cheap.computer.flip_margin_eur, expected - 90.0 - CONFIG["flip"]["costs_eur"])
+        self.assertAlmostEqual(cheap.computer.profit_eur, expected - 90.0 - CONFIG["flip"]["costs_eur"])
         self.assertEqual(cheap.computer.comp_count, 3)
         self.assertEqual(pc.flips(others + [cheap])[0], cheap)
 
@@ -224,7 +231,7 @@ class SignalTest(unittest.TestCase):
         repair = self.listing("r", "Garmin Edge 830 scherm vervangen", 110.0)
         pc.apply_computer_signals(others + [repair])
         self.assertIn("reparatie", repair.computer.excluded)
-        self.assertIsNone(repair.computer.flip_margin_eur)
+        self.assertIsNone(repair.computer.profit_eur)
         self.assertFalse(repair.computer.is_upgrade)
         self.assertNotIn(repair, pc.flips(others + [repair]))
         # ... and its price doesn't drag the others' comparables down.

@@ -23,7 +23,7 @@ for l1,items in sorted(per.items(),key=lambda x:int(x[0])):
         if it['id'] in res: continue
         time.sleep(2.0)
         try: r=s.get("https://www.marktplaats.nl"+it['url'],timeout=20,allow_redirects=False); code=r.status_code; t=r.text if code==200 else ''
-        except Exception as e: code=-1; t=''
+        except Exception: code=-1; t=''
         if code in (403,429): print('blocked',code,flush=True); time.sleep(60); continue
         rec=dict(it, l1=l1, code=code, age_h=(time.time()-it['t'])/3600)
         if t:

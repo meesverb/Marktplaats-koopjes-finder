@@ -178,10 +178,6 @@ class Task:
             return "gekocht"
         return "open"
 
-    @property
-    def shop_key(self) -> str:
-        return "".join((self.shop or "").lower().split())
-
 
 @dataclass
 class Offer:
@@ -353,8 +349,7 @@ def _tables(conn) -> set:
 def _open_readonly(db_path) -> Optional[sqlite3.Connection]:
     if not Path(db_path).exists():
         return None
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = db.connect_readonly(db_path, rows=True)
     return conn
 
 

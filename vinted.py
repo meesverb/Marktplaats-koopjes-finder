@@ -38,6 +38,7 @@ from typing import Optional, Sequence
 
 import computers as pc
 import db
+import util
 
 HERE = Path(__file__).resolve().parent
 # De database van koopjes.py (naast schedule.json), ongeacht de map waarin je
@@ -50,7 +51,6 @@ REQUIRED_COLUMNS = ("Item Title", "Item Price", "Item Service Fee", "Item Total 
 ITEM_ID_RE = re.compile(r"^https?://[^\s'\"<>]*/items/(\d+)")
 # "productsList_2026-09-28T14-57-35-028Z.csv": het tijdstip van de export, UTC.
 EXPORT_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})")
-NEW_CONDITIONS = ("Nieuw met prijskaartje", "Nieuw zonder prijskaartje")
 DEFAULTS = {"shipping_eur": 4.5, "max_price_eur": 1000}
 
 # Vinted zoekt niet binnen een categorie. In de exports van 28-09-2026 (Garmin
@@ -360,17 +360,8 @@ class VintedView:
         return statistics.median(ratios) if ratios else None
 
 
-def _parse_time(value: str) -> Optional[datetime]:
-    try:
-        return datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _read_rows(db_path) -> list:
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = db.connect_readonly(db_path, rows=True)
     try:
         return conn.execute("SELECT * FROM vinted_listing").fetchall()
     except sqlite3.OperationalError:
@@ -387,7 +378,7 @@ def load_view(db_path, config: Optional[dict] = None) -> Optional[VintedView]:
     if not db_path or not Path(db_path).exists():
         return None
     rows = _read_rows(db_path)
-    seen = [t for t in (_parse_time(r["last_exported_at"]) for r in rows) if t]
+    seen = [t for t in (util.parse_time(r["last_exported_at"]) for r in rows) if t]
     if not seen:
         return None
     newest = max(seen)
@@ -406,7 +397,7 @@ def load_view(db_path, config: Optional[dict] = None) -> Optional[VintedView]:
 
     items = []
     for r in rows:
-        last = _parse_time(r["last_exported_at"])
+        last = util.parse_time(r["last_exported_at"])
         if last is None or last < active_since:
             continue
         row = VintedRow(
@@ -416,7 +407,7 @@ def load_view(db_path, config: Optional[dict] = None) -> Optional[VintedView]:
             seller_id=r["seller_id"] or "", is_business=bool(r["is_business"]),
         )
         model, kind, reason = classify(row, catalog, mp_prices, config)
-        first = _parse_time(r["first_exported_at"])
+        first = util.parse_time(r["first_exported_at"])
         item = VintedItem(row, model, kind, reason, r["first_exported_at"], r["last_exported_at"],
                           is_new=bool(first and first >= new_since))
         if item.is_computer and model:
@@ -453,7 +444,7 @@ def _euro(amount: Optional[float]) -> str:
 
 
 def _local(iso: str) -> str:
-    moment = _parse_time(iso)
+    moment = util.parse_time(iso)
     return moment.astimezone().strftime("%d-%m-%Y %H:%M") if moment else iso
 
 

@@ -1,5 +1,5 @@
 """Stap 5: de tabellen voor MARKTONDERZOEK.md en marktonderzoek_subcategorieen.csv."""
-import json, os, csv, statistics as st, collections, datetime
+import json, os, csv, statistics as st, datetime
 S=os.getcwd()
 m=json.load(open(os.path.join(S,'metrics.json'))); rows=json.load(open(os.path.join(S,'l2_scored.json')))
 vip=json.load(open(os.path.join(S,'vip.json'))) if os.path.exists(os.path.join(S,'vip.json')) else {}

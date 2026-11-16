@@ -7,7 +7,7 @@ Sources (all giant-bicycles.com NL, EUR):
   - Live archive pages /nl/<slug>-<year> (specs only, no price)
 Output: giant_pages.json (one record per parsed page/tile).
 """
-import json, re, html, os, sys
+import json, re, html
 import wb
 
 ROAD = re.compile(r"(?i)(^|/)(tcr|defy|propel|scr|trinity|tcx|ocr|contend|avail|envie|langma|fcr)")

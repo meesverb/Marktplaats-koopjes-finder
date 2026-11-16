@@ -1,5 +1,5 @@
 """Trek NL product API: specs, marketing model year and (for current bikes) EUR price."""
-import json, re, sys
+import json, sys
 import wb
 
 OUT = "trek_api.json"

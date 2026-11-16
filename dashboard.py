@@ -74,13 +74,13 @@ import report
 import trades as tr
 import upgrade as up
 import upgrade_test as ut
+import util
 import valuation as val
 import views as vw
 import vinted as vn
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = "dashboard.html"
-COMPUTER_CATEGORY = mk.COMPUTERS.categories[0]
 
 esc = html.escape
 
@@ -136,9 +136,6 @@ class Dashboard:
     @property
     def unknown_items(self) -> list:
         return [u for u in self.unknown if u.kind == self.market.item]
-
-    computers = items
-    unknown_computers = unknown_items
 
     @property
     def excluded(self) -> list:
@@ -227,13 +224,6 @@ class Dashboard:
 # --- Uit de database ---------------------------------------------------------
 
 
-def _parse_time(value: str) -> Optional[datetime]:
-    try:
-        return datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def load_dashboard(db_path, config: Optional[dict] = None, market: mk.Market = mk.COMPUTERS) -> Dashboard:
     """De actieve advertenties in de categorieën van `market`: niet verdwenen
     en gezien binnen `active_days` van de nieuwste waarneming. Relatief aan de
@@ -281,7 +271,7 @@ def data_stamp(db_path, trades: bool = True) -> Optional[tuple]:
     checked_at. None: niet vast te stellen (dan onthoudt de server niets)."""
     if not Path(db_path).exists():
         return None
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         parts = [tuple(conn.execute(
@@ -465,9 +455,7 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
     set())."""
     if not Path(db_path).exists():
         return [], None, set()
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = db.connect_readonly(db_path, rows=True)
     try:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(listing)")}
         images = "image_urls" if "image_urls" in columns else "'' AS image_urls"
@@ -487,7 +475,7 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
     finally:
         conn.close()
 
-    seen = [t for t in (_parse_time(r["last_seen"]) for r in rows) if t]
+    seen = [t for t in (util.parse_time(r["last_seen"]) for r in rows) if t]
     if not seen:
         return [], None, set()
     newest = max(seen)
@@ -496,7 +484,7 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
 
     listings, new_ids = [], set()
     for r in rows:
-        last = _parse_time(r["last_seen"])
+        last = util.parse_time(r["last_seen"])
         if last is None or last < active_since:
             continue
         listing = mp.Listing(
@@ -519,7 +507,7 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
         )
         # Wat de biedopvraging en controleer vonden (migratie 11 en 14).
         mp.apply_stored_bids(listing, r)
-        first = _parse_time(r["first_seen"])
+        first = util.parse_time(r["first_seen"])
         if first and first >= new_since:
             new_ids.add(listing.item_id)
         listings.append(listing)
@@ -626,7 +614,7 @@ def nl_date(value: Optional[str]) -> str:
 
 
 def local_time(iso: str) -> str:
-    moment = _parse_time(iso)
+    moment = util.parse_time(iso)
     if moment is None:
         return iso or "?"
     if moment.tzinfo is not None:
@@ -1098,9 +1086,6 @@ def view_counts(d: Dashboard) -> tuple[int, int]:
 
 # Tabknoppen die Alle openen met een filter (Toon): dezelfde weergaven als op
 # /racefietsen, zonder een tweede tabel van duizenden rijen in de pagina.
-VIEW_TABS = (("beoordelen", "Te beoordelen", "beoordelen"), ("weggezet", "Weggezet", mr.DISMISSED))
-
-
 def view_tab_labels(d: Dashboard) -> dict:
     review, away = view_counts(d)
     return {"beoordelen": f"Te beoordelen ({review})", "weggezet": f"Weggezet ({away})"}
@@ -2656,7 +2641,7 @@ def flip_add_task(trade_id: Optional[int], investment: bool = False) -> str:
              + flip_input("winkel", "", "Winkel", 10, placeholder="winkel")
              + flip_input("geschat", "", "Geschatte prijs", 5, "euro", "geschat €")
              + flip_input("prijs", "", "Echte prijs", 5, "euro", "echt €")
-             + (f"<input type='hidden' name='investering' value='1'>" if investment else "")
+             + ("<input type='hidden' name='investering' value='1'>" if investment else "")
              + "<button name='doe' value='nieuw'>toevoegen</button>")
     return act("/flips/klus-nieuw", "" if trade_id is None else str(trade_id), inner, "addtask")
 
@@ -3304,15 +3289,7 @@ def flip_action_stage(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]
 
 def flip_action_sold(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
     trade_id = _flip_id(form)
-    price = parse_euro(form.get("prijs"), "Verkoopprijs")
-    costs = parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
-    via = form.get("via") if form.get("via") in ("marktplaats", "vinted", "anders") else "anders"
-    sold_at = parse_day(form.get("datum"))
-    bought = next((t for t in tr.load_trades(db_path) if t.id == trade_id), None)
-    if bought is None:
-        raise FormError("Onbekende flip.")
-    if sold_at < bought.bought_at[:10]:
-        raise FormError(f"Verkocht op {nl_date(sold_at)} ligt vóór de aankoop ({nl_date(bought.bought_at)}).")
+    price, costs, via, sold_at, bought = parse_sale(db_path, form, trade_id, "Onbekende flip.")
     conn = db.connect(str(db_path))
     try:
         fl.sell(conn, trade_id, sold_at=sold_at, price_eur=price, costs_eur=costs, via=via)
@@ -3917,17 +3894,25 @@ def action_add(db_path, form: dict) -> str:
     return f"Toegevoegd: {title} voor {euro(price)}."
 
 
-def action_sold(db_path, form: dict) -> str:
-    trade_id = parse_id(form.get("id"))
+def parse_sale(db_path, form: dict, trade_id: int, unknown: str) -> tuple:
+    """(prijs, kosten, via, datum, de aankoop) uit een verkocht-formulier, voor
+    Mijn flips en /flips. `unknown` is de melding bij een aankoop die niet
+    bestaat."""
     price = parse_euro(form.get("prijs"), "Verkoopprijs")
     costs = parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
     via = form.get("via") if form.get("via") in ("marktplaats", "vinted", "anders") else "anders"
     sold_at = parse_day(form.get("datum"))
     bought = next((t for t in tr.load_trades(db_path) if t.id == trade_id), None)
     if bought is None:
-        raise FormError("Onbekende regel.")
+        raise FormError(unknown)
     if sold_at < bought.bought_at[:10]:
         raise FormError(f"Verkocht op {nl_date(sold_at)} ligt vóór de aankoop ({nl_date(bought.bought_at)}).")
+    return price, costs, via, sold_at, bought
+
+
+def action_sold(db_path, form: dict) -> str:
+    trade_id = parse_id(form.get("id"))
+    price, costs, via, sold_at, _ = parse_sale(db_path, form, trade_id, "Onbekende regel.")
     conn = db.connect(str(db_path))
     try:
         if not db.sell_trade(conn, trade_id, sold_at=sold_at, sell_price_eur=price,
@@ -4010,13 +3995,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _host_ok(self) -> bool:
         return self.headers.get("Host", "") in self._origins()
 
-    def _send(self, code: int, body: str, content_type: str = "text/plain; charset=utf-8") -> None:
-        data = body.encode("utf-8")
+    def _send_bytes(self, code: int, data: bytes, content_type: str, cache: str = "no-store",
+                    headers: tuple = ()) -> None:
+        """Eén antwoord met een body; `headers` zijn extra (naam, waarde)-paren."""
         try:
             self.send_response(code)
             self.send_header("Content-Type", content_type)
+            for name, value in headers:
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", cache)
             self.end_headers()
             self.wfile.write(data)
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
@@ -4025,6 +4013,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # een traceback met WinError 10053 in het venster, terwijl er niets
             # mis is: de volgende aanvraag werkt gewoon.
             self.close_connection = True
+
+    def _send(self, code: int, body: str, content_type: str = "text/plain; charset=utf-8") -> None:
+        self._send_bytes(code, body.encode("utf-8"), content_type)
 
     def _back(self, message: str, market: mk.Market = mk.COMPUTERS, tab: str = "mijn",
               path: Optional[str] = None) -> None:
@@ -4108,17 +4099,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                              message), "text/html; charset=utf-8")
         if owner is None:
             return self._send(404, f"Geen eigen fiets: {problem}")
-        data = ut.csv_download(owner, bikes, problem).encode("utf-8")
-        try:
-            self.send_response(200)
-            self.send_header("Content-Type", "text/csv; charset=utf-8")
-            self.send_header("Content-Disposition", 'attachment; filename="upgrade_uitdraai.csv"')
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
-        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
-            self.close_connection = True
+        self._send_bytes(200, ut.csv_download(owner, bikes, problem).encode("utf-8"), "text/csv; charset=utf-8",
+                         headers=(("Content-Disposition", 'attachment; filename="upgrade_uitdraai.csv"'),))
 
     def _upgrade_post(self, path: str, form: dict) -> None:
         """De acties van /upgrade, altijd JSON: een oordeel, een regel
@@ -4205,15 +4187,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         data = path.read_bytes()
         if path.suffix.lower() == ".html":
             data = with_file_nav(data)
-        try:
-            self.send_response(200)
-            self.send_header("Content-Type", FILE_TYPES.get(path.suffix.lower(), "text/plain; charset=utf-8"))
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
-        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
-            self.close_connection = True
+        self._send_bytes(200, data, FILE_TYPES.get(path.suffix.lower(), "text/plain; charset=utf-8"))
 
     def _send_photo(self, ident: str) -> None:
         try:
@@ -4222,16 +4196,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             found = None
         if found is None or not found[0].is_file():
             return self._send(404, "Niet gevonden")
-        data = found[0].read_bytes()
-        try:
-            self.send_response(200)
-            self.send_header("Content-Type", found[1])
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "private, max-age=86400")
-            self.end_headers()
-            self.wfile.write(data)
-        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
-            self.close_connection = True
+        self._send_bytes(200, found[0].read_bytes(), found[1], cache="private, max-age=86400")
 
     def _upload_photo(self, url) -> None:
         """Eén foto als ruwe body (FLIPS_JS), het geheim in een kop: een

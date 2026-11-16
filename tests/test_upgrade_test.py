@@ -2,11 +2,9 @@
 de regel van de eigenaar, zijn oordelen, de uitslag, het zoeken naar een
 regel die past, de uitdraai, en dat een opgeslagen regel overal doorwerkt."""
 import contextlib
-import copy
 import http.client
 import io
 import json
-import math
 import re
 import shutil
 import tempfile

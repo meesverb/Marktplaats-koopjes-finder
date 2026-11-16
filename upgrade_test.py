@@ -156,7 +156,7 @@ def _read_setting(db_path) -> Optional[str]:
     if not db_path or not Path(db_path).exists():
         return None
     try:
-        conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+        conn = db.connect_readonly(db_path)
     except sqlite3.Error:
         return None
     try:
@@ -320,7 +320,7 @@ def load_bikes(db_path, listings: Optional[Sequence[mp.Listing]] = None,
     labels, links, marks = {}, {}, []
     inactive: list = []
     if db_path and Path(db_path).exists():
-        conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+        conn = db.connect_readonly(db_path)
         try:
             labels = db.list_upgrade_labels(conn)
             links = db.list_bike_links(conn)

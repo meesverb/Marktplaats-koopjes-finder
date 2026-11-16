@@ -18,7 +18,6 @@ from unittest import mock
 from helpers import make_listing, mp, repo_file
 
 import db
-import report
 import scoring as sc
 import upgrade as up
 

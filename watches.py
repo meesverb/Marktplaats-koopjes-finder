@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 import computers as pc
+import util
 
 HERE = Path(__file__).resolve().parent
 CATALOG_PATH = HERE / "reference_sport_watches.csv"
@@ -182,8 +183,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     resale = dashboard.model_resale(d)
     print(f"\n{'Model':<24} {'Actief':>6} {'Mediaan':>8}  Verwachte verkoop")
     for label, items, median in dashboard.market_rows(d):
-        sale = pc._euro(resale.get(label)) if label in resale else "te weinig vergelijkingsmateriaal"
-        print(f"{label[:24]:<24} {len(items):>6} {pc._euro(median):>8}  {sale}")
+        sale = util.euro(resale.get(label)) if label in resale else "te weinig vergelijkingsmateriaal"
+        print(f"{label[:24]:<24} {len(items):>6} {util.euro(median):>8}  {sale}")
 
     found = d.flips
     steps = ", ".join(f"{sum(1 for l in found if l.computer.profit_eur > step)} boven €{step}"
@@ -191,13 +192,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"\nFlips (winst = verwachte verkoopprijs − prijs − verzendkosten): {steps}.")
     for l in found[:args.flips]:
         c = l.computer
-        print(f"  {pc._signed(c.profit_eur):>5} ({pc._euro(c.profit_low_eur)} tot {pc._euro(c.profit_high_eur)}) "
+        print(f"  {pc._signed(c.profit_eur):>5} ({util.euro(c.profit_low_eur)} tot {util.euro(c.profit_high_eur)}) "
               f"{sleepers.price_text(l)[:22]:<22} {c.model.label[:22]:<22} ({dashboard.comp_text(c)}) {l.title[:50]}")
         print(f"        {l.url}")
     if d.open_bids:
         print(f"\nZonder prijs, bied maximaal (quitte bij de lage verkoopschatting): {len(d.open_bids)}")
         for l in d.open_bids[:args.flips]:
-            print(f"  {pc._euro(l.computer.max_bid_eur):>6}  {l.computer.model.label[:22]:<22} {l.title[:50]}")
+            print(f"  {util.euro(l.computer.max_bid_eur):>6}  {l.computer.model.label[:22]:<22} {l.title[:50]}")
     print(f"\nLet op: vanaf {pc.MIN_FAST} snel verkochte (≤ {pc.FAST_DAYS} dagen weg) is de verwachte verkoop "
           "hun mediaan; anders de mediaan-vraagprijs × 0,875, dezelfde heuristiek als bij de fietscomputers, "
           "geen meting. Varianten (S/X, Solar, Sapphire, Music) delen een rij; een flip rekent met dezelfde "

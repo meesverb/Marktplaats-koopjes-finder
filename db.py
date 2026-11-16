@@ -36,6 +36,7 @@ import json
 import sqlite3
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 # Each entry is one migration's DDL, applied in order. Add new entries to
@@ -629,6 +630,20 @@ FRAME_MATERIALS = ("carbon", "aluminium", "staal", "titanium")
 # (02-10-2026): putting a bike away on /racefietsen failed while a round or
 # the server itself was reading thousands of listings.
 BUSY_TIMEOUT_S = 30
+
+
+def connect_readonly(path, rows: bool = False) -> sqlite3.Connection:
+    """Open the database at `path` for reading only. Nothing is created or
+    migrated and SQLite refuses every write, so a page that only shows data
+    can never change it; the file has to exist. `rows=True` gives sqlite3.Row
+    results (columns by name). The caller closes the connection.
+
+    A database from before a migration stays as it is here: a reader has to
+    cope with a missing table or column itself."""
+    conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
+    if rows:
+        conn.row_factory = sqlite3.Row
+    return conn
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -1686,12 +1701,6 @@ def set_own_bid_status(conn: sqlite3.Connection, bid_id: int, status: str,
         "UPDATE own_bid SET status = ?, status_at = ?, trade_id = COALESCE(?, trade_id) WHERE id = ?",
         (status, _now(), trade_id, bid_id),
     )
-    conn.commit()
-    return cur.rowcount > 0
-
-
-def delete_own_bid(conn: sqlite3.Connection, bid_id: int) -> bool:
-    cur = conn.execute("DELETE FROM own_bid WHERE id = ?", (bid_id,))
     conn.commit()
     return cur.rowcount > 0
 

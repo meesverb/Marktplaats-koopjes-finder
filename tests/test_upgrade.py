@@ -6,7 +6,6 @@ de maat verschijnt nooit, en een biedadvertentie zonder opgehaald bod valt
 niet stil terug op €0."""
 import datetime
 import os
-import sqlite3
 import tempfile
 import unittest
 

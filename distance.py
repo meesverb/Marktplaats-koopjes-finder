@@ -214,7 +214,7 @@ def load(db_path) -> tuple[Optional[Home], dict[str, Distance]]:
     """(eigen plek, afstanden) uit koopjes.db, alleen lezen."""
     if not db_path or not Path(db_path).exists():
         return None, {}
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         home = load_home(conn)
         return home, distances(conn, home)

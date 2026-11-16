@@ -12,7 +12,6 @@ vergelijkingsprijs.
 """
 from __future__ import annotations
 
-import sqlite3
 import statistics
 from dataclasses import dataclass, field
 from datetime import date
@@ -80,8 +79,7 @@ def load_trades(db_path) -> list[Trade]:
     """Alleen lezen. Geen database, of een van vóór migratie 7: geen trades."""
     if not db_path or not Path(db_path).exists():
         return []
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         return [from_row(r) for r in db.list_trades(conn)]
     finally:
@@ -109,10 +107,6 @@ class Progress:
     estimate_error: Optional[float] = None
     estimate_n: int = 0
     monthly: list = field(default_factory=list)  # [(JJJJ-MM, winst)]
-
-    @property
-    def has_any(self) -> bool:
-        return bool(self.sold or self.stock)
 
 
 def progress(trades: list[Trade], market: dict, shipping_eur: float) -> Progress:

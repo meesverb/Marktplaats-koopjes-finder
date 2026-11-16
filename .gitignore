@@ -8,6 +8,7 @@ seen_listings.json
 racefiets_report*.html
 overzicht.html
 dashboard.html
+dashboard_horloges.html
 logs/
 .koopjes.lock
 koopjes.db

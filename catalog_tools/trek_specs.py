@@ -1,5 +1,5 @@
 """Fetch Trek NL archive pages (/a/<id>/) and extract the spec table."""
-import json, re, sys, html
+import json, re, html
 import wb
 
 EXCLUDE_NAME = re.compile(r"(?i)^(zektor|domane\+|ion\b)")

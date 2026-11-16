@@ -89,7 +89,7 @@ def load(db_path) -> dict[str, BidTrail]:
     """{item_id: BidTrail}, alleen lezen. Geen database of van vóór 18: leeg."""
     if not db_path or not Path(db_path).exists():
         return {}
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         rows = db.list_own_bids(conn)
     except sqlite3.Error:

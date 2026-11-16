@@ -56,7 +56,7 @@ class DashboardTest(DatabaseCase):
         self.assertNotIn("b", ids(d.listings))  # another category: not on the dashboard
         self.assertEqual(ids(d.flips) & {"c"}, {"c"})
         self.assertIn("c", ids(d.upgrades))
-        self.assertEqual({u.listing.item_id for u in d.unknown_computers}, {"u"})
+        self.assertEqual({u.listing.item_id for u in d.unknown_items}, {"u"})
         self.assertEqual({l.item_id for l, _, _ in d.excluded}, {"h", "m"})
 
         html = dashboard.render(d)
@@ -94,7 +94,7 @@ class DashboardTest(DatabaseCase):
         self.sync(self.market() + [reserved])
         d = dashboard.load_dashboard(self.db)
         ids = lambda items: {l.item_id for l in items}
-        self.assertIn("r", ids(d.computers))  # nog wel in Alle computers
+        self.assertIn("r", ids(d.items))  # nog wel in Alle computers
         self.assertNotIn("r", ids(d.flips))
         self.assertNotIn("r", ids(d.upgrades))
         self.assertIn("gereserveerd", dashboard.all_panel(d))
@@ -246,7 +246,7 @@ class MarksTest(DatabaseCase):
         ids = lambda items: {l.item_id for l in items}
         self.assertNotIn("c", ids(d.flips))
         self.assertNotIn("c", ids(d.upgrades))
-        self.assertIn("c", ids(d.computers))
+        self.assertIn("c", ids(d.items))
         self.assertEqual(ids(d.dismissed_flips), {"c"})
         self.assertIn("1 flip weggezet", dashboard.flips_panel(d))
         all_html = dashboard.all_panel(d)

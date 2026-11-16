@@ -67,6 +67,7 @@ import own_bids as ob
 import racefiets_jev as mp
 import spares as sp
 import upgrade as up
+import util
 import valuation as val
 import views as vw
 
@@ -163,13 +164,6 @@ class Base:
         return self.rows[at] if at is not None else None
 
 
-def _time(value) -> Optional[datetime]:
-    try:
-        return datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-
-
 SELECT = (
     "SELECT item_id, title, description, price_eur, price_type, is_bid, price_is_asking, city, "
     "posted_date, condition, frame_height, url, first_seen, last_seen, image_urls, reserved_at, "
@@ -230,8 +224,7 @@ def active_rules(rules: list) -> dict:
 def _read(db_path) -> Read:
     if not Path(db_path).exists():
         return Read()
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = db.connect_readonly(db_path, rows=True)
     try:
         rows = conn.execute(SELECT, (f"%/{CATEGORY}/%",)).fetchall()
         return Read(rows, db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE), db.list_places(conn),
@@ -246,7 +239,7 @@ def read_links(db_path) -> tuple[dict, list, list]:
     """Alleen de eigen koppelingen, modellen en regels: klein, voor één correctie."""
     if not Path(db_path).exists():
         return {}, [], []
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         return db.list_bike_links(conn), db.list_bike_models(conn), db.list_bike_rules(conn)
     except sqlite3.Error:
@@ -261,7 +254,7 @@ def load_listings(db_path, active_days: int = ACTIVE_DAYS, _read_result=None) ->
     read = _read_result or _read(db_path)
     rows, site, places = read.rows, read.site, read.places
     rows = [r for r in rows if r["disappeared_at"] is None]
-    seen = [t for t in (_time(r["last_seen"]) for r in rows) if t]
+    seen = [t for t in (util.parse_time(r["last_seen"]) for r in rows) if t]
     if not seen:
         return [], None, set()
     newest = max(seen)
@@ -269,11 +262,11 @@ def load_listings(db_path, active_days: int = ACTIVE_DAYS, _read_result=None) ->
     new_since = newest - timedelta(hours=NEW_HOURS)
     out, new_ids = [], set()
     for r in rows:
-        last = _time(r["last_seen"])
+        last = util.parse_time(r["last_seen"])
         if last is None or last < since:
             continue
         listing = _listing(r, site, places)
-        first = _time(r["first_seen"])
+        first = util.parse_time(r["first_seen"])
         if first and first >= new_since:
             new_ids.add(listing.item_id)
         out.append(listing)
@@ -294,7 +287,7 @@ def sold_fast(r) -> bool:
         return True
     if r["days_online"] is not None:
         return r["days_online"] <= FAST_DAYS
-    first, end = _time(r["first_seen"]), _time(gone)
+    first, end = util.parse_time(r["first_seen"]), util.parse_time(gone)
     try:
         return bool(first and end and end - first <= timedelta(days=FAST_DAYS))
     except TypeError:  # de een met tijdzone, de ander zonder
@@ -306,14 +299,14 @@ def load_pool(db_path, _read_result=None) -> bi.Pool:
     verdwenen, als (Identity, prijs, (item_id, titel, url, verdwenen, snel verkocht))."""
     read = _read_result or _read(db_path)
     rows, site, places = read.rows, read.site, read.places
-    seen = [t for t in (_time(r["last_seen"]) for r in rows) if t]
+    seen = [t for t in (util.parse_time(r["last_seen"]) for r in rows) if t]
     if not seen:
         return bi.Pool([])
     since = max(seen) - timedelta(days=POOL_DAYS)
     items = []
     rules = read.rule_map
     for r in rows:
-        last = _time(r["last_seen"])
+        last = util.parse_time(r["last_seen"])
         if last is None or last < since:
             continue
         listing = _listing(r, site, places)
@@ -876,7 +869,7 @@ def load_fresh(db_path) -> Fresh:
     home, distances = dm.load(db_path)
     bought = {}
     if Path(db_path).exists():
-        conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+        conn = db.connect_readonly(db_path)
         try:
             bought = {t["item_id"]: t["bought_at"] or "" for t in db.list_trades(conn) if t.get("item_id")}
         finally:
@@ -1931,8 +1924,7 @@ def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
     eigenaar, 02-10-2026)."""
     if not Path(db_path).exists():
         return None
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = db.connect_readonly(db_path, rows=True)
     try:
         row = conn.execute(SELECT + " AND item_id = ?", (f"%/{CATEGORY}/%", item_id)).fetchone()
         newest = conn.execute("SELECT MAX(last_seen) FROM listing WHERE url LIKE ? AND disappeared_at IS NULL",
@@ -1949,7 +1941,7 @@ def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
         return None
     finally:
         conn.close()
-    last, newest = _time(row["last_seen"]), _time(newest)
+    last, newest = util.parse_time(row["last_seen"]), util.parse_time(newest)
     if last is None or newest is None or last < newest - timedelta(days=ACTIVE_DAYS):
         return None
     return _listing(row, site, places)
@@ -1994,7 +1986,7 @@ class YearTarget:
 
 def _details_fetched(db_path) -> set:
     """De advertenties waarvan de pagina al eens is opgehaald (ook zonder omschrijving)."""
-    conn = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         return {r[0] for r in conn.execute("SELECT item_id FROM listing WHERE details_fetched_at IS NOT NULL")}
     except sqlite3.Error:

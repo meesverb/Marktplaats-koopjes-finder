@@ -23,7 +23,6 @@ reservering de prijs verlaagt, wil je ook zien.
 """
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -81,8 +80,7 @@ def load_marks(db_path) -> dict[str, Mark]:
     12: geen markeringen."""
     if not db_path or not Path(db_path).exists():
         return {}
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         rows = db.list_marks(conn)
     finally:
@@ -94,8 +92,7 @@ def load_notes(db_path) -> dict[str, str]:
     """{item_id: notitie}, alleen lezen. Geen database: geen notities."""
     if not db_path or not Path(db_path).exists():
         return {}
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
+    conn = db.connect_readonly(db_path)
     try:
         return db.list_notes(conn)
     finally:
