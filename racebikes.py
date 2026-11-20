@@ -223,28 +223,27 @@ def read_links(db_path) -> tuple[dict, list, list]:
         conn.close()
 
 
+def _recent(read: Read, rows: list, days: int) -> tuple[Optional[datetime], list]:
+    """(nieuwste waarneming, [(rij, Listing)] van wat binnen `days` daarvoor
+    nog gezien werd)."""
+    seen = [t for t in (util.parse_time(r["last_seen"]) for r in rows) if t]
+    if not seen:
+        return None, []
+    since = max(seen) - timedelta(days=days)
+    return max(seen), [(r, mp.listing_from_row(r, read.site, read.places)) for r in rows
+                       if (last := util.parse_time(r["last_seen"])) and last >= since]
+
+
 def load_listings(db_path, active_days: int = ACTIVE_DAYS, _read_result=None) -> tuple[list, Optional[datetime], set]:
     """(advertenties, nieuwste waarneming, id's van de nieuwe) in de categorie
     racefietsen, met alles wat de database erover weet."""
     read = _read_result or _read(db_path)
-    rows, site, places = read.rows, read.site, read.places
-    rows = [r for r in rows if r["disappeared_at"] is None]
-    seen = [t for t in (util.parse_time(r["last_seen"]) for r in rows) if t]
-    if not seen:
+    newest, recent = _recent(read, [r for r in read.rows if r["disappeared_at"] is None], active_days)
+    if newest is None:
         return [], None, set()
-    newest = max(seen)
-    since = newest - timedelta(days=active_days)
     new_since = newest - timedelta(hours=NEW_HOURS)
-    out, new_ids = [], set()
-    for r in rows:
-        last = util.parse_time(r["last_seen"])
-        if last is None or last < since:
-            continue
-        listing = mp.listing_from_row(r, site, places)
-        first = util.parse_time(r["first_seen"])
-        if first and first >= new_since:
-            new_ids.add(listing.item_id)
-        out.append(listing)
+    out = [listing for _, listing in recent]
+    new_ids = {l.item_id for r, l in recent if (first := util.parse_time(r["first_seen"])) and first >= new_since}
     if len(new_ids) == len(out):
         new_ids = set()  # de allereerste ronde: dan zegt "nieuw" niets
     return out, newest, new_ids
@@ -273,25 +272,12 @@ def load_pool(db_path, _read_result=None) -> bi.Pool:
     """Alle racefietsen van de laatste POOL_DAYS met een vraagprijs, ook
     verdwenen, als (Identity, prijs, (item_id, titel, url, verdwenen, snel verkocht))."""
     read = _read_result or _read(db_path)
-    rows, site, places = read.rows, read.site, read.places
-    seen = [t for t in (util.parse_time(r["last_seen"]) for r in rows) if t]
-    if not seen:
-        return bi.Pool([])
-    since = max(seen) - timedelta(days=POOL_DAYS)
-    items = []
     rules = read.rule_map
-    for r in rows:
-        last = util.parse_time(r["last_seen"])
-        if last is None or last < since:
-            continue
-        listing = mp.listing_from_row(r, site, places)
-        # Alleen een vraagprijs: een lopend bod zegt nog niet wat hij opbrengt.
-        if not listing.price_is_asking or not listing.price_eur or listing.price_eur <= 0:
-            continue
-        gone = (r["disappeared_at"] or "")[:10]
-        items.append((bi.identify(listing, read.links.get(listing.item_id), rules), listing.price_eur,
-                      (listing.item_id, listing.title, listing.url, gone, sold_fast(r))))
-    return bi.Pool(items)
+    # Alleen een vraagprijs: een lopend bod zegt nog niet wat hij opbrengt.
+    return bi.Pool([(bi.identify(l, read.links.get(l.item_id), rules), l.price_eur,
+                     (l.item_id, l.title, l.url, (r["disappeared_at"] or "")[:10], sold_fast(r)))
+                    for r, l in _recent(read, read.rows, POOL_DAYS)[1]
+                    if l.price_is_asking and l.price_eur and l.price_eur > 0])
 
 
 @dataclass

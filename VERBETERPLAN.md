@@ -202,10 +202,11 @@ rest veiliger.
   gebruiken die. Werk de valkuil in `CLAUDE.md` bij.
   *Gedaan 20-11-2026:* Korter dan gepland: de migraties zijn SQL-tekst, dus `tests/helpers.roll_back(conn, versie)` leest de `CREATE TABLE`-namen er zelf uit. De zes tuples zijn weg uit `db.py`; een nieuwe migratie hoeft nergens meer bij. Valkuil in CLAUDE.md bijgewerkt. (`opdrachten/` noemt de tuples nog: dat zijn afgeronde opdrachten, niet bijgewerkt.)
 
-- [ ] **B7 — De twee `load_...`-lussen in `racebikes.py`.**
+- [x] **B7 — De twee `load_...`-lussen in `racebikes.py`.**
   *Bevinding:* `load_listings()` en `load_pool()` lopen allebei over dezelfde
   rijen met hetzelfde filter op `last_seen`.
   *Wat:* een kleine generator `_recent_rows(rows, since)`.
+  *Gedaan 20-11-2026:* `racebikes._recent(read, rows, days)` geeft de nieuwste waarneming en de (rij, Listing)-paren binnen het venster; `load_listings()` en `load_pool()` zijn er twee korte functies op geworden.
 
 ## C. Structuur (elk een eigen sessie, in deze volgorde)
 
