@@ -12,3 +12,4 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -t tests
+      - run: for f in static/*.js; do node --check "$f"; done

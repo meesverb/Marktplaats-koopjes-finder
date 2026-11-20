@@ -1,0 +1,37 @@
+
+nav.site { margin: -6px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: .92rem; }
+nav.site .site-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+nav.site .site-menu { display: none; }
+nav.site a { text-decoration: none; color: var(--text-2); }
+nav.site a[aria-current] { color: var(--text); font-weight: 700; }
+nav.site a:hover { color: var(--accent); }
+/* Telefoon (de eigenaar, 02-10-2026): de balk bovenaan ingeklapt, rijen
+   tabknoppen die zijwaarts scrollen in plaats van vier regels hoog, en
+   knoppen en velden groot genoeg voor een duim. */
+@media (max-width: 700px) {
+  nav.site { margin-top: -10px; padding-bottom: 0; }
+  nav.site .site-menu { display: flex; align-items: center; min-height: 44px; font-weight: 700; cursor: pointer;
+    user-select: none; }
+  nav.site .site-links { display: none; flex-direction: column; gap: 0; }
+  nav.site .site-open:checked ~ .site-links { display: flex; }
+  nav.site .site-links a { padding: 11px 0; border-top: 1px solid var(--line); }
+  nav.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs button { flex: none; }
+  button, select, input[type=text], input[type=search], input[type=number], input[type=date], input:not([type]) {
+    min-height: 40px; }
+  input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }
+  summary { padding: 8px 0; }
+}
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; text-decoration: none; color: var(--text); }
+a.card:hover { border-color: var(--accent); }
+.card .model { font-size: 1.05rem; }
+ul.files { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; }
+ul.files li { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; }
+ul.files li:last-child { border-bottom: 0; }
+pre.log { max-height: 320px; overflow: auto; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; font-size: .8rem; white-space: pre-wrap; }

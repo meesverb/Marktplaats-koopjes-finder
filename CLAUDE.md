@@ -98,10 +98,12 @@ niet raden.
   `string.Template` (`$naam`/`${naam}`). Accolades in CSS/JS zijn daar gewoon
   enkel; het teken om op te letten is `$` zelf — schrijf `$$` voor een
   letterlijke.
-- **De andere pagina's hebben hun HTML, CSS en JavaScript als tekst in de
-  Python-module** (`pages.py`, `racebikes.py`, `upgrade_test.py`,
-  `flips_page.py`, `koopjes.py`), als gewone strings (`CSS`, `JS`, ...). Geen linter ziet die
-  JavaScript: open de pagina in een browser na een wijziging.
+- **De CSS en JavaScript van de live pagina's staan in `static/`**, de HTML
+  als f-strings in de Python-module (`pages.py`, `racebikes.py`,
+  `upgrade_test.py`, `flips_page.py`, ...). `pages.static()` leest een
+  bestand bij het starten en zet het letterlijk in de pagina, zodat elke
+  pagina één bestand blijft. Controleer JavaScript met `node --check` (doet
+  GitHub Actions ook) en open de pagina in een browser.
 - **Vier scores, niet vermengen.** `Listing.deal_score` (0-100: is de *prijs*
   goed), de slaperscore (`sleepers.py`), de kwaliteitsscore (`scoring.py`:
   hoe goed is de *fiets*) en de waardescore (`geschatte waarde / gevraagde
@@ -153,7 +155,7 @@ De lange versie, met tabellen, migraties en ingangen per bestand:
 | Crawlen, scoren, rapport | `racefiets_jev.py` (het commando, alle vlaggen), `crawl.py` (`Listing`, ophalen, parsen, biedingen, specs), `dealscore.py`, `console.py`, `report.py` + `report_template.html` (het rapport en zijn panelen), `sleepers.py` (slapers) | `docs/zoeken.md`, `docs/rapport.md` |
 | Rondes | `koopjes.py` + `schedule.json` (tijdsloten, overzicht, logboek), `launcher.py` (knoppen op `/start`) | `docs/rondes.md` |
 | Database, gedeeld | `db.py` (schema, migraties, alle queries), `util.py` (tijd, euro) | `docs/database.md` |
-| Live server | `server.py` (`--serve`: routes, knoppen, `LiveCache`), `pages.py` (paden, balk bovenaan, gedeelde CSS/JS, formulieren), `dashboard.py` (de dashboards per markt), `start_page.py`, `bike_page.py` (`/fiets`), `flips_page.py` (`/flips`) | `docs/dashboards.md` |
+| Live server | `static/` (CSS en JavaScript van de pagina's), `server.py` (`--serve`: routes, knoppen, `LiveCache`), `pages.py` (paden, balk bovenaan, gedeelde CSS/JS, formulieren), `dashboard.py` (de dashboards per markt), `start_page.py`, `bike_page.py` (`/fiets`), `flips_page.py` (`/flips`) | `docs/dashboards.md` |
 | Markten | `markets.py`, `computers.py` + `computer_scoring.json`, `watches.py`, `vinted.py`, `patterns.py` | `docs/dashboards.md` |
 | Per advertentie | `marks.py` (favoriet/weg/notitie), `own_bids.py`, `distance.py`, `views.py`, `recheck.py` (controleer), `trades.py` (Mijn flips) | `docs/dashboards.md` |
 | Racefietsen | `racebikes.py` (`/racefietsen`), `bike_identity.py` (welk model), `spares.py` (onderdelen), `dossier.py` | `docs/racefietsen.md` |

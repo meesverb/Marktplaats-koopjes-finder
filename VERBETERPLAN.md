@@ -260,7 +260,7 @@ rest veiliger.
   dekken dat) en één echte pagina nog te halen is.
   *Gedaan 20-11-2026:* `racefiets_jev.py` van 3.700 naar 1.420 regels: `crawl.py` (Marktplaats lezen, 1.800), `dealscore.py`, `console.py`, en het HTML-rapport naar `report.py`. Geen oude namen opnieuw aangeboden: elke verwijzing (`mp.detect_groupset` enz., ook `patch.object(mp, ...)` in de tests) wijst nu naar de nieuwe module. Daarmee is de laatste kring weg: `report` en `upgrade` hangen niet meer onder `racefiets_jev`, dat ze nu bovenaan importeert. Gecontroleerd: tests, elke `--help`, één echte pagina `luidsprekers`.
 
-- [ ] **C4 — CSS en JavaScript uit de Python-strings naar eigen bestanden.**
+- [x] **C4 — CSS en JavaScript uit de Python-strings naar eigen bestanden.**
   *Bevinding:* ruim 1.700 regels, waarvan ruim 1.400 JavaScript. Geen editor
   kleurt het, geen gereedschap controleert het, en een tikfout zie je pas in
   de browser. Het rapport doet het al goed: `report_template.html`.
@@ -274,6 +274,7 @@ rest veiliger.
   *Klaar als:* `node --check static/*.js` slaagt (alleen om te controleren,
   geen dependency van het programma) en de pagina's er in de browser
   hetzelfde uitzien.
+  *Gedaan 20-11-2026:* Dertien strings (1.809 regels, waarvan 1.430 JavaScript) staan nu in `static/` (`pagina.css/js`, `live.js`, `balk.css`, `racefietsen.css/js`, `upgrade.css/js`, `flips.css/js`, `fiets.js`, `start.js`, `overzicht.css`); `pages.static()` leest ze bij het starten. Er werd niets in ingevuld, dus de pagina's zijn byte voor byte gelijk gebleven (gecontroleerd: alle zeven live pagina's en `dashboard.html` op een verse database). `node --check` slaagt op alle bestanden en draait nu ook in GitHub Actions.
 
 - [ ] **C5 — De langste functies opknippen.**
   `dossier.build` (247 regels), `koopjes.render_overview` (199),

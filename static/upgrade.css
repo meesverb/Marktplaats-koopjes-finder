@@ -1,0 +1,62 @@
+
+kbd { font: .8em ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
+  padding: 0 4px; background: var(--card); }
+.progress { font-size: .9rem; color: var(--text-2); margin: 4px 0 10px; }
+.testcard { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 16px; min-height: 220px; }
+.testcard .pics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-content: start; }
+.testcard .pics img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; background: var(--line); }
+.testcard .pics img:first-child { grid-column: 1 / -1; }
+.testcard h2 { font-size: 1.15rem; margin: 0 0 4px; overflow-wrap: anywhere; }
+.testcard .price { font-size: 1.2rem; font-weight: 600; }
+.testcard .specs { margin-top: 4px; color: var(--text-2); }
+.testcard .q { margin-top: 12px; font-weight: 600; }
+.testcard .desc { white-space: pre-wrap; font-size: .88rem; color: var(--text-2); max-height: 20em; overflow: auto;
+  margin-top: 8px; overflow-wrap: anywhere; }
+.peekbox:not(:empty) { margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: var(--badge); font-size: .9rem; }
+.answer { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
+.answer button, .rulebar button, #takeover { font: inherit; padding: 9px 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+.answer button.yes { background: var(--good); border-color: var(--good); color: #fff; font-weight: 600; }
+.answer button.no { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+.answer button.yes kbd, .answer button.no kbd { color: var(--text); }
+.rulebar #save { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.peek { font-size: .85rem; color: var(--text-2); }
+.last { margin-top: 18px; }
+.last h3 { margin-top: 0; }
+.good { color: var(--good); font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+.delta { font-size: .78rem; white-space: nowrap; color: var(--muted); }
+.delta.plus { color: var(--good); }
+.delta.minus { color: var(--bad); }
+table.parts td, table.parts th { padding: 4px 8px; font-size: .85rem; }
+table.parts td.why { color: var(--text-2); font-size: .8rem; }
+table.matrix { width: auto; margin: 4px 0 8px; }
+table.matrix td, table.matrix th { text-align: center; }
+details.why summary { cursor: pointer; font-size: .8rem; color: var(--text-2); }
+fieldset { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 12px; padding: 8px 14px 12px;
+  background: var(--card); }
+legend { font-weight: 600; padding: 0 4px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px; }
+label.field { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: .86rem; }
+label.field input, label.field select { font: inherit; width: 7em; padding: 4px 6px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--surface); color: var(--text); }
+label.field select { width: 13em; }
+.rulebar { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.rulestatus { margin: 6px 0 10px; }
+ul.changelist { font-size: .85rem; color: var(--text-2); padding-left: 18px; }
+ul.changelist li.head { list-style: none; margin-left: -18px; font-weight: 600; }
+#out td { font-size: .86rem; }
+#out td .sub { font-size: .75rem; }
+#out th { cursor: pointer; }
+#outmore button { margin-top: 8px; }
+label.field.wide { grid-column: span 2; }
+@media (max-width: 700px) {
+  .testcard { grid-template-columns: 1fr; }
+  /* De knoppen blijven onderin in beeld: anders na elke fiets scrollen. */
+  .answer { position: sticky; bottom: 0; z-index: 2; background: var(--surface); padding: 8px 0;
+    border-top: 1px solid var(--line); }
+  .answer button { flex: 1 1 40%; min-height: 44px; }
+  label.field input { width: 6em; }
+  label.field.wide { grid-column: auto; }
+}

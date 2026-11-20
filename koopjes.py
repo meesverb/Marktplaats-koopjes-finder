@@ -41,6 +41,7 @@ import crawl
 import dashboard
 import db
 import markets
+import pages as pg
 import racefiets_jev as mp
 import util
 
@@ -640,26 +641,7 @@ def latest_valuations(db_path: Path) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-OVERVIEW_CSS = """
-.dashlink { font-size: 1.05rem; margin: 8px 0 18px; }
-:root { color-scheme: light dark; --bg:#fff; --fg:#1d1d1f; --muted:#6b6b70; --line:#e3e3e6;
-        --accent:#0a66c2; --good:#1a7f37; --warn:#b35900; }
-@media (prefers-color-scheme: dark) { :root { --bg:#161618; --fg:#ececef; --muted:#a0a0a8;
-        --line:#2e2e33; --accent:#5aa9ff; --good:#4ac26b; --warn:#f0a050; } }
-body { background:var(--bg); color:var(--fg); font:15px/1.45 system-ui, sans-serif;
-       margin:0 auto; max-width:1100px; padding:16px; }
-h1 { font-size:22px; margin:8px 0 2px; } h2 { font-size:17px; margin:28px 0 8px; }
-.muted { color:var(--muted); } a { color:var(--accent); }
-.table-wrap { overflow-x:auto; }
-table { border-collapse:collapse; width:100%; }
-th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-th { font-weight:600; font-size:13px; color:var(--muted); }
-td.num { text-align:right; font-variant-numeric:tabular-nums; }
-.good { color:var(--good); font-weight:600; } .warn { color:var(--warn); }
-ul.hl { margin:4px 0 12px; padding-left:18px; } ul.hl li { margin:2px 0; }
-.badge { display:inline-block; font-size:12px; padding:0 6px; border-radius:8px;
-         border:1px solid var(--line); margin-left:4px; }
-"""
+OVERVIEW_CSS = pg.static("overzicht.css")
 
 
 def render_overview(config: Config, summaries: dict[str, dict], valuations: list[dict],

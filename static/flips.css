@@ -1,0 +1,60 @@
+
+.sparks { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 4px; }
+.flipcard { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  margin: 0 0 16px; }
+.flipcard.stage-verkocht { opacity: .92; }
+.flipcard header { display: flex; gap: 14px; align-items: flex-start; }
+.flipcard h2 { font-size: 1.2rem; margin: 0 0 2px; }
+.flipcard .meta { margin-bottom: 6px; }
+img.cover { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; }
+.pill { display: inline-block; font-size: .78rem; font-weight: 700; padding: 1px 8px; border-radius: 10px;
+  background: var(--badge); color: var(--text); }
+.stage-te_koop .pill { background: var(--fav); }
+.stage-verkocht .pill { background: var(--good); color: #fff; }
+.money { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px 14px; margin: 10px 0; }
+.money .label { font-size: .78rem; color: var(--text-2); }
+.money .value { font-size: 1.15rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.progress { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.progress div { height: 100%; background: var(--good); }
+.flipcard details { border-top: 1px solid var(--line); padding: 6px 0; }
+.flipcard details > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.flipcard h4 { font-size: .9rem; margin: 12px 0 4px; }
+table.tasks td { padding: 6px 8px; }
+table.tasks td.tickcell { width: 40px; }
+button.tick { width: 30px; height: 30px; padding: 0; font-weight: 700; }
+button.tick.on { background: var(--good); border-color: var(--good); color: #fff; }
+tr.gedaan .what { color: var(--muted); }
+.struck { text-decoration: line-through; }
+.badge.est { background: var(--line); color: var(--text-2); }
+.act.menu { flex-wrap: nowrap; margin: 0; }
+.act.menu button { font-size: .75rem; padding: 2px 7px; white-space: nowrap; }
+table.tasks .act { margin-top: 0; }
+.act.tiny { display: inline-flex; margin: 0; }
+.act.tiny button { font-size: .72rem; padding: 0 6px; }
+.act.right { justify-content: flex-end; }
+.act.stages button { font-size: .8rem; }
+.act.addtask, .act.specform { margin-top: 10px; }
+.act.specform label { display: flex; flex-direction: column; font-size: .78rem; color: var(--text-2); gap: 2px; }
+.shops { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.shop { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: .88rem; }
+.shop ul { margin: 4px 0 0; padding-left: 18px; }
+textarea.draft { width: 100%; font: inherit; font-size: .88rem; padding: 8px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); color: var(--text); }
+.photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.photos figure { margin: 0; }
+.photos img { width: 140px; height: 105px; object-fit: cover; border-radius: 8px; display: block; }
+.photos figcaption { font-size: .75rem; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+ul.bids { margin: 0; padding-left: 18px; }
+.flipcard details.offers, #flip-tools details.offers { border-top: 0; padding: 2px 0 0; }
+details.offers > summary { font-weight: 400; font-size: .8rem; color: var(--text-2); }
+details.offers ul { margin: 4px 0; padding-left: 18px; font-size: .85rem; }
+details.offers li { margin: 2px 0; }
+.act.addoffer { margin-top: 4px; }
+.act.addoffer input { font-size: .82rem; }
+@media (max-width: 640px) {
+  .flipcard { padding: 12px; }
+  .flipcard header { flex-direction: column; }
+  .flipcard details > summary, details.offers > summary { padding: 10px 0; }
+  button.tick { min-width: 40px; }
+  table.tasks th:nth-child(4), table.tasks td:nth-child(4) { min-width: 150px; }
+}
