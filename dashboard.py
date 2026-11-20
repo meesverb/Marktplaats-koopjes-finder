@@ -75,7 +75,7 @@ import trades as tr
 import upgrade as up
 import upgrade_test as ut
 import util
-from util import euro
+from util import euro, local_time
 import valuation as val
 import views as vw
 import vinted as vn
@@ -594,20 +594,8 @@ MONTHS = ("jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", 
 
 
 def nl_date(value: Optional[str]) -> str:
-    try:
-        day = date.fromisoformat((value or "")[:10])
-    except ValueError:
-        return value or "?"
-    return f"{day.day} {MONTHS[day.month - 1]} {day.year}"
-
-
-def local_time(iso: str) -> str:
-    moment = util.parse_time(iso)
-    if moment is None:
-        return iso or "?"
-    if moment.tzinfo is not None:
-        moment = moment.astimezone()
-    return moment.strftime("%d-%m-%Y %H:%M")
+    day = util.parse_day(value)
+    return f"{day.day} {MONTHS[day.month - 1]} {day.year}" if day else (value or "?")
 
 
 def thumb(listing) -> str:

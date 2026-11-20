@@ -1,13 +1,13 @@
 """Kleine hulpfuncties die meer dan één module nodig heeft.
 
-Wat op meerdere plekken hetzelfde moet: een tijd uit de database lezen, een
-bedrag in euro's schrijven.
+Wat op meerdere plekken hetzelfde moet: een tijd uit de database lezen of
+tonen, een bedrag in euro's schrijven.
 
 Hangt van geen andere module in deze repo af.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 
@@ -33,6 +33,30 @@ def parse_time_utc(value) -> Optional[datetime]:
     except ValueError:
         return None
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def parse_day(value) -> Optional[date]:
+    """De dag van een datum of tijdstip, of None. Een tijdstip met tijdzone
+    (de database bewaart UTC) telt op de lokale dag, zoals date.today():
+    anders stond een flip die je om half een 's nachts op te koop zette
+    meteen op "1 dag"."""
+    moment = parse_time(value)
+    if moment is not None and len(value) > 10:
+        return (moment.astimezone() if moment.tzinfo else moment).date()
+    try:
+        return date.fromisoformat((value or "")[:10])
+    except ValueError:
+        return None
+
+
+def local_time(value, fmt: str = "%d-%m-%Y %H:%M") -> str:
+    """Een tijd uit de database op de eigen klok. De database en de rondes
+    bewaren UTC ("...+00:00", de advertentiepagina "...Z"); een tijd zonder
+    tijdzone (een eigen bod) blijft zoals hij is. Onleesbaar: de tekst zelf."""
+    moment = parse_time(str(value).replace("Z", "+00:00")) if value else None
+    if moment is None:
+        return value or "?"
+    return (moment.astimezone() if moment.tzinfo else moment).strftime(fmt)
 
 
 def euro(amount: Optional[float], cents: bool = False, sign: bool = False, none: str = "—") -> str:

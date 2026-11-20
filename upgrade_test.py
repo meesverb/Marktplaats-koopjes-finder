@@ -47,6 +47,7 @@ import db
 import racefiets_jev as mp
 import scoring as sc
 import upgrade as up
+import util
 
 RULE_KEY = "upgrade_regel"
 LABELS = ("ja", "nee", "twijfel")
@@ -882,7 +883,7 @@ def render(owner, problem: str, bikes: Sequence[Bike], saved_at: Optional[str], 
             "dimnames": [DIMENSION_LABELS[d] for d in DIMENSIONS], "minJudged": MIN_JUDGED,
             "paths": {"label": LABEL_PATH, "try": TRY_PATH, "rule": RULE_PATH, "search": SEARCH_PATH,
                       "explain": EXPLAIN_PATH}}
-    rule_text = (f"jouw regel van {html.escape(dash.local_time(saved_at)[:10])}" if saved_at
+    rule_text = (f"jouw regel van {html.escape(util.local_time(saved_at)[:10])}" if saved_at
                  else "de standaard (scoring_config.json)")
     return (
         head

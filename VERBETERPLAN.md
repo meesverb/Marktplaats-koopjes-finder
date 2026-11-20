@@ -146,13 +146,14 @@ rest veiliger.
   in de commit en pas de tests aan die op de oude tekst controleren.
   *Gedaan 20-11-2026:* `util.euro(amount, cents=False, sign=False, none='—')` vervangt `dashboard.euro/signed_euro/flip_money/flip_signed`, `flips.euro`, `report.euro`, `vinted._euro` (en zijn `cents`-lambda) en `recheck._euro`. **Zichtbaar:** in het rapport en de Vinted-tab staat nu "€1.250" i.p.v. "€1250", en in de console "−€5" i.p.v. "€-5". Geen test controleerde op de oude tekst. Bedragen die in een f-string zelf opgemaakt worden (`f'€{x:.0f}'`, tientallen plekken) zijn niet aangeraakt.
 
-- [ ] **B2 — Eén manier om een tijdstip te tonen.**
+- [x] **B2 — Eén manier om een tijdstip te tonen.**
   *Bevinding:* `dashboard.local_time()`, `koopjes.local_time()`,
   `dossier._local()` en `vinted._local()` doen hetzelfde met kleine
   verschillen (met of zonder jaar); `dashboard.nl_date()` en
   `trades` lezen allebei een datum uit de eerste tien tekens.
   *Wat:* `util.local_time(iso, year=True)` en `util.parse_day()`; de vier
   plekken erop aansluiten.
+  *Gedaan 20-11-2026:* `util.local_time(value, fmt)` vervangt `dashboard.local_time`, `koopjes.local_time`, `vinted._local` en het rekenwerk in `dossier._local`; `util.parse_day()` vervangt `trades._date` en `flips._date` en zit onder `dashboard.nl_date`. Verschil: een onleesbare tijd toont nu de tekst zelf i.p.v. "?" in het overzicht.
 
 - [ ] **B3 — Eén plek die een rij uit `listing` omzet naar een `Listing`.**
   *Bevinding:* `dashboard.py` (r. 490), `racebikes._listing()`,

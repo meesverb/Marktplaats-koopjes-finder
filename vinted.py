@@ -439,16 +439,11 @@ def load_view(db_path, config: Optional[dict] = None) -> Optional[VintedView]:
 # --- Console -----------------------------------------------------------------------
 
 
-def _local(iso: str) -> str:
-    moment = util.parse_time(iso)
-    return moment.astimezone().strftime("%d-%m-%Y %H:%M") if moment else iso
-
-
 def print_view(view: Optional[VintedView], flips: int = 15) -> None:
     if view is None:
         print("Nog geen Vinted-export in de database. Lees er een in met: python vinted.py import <export.csv>")
         return
-    print(f"Vinted naast Marktplaats · laatste export {_local(view.newest_export)} · "
+    print(f"Vinted naast Marktplaats · laatste export {util.local_time(view.newest_export)} · "
           f"{len(view.computers)} computers met bekend model, {len(view.unknown)} zonder, "
           f"{len(view.excluded)} uitgefilterd")
     print()
@@ -491,7 +486,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     print(f"Fout: {exc}", file=sys.stderr)
                     return 1
                 skipped = "".join(f", {n} overgeslagen ({why})" for why, n in r.skipped.items())
-                print(f"{r.file} ({_local(r.exported_at)}): {r.rows} advertenties, {r.new} nieuw, "
+                print(f"{r.file} ({util.local_time(r.exported_at)}): {r.rows} advertenties, {r.new} nieuw, "
                       f"{r.updated} al bekend ({r.repriced} met een andere prijs){skipped}")
         finally:
             conn.close()

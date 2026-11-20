@@ -110,22 +110,6 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _date(value: Optional[str]) -> Optional[date]:
-    """De dag van een datum of tijdstip. Een tijdstip met tijdzone (de
-    fasewissels staan in UTC) telt op de lokale dag, zoals date.today():
-    anders stond een flip die je om half een 's nachts op te koop zette
-    meteen op "1 dag"."""
-    value = value or ""
-    try:
-        if len(value) > 10:
-            moment = datetime.fromisoformat(value)
-            if moment.tzinfo is not None:
-                return moment.astimezone().date()
-        return date.fromisoformat(value[:10])
-    except ValueError:
-        return None
-
-
 @dataclass
 class Task:
     id: int
@@ -281,8 +265,8 @@ class Flip:
 
     @property
     def days_in_stage(self) -> Optional[int]:
-        start = _date(self.stage_since or self.trade.bought_at)
-        end = _date(self.trade.sold_at) if self.sold else date.today()
+        start = util.parse_day(self.stage_since or self.trade.bought_at)
+        end = util.parse_day(self.trade.sold_at) if self.sold else date.today()
         if start is None or end is None:
             return None
         return max(0, (end - start).days)

@@ -235,15 +235,7 @@ def _local(value: Optional[str]) -> str:
     bewaart UTC ("...+00:00"), de pagina "...Z". Zonder tijdzone (een eigen
     bod, een datum) blijft hij zoals hij is."""
     text = value or ""
-    if len(text) <= 10:
-        return text
-    try:
-        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return text[:16].replace("T", " ")
-    if moment.tzinfo is not None:
-        moment = moment.astimezone()
-    return moment.strftime("%Y-%m-%d %H:%M")
+    return text if len(text) <= 10 else util.local_time(text, "%Y-%m-%d %H:%M")
 
 
 def day(value: Optional[str]) -> str:

@@ -33,6 +33,22 @@ class ParseTimeTest(unittest.TestCase):
                          datetime(2026, 9, 28, 10, tzinfo=timezone.utc))
 
 
+class LocalTimeTest(unittest.TestCase):
+    def test_a_time_without_timezone_stays_as_it_is(self):
+        self.assertEqual(util.local_time("2026-09-28T10:05:00"), "28-09-2026 10:05")
+        self.assertEqual(util.local_time("2026-09-28T10:05:00", "%d-%m %H:%M"), "28-09 10:05")
+
+    def test_unreadable_gives_the_text_back(self):
+        self.assertEqual(util.local_time("onbekend"), "onbekend")
+        self.assertEqual(util.local_time(None), "?")
+
+    def test_parse_day(self):
+        self.assertEqual(util.parse_day("2026-09-28"), datetime(2026, 9, 28).date())
+        self.assertEqual(util.parse_day("2026-09-28T10:00:00"), datetime(2026, 9, 28).date())
+        self.assertIsNone(util.parse_day(""))
+        self.assertIsNone(util.parse_day(None))
+
+
 class EuroTest(unittest.TestCase):
     def test_whole_euros_with_a_dot_per_thousand(self):
         self.assertEqual(util.euro(1250), "€1.250")

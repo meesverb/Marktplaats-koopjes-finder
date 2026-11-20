@@ -1691,7 +1691,6 @@ def own_flips_html(db_path) -> tuple[int, str]:
     staat wat erin zit en wat het oplevert, zodat elke pagina dezelfde
     weergaven heeft (de eigenaar, 02-10-2026). Gelezen bij elk verzoek: het
     zijn er een handvol."""
-    import dashboard as dash
     import flips as fl
 
     book = fl.load_book(db_path, with_market_check=False) if db_path and Path(db_path).exists() else None
@@ -1783,7 +1782,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         + ", ".join(f"€{b['a']:.0f} op {esc(b['at'])} ({esc(b['s'])})" for b in g["b"])
         + f" <span class='muted'>{'verdwenen ' + esc(g['gone']) if g['gone'] else 'laatst gezien ' + esc(g['last'])}</span></li>"
         for g in gone)
-    meta = (f"{len(base.rows)} racefietsen te koop · laatste ronde {esc(dash.local_time(base.newest)) if base.newest else '—'}"
+    meta = (f"{len(base.rows)} racefietsen te koop · laatste ronde {esc(util.local_time(base.newest)) if base.newest else '—'}"
             + (" · <strong>live</strong> (wijzigingen gaan in koopjes.db)" if token else ""))
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"

@@ -60,7 +60,7 @@ SQLite-schema, migraties, import van de oude bestanden, CSV-export; sinds fase 1
 
 ### `util.py`
 
-Wat meer dan één module letterlijk hetzelfde nodig had: `parse_time()` / `parse_time_utc()` (een ISO-tijd uit de database, zonder of mét gegarandeerde tijdzone) en `euro()` ("€1.250", "−€5"; `cents=True` "€11,95" voor /flips, `sign=True` "+€25", `none=` de tekst zonder bedrag) — elk bedrag op een pagina gaat hierdoor. Hangt van geen andere module af.
+Wat meer dan één module hetzelfde nodig had: `parse_time()` / `parse_time_utc()` (een ISO-tijd uit de database, zonder of mét gegarandeerde tijdzone), `parse_day()` (de lokale dag), `local_time()` (een tijd op de eigen klok) en `euro()` ("€1.250", "−€5"; `cents=True` "€11,95" voor /flips, `sign=True` "+€25", `none=` de tekst zonder bedrag) — elk bedrag op een pagina gaat hierdoor. Hangt van geen andere module af.
 
 ## De live server en de dashboards
 

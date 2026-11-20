@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 import db
+import util
 
 
 @dataclass
@@ -54,18 +55,11 @@ class Trade:
         return round(self.sell_price_eur - (self.sell_costs_eur or 0.0) - self.cost_basis_eur, 2)
 
     def days_held(self, today: Optional[date] = None) -> Optional[int]:
-        start = _date(self.bought_at)
-        end = _date(self.sold_at) if self.sold else (today or date.today())
+        start = util.parse_day(self.bought_at)
+        end = util.parse_day(self.sold_at) if self.sold else (today or date.today())
         if start is None or end is None:
             return None
         return (end - start).days
-
-
-def _date(value: Optional[str]) -> Optional[date]:
-    try:
-        return date.fromisoformat((value or "")[:10])
-    except ValueError:
-        return None
 
 
 FIELDS = {f for f in Trade.__dataclass_fields__}

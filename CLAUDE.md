@@ -81,7 +81,7 @@ niet raden.
   Marktplaats — die zijn niet af te leiden uit de code. Een meting hoort een
   datum te hebben ("gemeten 28-09-2026").
 - **Schrijf een hulpfunctie niet opnieuw.** Een tijd uit de database lezen:
-  `util.parse_time()` / `util.parse_time_utc()`. Een bedrag: `util.euro()` (ook met centen of plusteken).
+  `util.parse_time()` / `util.parse_time_utc()`; tonen: `util.local_time()`; een dag: `util.parse_day()`. Een bedrag: `util.euro()` (ook met centen of plusteken).
   De database openen om alleen te lezen: `db.connect_readonly()`; om te
   schrijven (migreert ook): `db.connect()`.
 - **Een pagina die alleen toont, opent de database alleen-lezen.** Zo kan een

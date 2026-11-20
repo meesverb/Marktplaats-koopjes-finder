@@ -637,13 +637,6 @@ def latest_valuations(db_path: Path) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def local_time(iso: str) -> str:
-    try:
-        return datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone().strftime("%d-%m %H:%M")
-    except (ValueError, AttributeError):
-        return "?"
-
-
 OVERVIEW_CSS = """
 .dashlink { font-size: 1.05rem; margin: 8px 0 18px; }
 :root { color-scheme: light dark; --bg:#fff; --fg:#1d1d1f; --muted:#6b6b70; --line:#e3e3e6;
@@ -691,7 +684,7 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         for r in rounds:
             parts.append(
                 f"<tr><td>{esc(str(r.get('slot', '?')))}</td>"
-                f"<td>{esc(local_time(r.get('started_at', '')))}</td>"
+                f"<td>{esc(util.local_time(r.get('started_at', ''), "%d-%m %H:%M"))}</td>"
                 f"<td>{labels.get(r.get('status'), esc(str(r.get('status', '?'))))}</td>"
                 f"<td class='num'>{esc(str(r.get('new', 0)))}</td></tr>"
             )
@@ -704,7 +697,7 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         items = "".join(
             f"<li>Scenario {esc(v['scenario'])}: {util.euro(v['low_eur'])} – <strong>{util.euro(v['mid_eur'])}"
             f"</strong> – {util.euro(v['high_eur'])} <span class='muted'>(vertrouwen: "
-            f"{esc(v['confidence'] or '?')}, {esc(local_time(v['created_at'] or ''))})</span></li>"
+            f"{esc(v['confidence'] or '?')}, {esc(util.local_time(v['created_at'] or '', "%d-%m %H:%M"))})</span></li>"
             for v in valuations
         )
         parts.append(f"<ul>{items}</ul>")
@@ -743,7 +736,7 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
                 link = "<span class='muted'>—</span>"
             parts.append(
                 f"<tr><td>{esc(summary['name'])}<div class='muted'>{esc(summary.get('query', ''))}</div></td>"
-                f"<td>{esc(local_time(summary.get('finished_at', '')))}</td>"
+                f"<td>{esc(util.local_time(summary.get('finished_at', ''), "%d-%m %H:%M"))}</td>"
                 f"<td class='num'>{summary.get('listings', 0)}</td>"
                 f"<td class='num{' good' if summary.get('new') else ''}'>{summary.get('new', 0)}</td>"
                 f"<td class='num{' good' if summary.get('better') else ''}'>{summary.get('better', 0)}</td>"
@@ -1045,7 +1038,7 @@ def render_best_deals(config: Config, summaries: dict[str, dict]) -> str:
             if not upgrades and not deals:
                 continue
             lines += ["", f"== {summary['name']} ({summary.get('query', '')}, "
-                          f"{local_time(summary.get('finished_at', ''))}) =="]
+                          f"{util.local_time(summary.get('finished_at', ''), "%d-%m %H:%M")}) =="]
             if upgrades:
                 lines.append("Upgrades voor jouw fiets (binnen budget en maat, op upgrade per euro):")
                 for u in upgrades:
@@ -1142,7 +1135,7 @@ def print_status(config: Config) -> None:
         running = True
     print("Er draait nu een ronde." if running else "Er draait nu geen ronde.")
     for r in load_rounds(config.base_dir / config.rounds_file, limit=3):
-        print(f"Ronde {r.get('slot', '?')} om {local_time(r.get('started_at', ''))}: "
+        print(f"Ronde {r.get('slot', '?')} om {util.local_time(r.get('started_at', ''), "%d-%m %H:%M")}: "
               f"{r.get('status', '?')}, {r.get('new', 0)} nieuw")
     print()
     for slot in config.slots.values():
@@ -1156,7 +1149,7 @@ def print_status(config: Config) -> None:
             print(f"  {name}: nog niet gedraaid")
         for s in found:
             print(
-                f"  {s['name']}: {local_time(s.get('finished_at', ''))} — {s.get('listings', 0)} "
+                f"  {s['name']}: {util.local_time(s.get('finished_at', ''), "%d-%m %H:%M")} — {s.get('listings', 0)} "
                 f"advertenties, {s.get('new', 0)} nieuw, {s.get('better', 0)} beter dan referentie"
             )
 
