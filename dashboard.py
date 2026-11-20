@@ -75,6 +75,7 @@ import trades as tr
 import upgrade as up
 import upgrade_test as ut
 import util
+from util import euro
 import valuation as val
 import views as vw
 import vinted as vn
@@ -573,25 +574,12 @@ def market_rows(d: Dashboard) -> list[tuple[str, list, Optional[float]]]:
 # --- HTML ---------------------------------------------------------------------
 
 
-def euro(amount: Optional[float]) -> str:
-    if amount is None:
-        return "—"
-    text = f"€{abs(amount):,.0f}".replace(",", ".")
-    return f"−{text}" if amount < 0 else text
-
-
 def band(low: Optional[float], high: Optional[float]) -> str:
     if low is None or high is None:
         return ""
     if round(low) == round(high):
         return f"weinig spreiding ({euro(low)})"
     return f"{euro(low)} tot {euro(high)}"
-
-
-def signed_euro(amount: Optional[float]) -> str:
-    if amount is None:
-        return "—"
-    return ("+" if amount >= 0 else "") + euro(amount)
 
 
 def web_link(url: Optional[str]) -> str:
@@ -919,7 +907,7 @@ def flips_tiles(d: Dashboard) -> str:
     best = flips[0] if flips else None
     return tiles([
         ("Flips met winst", str(len(flips)), f"na {euro(flip.get('costs_eur', 0))} verzendkosten per stuk"),
-        ("Beste flip", signed_euro(best.computer.profit_eur) if best else "—",
+        ("Beste flip", euro(best.computer.profit_eur, sign=True) if best else "—",
          best.computer.model.label if best else "nog niets"),
         ("Samen", euro(sum(l.computer.profit_eur for l in flips)) if flips else "—",
          "als je ze allemaal koopt en verkoopt"),
@@ -979,7 +967,7 @@ def flips_panel(d: Dashboard) -> str:
                 "<tr>"
                 f"<td class='pic'>{thumb(l)}</td>"
                 f"<td class='num profit' data-sort='{c.profit_eur}'>"
-                f"<span class='gain' aria-hidden='true'>▲</span>{signed_euro(c.profit_eur)}"
+                f"<span class='gain' aria-hidden='true'>▲</span>{euro(c.profit_eur, sign=True)}"
                 f"<div class='sub'>{band(c.profit_low_eur, c.profit_high_eur)}</div></td>"
                 f"{price_cell(l)}"
                 f"<td class='num' data-sort='{c.resale_eur}' title='{esc(c.comp_note, quote=True)}'>{euro(c.resale_eur)}"
@@ -1135,7 +1123,7 @@ def all_panel(d: Dashboard) -> str:
             f"data-text='{esc(search_text(l, d, label), quote=True)}'>"
             f"<td class='pic'>{thumb(l)}</td>"
             f"{price_cell(l)}"
-            f"<td class='num' data-sort='{profit if profit is not None else ''}'>{signed_euro(profit)}</td>"
+            f"<td class='num' data-sort='{profit if profit is not None else ''}'>{euro(profit, sign=True)}</td>"
             + (f"<td class='num' data-sort='{delta if delta is not None else ''}'>"
                f"{'—' if delta is None else f'{delta:+.0f}'}</td>"
                f"<td class='num' data-sort='{score if score is not None else ''}'>{'—' if score is None else f'{score:.0f}'}</td>"
@@ -1175,7 +1163,7 @@ def favorites_panel(d: Dashboard) -> str:
                 "<tr>"
                 f"<td class='pic'>{thumb(l)}</td>"
                 f"{price_cell(l, then)}"
-                f"<td class='num' data-sort='{profit if profit is not None else ''}'>{signed_euro(profit)}</td>"
+                f"<td class='num' data-sort='{profit if profit is not None else ''}'>{euro(profit, sign=True)}</td>"
                 f"{listing_cell(l, d, label, note)}"
                 "</tr>"
             )
@@ -1296,7 +1284,7 @@ def vinted_panel(d: Dashboard) -> str:
         ("Op Vinted", str(len(v.computers)), f"computers met bekend model, export {local_time(v.newest_export)}"),
         ("Vinted ÷ Marktplaats", _ratio(v.median_ratio), "mediaan over de modellen met genoeg vergelijking"),
         ("Koop op Vinted", str(len(flips)), "onder de Marktplaats-verkoopprijs"),
-        ("Beste", signed_euro(flips[0].profit_eur) if flips else "—",
+        ("Beste", euro(flips[0].profit_eur, sign=True) if flips else "—",
          flips[0].model.label if flips else "nog niets"),
     ])]
     parts.append(
@@ -1314,7 +1302,7 @@ def vinted_panel(d: Dashboard) -> str:
             "<tr>"
             f"<td class='pic'>{_vinted_thumb(i)}</td>"
             f"<td class='num profit' data-sort='{i.profit_eur}'>"
-            f"<span class='gain' aria-hidden='true'>▲</span>{signed_euro(i.profit_eur)}</td>"
+            f"<span class='gain' aria-hidden='true'>▲</span>{euro(i.profit_eur, sign=True)}</td>"
             f"<td class='num' data-sort='{i.cost_eur}'>{euro(i.cost_eur)}"
             f"<div class='sub'>vraagt {euro(i.row.price_eur)}</div></td>"
             f"<td class='num' data-sort='{i.resale_eur}'>{euro(i.resale_eur)}"
@@ -1423,10 +1411,10 @@ def month_chart(monthly: list) -> str:
         year, mon = month.split("-")
         label = f"{MONTHS[int(mon) - 1]} '{year[2:]}"
         parts.append(
-            f"<g><title>{esc(label)}: {esc(signed_euro(value))}</title>"
+            f"<g><title>{esc(label)}: {esc(euro(value, sign=True))}</title>"
             f"<rect x='{x:.1f}' y='{y:.1f}' width='{bar:.1f}' height='{max(h, 1):.1f}' rx='3' class='bar'/>"
             f"<text x='{x + bar / 2:.1f}' y='{(y - 6) if value >= 0 else (y + h + 14):.1f}' "
-            f"class='val'>{esc(signed_euro(value))}</text>"
+            f"class='val'>{esc(euro(value, sign=True))}</text>"
             f"<text x='{x + bar / 2:.1f}' y='{height - 8}' class='lab'>{esc(label)}</text></g>"
         )
     parts.append("</svg>")
@@ -1442,10 +1430,10 @@ def mine_panel(d: Dashboard) -> str:
         direction = "boven" if p.estimate_error >= 0 else "onder"
         error = f"{abs(p.estimate_error):.0%} {direction} de schatting (n={p.estimate_n})"
     parts = [tiles([
-        ("Gerealiseerde winst", signed_euro(p.realized_profit_eur) if p.sold else "—",
+        ("Gerealiseerde winst", euro(p.realized_profit_eur, sign=True) if p.sold else "—",
          f"{len(p.sold)} verkocht, samen {euro(p.revenue_eur)} omzet" if p.sold else "nog niets verkocht"),
         ("Op voorraad", str(len(p.stock)), f"{euro(p.invested_in_stock_eur)} erin gestoken" if p.stock else "niets"),
-        ("Verwachte winst voorraad", signed_euro(p.expected_stock_profit_eur),
+        ("Verwachte winst voorraad", euro(p.expected_stock_profit_eur, sign=True),
          f"na {euro(shipping)} verzendkosten per stuk"),
         ("Gemiddeld verkocht na", f"{p.avg_days_to_sell:.0f} dagen" if p.avg_days_to_sell is not None else "—",
          error or "hoe goed de schatting klopte, verschijnt na je eerste verkopen"),
@@ -1490,7 +1478,7 @@ def mine_panel(d: Dashboard) -> str:
                 f"<td class='num' data-sort='{t.cost_basis_eur}'>{euro(t.cost_basis_eur)}</td>"
                 f"<td class='num' data-sort='{s.expected_resale_eur or ''}'>{euro(s.expected_resale_eur)}</td>"
                 f"<td class='num' data-sort='{s.expected_profit_eur if s.expected_profit_eur is not None else ''}'>"
-                f"{signed_euro(s.expected_profit_eur)}</td>"
+                f"{euro(s.expected_profit_eur, sign=True)}</td>"
                 "</tr>"
             )
         parts.append(table([("Wat", "text"), ("Gekocht", "text"), ("Inkoop", "num"), ("Verwacht verkoop", "num"),
@@ -1523,7 +1511,7 @@ def mine_panel(d: Dashboard) -> str:
                 f"<td class='num' data-sort='{t.cost_basis_eur}'>{euro(t.cost_basis_eur)}</td>"
                 f"<td class='num' data-sort='{t.sell_price_eur}'>{euro(t.sell_price_eur)}"
                 f"<div class='sub'>−{euro(t.sell_costs_eur or 0)} kosten</div>{vs}</td>"
-                f"<td class='num profit' data-sort='{t.profit_eur}'>{signed_euro(t.profit_eur)}</td>"
+                f"<td class='num profit' data-sort='{t.profit_eur}'>{euro(t.profit_eur, sign=True)}</td>"
                 "</tr>"
             )
         parts.append(table([("Wat", "text"), ("Verkocht", "text"), ("Inkoop", "num"), ("Verkoopprijs", "num"),
@@ -2075,7 +2063,7 @@ def tab_list(d: Dashboard) -> list:
     m = d.market
     computers = len(d.items) + len(d.unknown_items)
     p = d.progress
-    mine_label = f"Mijn flips ({signed_euro(p.realized_profit_eur)})" if p and p.sold else "Mijn flips"
+    mine_label = f"Mijn flips ({euro(p.realized_profit_eur, sign=True)})" if p and p.sold else "Mijn flips"
     tabs = [("flips", f"Flips ({len(d.flips)})", flips_panel)]
     if m.has_upgrades:
         tabs.append(("upgrades", f"Upgrades ({len(d.upgrades)})", upgrades_panel))
@@ -2483,20 +2471,6 @@ FLIPS_PATH = "/flips"
 FLIPS_PHOTO_PATH = "/flips/foto"
 
 
-def flip_money(amount: Optional[float]) -> str:
-    """Op de flippagina in centen: een onderdeel van €11,95 is geen €12."""
-    if amount is None:
-        return "—"
-    text = f"€{abs(amount):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"−{text}" if amount < 0 else text
-
-
-def flip_signed(amount: Optional[float]) -> str:
-    if amount is None:
-        return "—"
-    return ("+" if amount >= 0 else "") + flip_money(amount)
-
-
 def flip_input(name: str, value, label: str, size: int = 6, kind: str = "text", placeholder: str = "") -> str:
     shown = "" if value is None else (f"{value:.2f}".replace(".", ",") if isinstance(value, float) else str(value))
     mode = " inputmode='decimal'" if kind == "euro" else ""
@@ -2514,18 +2488,18 @@ def flip_select(name: str, options, chosen: str, label: str) -> str:
 
 def flip_totals(book: fl.FlipBook) -> str:
     t = book.totals
-    hours = (f"{flip_money(t.per_hour_eur)} per uur over {t.hours:g} uur" if t.per_hour_eur is not None
+    hours = (f"{euro(t.per_hour_eur, cents=True)} per uur over {t.hours:g} uur" if t.per_hour_eur is not None
              else (f"{t.hours:g} uur gewerkt" if t.hours else "vul per flip je uren in"))
-    tools = f"{flip_money(t.tools_spent_eur)} uitgegeven"
+    tools = f"{euro(t.tools_spent_eur, cents=True)} uitgegeven"
     if t.tools_planned_eur:
-        tools += f", {flip_money(t.tools_planned_eur)} nog gepland"
+        tools += f", {euro(t.tools_planned_eur, cents=True)} nog gepland"
     return tiles([
-        ("Verdiend", flip_signed(t.realized_eur) if t.sold else "—",
-         f"{t.sold} verkocht, {flip_money(t.revenue_eur)} omzet" if t.sold else "nog niets verkocht"),
-        ("Netto na investeringen", flip_signed(t.net_eur), "verdiend min gereedschap en voorraad"),
-        ("Zit erin", flip_money(t.stock_spent_eur), f"{t.stock} lopende flip{'s' if t.stock != 1 else ''}"),
-        ("Verwachte winst lopend", flip_signed(t.stock_expected_eur), "op het midden van je doelprijs"),
-        ("Investeringen", flip_money(t.tools_spent_eur + t.tools_planned_eur), tools),
+        ("Verdiend", euro(t.realized_eur, cents=True, sign=True) if t.sold else "—",
+         f"{t.sold} verkocht, {euro(t.revenue_eur, cents=True)} omzet" if t.sold else "nog niets verkocht"),
+        ("Netto na investeringen", euro(t.net_eur, cents=True, sign=True), "verdiend min gereedschap en voorraad"),
+        ("Zit erin", euro(t.stock_spent_eur, cents=True), f"{t.stock} lopende flip{'s' if t.stock != 1 else ''}"),
+        ("Verwachte winst lopend", euro(t.stock_expected_eur, cents=True, sign=True), "op het midden van je doelprijs"),
+        ("Investeringen", euro(t.tools_spent_eur + t.tools_planned_eur, cents=True), tools),
         ("Tijd", f"{t.avg_days:.0f} dagen" if t.avg_days is not None else "—",
          "gemiddeld van kopen tot verkopen · " + hours),
     ])
@@ -2563,7 +2537,7 @@ def flip_task_row(k: fl.Task) -> str:
         cost = (flip_input("tarief", k.fare_eur, "Vol tarief", 5, "euro", "vol tarief")
                 + flip_select("korting", fl.DISCOUNT_LABELS.items(), k.discount or "vol", "Korting")
                 + "<button class='quiet' name='doe' value='prijs'>opslaan</button>")
-        money = (f"<td class='num'>{flip_money(k.cost_eur)}"
+        money = (f"<td class='num'>{euro(k.cost_eur, cents=True)}"
                  f"<div class='sub'>{esc(fl.DISCOUNT_LABELS.get(k.discount or 'vol', ''))}</div></td>")
     elif k.kind == "klus" and k.price_eur is None:
         # Een klus kost meestal niets; wie er toch iets voor betaalde kan
@@ -2574,9 +2548,9 @@ def flip_task_row(k: fl.Task) -> str:
         cost = (flip_input("prijs", k.price_eur, "Echte prijs", 5, "euro", "echte prijs")
                 + "<button class='quiet' name='doe' value='prijs'>opslaan</button>")
         est = (f"<div class='sub{' struck' if k.cost_eur is not None else ''}'>geschat "
-               f"{flip_money(k.est_eur)}</div>") if k.est_eur is not None else ""
-        money = (f"<td class='num'>{flip_money(k.cost_eur) if k.cost_eur is not None else ''}"
-                 f"{'' if k.cost_eur is not None else ('<span class=muted>' + flip_money(k.est_eur) + '</span>' if k.est_eur is not None else '')}"
+               f"{euro(k.est_eur, cents=True)}</div>") if k.est_eur is not None else ""
+        money = (f"<td class='num'>{euro(k.cost_eur, cents=True) if k.cost_eur is not None else ''}"
+                 f"{'' if k.cost_eur is not None else ('<span class=muted>' + euro(k.est_eur, cents=True) + '</span>' if k.est_eur is not None else '')}"
                  f"{est if k.cost_eur is not None else ''}</td>")
     # Losse investeringen horen bij geen flip: "naar flip" kan daar niet.
     toggle = "" if k.trade_id is None else (
@@ -2597,13 +2571,13 @@ def flip_offers(k: fl.Task) -> str:
         link = (f"<a href='{esc(web_link(o.url), quote=True)}' target='_blank' rel='noopener'>{esc(o.domain)}</a>"
                 if web_link(o.url)
                 else "<span class='badge est'>geen link</span>")
-        ship = (f" + {flip_money(o.shipping_eur)} verzending = {flip_money(o.total_eur)}" if o.shipping_eur
+        ship = (f" + {euro(o.shipping_eur, cents=True)} verzending = {euro(o.total_eur, cents=True)}" if o.shipping_eur
                 else (" incl. verzending" if o.shipping_eur == 0 else ""))
         source = " <span class='badge est'>schatting</span>" if o.source == "schatting" else ""
         extra = " · ".join(x for x in (esc(o.note), f"bekeken {esc(nl_date(o.checked_at))}" if o.checked_at else "") if x)
         pick = ("<span class='badge'>gekozen</span>" if chosen
                 else act("/flips/aanbod-kies", str(o.id), "<button class='quiet'>kies deze</button>", "tiny"))
-        items.append(f"<li><strong>{flip_money(o.price_eur)}</strong>{ship} · {esc(o.shop or '')} {link}{source} "
+        items.append(f"<li><strong>{euro(o.price_eur, cents=True)}</strong>{ship} · {esc(o.shop or '')} {link}{source} "
                      f"<span class='muted'>{extra}</span> {pick}"
                      f"{act('/flips/aanbod-weg', str(o.id), '<button class=quiet>weg</button>', 'tiny')}</li>")
     add = act("/flips/aanbod", str(k.id),
@@ -2652,10 +2626,10 @@ def flip_basket(tasks: list) -> str:
         return "<p class='empty'>Alles gekocht.</p>"
     out = []
     for shop, items, subtotal, short in groups:
-        warn = (f"<div class='sub warn'>nog {flip_money(short)} tot gratis verzending</div>" if short is not None
+        warn = (f"<div class='sub warn'>nog {euro(short, cents=True)} tot gratis verzending</div>" if short is not None
                 else "")
-        names = "".join(f"<li>{esc(k.title)} <span class='muted'>{flip_money(k.est_eur)}</span></li>" for k in items)
-        out.append(f"<div class='shop'><div class='model'>{esc(shop)} · {flip_money(subtotal)}</div>{warn}"
+        names = "".join(f"<li>{esc(k.title)} <span class='muted'>{euro(k.est_eur, cents=True)}</span></li>" for k in items)
+        out.append(f"<div class='shop'><div class='model'>{esc(shop)} · {euro(subtotal, cents=True)}</div>{warn}"
                    f"<ul>{names}</ul></div>")
     return "<div class='shops'>" + "".join(out) + "</div>"
 
@@ -2670,37 +2644,37 @@ def flip_stage_buttons(f: fl.Flip) -> str:
 def flip_money_grid(f: fl.Flip) -> str:
     t = f.trade
     low, high = f.target
-    cells = [("Inkoop", flip_money(t.buy_price_eur), f"+ {flip_money(t.buy_costs_eur)} kosten" if t.buy_costs_eur else "")]
+    cells = [("Inkoop", euro(t.buy_price_eur, cents=True), f"+ {euro(t.buy_costs_eur, cents=True)} kosten" if t.buy_costs_eur else "")]
     extra = round(f.spent_eur - t.cost_basis_eur, 2)
-    cells.append(("Uitgegeven", flip_money(f.spent_eur), f"waarvan {flip_money(extra)} aan de lijst" if extra else ""))
+    cells.append(("Uitgegeven", euro(f.spent_eur, cents=True), f"waarvan {euro(extra, cents=True)} aan de lijst" if extra else ""))
     if not f.sold:
-        cells.append(("Nog gepland", flip_money(f.planned_eur), "schattingen, tot je de echte prijs invult"))
-        cells.append(("Kostprijs verwacht", flip_money(f.expected_cost_eur), ""))
-        target = (flip_money(low) if low == high else f"{flip_money(low)} – {flip_money(high)}") if low is not None else "—"
+        cells.append(("Nog gepland", euro(f.planned_eur, cents=True), "schattingen, tot je de echte prijs invult"))
+        cells.append(("Kostprijs verwacht", euro(f.expected_cost_eur, cents=True), ""))
+        target = (euro(low, cents=True) if low == high else f"{euro(low, cents=True)} – {euro(high, cents=True)}") if low is not None else "—"
         cells.append(("Doelprijs", target, "wat je wilt ontvangen"))
         mc = f.market_check
         if mc is not None:
             if mc.n:
-                cells.append(("Marktcheck", flip_money(mc.median_eur),
+                cells.append(("Marktcheck", euro(mc.median_eur, cents=True),
                               f"mediaan vraagprijs van {mc.n} advertenties met '{mc.words}'"
-                              + (f", midden 50%: {flip_money(mc.low_eur)} – {flip_money(mc.high_eur)}"
+                              + (f", midden 50%: {euro(mc.low_eur, cents=True)} – {euro(mc.high_eur, cents=True)}"
                                  if mc.n >= 4 else "")))
             else:
                 cells.append(("Marktcheck", "—", f"geen advertenties met '{mc.words}' in de laatste 180 dagen"))
         if low is not None:
             pl, ph = f.expected_profit(low), f.expected_profit(high)
-            profit = flip_signed(pl) if low == high else f"{flip_signed(pl)} – {flip_signed(ph)}"
+            profit = euro(pl, cents=True, sign=True) if low == high else f"{euro(pl, cents=True, sign=True)} – {euro(ph, cents=True, sign=True)}"
             cells.append(("Verwachte winst", profit, "doelprijs min verwachte kostprijs"))
         top = f.top_bid
         if top is not None:
-            cells.append(("Hoogste bod", flip_money(top["amount_eur"]),
-                          f"winst bij dat bod {flip_signed(f.expected_profit(top['amount_eur']))}"))
+            cells.append(("Hoogste bod", euro(top["amount_eur"], cents=True),
+                          f"winst bij dat bod {euro(f.expected_profit(top['amount_eur']), cents=True, sign=True)}"))
     else:
-        cells.append(("Verkocht voor", flip_money(t.sell_price_eur),
-                      f"− {flip_money(t.sell_costs_eur)} kosten" if t.sell_costs_eur else esc(t.sold_via or "")))
-        cells.append(("Winst", flip_signed(f.profit_eur), f"in {t.days_held()} dagen"))
+        cells.append(("Verkocht voor", euro(t.sell_price_eur, cents=True),
+                      f"− {euro(t.sell_costs_eur, cents=True)} kosten" if t.sell_costs_eur else esc(t.sold_via or "")))
+        cells.append(("Winst", euro(f.profit_eur, cents=True, sign=True), f"in {t.days_held()} dagen"))
     if f.hours:
-        cells.append(("Uren", f"{f.hours:g}", f"{flip_money(f.per_hour_eur)} per uur" if f.per_hour_eur is not None else ""))
+        cells.append(("Uren", f"{f.hours:g}", f"{euro(f.per_hour_eur, cents=True)} per uur" if f.per_hour_eur is not None else ""))
     return "<div class='money'>" + "".join(
         f"<div><div class='label'>{esc(a)}</div><div class='value'>{b}</div><div class='sub'>{esc(c)}</div></div>"
         for a, b, c in cells) + "</div>"
@@ -2744,7 +2718,7 @@ def flip_details_form(f: fl.Flip) -> str:
 
 def flip_sale(f: fl.Flip) -> str:
     bids = "".join(
-        f"<li>{flip_money(b['amount_eur'])} <span class='muted'>{esc(local_time(b['at']))}"
+        f"<li>{euro(b['amount_eur'], cents=True)} <span class='muted'>{esc(local_time(b['at']))}"
         f"{' · ' + esc(b['note']) if b['note'] else ''}</span> "
         f"{act('/flips/bod-weg', str(b['id']), '<button class=quiet>weg</button>', 'tiny')}</li>"
         for b in f.bids)
@@ -2851,7 +2825,7 @@ def flip_stock_row(f: fl.Flip) -> str:
                "<button class='quiet' name='fase' value='opknappen'>eerst opknappen</button>")
     note = f"<div class='note'>{esc(t.notes)}</div>" if t.notes else ""
     return (f"<tr data-flip='{f.id}'><td class='what'>{esc(t.title)}{note}</td>"
-            f"<td class='num'>{flip_money(t.cost_basis_eur)}</td>"
+            f"<td class='num'>{euro(t.cost_basis_eur, cents=True)}</td>"
             f"<td>{act('/flips/fase', str(f.id), buttons)}</td>"
             f"<td>{act('/flips/weg', str(f.id), '<button class=quiet name=doe value=weg>weg</button>')}</td></tr>")
 
@@ -2862,8 +2836,8 @@ def flip_tools(book: fl.FlipBook) -> str:
     t = book.totals
     head = (f"<p class='explain'>Gereedschap en spullen die je bij meer dan één flip gebruikt. Ze tellen niet "
             f"mee in de winst van één flip, wel in <em>Netto na investeringen</em>: "
-            f"{flip_money(t.tools_spent_eur)} uitgegeven"
-            + (f", {flip_money(t.tools_planned_eur)} nog te kopen" if t.tools_planned_eur else "") + ".</p>")
+            f"{euro(t.tools_spent_eur, cents=True)} uitgegeven"
+            + (f", {euro(t.tools_planned_eur, cents=True)} nog te kopen" if t.tools_planned_eur else "") + ".</p>")
     extra = ""
     if on_flips:
         extra = (f"<p class='muted'>Plus {len(on_flips)} regel{'s' if len(on_flips) != 1 else ''} die op de "
@@ -3098,14 +3072,14 @@ def flip_action_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
                     raise FormError("Onbekende korting.")
                 fl.update_task(conn, task_id, fare_eur=fare, discount=discount)
                 cost = None if fare is None else round(fare * fl.DISCOUNTS[discount], 2)
-                message = f"{task.title}: {flip_money(cost)} ({fl.DISCOUNT_LABELS[discount]})."
+                message = f"{task.title}: {euro(cost, cents=True)} ({fl.DISCOUNT_LABELS[discount]})."
             else:
                 price = parse_euro(form.get("prijs"), "Prijs", required=False)
                 values = {"price_eur": price}
                 if price is None:
                     values["bought_at"] = None
                 fl.update_task(conn, task_id, **values)
-                message = (f"{task.title}: {flip_money(price)}." if price is not None
+                message = (f"{task.title}: {euro(price, cents=True)}." if price is not None
                            else f"{task.title}: echte prijs gewist, de schatting telt weer.")
         elif what == "investering":
             fl.update_task(conn, task_id, investment=not task.investment)
@@ -3146,7 +3120,7 @@ def flip_action_offer(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]
         raise FormError(str(exc)[:1].upper() + str(exc)[1:] + ".") from None
     finally:
         conn.close()
-    return f"Aanbieding bij {row['title']}: {flip_money(price)}.", row["trade_id"]
+    return f"Aanbieding bij {row['title']}: {euro(price, cents=True)}.", row["trade_id"]
 
 
 def flip_action_offer_choose(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
@@ -3158,7 +3132,7 @@ def flip_action_offer_choose(db_path, form: dict, ctx=None) -> tuple[str, Option
         row = conn.execute("SELECT title, trade_id FROM flip_task WHERE id = ?", (offer.task_id,)).fetchone()
     finally:
         conn.close()
-    return (f"{row['title']}: {offer.shop or 'deze aanbieding'} voor {flip_money(offer.total_eur)}; "
+    return (f"{row['title']}: {offer.shop or 'deze aanbieding'} voor {euro(offer.total_eur, cents=True)}; "
             "de geplande kosten zijn bijgewerkt."), row["trade_id"]
 
 
@@ -3171,7 +3145,7 @@ def flip_action_offer_delete(db_path, form: dict, ctx=None) -> tuple[str, Option
         trade_id = fl.task_trade(conn, offer.task_id)
     finally:
         conn.close()
-    return f"Aanbieding weggehaald ({offer.shop or offer.domain or 'zonder link'}, {flip_money(offer.price_eur)}).", trade_id
+    return f"Aanbieding weggehaald ({offer.shop or offer.domain or 'zonder link'}, {euro(offer.price_eur, cents=True)}).", trade_id
 
 
 def flip_action_new_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
@@ -3249,7 +3223,7 @@ def flip_action_bid(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
         raise FormError(str(exc)) from None
     finally:
         conn.close()
-    return f"Bod van {flip_money(amount)} genoteerd.", trade_id
+    return f"Bod van {euro(amount, cents=True)} genoteerd.", trade_id
 
 
 def flip_action_bid_delete(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
@@ -3295,7 +3269,7 @@ def flip_action_sold(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
         fl.sell(conn, trade_id, sold_at=sold_at, price_eur=price, costs_eur=costs, via=via)
     finally:
         conn.close()
-    return f"Verkocht voor {flip_money(price)}: {bought.title}.", trade_id
+    return f"Verkocht voor {euro(price, cents=True)}: {bought.title}.", trade_id
 
 
 def flip_action_new(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
@@ -3612,17 +3586,17 @@ def render_start(db_path, files_dir, message: str = "", token: str = "", running
     ]
     if t is not None:
         tile_list += [
-            ("Verdiend met flips", flip_signed(t.realized_eur) if t.sold else "—",
-             f"netto na investeringen {flip_signed(t.net_eur)}"),
-            ("Lopende flips", str(t.stock), f"{flip_money(t.stock_spent_eur)} erin, verwacht "
-                                            f"{flip_signed(t.stock_expected_eur)}"),
+            ("Verdiend met flips", euro(t.realized_eur, cents=True, sign=True) if t.sold else "—",
+             f"netto na investeringen {euro(t.net_eur, cents=True, sign=True)}"),
+            ("Lopende flips", str(t.stock), f"{euro(t.stock_spent_eur, cents=True)} erin, verwacht "
+                                            f"{euro(t.stock_expected_eur, cents=True, sign=True)}"),
         ]
     trails = ob.ordered(ob.load(db_path))
     open_bids = [x for x in trails if x.active]
     if trails:
         outbid = sum(1 for x in open_bids if x.outbid)
         tile_list.append(("Lopende biedingen", str(len(open_bids)),
-                          (f"samen {flip_money(sum(x.latest.amount_eur for x in open_bids))} geboden"
+                          (f"samen {euro(sum(x.latest.amount_eur for x in open_bids), cents=True)} geboden"
                            + (f", {outbid} al overboden" if outbid else "")) if open_bids else "geen lopende"))
     live = [
         (rb.PATH, "Racefietsen", "alle racefietsen: snel beoordelen, wegzetten, bod vastleggen, afstand"),

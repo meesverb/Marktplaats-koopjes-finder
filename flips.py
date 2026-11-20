@@ -54,6 +54,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import db
 import trades as tr
+import util
 
 HERE = Path(__file__).resolve().parent
 PHOTO_DIR = HERE / "flip_fotos"
@@ -992,7 +993,7 @@ def update_file(conn, path) -> list[str]:
             if values:
                 update_task(conn, task.id, **values)
                 done.append(f"bijgewerkt: {task.title}"
-                            + (f" → {values['shop']} {euro(values['est_eur'])}" if "est_eur" in values else ""))
+                            + (f" → {values['shop']} {util.euro(values['est_eur'], cents=True)}" if "est_eur" in values else ""))
             have = {(o["url"] or "", o["price_eur"]) for o in conn.execute(
                 "SELECT url, price_eur FROM flip_offer WHERE task_id = ? AND deleted_at IS NULL", (task.id,))}
             added = 0
@@ -1027,21 +1028,17 @@ def update_file(conn, path) -> list[str]:
 # --- Console ---------------------------------------------------------------------
 
 
-def euro(amount: Optional[float]) -> str:
-    return "—" if amount is None else f"€{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
 def print_book(book: FlipBook) -> None:
     t = book.totals
-    print(f"Verdiend: {euro(t.realized_eur)} op {t.sold} verkocht · investeringen {euro(t.tools_spent_eur)} "
-          f"· netto {euro(t.net_eur)}")
-    print(f"Lopend: {t.stock} flips, {euro(t.stock_spent_eur)} erin, verwachte winst {euro(t.stock_expected_eur)}")
+    print(f"Verdiend: {util.euro(t.realized_eur, cents=True)} op {t.sold} verkocht · investeringen {util.euro(t.tools_spent_eur, cents=True)} "
+          f"· netto {util.euro(t.net_eur, cents=True)}")
+    print(f"Lopend: {t.stock} flips, {util.euro(t.stock_spent_eur, cents=True)} erin, verwachte winst {util.euro(t.stock_expected_eur, cents=True)}")
     for f in book.flips:
         low, high = f.target
-        profit = (euro(f.profit_eur) if f.sold else
-                  f"{euro(f.expected_profit(low))} – {euro(f.expected_profit(high))} verwacht")
-        print(f"  [{STAGE_LABELS[f.stage]}] {f.trade.title}: uitgegeven {euro(f.spent_eur)}, "
-              f"gepland {euro(f.planned_eur)}, winst {profit}")
+        profit = (util.euro(f.profit_eur, cents=True) if f.sold else
+                  f"{util.euro(f.expected_profit(low), cents=True)} – {util.euro(f.expected_profit(high), cents=True)} verwacht")
+        print(f"  [{STAGE_LABELS[f.stage]}] {f.trade.title}: uitgegeven {util.euro(f.spent_eur, cents=True)}, "
+              f"gepland {util.euro(f.planned_eur, cents=True)}, winst {profit}")
 
 
 def main(argv: Optional[list[str]] = None) -> int:

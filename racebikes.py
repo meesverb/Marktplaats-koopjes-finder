@@ -1709,21 +1709,21 @@ def own_flips_html(db_path) -> tuple[int, str]:
         title = (f"<a href='{esc(t.url, quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
                  if t.url else esc(t.title))
         low, high = f.target
-        target = ("—" if low is None else dash.flip_money(low) if high == low
-                  else f"{dash.flip_money(low)}–{dash.flip_money(high)}")
+        target = ("—" if low is None else util.euro(low, cents=True) if high == low
+                  else f"{util.euro(low, cents=True)}–{util.euro(high, cents=True)}")
         profit = f.profit_eur if f.sold else f.expected_profit(f.target_mid_eur)
         days = None if f.sold else f.days_in_stage
         rows.append(
             f"<tr><td>{title}</td><td>{esc(fl.STAGE_LABELS.get(f.stage, f.stage))}"
             f"{'' if days is None else f' <span class=muted>{days} d</span>'}</td>"
-            f"<td class='num'>{dash.flip_money(t.cost_basis_eur)}</td>"
-            f"<td class='num'>{dash.flip_money(f.spent_eur)}"
-            f"{f' <span class=muted>+{dash.flip_money(f.planned_eur)} gepland</span>' if f.planned_eur else ''}</td>"
+            f"<td class='num'>{util.euro(t.cost_basis_eur, cents=True)}</td>"
+            f"<td class='num'>{util.euro(f.spent_eur, cents=True)}"
+            f"{f' <span class=muted>+{util.euro(f.planned_eur, cents=True)} gepland</span>' if f.planned_eur else ''}</td>"
             f"<td class='num'>{target}</td>"
-            f"<td class='num'>{dash.flip_signed(profit)}{'' if f.sold or profit is None else ' <span class=muted>verwacht</span>'}</td>"
+            f"<td class='num'>{util.euro(profit, cents=True, sign=True)}{'' if f.sold or profit is None else ' <span class=muted>verwacht</span>'}</td>"
             f"<td><a href='/flips#flip-{f.id}'>op /flips</a></td></tr>")
     summary = (f"{len(bikes)} fiets{'en' if len(bikes) != 1 else ''}, {len(sold)} verkocht"
-               + (f", verdiend {dash.flip_signed(earned)}" if sold else ""))
+               + (f", verdiend {util.euro(earned, cents=True, sign=True)}" if sold else ""))
     return len(bikes), (
         f"<p class='explain'>Je eigen fietsflips van <a href='/flips'>/flips</a>: {summary}. "
         "Erin = aankoop plus wat je aan onderdelen en klussen uitgaf; de winst van een lopende flip is "

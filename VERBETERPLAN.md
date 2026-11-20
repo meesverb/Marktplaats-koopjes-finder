@@ -133,7 +133,7 @@ rest veiliger.
 
 ## B. Kleine opruimstappen (elk een uur of minder)
 
-- [ ] **B1 — Eén manier om een bedrag te schrijven.**
+- [x] **B1 — Eén manier om een bedrag te schrijven.**
   *Bevinding:* `report.euro()` en `vinted._euro()` schrijven "€1250",
   `util.euro()` en `dashboard.euro()` schrijven "€1.250"; `dashboard.euro()`
   zet bij een negatief bedrag een minteken vóór het euroteken, `util.euro()`
@@ -144,6 +144,7 @@ rest veiliger.
   *Let op:* dit verandert wat er op het scherm staat ("€1250" wordt
   "€1.250" in het rapport en de Vinted-tab). Klein, maar zichtbaar: noem het
   in de commit en pas de tests aan die op de oude tekst controleren.
+  *Gedaan 20-11-2026:* `util.euro(amount, cents=False, sign=False, none='—')` vervangt `dashboard.euro/signed_euro/flip_money/flip_signed`, `flips.euro`, `report.euro`, `vinted._euro` (en zijn `cents`-lambda) en `recheck._euro`. **Zichtbaar:** in het rapport en de Vinted-tab staat nu "€1.250" i.p.v. "€1250", en in de console "−€5" i.p.v. "€-5". Geen test controleerde op de oude tekst. Bedragen die in een f-string zelf opgemaakt worden (`f'€{x:.0f}'`, tientallen plekken) zijn niet aangeraakt.
 
 - [ ] **B2 — Eén manier om een tijdstip te tonen.**
   *Bevinding:* `dashboard.local_time()`, `koopjes.local_time()`,

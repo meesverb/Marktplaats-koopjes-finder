@@ -1,9 +1,7 @@
 """Kleine hulpfuncties die meer dan één module nodig heeft.
 
-Alleen wat op meerdere plekken letterlijk hetzelfde was (een tijd uit de
-database lezen, een bedrag in euro's schrijven). Wat per pagina net anders
-moet (`dashboard.euro()` met een minteken, `flips.euro()` met centen,
-`recheck._euro()` met "geen prijs") staat bewust bij die pagina.
+Wat op meerdere plekken hetzelfde moet: een tijd uit de database lezen, een
+bedrag in euro's schrijven.
 
 Hangt van geen andere module in deze repo af.
 """
@@ -37,6 +35,10 @@ def parse_time_utc(value) -> Optional[datetime]:
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
-def euro(amount: Optional[float]) -> str:
-    """"€1.250" (hele euro's, punt als duizendtal), of "—" zonder bedrag."""
-    return "—" if amount is None else f"€{amount:,.0f}".replace(",", ".")
+def euro(amount: Optional[float], cents: bool = False, sign: bool = False, none: str = "—") -> str:
+    """"€1.250", "−€5", met `cents` "€11,95" (op /flips: een onderdeel van
+    €11,95 is geen €12), met `sign` "+€25". Zonder bedrag `none`."""
+    if amount is None:
+        return none
+    text = f"{abs(amount):,.{2 if cents else 0}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return ("−" if amount < 0 else "+" if sign else "") + "€" + text

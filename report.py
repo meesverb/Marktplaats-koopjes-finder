@@ -30,6 +30,7 @@ import db
 import racefiets_jev as mp
 import scoring as sc
 import upgrade as up
+from util import euro
 import valuation as val
 
 # De gewichten zijn code-configuratie, geen gebruikersdata: ze horen naast het
@@ -42,10 +43,6 @@ SCENARIO_KEYS = ("a", "b")
 
 def esc(value: object) -> str:
     return html.escape(str(value), quote=True)
-
-
-def euro(amount: Optional[float]) -> str:
-    return f"€{amount:.0f}" if amount is not None else "—"
 
 
 # --- De eigen fiets ---------------------------------------------------------

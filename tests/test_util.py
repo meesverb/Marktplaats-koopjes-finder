@@ -39,6 +39,13 @@ class EuroTest(unittest.TestCase):
         self.assertEqual(util.euro(89.6), "€90")
         self.assertEqual(util.euro(None), "—")
 
+    def test_variants(self):
+        self.assertEqual(util.euro(-5), "−€5")
+        self.assertEqual(util.euro(1234.5, cents=True), "€1.234,50")
+        self.assertEqual(util.euro(25, sign=True), "+€25")
+        self.assertEqual(util.euro(-25, sign=True), "−€25")
+        self.assertEqual(util.euro(None, none="geen prijs"), "geen prijs")
+
 
 class ConnectReadonlyTest(unittest.TestCase):
     def setUp(self):

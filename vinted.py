@@ -439,10 +439,6 @@ def load_view(db_path, config: Optional[dict] = None) -> Optional[VintedView]:
 # --- Console -----------------------------------------------------------------------
 
 
-def _euro(amount: Optional[float]) -> str:
-    return "—" if amount is None else f"€{amount:.0f}"
-
-
 def _local(iso: str) -> str:
     moment = util.parse_time(iso)
     return moment.astimezone().strftime("%d-%m-%Y %H:%M") if moment else iso
@@ -459,17 +455,16 @@ def print_view(view: Optional[VintedView], flips: int = 15) -> None:
     print(f"{'Model':28} {'Vinted':>6} {'laagste':>8} {'mediaan':>8} {'MP':>4} {'mediaan':>8} {'verkoop':>8} {'V÷MP':>5}")
     for m in view.models:
         ratio = f"{m.ratio:.2f}".replace(".", ",") if m.ratio is not None else "—"
-        print(f"{m.model.label:28} {len(m.vinted):>6} {_euro(m.vinted[0]):>8} {_euro(m.vinted_median):>8} "
-              f"{len(m.marktplaats):>4} {_euro(m.mp_median):>8} {_euro(m.resale_eur):>8} {ratio:>5}")
+        print(f"{m.model.label:28} {len(m.vinted):>6} {util.euro(m.vinted[0]):>8} {util.euro(m.vinted_median):>8} "
+              f"{len(m.marktplaats):>4} {util.euro(m.mp_median):>8} {util.euro(m.resale_eur):>8} {ratio:>5}")
     print()
-    cents = lambda amount: f"€{amount:.2f}".replace(".", ",")
     print(f"Koop op Vinted, verkoop op Marktplaats: vraagprijs + kopersbescherming + "
-          f"{cents(view.shipping_eur)} verzending, bij verkoop nog {cents(view.costs_eur)} eraf.")
+          f"{util.euro(view.shipping_eur, cents=True)} verzending, bij verkoop nog {util.euro(view.costs_eur, cents=True)} eraf.")
     if not view.flips:
         print("  Geen advertentie onder de Marktplaats-verkoopprijs.")
     for i in view.flips[:flips]:
-        print(f"  {'+' + _euro(i.profit_eur):>6}  {i.model.label:24} vraagt {_euro(i.row.price_eur):>5}, "
-              f"je betaalt {_euro(i.cost_eur):>5}, verkoopt ±{_euro(i.resale_eur)} (n={i.mp_count})  "
+        print(f"  {'+' + util.euro(i.profit_eur):>6}  {i.model.label:24} vraagt {util.euro(i.row.price_eur):>5}, "
+              f"je betaalt {util.euro(i.cost_eur):>5}, verkoopt ±{util.euro(i.resale_eur)} (n={i.mp_count})  "
               f"{i.row.condition}  {i.row.url}")
 
 
