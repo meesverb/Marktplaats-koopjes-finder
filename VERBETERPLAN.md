@@ -291,7 +291,7 @@ rest veiliger.
 
 ## D. Documentatie
 
-- [ ] **D1 — Eén logboek, één lijst met ideeën.**
+- [x] **D1 — Eén logboek, één lijst met ideeën.**
   *Bevinding:* wat er gebouwd is staat op drie plekken: §12 van
   `PLAN_FIETSWAARDE.md` (regels van duizenden tekens), `NEXT_STEPS.md` (400
   regels, deels dezelfde gebeurtenissen) en `opdrachten/weekend.md`. Het
@@ -303,6 +303,7 @@ rest veiliger.
   één regel dat alle fases af zijn.
   *Let op:* alleen verplaatsen en inkorten; de metingen (aantallen, datums)
   niet weggooien.
+  *Gedaan 20-11-2026:* `LOGBOEK.md`: de acht gedateerde secties uit `NEXT_STEPS.md` letterlijk (nieuwste eerst), plus de oude "stand van zaken" van 27-09 als geschiedenis. `NEXT_STEPS.md` (was 400 regels, nu 119) houdt wat de naam zegt: de open ideeën en wat we over Marktplaats leerden. Gecontroleerd dat er geen regel verloren ging (op de oude inleiding na). Het verouderde blok "Lees dit eerst" in `PLAN_FIETSWAARDE.md` (87 tests, een oude branch) is één regel geworden: alle fases zijn af. §12 van het plan en `opdrachten/weekend.md` zijn gebleven: dat zijn de logboeken per fase en per opdracht, en inkorten zou metingen weggooien.
 
 - [ ] **D2 — De pagina's in `docs/` vertalen en inkorten, één per sessie.**
   *Bevinding:* ze zijn Engels (zo is de README gegroeid), de rest is

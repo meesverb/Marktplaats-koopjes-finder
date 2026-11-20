@@ -6,22 +6,9 @@ pak **één fase**, en vink hem af in de checklist onderaan.
 Dit plan is geschreven na een gesprek met de eigenaar; zijn keuzes staan in
 §3. Wijk daar niet van af zonder te vragen.
 
-> **Lees dit eerst — de code is veranderd sinds dit plan geschreven werd.**
->
-> Ontwikkel op **`main`** (niet op `claude/clever-dijkstra-64tu8z`; die is in
-> `main` samengevoegd en wordt niet meer gebruikt).
->
-> Deze dingen bestaan al en hoef je niet te bouwen:
->
-> | Bestaat al | Waar |
-> | --- | --- |
-> | Samengestelde dealscore 0-100 per advertentie, met onderbouwing per signaal | `score_listing()`, `docs/rapport.md` → "Dealscore" |
-> | Bied-overzicht: biedaantal, echt minimumbod, "vrij te bieden", eigen tabs | `enrich_bid_listings()`, `print_bid_overview()`, `docs/zoeken.md` → "Bidding listings" |
-> | Testsuite (87 tests) | `tests/`, draaien met `python -m unittest discover -s tests -t tests` |
->
-> Fase 4, 5 en 7 bouwen dáárop voort in plaats van bij nul te beginnen; per
-> fase staat hieronder wat dat concreet betekent. **Houd de tests groen** —
-> ze zijn er speciaal voor fase 1 gezet.
+> **Alle fases zijn af** (zie §12). Dit plan staat er nog als verslag van de
+> keuzes van de eigenaar (§3) en van wat er per fase gebouwd is en bleef
+> liggen. Nieuw werk: `CLAUDE.md` → "Voor je begint".
 
 ---
 

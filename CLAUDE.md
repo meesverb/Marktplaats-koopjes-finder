@@ -176,7 +176,8 @@ een lege map buiten de repo, ze schrijven een cache in de werkmap.
 | `docs/` | naslag per onderwerp; `docs/README.md` is de inhoudsopgave |
 | `VERBETERPLAN.md` | opschonen en verbeteren in kleine stappen, met een logboek |
 | `PLAN_FIETSWAARDE.md` | het productplan; alle fases af, §12 is het logboek |
-| `NEXT_STEPS.md` | stand van zaken, wat we leerden over Marktplaats, losse ideeën |
+| `NEXT_STEPS.md` | de ideeën die nog open liggen, en wat we leerden over Marktplaats |
+| `LOGBOEK.md` | wat er per keer gebouwd is, met datums en metingen (per fase: `PLAN_FIETSWAARDE.md` §12) |
 | `opdrachten/` | uitgeschreven opdrachten van de eigenaar, met zijn keuzes |
 | `mijn_fiets.md` | intake van de eigen fiets: brondocument voor taxatie en upgrades (het script leest dit bestand) |
 | `fiets_master.md`, `fiets_kaart.md` | alles over de eigen fiets (onderdelen, maten, wat past); lees `fiets_master.md` bij elke vraag over wat erop past, en werk de kaart mee bij |

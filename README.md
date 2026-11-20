@@ -161,7 +161,8 @@ met een bron per rij) en de documenten over je eigen fiets (`mijn_fiets.md`,
 | [docs/architectuur.md](docs/architectuur.md) | welk bestand doet wat |
 | [CLAUDE.md](CLAUDE.md) | werkafspraken voor wie (of wat) aan de code werkt |
 | [VERBETERPLAN.md](VERBETERPLAN.md) | wat er aan de code en de documentatie verbeterd kan worden, in kleine stappen |
-| [PLAN_FIETSWAARDE.md](PLAN_FIETSWAARDE.md), [NEXT_STEPS.md](NEXT_STEPS.md) | hoe het gegroeid is en welke ideeën er nog liggen |
+| [LOGBOEK.md](LOGBOEK.md), [PLAN_FIETSWAARDE.md](PLAN_FIETSWAARDE.md) | hoe het gegroeid is, met datums en metingen |
+| [NEXT_STEPS.md](NEXT_STEPS.md) | welke ideeën er nog liggen, en wat we over Marktplaats leerden |
 | [MARKTONDERZOEK.md](MARKTONDERZOEK.md) | welke Marktplaats-categorieën als volgende markt passen |
 
 Marktplaats kan zijn pagina's op elk moment veranderen. Breekt het lezen
