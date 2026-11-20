@@ -453,6 +453,18 @@ class LiveServerTest(unittest.TestCase):
             page += panel
         return page
 
+    def test_every_page_answers(self):
+        # Elke GET-route van --serve, zodat een fout in een render()-functie
+        # hier opvalt en niet pas in de browser van de eigenaar.
+        for path in ("/start", "/", "/horloges", "/racefietsen", "/fiets", "/upgrade", "/flips"):
+            with self.subTest(path=path):
+                status, _, page = self.request("GET", path)
+                self.assertEqual(status, 200)
+                self.assertIn("</html>", page)
+        for path in ("/nietbestaand", "/bestanden/koopjes.db", "/bestanden/sheets.json"):
+            with self.subTest(path=path):
+                self.assertEqual(self.request("GET", path)[0], 404)
+
     def test_buying_from_a_flip_row_and_selling_it(self):
         import trades as tr
 
