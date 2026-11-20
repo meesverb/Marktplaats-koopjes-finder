@@ -316,12 +316,13 @@ rest veiliger.
   `referentiedata.md`, `database.md`.
   *Let op:* geen getal of vlag veranderen zonder het in de code na te gaan.
 
-- [ ] **D3 — `docs/architectuur.md` naast de code leggen.**
+- [x] **D3 — `docs/architectuur.md` naast de code leggen.**
   *Bevinding:* de tekst komt uit de oude tabel in `CLAUDE.md` en is op 16-11
   niet regel voor regel nagelopen.
   *Wat:* per bestand controleren of de genoemde functies, tabellen en
   migratienummers nog bestaan (`grep`), en de alinea's van `dashboard.py` en
   `racebikes.py` opknippen in leesbare punten.
+  *Gedaan 20-11-2026:* Elke `functie()`, constante, tabel, migratienummer en bestandsnaam in `docs/architectuur.md` nagelopen tegen de code: alles bestaat (de verhuizingen van C1-C6 zijn er al in verwerkt). De vier langste alinea's (`racebikes.py`, `bike_identity.py`, `dossier.py`, `flips.py`) zijn punten geworden, met dezelfde inhoud.
 
 - [ ] **D4 — De hoofdmap opruimen.** *Eerst vragen aan de eigenaar.*
   *Bevinding:* ruim 60 bestanden in de hoofdmap, code en documenten door elkaar.

@@ -140,11 +140,22 @@ Naslag: [racefietsen.md](racefietsen.md).
 
 ### `racebikes.py`
 
-`/racefietsen` in `dashboard.py --serve`: alle racefietsen uit `koopjes.db` (actief = gezien binnen 8 dagen) als kaarten met 3 foto's, specs, beschrijving, flip (verkoopschatting uit de fietsen van hetzelfde model: mediaan van ≥ 3 snel verkochte — ≤ 7 dagen weg of gereserveerd en weg, `sold_fast()` — anders vraagprijzen × 0,875; zonder kosten), upgrade t.o.v. `mijn_fiets.md` en waardescore; weergaven Te beoordelen / Favorieten / Mijn biedingen / Mijn flips (de fietsen van /flips, `own_flips_html()`) / Alle / Weggezet / Modellen (de lijst met alle modellen, zoeken, sorteren, nieuw model) / Onderdelen (`spares.py`) / Patronen, filters en sneltoetsen. Op de kaart klopt / ander model / bouwjaar / ontkoppelen (`POST /racefietsen/model`, tabellen `bike_model`/`bike_link`, migratie 19); na 3 dezelfde correcties een voorstel voor een regel bovenaan Modellen (`rules_json()`, `POST /racefietsen/regel`, tabel `bike_rule`, migratie 20; "nee" wordt onthouden). `refresh()` rekent alleen de geraakte fietsen opnieuw in de gecachte `Base` (met `Base.lock`), de rest bij de volgende ronde. Het zware deel rekent één keer per ronde (`LiveCache.racebikes`), de pagina krijgt JSON (`bikes`, `models`, `rules`) en tekent zelf; de vergelijkingslijst per fiets komt pas bij openklappen (`GET /racefietsen/vergelijk`, `COMPS_PATH`: hij was 2/3 van de pagina). `python racebikes.py jaar N` (koopjes.py, `year_budget`): de advertentiepagina van hooguit 20 goedkope fietsen zonder bouwjaar (≥ 15% onder de schatting), nooit twee keer, voor de volledige omschrijving, en framehoogte/materiaal/rem uit de Kenmerken zoals een ronde (`plan_years()`, `lookup_years()`, `recheck.save_page_specs()`). Weg-redenen `marks.BIKE_REASONS`; "geen racefiets" komt niet terug bij een lagere prijs.
+`/racefietsen` in `dashboard.py --serve`: alle racefietsen uit `koopjes.db` als kaarten.
+
+- **Actief** = gezien binnen 8 dagen. Per kaart 3 foto's, specs, beschrijving, flip, upgrade t.o.v. `mijn_fiets.md` en waardescore.
+- **Flip**: verkoopschatting uit de fietsen van hetzelfde model — de mediaan van ≥ 3 snel verkochte (≤ 7 dagen weg, of gereserveerd en weg: `sold_fast()`), anders vraagprijzen × 0,875; zonder kosten.
+- **Weergaven**: Te beoordelen / Favorieten / Mijn biedingen / Mijn flips (de fietsen van /flips, `own_flips_html()`) / Alle / Weggezet / Modellen (alle modellen: zoeken, sorteren, nieuw model) / Onderdelen (`spares.py`) / Patronen; filters en sneltoetsen. Weg-redenen `marks.BIKE_REASONS`; "geen racefiets" komt niet terug bij een lagere prijs.
+- **Model op de kaart**: klopt / ander model / bouwjaar / ontkoppelen (`POST /racefietsen/model`, tabellen `bike_model`/`bike_link`, migratie 19). Na 3 dezelfde correcties een voorstel voor een regel bovenaan Modellen (`rules_json()`, `POST /racefietsen/regel`, tabel `bike_rule`, migratie 20; "nee" wordt onthouden).
+- **Snelheid**: het zware deel rekent één keer per ronde (`LiveCache.racebikes`); de pagina krijgt JSON (`bikes`, `models`, `rules`) en tekent zelf. `refresh()` rekent na een klik alleen de geraakte fietsen opnieuw in de gecachte `Base` (met `Base.lock`). De vergelijkingslijst per fiets komt pas bij openklappen (`GET /racefietsen/vergelijk`, `COMPS_PATH`: hij was 2/3 van de pagina).
+- **Bouwjaar opzoeken**: `python racebikes.py jaar N` (vanuit `koopjes.py`, `year_budget`) haalt de advertentiepagina van hooguit 20 goedkope fietsen zonder bouwjaar (≥ 15% onder de schatting), nooit twee keer, voor de volledige omschrijving en framehoogte/materiaal/rem uit de Kenmerken (`plan_years()`, `lookup_years()`, `recheck.save_page_specs()`).
 
 ### `bike_identity.py`
 
-Welke fiets is het: `identify()` = `recognize()` (wat de advertentie zegt) + `resolve()` (koppeling of regel erop, zonder de tekst opnieuw te lezen). Het model (`Identity.name`) is de eigen koppeling, anders een toegepaste regel, anders het referentiemodel uit `reference_bikes.csv` (tenzij de titel preciezer is: "Trek Domane SL6" tegen het vangnet "Trek Domane"), anders merk + model + uitvoering uit de titel (modelnamen per merk uit `reference_bike_catalog.csv` of het woord na het merk; uitvoering `variant_of()`: "SL6", "Advanced 2"). Sleutels `exact`/`coarse` via `model_key()` (zonder spaties en haakjes). Bouwjaar (eigen jaar gaat voor) en tijdperk (rem, elektronisch, versnellingen — zonder jaartallen). `comparables()`: minstens 5 per trede (model ±2 jaar → model → familie ±2 → familie tijdperk → opbouw ±2 → onzeker), anders nog eens met 3 "(weinig)"; zonder model geen schatting. `Pool.replace()` verplaatst één fiets. `NOT_A_FAMILY` houdt gewone woorden ("maat", "cross") buiten de modelnamen.
+Welke fiets is het: `identify()` = `recognize()` (wat de advertentie zegt) + `resolve()` (koppeling of regel erop, zonder de tekst opnieuw te lezen).
+
+- **Het model** (`Identity.name`), eerste die past: de eigen koppeling; een toegepaste regel; het referentiemodel uit `reference_bikes.csv` (tenzij de titel preciezer is: "Trek Domane SL6" tegen het vangnet "Trek Domane"); anders merk + model + uitvoering uit de titel (modelnamen per merk uit `reference_bike_catalog.csv` of het woord na het merk; uitvoering `variant_of()`: "SL6", "Advanced 2"). `NOT_A_FAMILY` houdt gewone woorden ("maat", "cross") buiten de modelnamen.
+- **Sleutels** `exact`/`coarse` via `model_key()` (zonder spaties en haakjes). Bouwjaar (eigen jaar gaat voor) en tijdperk (rem, elektronisch, versnellingen — zonder jaartallen).
+- **Vergelijken**: `comparables()` zoekt minstens 5 per trede (model ±2 jaar → model → familie ±2 → familie tijdperk → opbouw ±2 → onzeker), anders nog eens met 3 "(weinig)"; zonder model geen schatting. `Pool.replace()` verplaatst één fiets.
 
 ### `spares.py`
 
@@ -152,7 +163,12 @@ Reserves voor het flippen: losse fietsonderdelen die de rondes al tegenkomen (ge
 
 ### `dossier.py`
 
-De knop dossier op `/racefietsen` (sneltoets d) en `python dossier.py <id> [--ophalen] [--uit pad]`: alles over één racefiets als Markdown om aan Claude te geven, met de vragen bovenaan (goede deal, wat vernieuwen, analyse van de vergelijkingen). Haalt de pagina op zoals controleer (`recheck_listing(details=True)`: bewaart ook wat een ronde bewaart bij een opgehaalde pagina — omschrijving, en framehoogte/materiaal/rem uit de Kenmerken, `recheck.save_page_specs()`), plus alle foto's, de overige Kenmerken en verkoper (alleen in het dossier, zonder namen); een vraagprijs alleen als die zeker is (`asking_from_row()`: een ronde schrijft `price_type` vaak niet weg); de vergelijkingsfietsen als CSV (trede van de schatting plus de rest van model en familie, hooguit 300: eerst de snel verkochte, dan elke groep naar verhouding en gelijkmatig over de prijzen, `pick_rows()`). Rekent niets nieuws: schatting en oordeel zijn die van `racebikes.py`.
+De knop dossier op `/racefietsen` (sneltoets d) en `python dossier.py <id> [--ophalen] [--uit pad]`: alles over één racefiets als Markdown om aan Claude te geven, met de vragen bovenaan (goede deal, wat vernieuwen, analyse van de vergelijkingen).
+
+- Haalt de pagina op zoals controleer (`recheck_listing(details=True)`) en bewaart wat een ronde ook bewaart: omschrijving, en framehoogte/materiaal/rem uit de Kenmerken (`recheck.save_page_specs()`). Alle foto's, de overige Kenmerken en de verkoper staan alleen in het dossier, zonder namen.
+- Een vraagprijs alleen als die zeker is (`asking_from_row()`: een ronde schrijft `price_type` vaak niet weg).
+- De vergelijkingsfietsen als CSV: de trede van de schatting plus de rest van model en familie, hooguit 300 — eerst de snel verkochte, dan elke groep naar verhouding en gelijkmatig over de prijzen (`pick_rows()`).
+- Rekent niets nieuws: schatting en oordeel zijn die van `racebikes.py`.
 
 ## De eigen fiets: taxatie, kwaliteitsscore, upgrades
 
@@ -184,7 +200,14 @@ Naslag: [flips.md](flips.md) en [SHEETS.md](../SHEETS.md).
 
 ### `flips.py` + `flips_import/`
 
-De flippagina `/flips` in `dashboard.py --serve`: elke flip (fiets, spullen, en de trades uit Mijn flips) als kaart met fase en dagen in die fase, klussenlijst (onderdeel: geschat → echte prijs → gedaan; klus; reis met OV-korting vol/40%/gratis), winkelmandje per winkel, aanbiedingen per onderdeel (link plakken met prijs, "kies deze" zet winkel/link/schatting; tabel `flip_offer`, migratie 21; `clean_url()` haalt volgcodes weg), doelprijs + marktcheck, specs en concept-advertentietekst, foto's (`flip_fotos/`, niet in git), biedingen van kopers; bovenaan verdiend, netto na investeringen (gereedschap, `flip_task.trade_id` NULL of `investment`), wat erin zit. Migratie 17 (`flip`, `trade_stage`, `flip_task`, `flip_bid`, `flip_photo`); `trade.market` `fietsen`/`spullen` hoort bij geen dashboard. `python flips.py import <json>` leest een lijst in, `python flips.py bijwerken <json>` werkt bestaande regels bij (winkel, link, prijs) en voegt aanbiedingen toe.
+Het rekenwerk achter `/flips` (de pagina zelf: `flips_page.py`): elke flip (fiets, spullen, en de trades uit Mijn flips) met fase en dagen in die fase.
+
+- **Klussenlijst**: onderdeel (geschat → echte prijs → gedaan), klus, reis met OV-korting (vol/40%/gratis); winkelmandje per winkel.
+- **Aanbiedingen** per onderdeel: link plakken met prijs, "kies deze" zet winkel/link/schatting (tabel `flip_offer`, migratie 21; `clean_url()` haalt volgcodes weg).
+- Doelprijs + marktcheck, specs en concept-advertentietekst, foto's (`flip_fotos/`, niet in git), biedingen van kopers.
+- **Bovenaan**: verdiend, netto na investeringen (gereedschap: `flip_task.trade_id` NULL of `investment`), wat erin zit.
+- Tabellen van migratie 17: `flip`, `trade_stage`, `flip_task`, `flip_bid`, `flip_photo`. `trade.market` `fietsen`/`spullen` hoort bij geen dashboard.
+- `python flips.py import <json>` leest een lijst in; `python flips.py bijwerken <json>` werkt bestaande regels bij (winkel, link, prijs) en voegt aanbiedingen toe.
 
 ### `flips_sheets.py` + `flips_sheets.gs` + `SHEETS.md`
 
