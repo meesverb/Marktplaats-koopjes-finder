@@ -14,12 +14,12 @@ from unittest import mock
 
 from helpers import close_databases_before_cleanup, make_listing, repo_file
 
-import dashboard
 import db
 import distance as dm
 import flips as fl
 import marks as mr
 import racebikes as rb
+import server
 
 BIKE_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/{}-x"
 COMPUTER_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsaccessoires-fietscomputers/{}-x"
@@ -831,7 +831,7 @@ class LiveTest(Case):
 
     def setUp(self):
         super().setUp()
-        self.httpd = dashboard.make_server(self.db, 0, intake_path=self.dir / "geen_fiets.md")
+        self.httpd = server.make_server(self.db, 0, intake_path=self.dir / "geen_fiets.md")
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
         self.addCleanup(self.httpd.server_close)
@@ -919,13 +919,13 @@ class LiveTest(Case):
         def busy(db_path, form):
             raise sqlite3.OperationalError("database is locked")
 
-        with mock.patch.dict(dashboard.ACTIONS, {"/markeer": busy}):
+        with mock.patch.dict(server.ACTIONS, {"/markeer": busy}):
             data = self.live("/markeer", {"item_id": "c", "soort": "niet waard"})
-        self.assertEqual(data["message"], dashboard.DB_BUSY)
+        self.assertEqual(data["message"], server.DB_BUSY)
         with mock.patch.object(rb, "model_update", side_effect=sqlite3.OperationalError("database is locked")):
-            self.assertEqual(self.live(rb.MODEL_PATH, {"item_id": "c", "confirm": "1"})["message"], dashboard.DB_BUSY)
+            self.assertEqual(self.live(rb.MODEL_PATH, {"item_id": "c", "confirm": "1"})["message"], server.DB_BUSY)
         with mock.patch.object(rb, "reserve_update", side_effect=sqlite3.OperationalError("database is locked")):
-            self.assertEqual(self.live(rb.RESERVE_PATH, {"soorten": "cassette"})["message"], dashboard.DB_BUSY)
+            self.assertEqual(self.live(rb.RESERVE_PATH, {"soorten": "cassette"})["message"], server.DB_BUSY)
 
     def test_spares_choice_and_marking_a_part(self):
         conn = db.connect(self.db)

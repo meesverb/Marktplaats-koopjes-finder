@@ -231,7 +231,7 @@ rest veiliger.
   volgorde, en het aantal imports binnen functies is gedaald (nu 14 modules).
   *Gedaan 20-11-2026:* Anders dan gepland: op topniveau bleek er al geen kring te zijn; hij liep alleen via 28 imports binnen functies, en `Listing` naar `listing.py` verplaatsen haalde daar geen enkele van weg. Daarom (C1a) de opgeslagen upgraderegel van `upgrade_test.py` naar `upgrade.py` (`upgrade` en `report` hingen daardoor niet meer onder `upgrade_test` → `dashboard`), en (C1b) elke import binnen een functie die zonder kring naar boven kon, naar boven: nog 7 in 5 modules (was 28 in 14). Over: `racefiets_jev → report/upgrade` (het rapport, C3), `racebikes/upgrade_test → dashboard` (de gedeelde paginaschil, C2), `watches/koopjes → dashboard` (hun commando bouwt het dashboard: zo hoort het).
 
-- [ ] **C2 — `dashboard.py` (4.500 regels) per pagina opdelen.**
+- [x] **C2 — `dashboard.py` (4.500 regels) per pagina opdelen.**
   *Bevinding:* één bestand bevat de twee dashboards, de startpagina, de
   pagina `/fiets`, de hele pagina `/flips` (HTML, CSS, JavaScript én de
   acties), de cache en de webserver.
@@ -246,6 +246,7 @@ rest veiliger.
   gebruiken namen uit `dashboard`; laat die namen daar bestaan (opnieuw
   aanbieden) tot alles om is.
   *Klaar als:* `dashboard.py` onder de 2.000 regels zit en test A1 groen is.
+  *Gedaan 20-11-2026:* `dashboard.py` van 4.500 naar 1.566 regels, alles letterlijk verplaatst (een script dat definities verhuist en elke verwijzing bijwerkt): `pages.py` (paden, balk bovenaan, gedeelde CSS/JS, formulieren — zonder dit importeerden pagina's en dashboard elkaar), `flips_page.py`, `bike_page.py`, `start_page.py`, en verder dan gepland `server.py` (de webserver, `LiveCache`, de acties): `dashboard.py` is nu alleen de dashboards per markt; `python dashboard.py --serve` werkt als voorheen. C2d: `do_POST` leest het formulier één keer en kiest uit een routetabel (was zeven keer hetzelfde blok); `do_GET` is zo gelaten — 55 leesbare regels, een tabel was niet korter. Gecontroleerd: alle pagina's geven op een verse database exact dezelfde bytes als op 16-11.
 
 - [ ] **C3 — `racefiets_jev.py` (3.700 regels) in lagen.**
   *Wat, één laag per commit:* ophalen en parsen van zoekpagina's

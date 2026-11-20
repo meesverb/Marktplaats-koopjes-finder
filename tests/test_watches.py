@@ -20,6 +20,7 @@ import dashboard
 import db
 import markets as mk
 import patterns as pt
+import server
 import trades as tr
 import watches
 
@@ -384,7 +385,7 @@ class WatchLiveServerTest(WatchDatabaseTest):
     def setUp(self):
         super().setUp()
         self.sync(fenix_market() + [watch("c", "Garmin Fenix 6 Pro", 100.0)])
-        self.httpd = dashboard.make_server(self.db, 0)
+        self.httpd = server.make_server(self.db, 0)
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
         self.addCleanup(self.httpd.server_close)

@@ -17,11 +17,11 @@ from unittest import mock
 
 from helpers import close_databases_before_cleanup, make_listing, repo_file
 
-import dashboard
 import db
 import racebikes as rb
 import report
 import scoring as sc
+import server
 import upgrade as up
 import upgrade_test as ut
 import valuation as val
@@ -468,7 +468,7 @@ class OutputTest(BikesCase):
 
 class CacheTest(BikesCase):
     def test_a_new_rule_only_rescores_the_cached_racefietsen(self):
-        cache = dashboard.LiveCache()
+        cache = server.LiveCache()
         base = cache.racebikes(self.db, self.intake)
         before = {r.listing.item_id: r.upgrade_ok for r in base.rows}
         up.save_rule(self.db, {"upgrade": {"marge": -20, "onbekend": "gelijk"}})
@@ -484,7 +484,7 @@ class CacheTest(BikesCase):
         self.assertEqual({r.listing.item_id: r.upgrade_ok for r in cache.racebikes(self.db, self.intake).rows}, before)
 
     def test_upgrade_bikes_come_from_the_cache(self):
-        cache = dashboard.LiveCache()
+        cache = server.LiveCache()
         bikes = cache.upgrade_bikes(self.db, self.intake)
         self.assertEqual({b.listing.item_id for b in bikes}, {r.listing.item_id for r in cache.racebikes(self.db, self.intake).rows})
         self.label("tcr", "ja")
@@ -499,7 +499,7 @@ class ServerTest(BikesCase):
         self.start(self.intake)
 
     def start(self, intake):
-        self.httpd = dashboard.make_server(self.db, 0, intake_path=intake)
+        self.httpd = server.make_server(self.db, 0, intake_path=intake)
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
         self.addCleanup(self.httpd.server_close)

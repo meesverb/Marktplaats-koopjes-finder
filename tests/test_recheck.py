@@ -20,6 +20,8 @@ import dashboard
 import db
 import racefiets_jev as mp
 import recheck as rc
+import server
+import util
 
 CATEGORY_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsaccessoires-fietscomputers/{}-x"
 
@@ -354,7 +356,7 @@ class DashboardButtonTest(RecheckCase):
         self.check("c", listing_page("c", 9000))
         d = dashboard.load_dashboard(self.db)
         d.editable, d.token = True, "geheim"
-        self.assertIn(f"gecontroleerd {dashboard.local_time(self.later)}", dashboard.render(d))
+        self.assertIn(f"gecontroleerd {util.local_time(self.later)}", dashboard.render(d))
 
     def test_the_live_server_checks_and_comes_back_on_the_tab(self):
         import http.client
@@ -362,7 +364,7 @@ class DashboardButtonTest(RecheckCase):
         import urllib.parse
 
         self.sync(self.market() + [computer("c", "Garmin Edge 530", 90.0)])
-        httpd = dashboard.make_server(self.db, 0)
+        httpd = server.make_server(self.db, 0)
         port = httpd.server_address[1]
         threading.Thread(target=lambda: httpd.serve_forever(poll_interval=0.02), daemon=True).start()
         self.addCleanup(httpd.server_close)

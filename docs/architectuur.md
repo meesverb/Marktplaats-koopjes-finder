@@ -68,7 +68,19 @@ Naslag: [dashboards.md](dashboards.md).
 
 ### `dashboard.py`
 
-De dashboards per markt (`markets.py`): `dashboard.html` (fietscomputers: Flips / Upgrades / Te beoordelen / Favorieten / Mijn biedingen / Mijn flips / Alle computers / Weggezet / Marktprijzen / Vinted / Patronen / Uitgefilterd; Te beoordelen en Weggezet zijn knoppen die Alle met een filter openen, `view_tab_labels()`) en `dashboard_horloges.html` (sporthorloges: zonder Upgrades en Vinted), uit `koopjes.db`. `koopjes.py` bouwt beide na elke ronde; `--markt sporthorloges`/`alle` met de hand. Leest alleen, behalve `--serve`: één adres voor alles (`/start`, met een balk bovenaan elke live pagina; de rapporten, het overzicht en `lijsten/` via `/bestanden/`, alleen die patronen: `SERVED_FILES`), toont beide live (`/` en `/horloges`) plus `/racefietsen` (`racebikes.py`), `/fiets` (`bike_comps.py`), `/upgrade` (`upgrade_test.py`) en `/flips`, en schrijft de eigen aan- en verkopen, met hun markt, de markeringen favoriet/weg en notities (`marks.py`), eigen biedingen (`own_bids.py`), de postcode voor de afstand (`distance.py`) en de keuzes op `/fiets`, en heeft per advertentie de knop controleer (`recheck.py`). Favoriet/weg, notitie en meenemen/niet gaan zonder herladen (JSON, `live_update()`); de knoppen zijn geen `<form>` per advertentie (duizenden formulieren maakten de pagina traag), `LiveCache` onthoudt het zware deel tot een ronde de database verandert (één opbouw tegelijk per pagina; `keep_warm()` rekent na het starten en na elke ronde alvast vooruit), en live komt de tab Alle pas van de server als je hem opent (`LAZY_PANELS`, `/paneel`; het geschreven bestand heeft alles).
+De dashboards per markt (`markets.py`): `dashboard.html` (fietscomputers: Flips / Upgrades / Te beoordelen / Favorieten / Mijn biedingen / Mijn flips / Alle computers / Weggezet / Marktprijzen / Vinted / Patronen / Uitgefilterd; Te beoordelen en Weggezet zijn knoppen die Alle met een filter openen, `view_tab_labels()`) en `dashboard_horloges.html` (sporthorloges: zonder Upgrades en Vinted), uit `koopjes.db`. `koopjes.py` bouwt beide na elke ronde; `--markt sporthorloges`/`alle` met de hand. Dezelfde pagina's live op `/` en `/horloges` via `server.py`. Favoriet/weg en notitie gaan zonder herladen (JSON, `live_update()`); de knoppen zijn geen `<form>` per advertentie (duizenden formulieren maakten de pagina traag), en live komt de tab Alle pas van de server als je hem opent (`LAZY_PANELS`, `/paneel`; het geschreven bestand heeft alles). `python dashboard.py --serve` start de server.
+
+### `server.py`
+
+De live server van `dashboard.py --serve`: één adres (127.0.0.1, met token) voor alles. `DashboardHandler` heeft de routes (GET per pagina; POST leest het formulier één keer en kiest de actie uit een tabel), `ACTIONS` de knoppen van de dashboards (gekocht, favoriet/weg, notitie, controleer, bieden, postcode, Mijn flips), en `LiveCache` onthoudt het zware deel tot een ronde de database verandert (één opbouw tegelijk per pagina; `keep_warm()` rekent na het starten en na elke ronde alvast vooruit). Schrijft alleen wat de eigenaar invoert: aan- en verkopen met hun markt, markeringen en notities (`marks.py`), eigen biedingen (`own_bids.py`), de postcode (`distance.py`), de keuzes op `/fiets`.
+
+### `pages.py`
+
+De gedeelde bouwstenen van elke live pagina: de paden (`START_PATH`, `RACEBIKES_PATH`, ...), de balk bovenaan (`site_nav()`), de gedeelde CSS en JavaScript, `act()` (een knop zonder `<form>`), tabellen en tegels, en het lezen van formulieren (`FormError`, `parse_euro()`, `parse_day()`). Importeert geen pagina, zodat de pagina's elkaar niet in een kring nodig hebben.
+
+### `start_page.py`, `bike_page.py`, `flips_page.py`
+
+De pagina's `/start` (met `/bestanden/`: de rapporten, het overzicht en `lijsten/`, alleen de patronen in `SERVED_FILES`, en de knoppen per ronde via `launcher.py`), `/fiets` (de vergelijkingslijst van `bike_comps.py`, meenemen of niet) en `/flips` (de HTML en de acties `FLIP_ACTIONS`; het rekenwerk staat in `flips.py`).
 
 ### `markets.py`
 

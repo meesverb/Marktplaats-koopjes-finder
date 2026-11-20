@@ -231,7 +231,7 @@ def _own_parts(db_path) -> list:
 
 
 def _local(value: Optional[str]) -> str:
-    """Een tijd op de eigen klok, zoals dashboard.local_time(): de database
+    """Een tijd op de eigen klok, zoals util.local_time(): de database
     bewaart UTC ("...+00:00"), de pagina "...Z". Zonder tijdzone (een eigen
     bod, een datum) blijft hij zoals hij is."""
     text = value or ""

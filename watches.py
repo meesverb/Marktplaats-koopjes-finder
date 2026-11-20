@@ -177,7 +177,7 @@ def main(argv: Optional[list[str]] = None) -> int:
               "nachtronde gedraaid?")
         return 0
 
-    print(f"Sporthorloges in {args.db}, laatste ronde {dashboard.local_time(d.newest_seen)}: "
+    print(f"Sporthorloges in {args.db}, laatste ronde {util.local_time(d.newest_seen)}: "
           f"{len(d.listings)} actief, {len(d.items)} met bekend model, {len(d.unknown_items)} model onbekend, "
           f"{len(d.excluded)} uitgefilterd (bandjes, andere merken, defect, gezocht).")
     resale = dashboard.model_resale(d)

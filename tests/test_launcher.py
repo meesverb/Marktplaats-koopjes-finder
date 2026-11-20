@@ -12,10 +12,10 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import dashboard
 import db
 import koopjes
 import launcher
+import server
 from test_koopjes import write_config
 
 NOW = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
@@ -106,7 +106,7 @@ class StartButtonTest(unittest.TestCase):
             return FakeProc()
         launcher.start = fake_start
         self.addCleanup(setattr, launcher, "start", original)
-        self.httpd = dashboard.make_server(self.db, 0, files_dir=self.dir, photo_dir=self.dir / "f",
+        self.httpd = server.make_server(self.db, 0, files_dir=self.dir, photo_dir=self.dir / "f",
                                            sheets_config=self.dir / "sheets.json")
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()

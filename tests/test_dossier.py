@@ -19,11 +19,11 @@ from unittest import mock
 import requests
 from helpers import FakeResponse, FakeSession, close_databases_before_cleanup, make_listing, repo_file
 
-import dashboard
 import db
 import dossier as ds
 import racebikes as rb
 import recheck as rc
+import server
 
 BIKE_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/{}-x"
 TITLE = "Giant Defy Composite 2012 racefiets"
@@ -426,7 +426,7 @@ class LiveTest(Case):
         patcher = mock.patch.object(rc, "make_session", lambda: self.session)
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.httpd = dashboard.make_server(self.db, 0, intake_path=self.intake)
+        self.httpd = server.make_server(self.db, 0, intake_path=self.intake)
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
         self.addCleanup(self.httpd.server_close)

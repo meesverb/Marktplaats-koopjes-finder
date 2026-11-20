@@ -12,6 +12,7 @@ from helpers import make_listing
 
 import dashboard
 import db
+import server
 
 CATEGORY_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsaccessoires-fietscomputers/{}-x"
 BIKE_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefietsen/{}-x"
@@ -415,7 +416,7 @@ class LiveServerTest(unittest.TestCase):
                              datetime.now(timezone.utc).isoformat())
         finally:
             conn.close()
-        self.httpd = dashboard.make_server(self.db, 0)
+        self.httpd = server.make_server(self.db, 0)
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
         self.addCleanup(self.httpd.server_close)
@@ -680,7 +681,7 @@ class LiveServerTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/paneel?markt=fietscomputers&naam=alle", host="evil.example")[0], 403)
 
     def test_the_heavy_part_is_remembered_until_a_round_changes_the_data(self):
-        cache = dashboard.LiveCache()
+        cache = server.LiveCache()
         first = cache.dashboard(self.db, dashboard.mk.COMPUTERS)
         conn = db.connect(self.db)
         try:
@@ -706,7 +707,7 @@ class LiveServerTest(unittest.TestCase):
         import threading
         import time
         from unittest import mock
-        cache = dashboard.LiveCache()
+        cache = server.LiveCache()
         real = dashboard.load_base
 
         def slow(*args, **kwargs):
@@ -728,7 +729,7 @@ class LiveServerTest(unittest.TestCase):
         import threading
         import time
         from unittest import mock
-        cache = dashboard.LiveCache()
+        cache = server.LiveCache()
         cache.dashboard(self.db, dashboard.mk.COMPUTERS)
         started = threading.Event()
 
@@ -737,7 +738,7 @@ class LiveServerTest(unittest.TestCase):
             time.sleep(0.6)
             return []
 
-        with mock.patch.object(dashboard.val, "fetch_comp_candidates", side_effect=slow):
+        with mock.patch.object(server.val, "fetch_comp_candidates", side_effect=slow):
             worker = threading.Thread(target=cache.comps, args=(self.db,))
             worker.start()
             started.wait(5)
@@ -771,9 +772,9 @@ class KeepWarmTest(unittest.TestCase):
                 self.calls += 1
 
         cache = mock.Mock()
-        with mock.patch.object(dashboard, "data_stamp", side_effect=lambda *_: next(stamps)), \
-                mock.patch.object(dashboard.Path, "exists", return_value=True):
-            dashboard.keep_warm(cache, "koopjes.db", "mijn_fiets.md", Stop(), every=0)
+        with mock.patch.object(server, "data_stamp", side_effect=lambda *_: next(stamps)), \
+                mock.patch.object(server.Path, "exists", return_value=True):
+            server.keep_warm(cache, "koopjes.db", "mijn_fiets.md", Stop(), every=0)
         # A meteen; B en C veranderden nog (een ronde loopt); C bleef staan: dan.
         self.assertEqual(cache.warm.call_count, 2)
 
@@ -791,9 +792,9 @@ class KeepWarmTest(unittest.TestCase):
 
         cache = mock.Mock()
         cache.warm.side_effect = RuntimeError("oude database")
-        with mock.patch.object(dashboard, "data_stamp", return_value="A"), \
-                mock.patch.object(dashboard.Path, "exists", return_value=True):
-            dashboard.keep_warm(cache, "koopjes.db", "mijn_fiets.md", Stop(), every=0)
+        with mock.patch.object(server, "data_stamp", return_value="A"), \
+                mock.patch.object(server.Path, "exists", return_value=True):
+            server.keep_warm(cache, "koopjes.db", "mijn_fiets.md", Stop(), every=0)
         self.assertEqual(cache.warm.call_count, 1)  # niet elke minuut opnieuw proberen
 
 
@@ -805,7 +806,7 @@ class AbortedConnectionTest(unittest.TestCase):
             def write(self, data):
                 raise ConnectionAbortedError(10053, "verbinding verbroken")
 
-        handler = dashboard.DashboardHandler.__new__(dashboard.DashboardHandler)
+        handler = server.DashboardHandler.__new__(server.DashboardHandler)
         handler.wfile = Wfile()
         handler.send_response = handler.send_header = lambda *a: None
         handler.end_headers = lambda: None
@@ -844,7 +845,7 @@ class BikePageTest(unittest.TestCase):
             db.sync_listing_specs(conn, {"sport": {"frame_material": "aluminium"}}, source=db.SITE_SPEC_SOURCE)
         finally:
             conn.close()
-        self.httpd = dashboard.make_server(self.db, 0, intake_path=repo_file("mijn_fiets.md"))
+        self.httpd = server.make_server(self.db, 0, intake_path=repo_file("mijn_fiets.md"))
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
         self.addCleanup(self.httpd.server_close)

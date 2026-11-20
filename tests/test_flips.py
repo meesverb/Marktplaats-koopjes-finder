@@ -19,6 +19,7 @@ import db
 import flips as fl
 import flips_sheets as fs
 import pages as pg
+import server
 
 HERE = Path(__file__).resolve().parent.parent
 CUBE = HERE / "flips_import" / "cube_peloton_pro.json"
@@ -317,7 +318,7 @@ class ServeTest(FlipTest):
         super().setUp()
         self.trade = self.bike()
         self.task = fl.add_task(self.conn, self.trade, kind="onderdeel", title="Cassette", est_eur=29.95)
-        self.httpd = dashboard.make_server(self.db, 0, photo_dir=self.dir / "fotos",
+        self.httpd = server.make_server(self.db, 0, photo_dir=self.dir / "fotos",
                                            sheets_config=self.dir / "sheets.json")
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
@@ -655,7 +656,7 @@ class StartTest(unittest.TestCase):
         (self.dir / "logs" / "rondes.jsonl").write_text(json.dumps(
             {"slot": "nacht", "started_at": "2026-09-29T01:00:00+00:00", "finished_at": "2026-09-29T02:00:00+00:00",
              "status": "ok", "new": 7}) + "\n")
-        self.httpd = dashboard.make_server(self.db, 0, files_dir=self.dir, photo_dir=self.dir / "fotos",
+        self.httpd = server.make_server(self.db, 0, files_dir=self.dir, photo_dir=self.dir / "fotos",
                                            sheets_config=self.dir / "sheets.json")
         self.port = self.httpd.server_address[1]
         threading.Thread(target=lambda: self.httpd.serve_forever(poll_interval=0.02), daemon=True).start()
