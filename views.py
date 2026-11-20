@@ -214,7 +214,6 @@ class Latest:
     observed_at: str
     since: Optional[str]
     fav_delta: Optional[int] = None  # likes erbij sinds de meting daarvoor
-    views_delta: Optional[int] = None
     previous_at: Optional[str] = None
 
     @property
@@ -239,7 +238,7 @@ def latest(observations: list[dict]) -> Optional[Latest]:
         return last[key] - prev[key]
 
     return Latest(last.get("views"), last.get("favorites"), last.get("observed_at") or "",
-                  last.get("online_since"), delta("favorites"), delta("views"),
+                  last.get("online_since"), delta("favorites"),
                   prev.get("observed_at") if prev else None)
 
 

@@ -447,7 +447,7 @@ class DatabaseTest(unittest.TestCase):
         again = val.upsert_owned_item(self.conn, kind="bike", label="Giant Defy Composite",
                                       specs={"model_year": "2012", "speeds": "10"})
         self.assertEqual(first, again)
-        rows = val.load_owned_items(self.conn)
+        rows = self.conn.execute("SELECT * FROM owned_item").fetchall()
         self.assertEqual(len(rows), 1)
         self.assertEqual(json.loads(rows[0]["specs_json"])["speeds"], "10")
 
@@ -537,23 +537,6 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("E2: gemeten correctie", out.getvalue())
         self.assertNotIn("E2: heuristische correctie", out.getvalue())
-
-    def test_component_prices_are_read_per_model(self):
-        self.conn.execute(
-            "INSERT INTO model (kind, pattern, model) VALUES ('wheelset', 'csc 50', 'CSC 50mm')"
-        )
-        model_id = self.conn.execute(
-            "SELECT id FROM model WHERE pattern = 'csc 50'"
-        ).fetchone()["id"]
-        for price in (180.0, 220.0):
-            self.conn.execute(
-                "INSERT INTO component_price (model_id, observed_at, price_eur) VALUES (?, ?, ?)",
-                (model_id, self.now, price),
-            )
-        self.conn.commit()
-
-        self.assertEqual(sorted(val.fetch_component_prices(self.conn, model_id)), [180.0, 220.0])
-        self.assertEqual(val.fetch_component_prices(self.conn, model_id + 99), [])
 
 
 class EndToEndTest(DatabaseTest):

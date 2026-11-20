@@ -167,7 +167,7 @@ rest veiliger.
   geeft.
   *Gedaan 20-11-2026:* `racefiets_jev.listing_from_row(row, site_specs, places)` (kolommen die de SELECT mist blijven leeg; met de biedkolommen erbij ook `apply_stored_bids()`) vervangt `racebikes._listing()` en de kopieën in `dashboard.load_active_listings()` en `upgrade.fetch_candidate_listings()`; `dossier`, `spares` en `upgrade_test` roepen hem direct aan. `racebikes._listing()` deed `apply_stored_bids()` ook nog eens zelf over. `recheck.py` bouwt zijn Listing uit de advertentiepagina, niet uit een rij: daar hoort hij niet bij. De drie SELECT-kolomlijsten zijn gebleven (ze verschillen bewust: dashboard vangt een database van vóór migratie 11/14 op).
 
-- [ ] **B4 — Beslissen over drie functies die alleen een test aanroept.**
+- [x] **B4 — Beslissen over drie functies die alleen een test aanroept.**
   *Eerst vragen aan de eigenaar; dit zijn keuzes, geen opruimwerk.*
   - `valuation.fetch_component_prices()`: de lezer voor E3 (som der delen).
     `valuation.main()` maakt de wielset aan als `Component(label=...)`
@@ -181,6 +181,7 @@ rest veiliger.
   Ook hier: `views.Latest.views_delta` wordt uitgerekend maar nergens
   getoond, `valuation.CompCandidate.is_bid` wordt gezet maar nooit gelezen,
   en de kolom `listing_mark.note` is leeg sinds migratie 15.
+  *Gedaan 20-11-2026:* De eigenaar zei "bouw dit allemaal, met zo min mogelijk code"; mijn keuzes, terug te draaien uit git: **weg** `db.export_csv()` (+ `_format_price`, zes tests: niets riep hem aan, `reference_overview.py` en `check_reference_overlaps.py` lezen de CSV zelf), `valuation.fetch_component_prices()` (en zijn test: niets vult `component_price`, dus aansluiten veranderde niets), `valuation.load_owned_items()` (de test leest de tabel nu zelf), `views.Latest.views_delta`, `CompCandidate.is_bid`. **Blijft:** E3 in `value_subject()` — hij telt niet mee zolang `component_price` leeg is en zegt dat in de bewijsregels (`docs/eigen-fiets.md` zei dat al). De kolom `listing_mark.note` blijft: een kolom laat zich niet terugdraaien (valkuil in CLAUDE.md).
 
 - [ ] **B5 — De gedeelde opstart van `valuation.py`, `upgrade.py` en
   `scoring.py`.**

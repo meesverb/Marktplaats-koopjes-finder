@@ -20,10 +20,6 @@ format changes. What's here:
 - save_watchlist()/get_watchlist()/list_watchlists()/delete_watchlist(), the
   named searches of fase 8. racefiets_jev.py decides which filters exist and
   how a watchlist run is kept apart from the regular queries.
-- export_csv(), which writes the `model` table back out in
-  reference_prices.csv's column format, so reference_overview.py and
-  check_reference_overlaps.py (both of which read that format through
-  racefiets_jev.load_reference_data()) keep working unchanged.
 
 Never write a derived valuation back into listing_price or component_price —
 those two tables are raw observations only, and a valuation feeding back into
@@ -799,7 +795,7 @@ def _import_reference_prices(conn: sqlite3.Connection, path: str) -> int:
     The free-text `specs` column and the `better_than_baseline` flag don't
     have their own columns on `model` (that table is shared with bike/part
     models that don't have either concept), so both go into specs_json as
-    {"specs": ..., "better_than_baseline": ...}. export_csv() reverses this.
+    {"specs": ..., "better_than_baseline": ...}.
 
     Three optional columns go straight into `model`: `kind`, `brand` and
     `source_url`. A fourth, `frame_material`, goes into specs_json. reference_prices.csv has none of them and imports exactly
@@ -1759,66 +1755,6 @@ def list_stats(conn: sqlite3.Connection, item_ids=None) -> dict[str, list[dict]]
 
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _format_price(value) -> str:
-    """Write a whole number back as "110", not "110.0". SQLite hands back a
-    REAL, so without this every priced row in reference_prices.csv changes
-    the moment the file is exported — a diff full of noise in a file that is
-    maintained (and reviewed) by hand."""
-    if value is None:
-        return ""
-    if float(value).is_integer():
-        return str(int(value))
-    return str(float(value))
-
-
-def export_csv(conn: sqlite3.Connection, path: str, kind: str = "other") -> int:
-    """Write one kind of `model` row back out as reference_prices.csv's exact
-    column format (pattern,label,original_price_eur,specs,score,
-    better_than_baseline), so racefiets_jev.load_reference_data() — and
-    therefore reference_overview.py and check_reference_overlaps.py — can
-    still read it. Returns the number of rows written.
-
-    The kind filter is the point, not a detail: `model` is one table for
-    speakers, bikes, groupsets and accessories alike, while
-    reference_prices.csv is read as one flat list of patterns matched against
-    whatever query is running. Exporting every kind at once would put a
-    "Giant Defy" pattern in the same file as the speaker rows, where it gets
-    matched against speaker titles. Fase 7 adds bike rows, so each kind needs
-    its own file."""
-    rows = conn.execute(
-        "SELECT pattern, model, original_price_eur, specs_json, score FROM model "
-        "WHERE kind = ? ORDER BY id",
-        (kind,),
-    ).fetchall()
-
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(
-            ["pattern", "label", "original_price_eur", "specs", "score", "better_than_baseline"]
-        )
-        for row in rows:
-            try:
-                extra = json.loads(row["specs_json"] or "{}")
-            except json.JSONDecodeError:
-                print(
-                    f"warning: specs_json van {row['model']!r} is niet te lezen; "
-                    "specs en better_than_baseline blijven leeg.",
-                    file=sys.stderr,
-                )
-                extra = {}
-            writer.writerow(
-                [
-                    row["pattern"],
-                    row["model"],
-                    _format_price(row["original_price_eur"]),
-                    extra.get("specs", ""),
-                    row["score"] or "",
-                    "1" if extra.get("better_than_baseline") else "0",
-                ]
-            )
-    return len(rows)
 
 
 # --- Own bike models and links (migration 19) -----------------------------------

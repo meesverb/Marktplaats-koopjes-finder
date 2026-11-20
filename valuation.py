@@ -123,7 +123,6 @@ class CompCandidate:
     url: str
     price_eur: float
     text: str
-    is_bid: bool = False
     days_online: Optional[int] = None
     disappeared: bool = False
     specs: dict[str, str] = field(default_factory=dict)
@@ -594,27 +593,12 @@ def candidate_from_row(
         url=row["url"] or "",
         price_eur=float(row["price_eur"]),
         text=f"{title} {description}".lower(),
-        is_bid=bool(row["is_bid"]),
         days_online=days_online,
         disappeared=disappeared,
         specs=specs,
         groupset_tier=tier,
         reference_material=reference_material,
     )
-
-
-def fetch_component_prices(conn: sqlite3.Connection, model_id: int) -> list[float]:
-    """De waargenomen prijzen voor één onderdeel. Leeg is een geldig antwoord:
-    dan weegt E3 voor dat onderdeel niet mee."""
-    rows = conn.execute(
-        "SELECT price_eur FROM component_price WHERE model_id = ? AND price_eur IS NOT NULL",
-        (model_id,),
-    ).fetchall()
-    return [float(row["price_eur"]) for row in rows]
-
-
-def load_owned_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM owned_item ORDER BY id").fetchall()
 
 
 def upsert_owned_item(
