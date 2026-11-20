@@ -98,7 +98,7 @@ afgesproken onderdelen uit het productplan: B4), de zes `db.*_TABLES`
 Zonder vangnet is elke latere stap een gok. Deze drie zijn klein en maken de
 rest veiliger.
 
-- [ ] **A1 — Een test die elke route van de server opvraagt.**
+- [x] **A1 — Een test die elke route van de server opvraagt.**
   *Waarom:* de tests renderen losse stukken HTML; of `/start`, `/racefietsen`
   enz. op een verse en op een gevulde database een 200 geven is op 16-11 met
   de hand gecontroleerd.
@@ -108,8 +108,9 @@ rest veiliger.
   `/flips`, een onbekend pad → 404, `/bestanden/koopjes.db` → 404).
   *Klaar als:* de test faalt wanneer je in een van de `render()`-functies een
   fout zet.
+  *Gedaan 20-11-2026:* `LiveServerTest.test_every_page_answers` vraagt de zeven pagina's en drie 404's op; gecontroleerd dat hij faalt als `racebikes.render` een fout gooit.
 
-- [ ] **A2 — Een test die ongebruikte imports en namen vindt, zonder nieuwe
+- [x] **A2 — Een test die ongebruikte imports en namen vindt, zonder nieuwe
   dependency.**
   *Waarom:* `pyflakes` vond op 16-11 een twintigtal ongebruikte imports; die
   komen vanzelf terug.
@@ -119,6 +120,7 @@ rest veiliger.
   voor het pad geïmporteerd wordt). Niet meer dan dat: "ongebruikte functie"
   geeft te veel vals alarm (de server roept `do_GET` nooit zelf aan).
   *Klaar als:* een bewust toegevoegde `import os` de test laat falen.
+  *Gedaan 20-11-2026:* `tests/test_hygiene.py`: alles compileert, geen ongebruikte import (`# noqa` op de regel laat er een staan); gecontroleerd met een losse `import os`.
 
 - [ ] **A3 — De tests vanzelf laten draaien op GitHub.** *Eerst vragen aan de
   eigenaar:* dit voegt een bestand `.github/workflows/tests.yml` toe en
