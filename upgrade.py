@@ -1105,16 +1105,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-
-    try:
-        with open(args.mijn_fiets, encoding="utf-8") as f:
-            intake = f.read()
-        bike = val.parse_owner_bike(intake)
-    except FileNotFoundError:
-        print(f"fout: {args.mijn_fiets} niet gevonden", file=sys.stderr)
-        return 1
-    except ValueError as exc:
-        print(f"fout: {exc}", file=sys.stderr)
+    intake, bike = val.read_owner_bike(args.mijn_fiets)
+    if bike is None:
         return 1
 
     config = sc.load_config(args.config)

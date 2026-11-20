@@ -183,7 +183,7 @@ rest veiliger.
   en de kolom `listing_mark.note` is leeg sinds migratie 15.
   *Gedaan 20-11-2026:* De eigenaar zei "bouw dit allemaal, met zo min mogelijk code"; mijn keuzes, terug te draaien uit git: **weg** `db.export_csv()` (+ `_format_price`, zes tests: niets riep hem aan, `reference_overview.py` en `check_reference_overlaps.py` lezen de CSV zelf), `valuation.fetch_component_prices()` (en zijn test: niets vult `component_price`, dus aansluiten veranderde niets), `valuation.load_owned_items()` (de test leest de tabel nu zelf), `views.Latest.views_delta`, `CompCandidate.is_bid`. **Blijft:** E3 in `value_subject()` — hij telt niet mee zolang `component_price` leeg is en zegt dat in de bewijsregels (`docs/eigen-fiets.md` zei dat al). De kolom `listing_mark.note` blijft: een kolom laat zich niet terugdraaien (valkuil in CLAUDE.md).
 
-- [ ] **B5 — De gedeelde opstart van `valuation.py`, `upgrade.py` en
+- [x] **B5 — De gedeelde opstart van `valuation.py`, `upgrade.py` en
   `scoring.py`.**
   *Bevinding:* alle drie hebben dezelfde `--db`/`--mijn-fiets`-vlaggen en
   hetzelfde blok "bestand niet gevonden → fout: ..., return 1"; `upgrade.py`
@@ -191,6 +191,7 @@ rest veiliger.
   `listing_query`).
   *Wat:* één functie die de intake inleest en de foutmelding geeft, en één
   voor het queryfilter; de teksten van de meldingen blijven gelijk.
+  *Gedaan 20-11-2026:* `valuation.read_owner_bike(path)` geeft (tekst, fiets) of een foutmelding; de drie `main()`'s gebruiken hem, met dezelfde meldingen als voorheen. Het SQL-stukje voor `--query` (twee regels) en de twee argparse-regels zijn gebleven: een functie ervoor is niet korter.
 
 - [ ] **B6 — De zes `db.*_TABLES` worden één tabel per migratie.**
   *Bevinding:* `FLIP_TABLES`, `PLACE_TABLES`, `MODEL_TABLES`, `RULE_TABLES`,

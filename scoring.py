@@ -511,7 +511,6 @@ def fits_frame_size(
 
 def main(argv: Optional[list[str]] = None) -> int:
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser(
         description="Kwaliteitsscore van de eigen fiets uit mijn_fiets.md (fase 4).",
@@ -522,14 +521,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     import valuation as val
 
-    try:
-        with open(args.mijn_fiets, encoding="utf-8") as f:
-            bike = val.parse_owner_bike(f.read())
-    except FileNotFoundError:
-        print(f"fout: {args.mijn_fiets} niet gevonden", file=sys.stderr)
-        return 1
-    except ValueError as exc:
-        print(f"fout: {exc}", file=sys.stderr)
+    _, bike = val.read_owner_bike(args.mijn_fiets)
+    if bike is None:
         return 1
 
     config = load_config(args.config)

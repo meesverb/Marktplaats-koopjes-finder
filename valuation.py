@@ -693,6 +693,20 @@ def _plain(value: str) -> str:
     return value.replace("**", "").replace("*", "").strip()
 
 
+def read_owner_bike(path) -> tuple[str, Optional[OwnerBike]]:
+    """(tekst, fiets) uit het intakebestand voor de commando's (valuation,
+    upgrade, scoring); de fiets is None na een foutmelding op stderr."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        return text, parse_owner_bike(text)
+    except FileNotFoundError:
+        print(f"fout: {path} niet gevonden", file=sys.stderr)
+    except ValueError as exc:
+        print(f"fout: {exc}", file=sys.stderr)
+    return "", None
+
+
 def parse_owner_bike(markdown_text: str) -> OwnerBike:
     """`mijn_fiets.md` → het blok waarop getaxeerd wordt.
 
@@ -1059,15 +1073,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-
-    try:
-        with open(args.mijn_fiets, encoding="utf-8") as f:
-            bike = parse_owner_bike(f.read())
-    except FileNotFoundError:
-        print(f"fout: {args.mijn_fiets} niet gevonden", file=sys.stderr)
-        return 1
-    except ValueError as exc:
-        print(f"fout: {exc}", file=sys.stderr)
+    _, bike = read_owner_bike(args.mijn_fiets)
+    if bike is None:
         return 1
 
     subject = subject_from_owner_bike(bike)
