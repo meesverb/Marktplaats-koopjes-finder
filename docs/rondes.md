@@ -2,112 +2,131 @@
 
 [← README](../README.md) · [alle naslag](README.md)
 
-Hoe de zoekopdrachten vanzelf draaien: tijdsloten, wat een ronde doet, het overzicht en de logboeken.
-
-The easiest way to run all of this is not to type commands at all.
-`schedule.json` describes every search (a query plus its filters) and the
-time slots they run in; `koopjes.py` runs one slot:
+## Zo gebruik je het
 
 ```bash
-python koopjes.py status            # check schedule.json, see when each search last ran
-python koopjes.py run overdag       # one round, exactly as the scheduler will start it
-python koopjes.py schedule          # Task Scheduler (Windows) / cron lines, paths filled in
-python koopjes.py lists             # lijsten/beste_koopjes.txt and lijsten/zonder_referentie.txt
-python koopjes.py dashboard         # rebuild dashboard.html and dashboard_horloges.html without a round
+python koopjes.py status            # klopt schedule.json, wanneer draaide elke zoekopdracht
+python koopjes.py run overdag       # één ronde, precies zoals de planner hem start
+python koopjes.py schedule          # regels voor de Taakplanner (Windows) / cron, paden ingevuld
+python koopjes.py lists             # lijsten/beste_koopjes.txt en lijsten/zonder_referentie.txt
+python koopjes.py dashboard         # dashboard.html en dashboard_horloges.html opnieuw, zonder ronde
 ```
 
-Paste what `schedule` prints into a command prompt (Windows) or `crontab -e`
-(macOS/Linux) once, and the rounds run by themselves. What a round does:
+Plak eenmalig wat `schedule` print in een opdrachtprompt (Windows) of
+`crontab -e` (macOS/Linux), en de rondes draaien vanzelf. Een ronde starten
+kan ook met de knoppen onder *Rondes* op `/start` (zie
+[dashboards.md](dashboards.md)).
 
-1. takes a lock — a round that starts while another is still running is
-   skipped, so Marktplaats never gets two crawls at once;
-2. writes the searches into the watchlist table (see "Watchlists" in [zoeken.md](zoeken.md)), so
-   `schedule.json` stays the one place to change them;
-3. runs `racefiets_jev.py` once for all the slot's searches, with the slot's
-   `pages`, `sort` and `bid_lookup` — and once more, with `--no-html`, for
-   the searches marked `"report": false` (see below). A search can have its
-   own `"bid_lookup"`, which goes before the slot's (the sport watches use
-   `"fast"`, also by day, see "Sport watches" in [dashboards.md](dashboards.md)); it then runs in a call of its own;
-4. with a `"year_budget"`, runs `racebikes.py jaar <budget>`: at most that
-   many listing pages to find the year of road bikes that look cheap but
-   don't say their year (see [racefietsen.md](racefietsen.md)); with a `"views_budget"`,
-   runs `views.py meet <budget>`: at most that many listing pages to measure
-   views and saves (see "Views and saves" in [dashboards.md](dashboards.md));
-   with `"valuation": true`, runs `valuation.py`, so the valuation history
-   builds up by itself;
-5. rebuilds **`overzicht.html`**: per search the latest run, how many listings
-   are new / better than your reference / top deals / cheaper than before, the
-   new listings most worth a look, this run's new **slapers** with their first
-   photo (see "Slapers" in [rapport.md](rapport.md)), a link to each full report, the latest
-   valuation of your own bike, and the schedule;
-6. rebuilds **`dashboard.html`**, one page with every bike computer on
-   Marktplaats (see [dashboards.md](dashboards.md)), and **`dashboard_horloges.html`**,
-   the same for Garmin sport watches (see "Sport watches" in [dashboards.md](dashboards.md)). `overzicht.html`
-   links to both, and each dashboard to the other. A new flip is logged
-   ("Nieuwe flip: …", or "Nieuwe flip (horloges): …") and, in a slot with
-   `"open_browser": "auto"`, opens the dashboard it is on.
+`schedule.json` beschrijft elke zoekopdracht (een query met filters) en de
+tijdsloten waarin ze draaien. Het is de enige plek om ze te veranderen.
 
-After every round two plain-text lists are rewritten in `lijsten/`, written
-to be pasted into a conversation: `beste_koopjes.txt` (per search the upgrade
-candidates and the highest deal scores, each with its URL and the reasons
-behind the score; running bids left out, since their price is only the bid so
-far) and `zonder_referentie.txt` (complete road bikes from the last 14 days
-that no row in `reference_bikes.csv` recognises, grouped by brand and first
-model word, most frequent first — the gaps in the reference file).
+## Wat een ronde doet
 
-Everything a round prints goes to `logs/koopjes.log`. Relative paths in
-`schedule.json` are relative to that file, so it doesn't matter which
-directory the scheduler starts the round in.
+1. **Een slot nemen.** Begint een ronde terwijl er nog een loopt, dan wordt
+   hij overgeslagen: Marktplaats krijgt nooit twee crawls tegelijk.
+2. **De zoekopdrachten in de watchlist-tabel zetten** (zie "Watchlists" in
+   [zoeken.md](zoeken.md)), zodat `schedule.json` de enige bron blijft.
+3. **`racefiets_jev.py` draaien**, één keer voor alle zoekopdrachten van het
+   slot, met de `pages`, `sort` en `bid_lookup` van het slot — en nog een keer
+   met `--no-html` voor de zoekopdrachten met `"report": false` (zie onder).
+   Een zoekopdracht met een eigen `"bid_lookup"` gaat voor die van het slot
+   (de sporthorloges hebben `"fast"`, ook overdag; zie "Sport watches" in
+   [dashboards.md](dashboards.md)) en draait dan in een eigen aanroep.
+4. **Opzoeken met een budget.** Met `"year_budget"`: `racebikes.py jaar
+   <budget>` — hooguit zoveel advertentiepagina's om het bouwjaar te vinden
+   van racefietsen die goedkoop lijken maar hun jaar niet noemen (zie
+   [racefietsen.md](racefietsen.md)). Met `"views_budget"`: `views.py meet
+   <budget>` — hooguit zoveel pagina's om weergaven en likes te meten (zie
+   "Views and saves" in [dashboards.md](dashboards.md)). Met `"valuation":
+   true`: `valuation.py`, zodat de taxatiegeschiedenis vanzelf groeit.
+5. **`overzicht.html` opnieuw**: per zoekopdracht de laatste run, hoeveel
+   advertenties nieuw / beter dan je referentie / topdeal / goedkoper dan
+   eerder zijn, de nieuwe die het bekijken waard zijn, de nieuwe **slapers**
+   van deze run met hun eerste foto (zie "Slapers" in
+   [rapport.md](rapport.md)), een link naar elk rapport, de laatste taxatie
+   van je eigen fiets en het schema.
+6. **`dashboard.html` en `dashboard_horloges.html` opnieuw**: alle
+   fietscomputers resp. sporthorloges op Marktplaats (zie
+   [dashboards.md](dashboards.md)). Het overzicht linkt naar beide, en elk
+   dashboard naar het andere. Een nieuwe flip komt in het logboek ("Nieuwe
+   flip: …" of "Nieuwe flip (horloges): …") en opent, in een slot met
+   `"open_browser": "auto"`, het dashboard waar hij op staat.
 
-Every round, whatever its outcome, also leaves one line in
-`logs/rondes.jsonl` (slot, start time, `ok`/`fout`/`overgeslagen`, number of
-new listings; another path via `"rounds"` under `files`). `overzicht.html`
-shows the last 12 under **Laatste rondes** and `python koopjes.py status` the
-last 3, so you can see whether the scheduled rounds actually ran and reached
-Marktplaats.
+Na elke ronde worden twee tekstlijsten in `lijsten/` herschreven, bedoeld om
+in een gesprek te plakken:
 
-The shipped `schedule.json` follows a measurement of Marktplaats itself
-(September 2026, category racefietsen): 400-500 new listings a day, spread
-fairly evenly over 09:00-22:00 at 25-30 an hour, few at night. So:
+- `beste_koopjes.txt`: per zoekopdracht de upgradekandidaten en de hoogste
+  dealscores, elk met URL en de redenen achter de score. Lopende biedingen
+  staan er niet in: hun prijs is alleen het bod tot nu toe.
+- `zonder_referentie.txt`: complete racefietsen van de laatste 14 dagen die
+  geen rij in `reference_bikes.csv` herkent, gegroepeerd op merk en eerste
+  modelwoord, vaakste eerst — de gaten in het referentiebestand.
 
-| Slot | When | What |
+## Logboeken
+
+- Alles wat een ronde print gaat naar `logs/koopjes.log`. Relatieve paden in
+  `schedule.json` gaan uit van dat bestand, dus het maakt niet uit vanuit
+  welke map de planner de ronde start.
+- Elke ronde, hoe hij ook afloopt, laat één regel achter in
+  `logs/rondes.jsonl` (slot, starttijd, `ok`/`fout`/`overgeslagen`, aantal
+  nieuwe advertenties; een ander pad via `"rounds"` onder `files`). Het
+  overzicht toont de laatste 12 onder **Laatste rondes**, `python koopjes.py
+  status` de laatste 3: zo zie je of de geplande rondes echt draaiden en
+  Marktplaats bereikten.
+
+## De tijdsloten
+
+Het meegeleverde `schedule.json` volgt een meting aan Marktplaats zelf
+(september 2026, categorie racefietsen): 400-500 nieuwe advertenties per dag,
+vrij gelijkmatig verdeeld over 09:00-22:00 met 25-30 per uur, weinig 's nachts.
+
+| Slot | Wanneer | Wat |
 | --- | --- | --- |
-| `overdag` | 08:30, 13:30, 19:30 | racefietsen (every size and price since 30-09-2026; `/racefietsen` filters), newest first, 8 pages — 150-180 arrive between two runs, 8 pages leaves room. With the category set, "racefiets" returns the whole category (12780 results with the query, 12780 without, 23-09-2026), so a listing titled just "fiets" or "Cannondale CAAD10" is in there too |
-| `nacht` | 03:00 | complete crawls of "giant defy", "giant defy composite" (both in every category, see `/fiets` in [eigen-fiets.md](eigen-fiets.md)) and "ultegra 6700" (comps for your own bike, and complete, so sold listings are counted), the powermeter and bike computer searches, all Garmin, Polar, Suunto and Coros watches (`sporthorloges`, `polar`, `suunto`, `coros`: ~71 pages, plus a bid lookup for each of the ~370 "bieden" listings without a price), then `valuation.py` |
-| `computers` | 10:00, 14:00, 18:00, 22:00 | the newest bike computers and Garmin watches only, 2 pages each (3 requests per search, 6 a round), so a cheap flip doesn't wait for the night. Polar, Suunto and Coros only run at night: with ~5 new listings a day, 2 pages would fetch the same listings and bids every round. Watches: ~115 new on a Monday until 20:45 (28-09-2026), so 2 pages every 4 hours is enough there too. The whole category gets about 100-120 new listings a day, roughly a quarter of them a computer with a known model (measured 28-09-2026: at 18:40 "Vandaag" filled 3-4 pages newest first, "Gisteren" about 4), so 2 pages every 4 hours leaves room — also for the ~7 paid "Dagtoppers" Marktplaats puts on top of page 1 whatever the sort. For the bike computers `bid_lookup` `fast` cost 17 bid lookups a round on top of that, so the slot has `none`: a bidding bike computer shows under "Zonder prijs — bied maximaal" by day, and the night round fills in the running bid. The Garmin watches override that with their own `"bid_lookup": "fast"` (~15 lookups a round). A looked-up bid stays in the database until the next lookup (migration 11), so a round without lookups no longer wipes it. Being shallow, it never marks anything as gone: that stays with the night round |
-| `week` | Sunday 05:00 | every racefiets, complete, without bid lookups: with `"split": true` the search runs in parts that each stay under Marktplaats' ~5000 (see `--split` in [zoeken.md](zoeken.md)). ~250 requests of 100 listings, deliberately slow (at least 4 s apart, a minute's break every 40), ~30 minutes |
-| `defy` | by hand (`python koopjes.py run defy`) | every Giant Defy at once — the `giant-defy` and `giant-defy-composite` searches, complete, in every category, with bid lookups (~7 pages, a few minutes) — then `valuation.py` and both dashboards. For `/fiets` now rather than after the night round, which does the same every night. `koopjes.py schedule` leaves it out, `status` shows it as "handmatig" |
-| `horloges` | by hand (`python koopjes.py run horloges`) | all sport watches at once — the `sporthorloges`, `polar`, `suunto` and `coros` searches, complete, with bid lookups (~71 pages plus ~400 lookups, 15-20 minutes) — then both dashboards; `dashboard_horloges.html` opens if there's a new flip. The night round does the same every night; this slot is for looking now. `koopjes.py schedule` leaves it out, `status` shows it as "handmatig" |
+| `overdag` | 08:30, 13:30, 19:30 | racefietsen (elke maat en prijs sinds 30-09-2026; `/racefietsen` filtert), nieuwste eerst, 8 pagina's — tussen twee runs komen er 150-180 bij, 8 pagina's laat ruimte. Met de categorie ingesteld geeft "racefiets" de hele categorie (12780 resultaten met de query, 12780 zonder, 23-09-2026), dus ook een advertentie die alleen "fiets" of "Cannondale CAAD10" heet |
+| `nacht` | 03:00 | volledige crawls van "giant defy", "giant defy composite" (beide in elke categorie, zie `/fiets` in [eigen-fiets.md](eigen-fiets.md)) en "ultegra 6700" (vergelijkingsmateriaal voor je eigen fiets, en volledig, zodat verkochte advertenties meetellen), de zoekopdrachten powermeter en fietscomputer, alle Garmin-, Polar-, Suunto- en Coros-horloges (`sporthorloges`, `polar`, `suunto`, `coros`: ~71 pagina's, plus een biedopvraging voor elk van de ~370 "bieden"-advertenties zonder prijs), daarna `valuation.py` |
+| `computers` | 10:00, 14:00, 18:00, 22:00 | alleen de nieuwste fietscomputers en Garmin-horloges, 2 pagina's elk (3 verzoeken per zoekopdracht, 6 per ronde), zodat een goedkope flip niet op de nacht wacht. Polar, Suunto en Coros alleen 's nachts: met ~5 nieuwe per dag zou 2 pagina's elke ronde dezelfde advertenties en biedingen ophalen. Horloges: ~115 nieuwe op een maandag tot 20:45 (28-09-2026), dus 2 pagina's per 4 uur volstaat. De hele categorie fietscomputers krijgt ~100-120 nieuwe per dag, ongeveer een kwart een computer met bekend model (gemeten 28-09-2026: om 18:40 vulde "Vandaag" 3-4 pagina's nieuwste eerst, "Gisteren" ongeveer 4) — ruimte genoeg, ook voor de ~7 betaalde "Dagtoppers" die Marktplaats bovenaan pagina 1 zet, welke sortering ook. Voor de fietscomputers kostte `bid_lookup` `fast` 17 extra opvragingen per ronde, dus het slot heeft `none`: een biedende fietscomputer staat overdag onder "Zonder prijs — bied maximaal", en de nachtronde vult het lopende bod in. De Garmin-horloges hebben hun eigen `"bid_lookup": "fast"` (~15 opvragingen per ronde). Een opgevraagd bod blijft in de database tot de volgende opvraging (migratie 11). Omdat het slot ondiep is, markeert het nooit iets als verdwenen: dat doet de nachtronde |
+| `week` | zondag 05:00 | elke racefiets, volledig, zonder biedopvragingen: met `"split": true` draait de zoekopdracht in delen die elk onder Marktplaats' ~5000 blijven (zie `--split` in [zoeken.md](zoeken.md)). ~250 verzoeken van 100 advertenties, bewust langzaam (minstens 4 s ertussen, elke 40 een minuut pauze), ~30 minuten |
+| `defy` | met de hand (`python koopjes.py run defy`) | elke Giant Defy in één keer — `giant-defy` en `giant-defy-composite`, volledig, in elke categorie, met biedopvragingen (~7 pagina's, een paar minuten) — daarna `valuation.py` en beide dashboards. Voor `/fiets` nu in plaats van na de nachtronde, die elke nacht hetzelfde doet. `schedule` laat hem weg, `status` toont "handmatig" |
+| `horloges` | met de hand (`python koopjes.py run horloges`) | alle sporthorloges in één keer — `sporthorloges`, `polar`, `suunto` en `coros`, volledig, met biedopvragingen (~71 pagina's plus ~400 opvragingen, 15-20 minuten) — daarna beide dashboards; `dashboard_horloges.html` opent bij een nieuwe flip. `schedule` laat hem weg, `status` toont "handmatig" |
 
-Change the searches' filters (a `max_price` for your budget, say) and the
-times in `schedule.json`; `python koopjes.py status` tells you straight away
-if something in it is wrong. Searches accept the same filters as a watchlist,
-plus `"report": false` for a search whose listings only need to be in the
-database — the bike computer search has it: it used to query 17 brands,
-which gave 17 separate reports (`racefiets_report_garmin-edge.html`, …); now
-everything is on the dashboard, and those files are no longer written (old
-ones can be deleted). Slots take `searches`, `pages` (0 = everything), `sort`, `bid_lookup`,
-`times` (`"HH:MM"` or `"zo HH:MM"`, Dutch day abbreviations), `valuation`,
-`views_budget` (0-200, default 0: listing pages the round may fetch to
-measure views and saves; the shipped schedule has 40 at night, 15 per
-`overdag` round and 10 per `computers` round, ~125 requests a day),
-`year_budget` (0-20, default 0: listing pages the round may fetch to find
-the year of cheap road bikes; the shipped schedule has 20 in `overdag` and
-`nacht`, at most ~80 requests a day, fewer once the cheap ones are done) and
-`open_browser` (and a `note`, which is ignored). With `open_browser` `auto`,
-`overzicht.html` opens when a search *with* a report found new listings, and
-`dashboard.html` opens when the round found a new **flip** — a bike computer
-first seen this round, below its expected selling price after shipping, not
-bought by you and not reserved. The log names each one (`Nieuwe flip: €25
-winst — Garmin Edge 530 voor €90 — https://...`). A new listing in a search
-without a report doesn't open anything: in the bike computer category that is
-mostly an e-bike display.
+## `schedule.json` aanpassen
 
-A shallow round sorted newest first can tell when its pages weren't enough:
-if the bottom 5 listings of its last page were all new, the previous round
-wasn't reached and there may be new listings beyond that page. Only listings
-that pass the search's filters count: one outside the price or frame range
-never goes into the history, so it would look new every time. The log then
-says `let op: de onderste 5 advertenties op pagina 2 waren allemaal nieuw` —
-raise `pages`, or run the slot more often. (The bottom 5 rather than the
-whole page, because page 1 starts with the Dagtoppers, which are usually old.)
+Verander de filters van een zoekopdracht (een `max_price` voor je budget
+bijvoorbeeld) en de tijden; `python koopjes.py status` zegt meteen of er iets
+niet klopt.
+
+- **Zoekopdrachten** nemen dezelfde filters als een watchlist, plus
+  `"report": false` voor een zoekopdracht die alleen in de database hoeft. De
+  fietscomputers hebben dat: vroeger 17 merken met 17 losse rapporten
+  (`racefiets_report_garmin-edge.html`, …); nu staat alles op het dashboard en
+  worden die bestanden niet meer geschreven (oude mogen weg).
+- **Slots** nemen `searches`, `pages` (0 = alles), `sort`, `bid_lookup`,
+  `times` (`"HH:MM"` of `"zo HH:MM"`, Nederlandse dagafkortingen),
+  `valuation`, `open_browser` en een `note` (die wordt genegeerd), plus:
+  - `views_budget` (0-200, standaard 0): advertentiepagina's die de ronde mag
+    ophalen om weergaven en likes te meten. Meegeleverd: 40 's nachts, 15 per
+    `overdag`-ronde, 10 per `computers`-ronde, ~125 verzoeken per dag.
+  - `year_budget` (0-20, standaard 0): advertentiepagina's om het bouwjaar
+    van goedkope racefietsen te vinden. Meegeleverd: 20 in `overdag` en
+    `nacht`, hooguit ~80 verzoeken per dag, minder zodra de goedkope gedaan
+    zijn.
+- **`open_browser` `auto`**: `overzicht.html` opent als een zoekopdracht *met*
+  rapport nieuwe advertenties vond, en `dashboard.html` als de ronde een
+  nieuwe **flip** vond — een fietscomputer die deze ronde voor het eerst
+  gezien is, onder zijn verwachte verkoopprijs na verzending, niet door jou
+  gekocht en niet gereserveerd. Het logboek noemt hem (`Nieuwe flip: €25
+  winst — Garmin Edge 530 voor €90 — https://...`). Een nieuwe advertentie in
+  een zoekopdracht zonder rapport opent niets: in de categorie
+  fietscomputers is dat meestal een e-bike-display.
+
+## Waren de pagina's genoeg?
+
+Een ondiepe ronde, nieuwste eerst, ziet zelf wanneer zijn pagina's niet
+genoeg waren: waren de onderste 5 advertenties van zijn laatste pagina
+allemaal nieuw, dan is de vorige ronde niet gehaald en staan er misschien
+nieuwe voorbij die pagina. Alleen advertenties die door de filters van de
+zoekopdracht komen tellen: een buiten de prijs- of maatgrenzen komt nooit in
+de geschiedenis en zou elke keer nieuw lijken. Het logboek zegt dan `let op:
+de onderste 5 advertenties op pagina 2 waren allemaal nieuw` — verhoog
+`pages`, of draai het slot vaker. (De onderste 5 en niet de hele pagina,
+omdat pagina 1 met de Dagtoppers begint, en die zijn meestal oud.)
