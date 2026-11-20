@@ -897,8 +897,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--mijn-fiets", default=str(HERE / "mijn_fiets.md"))
     parser.add_argument("--uit", default=str(DEFAULT_OUT), help="waar de uitdraai komt (CSV)")
     args = parser.parse_args(argv)
-    if not Path(args.db).exists():
-        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+    if db.missing(args.db):
         return 1
     owner, problem = load_owner(args.db, args.mijn_fiets)
     if owner is None:

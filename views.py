@@ -539,8 +539,7 @@ def main(argv=None) -> int:
     parser.add_argument("aantal", type=int, nargs="?", default=10)
     parser.add_argument("--db", default="koopjes.db")
     args = parser.parse_args(argv)
-    if not Path(args.db).exists():
-        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+    if db.missing(args.db):
         return 1
     if args.actie == "plan":
         conn = db.connect(args.db)

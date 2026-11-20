@@ -1302,9 +1302,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     # een tussenstand van deze draai, geen taxatie van de fiets — die hoort bij
     # valuation.py, en twee plekken die in `valuation` schrijven zouden alleen
     # maar rijen opleveren die elkaar tegenspreken.
-    if not Path(args.db).exists():
-        # Anders maakte db.connect() bij een tikfout stil een lege database aan.
-        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+    if db.missing(args.db):
         return 1
     if args.config == sc.BUNDLED_CONFIG_PATH:
         # De regel die de eigenaar op /upgrade opsloeg; met een eigen

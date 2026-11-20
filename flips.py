@@ -1035,8 +1035,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     upd.add_argument("file")
     args = parser.parse_args(argv)
     if args.command == "bijwerken":
-        if not Path(args.db).exists():
-            print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+        if db.missing(args.db):
             return 1
         conn = db.connect(args.db)
         try:
@@ -1059,8 +1058,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         finally:
             conn.close()
         return 0
-    if not Path(args.db).exists():
-        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+    if db.missing(args.db):
         return 1
     print_book(load_book(args.db))
     return 0

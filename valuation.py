@@ -40,7 +40,6 @@ import statistics
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 import crawl
@@ -1078,9 +1077,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     subject = subject_from_owner_bike(bike)
-    if not Path(args.db).exists():
-        # Anders maakte db.connect() bij een tikfout stil een lege database aan.
-        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+    if db.missing(args.db):
         return 1
     conn = db.connect(args.db)
     try:

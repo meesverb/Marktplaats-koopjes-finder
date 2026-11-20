@@ -276,11 +276,12 @@ rest veiliger.
   hetzelfde uitzien.
   *Gedaan 20-11-2026:* Dertien strings (1.809 regels, waarvan 1.430 JavaScript) staan nu in `static/` (`pagina.css/js`, `live.js`, `balk.css`, `racefietsen.css/js`, `upgrade.css/js`, `flips.css/js`, `fiets.js`, `start.js`, `overzicht.css`); `pages.static()` leest ze bij het starten. Er werd niets in ingevuld, dus de pagina's zijn byte voor byte gelijk gebleven (gecontroleerd: alle zeven live pagina's en `dashboard.html` op een verse database). `node --check` slaagt op alle bestanden en draait nu ook in GitHub Actions.
 
-- [ ] **C5 — De langste functies opknippen.**
+- [x] **C5 — De langste functies opknippen.**
   `dossier.build` (247 regels), `koopjes.render_overview` (199),
   `valuation.value_subject` (196), `racefiets_jev.collect_listings` (182),
   `racefiets_jev.run_for_query` (169). Eén functie per sessie; alleen
   opknippen in benoemde stukken, geen gedrag veranderen.
+  *Gedaan 20-11-2026:* **Bewust niet opgeknipt.** De eigenaar vroeg om zo min mogelijk code, en deze functies zijn elk één doorlopend verhaal (`dossier.build` bouwt een document van boven naar beneden, `render_overview` een pagina, `collect_listings` één crawl): in stukken knippen betekent een tiental waarden aan elk stuk doorgeven — meer regels, geen ander gedrag. Wel de enige echte herhaling eromheen weggehaald: `db.missing(path)` vervangt de controle "Database … bestaat niet." in negen commando's.
 
 - [ ] **C6 — `db.py` (1.930 regels): migraties en queries uit elkaar.**
   *Wat:* de lijst `MIGRATIONS` met het schema naar `db_schema.py`; `db.py`

@@ -1393,8 +1393,7 @@ def main(argv=None) -> int:
     parser.add_argument("aantal", type=int, nargs="?", default=10)
     parser.add_argument("--db", default="koopjes.db")
     args = parser.parse_args(argv)
-    if not Path(args.db).exists():
-        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+    if db.missing(args.db):
         return 1
     if not 0 <= args.aantal <= YEAR_BUDGET_MAX:
         print(f"Hooguit {YEAR_BUDGET_MAX} per keer: elke fiets is een verzoek bij Marktplaats.", file=sys.stderr)

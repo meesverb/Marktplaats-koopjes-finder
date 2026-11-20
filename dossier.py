@@ -810,8 +810,7 @@ def main(argv=None) -> int:
                         help="eerst de advertentiepagina ophalen, zoals de knop controleer (één verzoek)")
     parser.add_argument("--uit", help="naar dit bestand (UTF-8) in plaats van naar het scherm")
     args = parser.parse_args(argv)
-    if not Path(args.db).exists():
-        print(f"Database {args.db} bestaat niet.", file=sys.stderr)
+    if db.missing(args.db):
         return 1
     checked, problem = None, ""
     try:

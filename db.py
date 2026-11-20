@@ -614,6 +614,16 @@ FRAME_MATERIALS = ("carbon", "aluminium", "staal", "titanium")
 BUSY_TIMEOUT_S = 30
 
 
+def missing(path) -> bool:
+    """For the commands: True (after saying so on stderr) when there is no
+    database at `path`. Otherwise connect() would quietly create an empty one
+    on a typo, and the command would report nothing found."""
+    if Path(path).exists():
+        return False
+    print(f"Database {path} bestaat niet.", file=sys.stderr)
+    return True
+
+
 def connect_readonly(path, rows: bool = False) -> sqlite3.Connection:
     """Open the database at `path` for reading only. Nothing is created or
     migrated and SQLite refuses every write, so a page that only shows data
