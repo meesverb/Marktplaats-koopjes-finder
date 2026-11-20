@@ -122,13 +122,14 @@ rest veiliger.
   *Klaar als:* een bewust toegevoegde `import os` de test laat falen.
   *Gedaan 20-11-2026:* `tests/test_hygiene.py`: alles compileert, geen ongebruikte import (`# noqa` op de regel laat er een staan); gecontroleerd met een losse `import os`.
 
-- [ ] **A3 — De tests vanzelf laten draaien op GitHub.** *Eerst vragen aan de
+- [x] **A3 — De tests vanzelf laten draaien op GitHub.** *Eerst vragen aan de
   eigenaar:* dit voegt een bestand `.github/workflows/tests.yml` toe en
   gebruikt GitHub Actions.
   *Wat:* bij elke push `pip install -r requirements.txt` en de testopdracht
   uit `CLAUDE.md`. De tests raken het netwerk niet, dus er is geen geheim
   nodig.
   *Klaar als:* een push met een kapotte test een rood kruisje geeft.
+  *Gedaan 20-11-2026:* `.github/workflows/tests.yml`: Python 3.13, `pip install -r requirements.txt`, de testopdracht; bij elke push en pull request. Of hij op GitHub groen wordt, zie je na de eerste push onder Actions.
 
 ## B. Kleine opruimstappen (elk een uur of minder)
 
