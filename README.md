@@ -28,7 +28,7 @@ schrijft een ronde en kun je ook los openen.
 
 ## Beginnen
 
-Nodig: Python 3 (getest met 3.13) en één pakket.
+Nodig: Python 3.10 of nieuwer (ontwikkeld op 3.13) en één pakket.
 
 ```bash
 pip install -r requirements.txt

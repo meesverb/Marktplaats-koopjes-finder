@@ -33,6 +33,9 @@ import crawl
 import db
 import util
 
+# Hoe een ontbrekende prijs in de melding van controleer heet.
+NO_PRICE = "geen prijs"
+
 # Wat Marktplaats teruggeeft voor een advertentie die weg is (verkocht,
 # ingetrokken of verlopen): 410, gezien op 29-09-2026. 404 voor de zekerheid.
 GONE_STATUSES = (404, 410)
@@ -89,14 +92,14 @@ class Recheck:
             if not self.bid_count:
                 parts.append("nog geen bod")
             else:
-                bids = f"{self.bid_count} bieding{'en' if self.bid_count != 1 else ''}, hoogste {util.euro(self.bid_high, none="geen prijs")}"
+                bids = f"{self.bid_count} bieding{'en' if self.bid_count != 1 else ''}, hoogste {util.euro(self.bid_high, none=NO_PRICE)}"
                 if self.price_type == "MIN_BID" and self.asking is not None and self.bid_high > self.asking:
-                    bids += f", boven de vraagprijs van {util.euro(self.asking, none="geen prijs")}"
+                    bids += f", boven de vraagprijs van {util.euro(self.asking, none=NO_PRICE)}"
                 parts.append(bids)
         if self.price != self.price_before:
-            parts.append(f"prijs {util.euro(self.price_before, none="geen prijs")} → {util.euro(self.price, none="geen prijs")}")
+            parts.append(f"prijs {util.euro(self.price_before, none=NO_PRICE)} → {util.euro(self.price, none=NO_PRICE)}")
         if not parts:
-            parts.append(f"nog te koop voor {util.euro(self.price, none="geen prijs")}" if self.price is not None
+            parts.append(f"nog te koop voor {util.euro(self.price, none=NO_PRICE)}" if self.price is not None
                          else "nog te koop, niets veranderd")
         return f"Gecontroleerd: {self.title} — {'; '.join(parts)}."
 

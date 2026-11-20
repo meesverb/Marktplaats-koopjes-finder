@@ -46,6 +46,8 @@ import racefiets_jev as mp
 import util
 
 HERE = Path(__file__).resolve().parent
+# Tijden in het overzicht en de console: dag-maand uur:minuut.
+SHORT_TIME = "%d-%m %H:%M"
 DEFAULT_CONFIG = HERE / "schedule.json"
 
 BID_LOOKUP_CHOICES = ("fast", "all", "none")
@@ -669,7 +671,7 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         for r in rounds:
             parts.append(
                 f"<tr><td>{esc(str(r.get('slot', '?')))}</td>"
-                f"<td>{esc(util.local_time(r.get('started_at', ''), "%d-%m %H:%M"))}</td>"
+                f"<td>{esc(util.local_time(r.get('started_at', ''), SHORT_TIME))}</td>"
                 f"<td>{labels.get(r.get('status'), esc(str(r.get('status', '?'))))}</td>"
                 f"<td class='num'>{esc(str(r.get('new', 0)))}</td></tr>"
             )
@@ -682,7 +684,7 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
         items = "".join(
             f"<li>Scenario {esc(v['scenario'])}: {util.euro(v['low_eur'])} – <strong>{util.euro(v['mid_eur'])}"
             f"</strong> – {util.euro(v['high_eur'])} <span class='muted'>(vertrouwen: "
-            f"{esc(v['confidence'] or '?')}, {esc(util.local_time(v['created_at'] or '', "%d-%m %H:%M"))})</span></li>"
+            f"{esc(v['confidence'] or '?')}, {esc(util.local_time(v['created_at'] or '', SHORT_TIME))})</span></li>"
             for v in valuations
         )
         parts.append(f"<ul>{items}</ul>")
@@ -720,7 +722,7 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
                 link = "<span class='muted'>—</span>"
             parts.append(
                 f"<tr><td>{esc(summary['name'])}<div class='muted'>{esc(summary.get('query', ''))}</div></td>"
-                f"<td>{esc(util.local_time(summary.get('finished_at', ''), "%d-%m %H:%M"))}</td>"
+                f"<td>{esc(util.local_time(summary.get('finished_at', ''), SHORT_TIME))}</td>"
                 f"<td class='num'>{summary.get('listings', 0)}</td>"
                 f"<td class='num{' good' if summary.get('new') else ''}'>{summary.get('new', 0)}</td>"
                 f"<td class='num{' good' if summary.get('better') else ''}'>{summary.get('better', 0)}</td>"
@@ -1019,7 +1021,7 @@ def render_best_deals(config: Config, summaries: dict[str, dict]) -> str:
             if not upgrades and not deals:
                 continue
             lines += ["", f"== {summary['name']} ({summary.get('query', '')}, "
-                          f"{util.local_time(summary.get('finished_at', ''), "%d-%m %H:%M")}) =="]
+                          f"{util.local_time(summary.get('finished_at', ''), SHORT_TIME)}) =="]
             if upgrades:
                 lines.append("Upgrades voor jouw fiets (binnen budget en maat, op upgrade per euro):")
                 for u in upgrades:
@@ -1116,7 +1118,7 @@ def print_status(config: Config) -> None:
         running = True
     print("Er draait nu een ronde." if running else "Er draait nu geen ronde.")
     for r in load_rounds(config.base_dir / config.rounds_file, limit=3):
-        print(f"Ronde {r.get('slot', '?')} om {util.local_time(r.get('started_at', ''), "%d-%m %H:%M")}: "
+        print(f"Ronde {r.get('slot', '?')} om {util.local_time(r.get('started_at', ''), SHORT_TIME)}: "
               f"{r.get('status', '?')}, {r.get('new', 0)} nieuw")
     print()
     for slot in config.slots.values():
@@ -1130,7 +1132,7 @@ def print_status(config: Config) -> None:
             print(f"  {name}: nog niet gedraaid")
         for s in found:
             print(
-                f"  {s['name']}: {util.local_time(s.get('finished_at', ''), "%d-%m %H:%M")} — {s.get('listings', 0)} "
+                f"  {s['name']}: {util.local_time(s.get('finished_at', ''), SHORT_TIME)} — {s.get('listings', 0)} "
                 f"advertenties, {s.get('new', 0)} nieuw, {s.get('better', 0)} beter dan referentie"
             )
 

@@ -5,11 +5,17 @@ on: [push, pull_request]
 jobs:
   tests:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 3.10 is de laagste versie die de code nodig heeft
+        # (Path.write_text(newline=...); gemeten met vermin, 20-11-2026);
+        # 3.13 is waar hij ontwikkeld wordt.
+        python: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python }}
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -t tests
       - run: for f in static/*.js; do node --check "$f"; done

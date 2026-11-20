@@ -334,18 +334,21 @@ rest veiliger.
 
 ## E. Later, als het zin heeft
 
-- [ ] **E1 — De oude bestanden naast de database.** Een ronde schrijft nog
+- [x] **E1 — De oude bestanden naast de database.** Een ronde schrijft nog
   steeds `seen_listings.json`, `bargains_log.csv` en
   `reference_price_history.csv` náást `koopjes.db`. Uitzoeken wat ze nog
   leest; daarna met de eigenaar beslissen of ze kunnen vervallen. Raakt
   vlaggen uit `docs/zoeken.md` (`--history-file`, `--log-file`,
   `--price-history-file`), dus niet zonder overleg.
-- [ ] **E2 — Vastleggen welke Python-versie nodig is.** Op 16-11 getest met
+- [x] **E2 — Vastleggen welke Python-versie nodig is.** Op 16-11 getest met
   3.13; welke versie de eigenaar draait en wat de ondergrens is staat
   nergens.
-- [ ] **E3 — `catalog_tools/` en `marktonderzoek/`.** Losse meetscripts in
+- [x] **E3 — `catalog_tools/` en `marktonderzoek/`.** Losse meetscripts in
   een compacte stijl, zonder tests. Ze hebben hun werk gedaan; laten zoals ze
   zijn tenzij er opnieuw gemeten moet worden.
+  *Gedaan 20-11-2026:* **Uitgezocht, niets veranderd (raakt vlaggen).** `seen_listings.json` is nog de bron van "nieuw" en "prijsverlaging" (`load_history()`/`apply_history()`); `reference_price_history.csv` is de bron van "2e-hands gem." in de dealscore (`load_reference_market_stats()`); beide worden elke ronde ook in `koopjes.db` ingelezen (`db.import_legacy()`). `bargains_log.csv` wordt alleen bijgeschreven en door geen code gelezen. De database heeft alles om "nieuw", prijsverlaging en het 2e-hands gemiddelde zelf te leveren (`listing.first_seen`, `listing_price`), dus de bestanden kunnen vervallen — maar dan veranderen `--history-file`, `--log-file` en `--price-history-file`. Beslissing voor de eigenaar.
+  *Gedaan 20-11-2026:* Met vermin gemeten: de code heeft **Python 3.10** nodig (`Path.write_text(newline=...)`). Bij het meten bleek dat mijn eigen vervangingen in B1/B2 (`util.euro(x, none="geen prijs")` en een tijdformaat met dubbele aanhalingstekens binnen een f-string) dat ongemerkt naar 3.12 hadden opgetrokken; hersteld met de constanten `recheck.NO_PRICE` en `koopjes.SHORT_TIME`. GitHub Actions draait nu op 3.10 én 3.13, zodat dit vanzelf opvalt. README: "Python 3.10 of nieuwer".
+  *Gedaan 20-11-2026:* Bewust gelaten: losse meetscripts die hun werk gedaan hebben. Alleen hun ongebruikte imports zijn op 16-11 weggehaald; de hygiënetest (A2) houdt ze sindsdien compileerbaar en zonder ongebruikte imports.
 
 ## Niet doen
 
