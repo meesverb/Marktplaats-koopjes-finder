@@ -117,11 +117,11 @@ niet raden.
 - **Marktplaats kan zijn paginastructuur wijzigen.** Breekt het parsen, geef
   dan een duidelijke foutmelding in plaats van stil door te gaan.
 - **Een migratie die een test terugdraait, maakt tabellen, geen kolommen.**
-  Een paar tests zetten de database terug naar een oudere versie met `DROP
-  TABLE` (zie `db.FLIP_TABLES`, `db.PLACE_TABLES` en de andere
-  `*_TABLES`); een `ALTER TABLE ... ADD COLUMN` op `listing` laat zich zo niet
-  terugdraaien en de migratie loopt dan vast. Daarom staan plek en promotie in
-  `listing_place`, niet in `listing`. Een nieuwe tabel hoort in zo'n tuple.
+  Een paar tests zetten de database terug naar een oudere versie
+  (`tests/helpers.roll_back()`: `DROP TABLE` van alles wat de migraties vanaf
+  die versie met `CREATE TABLE` aanmaakten); een `ALTER TABLE ... ADD COLUMN`
+  op `listing` laat zich zo niet terugdraaien en de migratie loopt dan vast.
+  Daarom staan plek en promotie in `listing_place`, niet in `listing`.
 - **`db.connect_readonly()` migreert niet.** Een lezer kan een database van
   vóór de laatste migratie treffen en moet zelf tegen een ontbrekende tabel of
   kolom kunnen (`sqlite3.Error` opvangen, of `db._has_table()`).

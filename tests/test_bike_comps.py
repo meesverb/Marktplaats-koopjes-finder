@@ -9,7 +9,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from helpers import make_listing, repo_file
+from helpers import make_listing, repo_file, roll_back
 
 import bike_comps as bc
 import db
@@ -217,11 +217,7 @@ class StorageTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp)
         path = tmp / "koopjes.db"
         conn = db.connect(str(path))
-        conn.execute("DROP TABLE comp_choice")
-        for table in db.FLIP_TABLES + db.PLACE_TABLES + db.MODEL_TABLES + db.RULE_TABLES + db.OFFER_TABLES + db.LABEL_TABLES:  # migratie 17-22 draaien daarna ook opnieuw
-            conn.execute(f"DROP TABLE {table}")
-        conn.execute("DELETE FROM schema_version WHERE version >= 16")
-        conn.commit()
+        roll_back(conn, 16)
         conn.close()
         readonly = bc.open_readonly(path)
         try:

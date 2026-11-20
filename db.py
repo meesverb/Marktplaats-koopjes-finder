@@ -591,20 +591,6 @@ MIGRATIONS: list[str] = [
     """,
 ]
 
-
-# What migration 17 creates; a test that rolls the schema back drops these.
-FLIP_TABLES = ("flip", "trade_stage", "flip_task", "flip_bid", "flip_photo")
-# And migration 18.
-PLACE_TABLES = ("listing_place", "setting", "own_bid", "listing_stats")
-# And migration 19.
-MODEL_TABLES = ("bike_model", "bike_link")
-# And migration 20.
-RULE_TABLES = ("bike_rule",)
-# And migration 21.
-OFFER_TABLES = ("flip_offer",)
-# And migration 22.
-LABEL_TABLES = ("upgrade_label",)
-
 # A CSV saved from Excel starts with a UTF-8 BOM, which otherwise ends up in
 # the first column's name and makes every row look like it is missing that
 # column. Same reasoning as racefiets_jev.CSV_READ_ENCODING.

@@ -12,7 +12,7 @@ import urllib.parse
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from helpers import make_listing
+from helpers import make_listing, roll_back
 
 import dashboard
 import db
@@ -304,10 +304,7 @@ class OfferTest(FlipTest):
         self.assertTrue(all(o.checked_at == "2026-10-02" and o.url.startswith("https://") for o in chain.offers))
 
     def test_a_database_from_before_migration_21(self):
-        for table in db.OFFER_TABLES + db.LABEL_TABLES:  # migratie 21 en later
-            self.conn.execute(f"DROP TABLE {table}")
-        self.conn.execute("DELETE FROM schema_version WHERE version >= 21")
-        self.conn.commit()
+        roll_back(self.conn, 21)
         self.assertEqual(fl.load_book(self.db).get(self.trade).tasks[0].offers, [])
         db.connect(self.db).close()  # migreert weer
         fl.add_offer(self.conn, self.task, url="https://x.nl/a", price_eur=1.0)

@@ -193,13 +193,14 @@ rest veiliger.
   voor het queryfilter; de teksten van de meldingen blijven gelijk.
   *Gedaan 20-11-2026:* `valuation.read_owner_bike(path)` geeft (tekst, fiets) of een foutmelding; de drie `main()`'s gebruiken hem, met dezelfde meldingen als voorheen. Het SQL-stukje voor `--query` (twee regels) en de twee argparse-regels zijn gebleven: een functie ervoor is niet korter.
 
-- [ ] **B6 — De zes `db.*_TABLES` worden één tabel per migratie.**
+- [x] **B6 — De zes `db.*_TABLES` worden één tabel per migratie.**
   *Bevinding:* `FLIP_TABLES`, `PLACE_TABLES`, `MODEL_TABLES`, `RULE_TABLES`,
   `OFFER_TABLES`, `LABEL_TABLES` bestaan alleen zodat drie tests een database
   kunnen terugzetten, en elke test telt ze zelf op.
   *Wat:* `db.TABLES_BY_MIGRATION = {17: (...), 18: (...), ...}` en in
   `tests/helpers.py` één `roll_back_to(conn, version)`; de drie tests
   gebruiken die. Werk de valkuil in `CLAUDE.md` bij.
+  *Gedaan 20-11-2026:* Korter dan gepland: de migraties zijn SQL-tekst, dus `tests/helpers.roll_back(conn, versie)` leest de `CREATE TABLE`-namen er zelf uit. De zes tuples zijn weg uit `db.py`; een nieuwe migratie hoeft nergens meer bij. Valkuil in CLAUDE.md bijgewerkt. (`opdrachten/` noemt de tuples nog: dat zijn afgeronde opdrachten, niet bijgewerkt.)
 
 - [ ] **B7 — De twee `load_...`-lussen in `racebikes.py`.**
   *Bevinding:* `load_listings()` en `load_pool()` lopen allebei over dezelfde

@@ -153,3 +153,19 @@ def read_csv_rows(path: str) -> list[dict]:
 
     with open(path, encoding="utf-8") as f:
         return list(csv.DictReader(f))
+
+
+def roll_back(conn, version: int) -> None:
+    """Zet de database terug naar vóór migratie `version`: de tabellen die
+    die migratie en de latere aanmaakten gaan weg (laatste eerst), en de
+    volgende db.connect() draait ze opnieuw. Werkt omdat een migratie
+    tabellen maakt en geen kolommen aan bestaande toevoegt (CLAUDE.md)."""
+    import re
+
+    import db
+
+    tables = [t for sql in db.MIGRATIONS[version - 1:] for t in re.findall(r"CREATE TABLE (\w+)", sql)]
+    for table in reversed(tables):
+        conn.execute(f"DROP TABLE {table}")
+    conn.execute("DELETE FROM schema_version WHERE version >= ?", (version,))
+    conn.commit()
