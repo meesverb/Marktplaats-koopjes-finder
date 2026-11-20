@@ -140,8 +140,8 @@ Alles wat het programma schrijft blijft lokaal en staat in `.gitignore`:
 | `flip_fotos/`, `sheets.json` | je foto's op `/flips`; de sleutel van de Google Sheet |
 
 Wél in git staan de onderzochte referentiebestanden (`reference_*.csv`,
-met een bron per rij) en de documenten over je eigen fiets (`mijn_fiets.md`,
-`fiets_master.md`, `fiets_kaart.md`, `fietser_kaart.md`).
+met een bron per rij) en de documenten over je eigen fiets: `mijn_fiets.md`
+(het intakebestand dat het programma leest) en de rest in `fiets/`.
 
 ## Spelregels
 

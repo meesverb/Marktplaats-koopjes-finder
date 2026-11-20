@@ -180,8 +180,8 @@ een lege map buiten de repo, ze schrijven een cache in de werkmap.
 | `LOGBOEK.md` | wat er per keer gebouwd is, met datums en metingen (per fase: `PLAN_FIETSWAARDE.md` §12) |
 | `opdrachten/` | uitgeschreven opdrachten van de eigenaar, met zijn keuzes |
 | `mijn_fiets.md` | intake van de eigen fiets: brondocument voor taxatie en upgrades (het script leest dit bestand) |
-| `fiets_master.md`, `fiets_kaart.md` | alles over de eigen fiets (onderdelen, maten, wat past); lees `fiets_master.md` bij elke vraag over wat erop past, en werk de kaart mee bij |
-| `fietser_kaart.md` | de eigenaar als fietser: maten, uitrusting, voorkeuren |
-| `taxatie_2026-09-22.md` | de eerste handmatige taxatie, met bewijsregels |
-| `bikepacking_uitrusting.xlsx` | bikepackingtassen voor de eigen fiets, met bron per regel |
+| `fiets/fiets_master.md`, `fiets/fiets_kaart.md` | alles over de eigen fiets (onderdelen, maten, wat past); lees `fiets_master.md` bij elke vraag over wat erop past, en werk de kaart mee bij |
+| `fiets/fietser_kaart.md` | de eigenaar als fietser: maten, uitrusting, voorkeuren |
+| `fiets/taxatie_2026-09-22.md` | de eerste handmatige taxatie, met bewijsregels (`/start` toont `fiets/taxatie_*.md`) |
+| `fiets/bikepacking_uitrusting.xlsx` | bikepackingtassen voor de eigen fiets, met bron per regel |
 | `SHEETS.md` | `/flips` koppelen aan een Google Sheet |

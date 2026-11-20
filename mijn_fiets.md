@@ -5,7 +5,7 @@ en de open punten staan eronder. `valuation.py` (fase 3) leest het scoringsblok
 onderaan en zet de fiets in `owned_item`.
 
 Onderdelen, maten, standaarden, onderhoud en antwoorden op "past X?"-vragen
-staan in **`fiets_master.md`**.
+staan in **`fiets/fiets_master.md`**.
 
 ## Vastgesteld door de eigenaar
 
@@ -144,14 +144,14 @@ advertenties heeft (een Defy Composite uit 2012 staat er vaak nul of één keer
 tegelijk op). Welke advertenties vergelijkbaar zijn, kies je sinds 29-09-2026
 zelf op `/fiets` in `python dashboard.py --serve`: alleen wat je meeneemt
 telt mee, en onder de vijf wint dit bedrag nog. De bron is dan jijzelf, bijvoorbeeld
-`taxatie_2026-09-22.md`, en het rapport zegt dat erbij. Leeg laten = geen
+`fiets/taxatie_2026-09-22.md`, en het rapport zegt dat erbij. Leeg laten = geen
 terugval.
 
 **Ingevuld: 390** (27-09-2026). Het bedrag is het fietsdeel van scenario B —
 de fiets met de originele wielen, zónder de CSC-set — want zo rekent de
 upgrade-finder ermee: bij een velremkandidaat verhuist de wielset mee, bij een
 schijfremkandidaat komt de opbrengst van de wielset er apart bij. Bron:
-`taxatie_2026-09-22.md`, scenario B1, realistische opbrengst €350-425; 390 is
+`fiets/taxatie_2026-09-22.md`, scenario B1, realistische opbrengst €350-425; 390 is
 het midden. Niet het B-totaal (€525-650) invullen: dan telt de wielset dubbel
 en komt het velrembudget ~€160 te hoog uit.
 

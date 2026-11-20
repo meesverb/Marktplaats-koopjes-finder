@@ -324,12 +324,13 @@ rest veiliger.
   `racebikes.py` opknippen in leesbare punten.
   *Gedaan 20-11-2026:* Elke `functie()`, constante, tabel, migratienummer en bestandsnaam in `docs/architectuur.md` nagelopen tegen de code: alles bestaat (de verhuizingen van C1-C6 zijn er al in verwerkt). De vier langste alinea's (`racebikes.py`, `bike_identity.py`, `dossier.py`, `flips.py`) zijn punten geworden, met dezelfde inhoud.
 
-- [ ] **D4 — De hoofdmap opruimen.** *Eerst vragen aan de eigenaar.*
+- [x] **D4 — De hoofdmap opruimen.** *Eerst vragen aan de eigenaar.*
   *Bevinding:* ruim 60 bestanden in de hoofdmap, code en documenten door elkaar.
   *Mogelijk:* de documenten over de eigen fiets naar `fiets/`. Dat raakt
   `--mijn-fiets` (standaard `mijn_fiets.md`), `SERVED_FILES` in
   `dashboard.py` (`taxatie_*.md`) en verwijzingen in `opdrachten/`; daarom
   een eigen stap en niet zomaar.
+  *Gedaan 20-11-2026:* `fiets_master.md`, `fiets_kaart.md`, `fietser_kaart.md`, `taxatie_2026-09-22.md` en `bikepacking_uitrusting.xlsx` staan in `fiets/` (met `git mv`, de geschiedenis blijft). `mijn_fiets.md` blijft in de hoofdmap: `--mijn-fiets` en de server lezen hem daar standaard. `/start` toont nu `fiets/taxatie_*.md` (`SERVED_FILES`). Let op voor de eigenaar: wie `fiets_kaart.md` buiten de repo op pad had staan, vindt hem nu in `fiets/`.
 
 ## E. Later, als het zin heeft
 

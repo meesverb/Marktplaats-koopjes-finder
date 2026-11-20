@@ -24,7 +24,7 @@ from util import euro, local_time
 # Wat /bestanden/ laat zien: alleen wat de rondes voor jou schrijven, nooit
 # de database, sheets.json of de broncode. Een pad met een map erin moet in
 # een van deze mappen liggen.
-SERVED_FILES = ("overzicht.html", "racefiets_report*.html", "lijsten/*.txt", "taxatie_*.md", "logs/koopjes.log")
+SERVED_FILES = ("overzicht.html", "racefiets_report*.html", "lijsten/*.txt", "fiets/taxatie_*.md", "logs/koopjes.log")
 
 
 # De geschreven dashboards zijn een momentopname; het overzicht linkt ernaar,
@@ -86,8 +86,8 @@ def _file_label(name: str) -> str:
         return f"Rapport: {rest.replace('-', ' ')}" if rest else "Rapport"
     if name.startswith("lijsten/"):
         return "Lijst: " + name[len("lijsten/"):-len(".txt")].replace("_", " ")
-    if name.startswith("taxatie_"):
-        return "Taxatie " + name[len("taxatie_"):-len(".md")]
+    if name.startswith("fiets/taxatie_"):
+        return "Taxatie " + name[len("fiets/taxatie_"):-len(".md")]
     if name == "logs/koopjes.log":
         return "Logboek van de rondes"
     return name

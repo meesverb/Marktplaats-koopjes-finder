@@ -271,23 +271,23 @@ Uitgeschreven opdrachten van de eigenaar (`fietsmodellen.md`, `goedkoopste_onder
 
 Intake van de eigen fiets (brondocument voor de taxatie).
 
-### `taxatie_2026-09-22.md`
+### `fiets/taxatie_2026-09-22.md`
 
 De eerste handmatige taxatie van de eigen fiets, met bewijsregels (voorloper van fase 3).
 
-### `fiets_master.md`
+### `fiets/fiets_master.md`
 
 Masterdocument van de eigen fiets: onderdelen, maten en standaarden, onderhoud, uitgewerkte "past X?"-vragen, meetlijst. Elke regel met status (eigenaar / bron / onbekend); lees het bij elke vraag over wat er op de fiets past.
 
-### `fiets_kaart.md`
+### `fiets/fiets_kaart.md`
 
 Één pagina met alles over de eigen fiets voor een chat (ook buiten de repo): maten, onderdelen, wat past en niet, voorkeuren, budget. Bijwerken samen met `fiets_master.md`.
 
-### `fietser_kaart.md`
+### `fiets/fietser_kaart.md`
 
 De eigenaar als fietser: rijprofiel, wat hij al heeft, lichaamsmaten (in te vullen), voorkeuren — voor vragen over kleding, maten, uitrusting. Naast `fiets_kaart.md`.
 
-### `bikepacking_uitrusting.xlsx`
+### `fiets/bikepacking_uitrusting.xlsx`
 
 Bikepackingtassen voor de eigen fiets: prijs, gewicht, bron per regel, "Past?" als formule op de maten in het tabblad Mijn fiets, totalen in Mijn set. Prijzen zijn momentopnamen met winkel en datum.
 

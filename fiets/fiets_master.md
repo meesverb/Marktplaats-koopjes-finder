@@ -14,7 +14,7 @@ bestand aan Claude (of open het zelf) voordat je zo'n vraag stelt.
     of zoek het op (zie §8, de meetlijst).
 - Verzin geen specs. Een verkeerd getal hier geeft later een verkeerd
   antwoord op een koopvraag.
-- `mijn_fiets.md` blijft het intakebestand voor de taxatie (`valuation.py`
+- `mijn_fiets.md` (in de hoofdmap) blijft het intakebestand voor de taxatie (`valuation.py`
   leest het scoringsblok daar). Dit document is breder: onderdelen, maten,
   standaarden, onderhoud en antwoorden op eerdere vragen. Verandert er iets
   aan de fiets dat de taxatie raakt (wielen, groep, schade), werk dan **beide**

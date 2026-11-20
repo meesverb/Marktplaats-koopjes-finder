@@ -37,7 +37,7 @@ earned, your running bids, links to every live page (racefietsen
 `/racefietsen`, fietscomputers `/`, sporthorloges `/horloges`, your own bike
 `/fiets`, your flips `/flips`) and to the files the
 rounds write — the overview, every `racefiets_report*.html`, the lists in
-`lijsten/`, the `taxatie_*.md` notes and `logs/koopjes.log` — served under
+`lijsten/`, the `fiets/taxatie_*.md` notes and `logs/koopjes.log` — served under
 `/bestanden/` with a bar back to the start page. Nothing else in the folder is
 served (not `koopjes.db`, not `sheets.json`). A link in the overview to
 `dashboard.html` or `dashboard_horloges.html` opens the live version. Every
