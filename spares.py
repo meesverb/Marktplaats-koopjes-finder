@@ -108,8 +108,6 @@ SELECT = (
 def load(db_path, item_id: Optional[str] = None) -> list[Part]:
     """Alle onderdelen die nu te koop zijn (gezien binnen ACTIVE_DAYS van de
     nieuwste in deze hoofdcategorie), met hun soorten. `item_id`: alleen die."""
-    import racebikes as rb
-
     if not Path(db_path).exists():
         return []
     conn = db.connect_readonly(db_path, rows=True)
@@ -144,7 +142,7 @@ def load(db_path, item_id: Optional[str] = None) -> list[Part]:
         kinds = kinds_of(r["title"], category)
         if not kinds:
             continue
-        out.append(Part(rb._listing(r, {}, places), kinds, category))
+        out.append(Part(mp.listing_from_row(r, {}, places), kinds, category))
     return out
 
 

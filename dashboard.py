@@ -488,26 +488,7 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
         last = util.parse_time(r["last_seen"])
         if last is None or last < active_since:
             continue
-        listing = mp.Listing(
-            item_id=r["item_id"],
-            title=r["title"] or "",
-            description=r["description"] or "",
-            price_eur=r["price_eur"],
-            price_type=r["price_type"] or "",
-            city=r["city"] or "",
-            date=r["posted_date"] or "",
-            condition=r["condition"] or "",
-            frame_height="",
-            groupset="",
-            groupset_tier=None,
-            url=r["url"] or "",
-            price_is_bid=bool(r["is_bid"]),
-            first_seen=r["first_seen"] or "",
-            image_urls=r["image_urls"] or "",
-            reserved=r["reserved_at"] is not None,
-        )
-        # Wat de biedopvraging en controleer vonden (migratie 11 en 14).
-        mp.apply_stored_bids(listing, r)
+        listing = mp.listing_from_row(r)
         first = util.parse_time(r["first_seen"])
         if first and first >= new_since:
             new_ids.add(listing.item_id)

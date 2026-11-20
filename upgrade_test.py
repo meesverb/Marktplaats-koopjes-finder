@@ -302,7 +302,7 @@ def _listings_by_id(conn: sqlite3.Connection, ids: Sequence[str]) -> list[mp.Lis
         chunk = list(ids[start:start + 500])
         rows = conn.execute(rb.SELECT + f" AND item_id IN ({','.join('?' * len(chunk))})",
                             (f"%/{rb.CATEGORY}/%", *chunk)).fetchall()
-        found += [rb._listing(r, site, {}) for r in rows]
+        found += [mp.listing_from_row(r, site, {}) for r in rows]
     return found
 
 

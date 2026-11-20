@@ -174,31 +174,6 @@ SELECT = (
 POOL_DAYS = val.DEFAULT_COMP_WINDOW_DAYS
 
 
-def _listing(r, site: dict, places: dict) -> mp.Listing:
-    title, detail = r["title"] or "", r["full_description"] or ""
-    groupset, tier = mp.detect_groupset(f"{title} {detail or r['description'] or ''}")
-    lat, lon, promotion, traits = places.get(r["item_id"], (None, None, "", ""))
-    listing = mp.Listing(
-        item_id=r["item_id"], title=title, description=r["description"] or "", price_eur=r["price_eur"],
-        price_type=r["price_type"] or "", city=r["city"] or "", date=r["posted_date"] or "",
-        condition=r["condition"] or "", frame_height=r["frame_height"] or "", groupset=groupset,
-        groupset_tier=tier, url=r["url"] or "", price_is_bid=bool(r["is_bid"]),
-        first_seen=r["first_seen"] or "", image_urls=r["image_urls"] or "",
-        reserved=r["reserved_at"] is not None, site_specs=site.get(r["item_id"], {}), detail_text=detail,
-        latitude=lat, longitude=lon, promotion=promotion or "", traits=traits or "")
-    listing.bid_minimum, listing.bid_high = r["bid_minimum"], r["bid_high"]
-    # Zelfde regel als dashboard.load_active_listings(): een bod boven de
-    # vraagprijs geldt tot de volgende opvraging.
-    if (listing.price_type == "MIN_BID" and listing.bid_high is not None and listing.price_eur is not None
-            and listing.bid_high > listing.price_eur):
-        listing.price_eur = listing.bid_high
-    listing.bids_checked_at, listing.checked_at = r["bids_checked_at"], r["checked_at"]
-    if r["bid_count"] is not None:
-        listing.bid_count = r["bid_count"]
-    elif r["is_bid"] and r["price_is_asking"] == 0:
-        listing.bid_count = 1
-    return listing
-
 
 @dataclass
 class Read:
@@ -265,7 +240,7 @@ def load_listings(db_path, active_days: int = ACTIVE_DAYS, _read_result=None) ->
         last = util.parse_time(r["last_seen"])
         if last is None or last < since:
             continue
-        listing = _listing(r, site, places)
+        listing = mp.listing_from_row(r, site, places)
         first = util.parse_time(r["first_seen"])
         if first and first >= new_since:
             new_ids.add(listing.item_id)
@@ -309,7 +284,7 @@ def load_pool(db_path, _read_result=None) -> bi.Pool:
         last = util.parse_time(r["last_seen"])
         if last is None or last < since:
             continue
-        listing = _listing(r, site, places)
+        listing = mp.listing_from_row(r, site, places)
         # Alleen een vraagprijs: een lopend bod zegt nog niet wat hij opbrengt.
         if not listing.price_is_asking or not listing.price_eur or listing.price_eur <= 0:
             continue
@@ -1943,7 +1918,7 @@ def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
     last, newest = util.parse_time(row["last_seen"]), util.parse_time(newest)
     if last is None or newest is None or last < newest - timedelta(days=ACTIVE_DAYS):
         return None
-    return _listing(row, site, places)
+    return mp.listing_from_row(row, site, places)
 
 
 def resale_for(db_path, item_id: str) -> Optional[float]:

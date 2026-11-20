@@ -511,6 +511,34 @@ def apply_stored_bids(listing: Listing, row) -> None:
         listing.bid_count = 1
 
 
+def listing_from_row(row, site_specs: Optional[dict] = None, places: Optional[dict] = None) -> Listing:
+    """A row from `listing` in koopjes.db back as a Listing, for everything
+    that reads the database instead of running a crawl (the dashboards,
+    /racefietsen, upgrade.py). Columns the SELECT left out stay empty; with
+    the bid columns in it, also what the last bid lookup and controleer found
+    (apply_stored_bids()). `site_specs`: {item_id: specs} from the listing
+    page's Kenmerken, `places`: {item_id: (lat, lon, promotion, traits)}."""
+    keys = row.keys()
+
+    def get(key):
+        return row[key] if key in keys else None
+
+    title, detail = get("title") or "", get("full_description") or ""
+    groupset, tier = detect_groupset(f"{title} {detail or get('description') or ''}")
+    lat, lon, promotion, traits = (places or {}).get(row["item_id"], (None, None, "", ""))
+    listing = Listing(
+        item_id=row["item_id"], title=title, description=get("description") or "", price_eur=get("price_eur"),
+        price_type=get("price_type") or "", city=get("city") or "", date=get("posted_date") or "",
+        condition=get("condition") or "", frame_height=get("frame_height") or "", groupset=groupset,
+        groupset_tier=tier, url=get("url") or "", price_is_bid=bool(get("is_bid")),
+        first_seen=get("first_seen") or "", image_urls=get("image_urls") or "",
+        reserved=get("reserved_at") is not None, site_specs=(site_specs or {}).get(row["item_id"], {}),
+        detail_text=detail, latitude=lat, longitude=lon, promotion=promotion or "", traits=traits or "")
+    if "bid_minimum" in keys:
+        apply_stored_bids(listing, row)
+    return listing
+
+
 def enrich_bid_listings(
     listings: list[Listing],
     delay: float,

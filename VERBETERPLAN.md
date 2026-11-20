@@ -155,7 +155,7 @@ rest veiliger.
   plekken erop aansluiten.
   *Gedaan 20-11-2026:* `util.local_time(value, fmt)` vervangt `dashboard.local_time`, `koopjes.local_time`, `vinted._local` en het rekenwerk in `dossier._local`; `util.parse_day()` vervangt `trades._date` en `flips._date` en zit onder `dashboard.nl_date`. Verschil: een onleesbare tijd toont nu de tekst zelf i.p.v. "?" in het overzicht.
 
-- [ ] **B3 — Eén plek die een rij uit `listing` omzet naar een `Listing`.**
+- [x] **B3 — Eén plek die een rij uit `listing` omzet naar een `Listing`.**
   *Bevinding:* `dashboard.py` (r. 490), `racebikes._listing()`,
   `recheck.py` (r. 201) en `upgrade.py` (r. 917) bouwen elk zelf een
   `mp.Listing` uit een databaserij, met elk een eigen `SELECT`-kolomlijst;
@@ -165,6 +165,7 @@ rest veiliger.
   kolommen; de vier plekken erop aansluiten, één per commit.
   *Klaar als:* `grep "mp.Listing(" *.py` nog één treffer buiten de tests
   geeft.
+  *Gedaan 20-11-2026:* `racefiets_jev.listing_from_row(row, site_specs, places)` (kolommen die de SELECT mist blijven leeg; met de biedkolommen erbij ook `apply_stored_bids()`) vervangt `racebikes._listing()` en de kopieën in `dashboard.load_active_listings()` en `upgrade.fetch_candidate_listings()`; `dossier`, `spares` en `upgrade_test` roepen hem direct aan. `racebikes._listing()` deed `apply_stored_bids()` ook nog eens zelf over. `recheck.py` bouwt zijn Listing uit de advertentiepagina, niet uit een rij: daar hoort hij niet bij. De drie SELECT-kolomlijsten zijn gebleven (ze verschillen bewust: dashboard vangt een database van vóór migratie 11/14 op).
 
 - [ ] **B4 — Beslissen over drie functies die alleen een test aanroept.**
   *Eerst vragen aan de eigenaar; dit zijn keuzes, geen opruimwerk.*

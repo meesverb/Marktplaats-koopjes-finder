@@ -907,33 +907,7 @@ def fetch_candidate_listings(
         params.append(query)
 
     site_specs = db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE)
-    listings = []
-    for row in conn.execute("\n".join(sql), params).fetchall():
-        title = row["title"] or ""
-        description = row["description"] or ""
-        detail_text = row["full_description"] or ""
-        groupset, tier = mp.detect_groupset(f"{title} {detail_text or description}")
-        listings.append(
-            mp.Listing(
-                item_id=row["item_id"],
-                title=title,
-                description=description,
-                price_eur=row["price_eur"],
-                price_type=row["price_type"] or "",
-                city=row["city"] or "",
-                date=row["posted_date"] or "",
-                condition=row["condition"] or "",
-                frame_height=row["frame_height"] or "",
-                groupset=groupset,
-                groupset_tier=tier,
-                url=row["url"] or "",
-                price_is_bid=bool(row["is_bid"]),
-                first_seen=row["first_seen"] or "",
-                site_specs=site_specs.get(row["item_id"], {}),
-                detail_text=detail_text,
-            )
-        )
-    return listings
+    return [mp.listing_from_row(row, site_specs) for row in conn.execute("\n".join(sql), params).fetchall()]
 
 
 # --- Uitvoer ---------------------------------------------------------------

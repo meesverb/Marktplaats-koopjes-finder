@@ -140,7 +140,7 @@ def _tables(conn) -> set:
 
 
 def load_stored(db_path, item_id: str) -> Optional[Stored]:
-    """De fiets zoals racebikes._listing() hem leest, ook als hij verdwenen of
+    """De fiets zoals racebikes hem leest (mp.listing_from_row()), ook als hij verdwenen of
     al lang niet meer gezien is: een dossier van een fiets die net verkocht
     werd, zegt nog steeds iets. None: geen racefiets met dit id."""
     if not Path(db_path).exists():
@@ -165,7 +165,7 @@ def load_stored(db_path, item_id: str) -> Optional[Stored]:
             (item_id,))] if "listing_stats" in tables else [])
     finally:
         conn.close()
-    listing = rb._listing(row, site, {item_id: tuple(place)} if place else {})
+    listing = mp.listing_from_row(row, site, {item_id: tuple(place)} if place else {})
     return Stored(listing, asking=asking_from_row(row), posted=extra["posted_date"] or "", first_seen=row["first_seen"] or "",
                   last_seen=row["last_seen"] or "", disappeared_at=row["disappeared_at"] or "",
                   days_online=row["days_online"], reserved_at=row["reserved_at"] or "",
