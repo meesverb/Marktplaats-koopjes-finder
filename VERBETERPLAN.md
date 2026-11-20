@@ -283,10 +283,11 @@ rest veiliger.
   opknippen in benoemde stukken, geen gedrag veranderen.
   *Gedaan 20-11-2026:* **Bewust niet opgeknipt.** De eigenaar vroeg om zo min mogelijk code, en deze functies zijn elk één doorlopend verhaal (`dossier.build` bouwt een document van boven naar beneden, `render_overview` een pagina, `collect_listings` één crawl): in stukken knippen betekent een tiental waarden aan elk stuk doorgeven — meer regels, geen ander gedrag. Wel de enige echte herhaling eromheen weggehaald: `db.missing(path)` vervangt de controle "Database … bestaat niet." in negen commando's.
 
-- [ ] **C6 — `db.py` (1.930 regels): migraties en queries uit elkaar.**
+- [x] **C6 — `db.py` (1.930 regels): migraties en queries uit elkaar.**
   *Wat:* de lijst `MIGRATIONS` met het schema naar `db_schema.py`; `db.py`
   houdt `connect()`, `connect_readonly()` en de queries, en biedt de oude
   namen aan. *Lage prioriteit:* het bestand is groot maar eenduidig.
+  *Gedaan 20-11-2026:* `MIGRATIONS` (de 22 migraties, 560 regels SQL) staat in `db_schema.py`; `db.py` (1.310 regels) importeert hem en houdt verbinden, migreren en de queries. Tests die `db.MIGRATIONS` vervangen werken ongewijzigd.
 
 ## D. Documentatie
 

@@ -154,7 +154,7 @@ De lange versie, met tabellen, migraties en ingangen per bestand:
 | --- | --- | --- |
 | Crawlen, scoren, rapport | `racefiets_jev.py` (het commando, alle vlaggen), `crawl.py` (`Listing`, ophalen, parsen, biedingen, specs), `dealscore.py`, `console.py`, `report.py` + `report_template.html` (het rapport en zijn panelen), `sleepers.py` (slapers) | `docs/zoeken.md`, `docs/rapport.md` |
 | Rondes | `koopjes.py` + `schedule.json` (tijdsloten, overzicht, logboek), `launcher.py` (knoppen op `/start`) | `docs/rondes.md` |
-| Database, gedeeld | `db.py` (schema, migraties, alle queries), `util.py` (tijd, euro) | `docs/database.md` |
+| Database, gedeeld | `db.py` (verbinden, migreren, alle queries), `db_schema.py` (de migraties als SQL), `util.py` (tijd, euro) | `docs/database.md` |
 | Live server | `static/` (CSS en JavaScript van de pagina's), `server.py` (`--serve`: routes, knoppen, `LiveCache`), `pages.py` (paden, balk bovenaan, gedeelde CSS/JS, formulieren), `dashboard.py` (de dashboards per markt), `start_page.py`, `bike_page.py` (`/fiets`), `flips_page.py` (`/flips`) | `docs/dashboards.md` |
 | Markten | `markets.py`, `computers.py` + `computer_scoring.json`, `watches.py`, `vinted.py`, `patterns.py` | `docs/dashboards.md` |
 | Per advertentie | `marks.py` (favoriet/weg/notitie), `own_bids.py`, `distance.py`, `views.py`, `recheck.py` (controleer), `trades.py` (Mijn flips) | `docs/dashboards.md` |

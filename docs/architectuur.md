@@ -64,7 +64,7 @@ Naslag: [database.md](database.md).
 
 ### `db.py`
 
-SQLite-schema, migraties, import van de oude bestanden, CSV-export; sinds fase 1b aangesloten op het script (`--db`/`--no-db`). `connect()` opent en migreert (schrijven); `connect_readonly()` opent alleen-lezen zonder te migreren — elke pagina die alleen toont gebruikt die.
+Verbinden en migreren (het schema zelf, één SQL-tekst per migratie, staat in `db_schema.py`), alle queries, import van de oude bestanden; sinds fase 1b aangesloten op het script (`--db`/`--no-db`). `connect()` opent en migreert (schrijven); `missing()` meldt een ontbrekende database voor de commando's; `connect_readonly()` opent alleen-lezen zonder te migreren — elke pagina die alleen toont gebruikt die.
 
 ### `util.py`
 
