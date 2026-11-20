@@ -33,6 +33,8 @@ De rekenkunde is puur en zonder database of netwerk testbaar; alleen
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import re
 import sqlite3
 import statistics
@@ -867,6 +869,176 @@ def find_upgrades(
     return UpgradeResult(tuple(candidates), tuple(rejected), scored_by_id)
 
 
+# --- De opgeslagen regel (/upgrade, upgrade_test.py) ------------------------
+
+# Wat de eigenaar op /upgrade als zijn regel opsloeg, in `setting`: een
+# scoring_config.json met zijn eigen getallen. Hier en niet in
+# upgrade_test.py, omdat elke taxatie en ronde hem leest.
+RULE_KEY = "upgrade_regel"
+
+
+class RuleError(ValueError):
+    """Een regel die niet kan; de tekst gaat terug naar de pagina."""
+
+
+# --- De regel -------------------------------------------------------------------
+
+# Leesbare namen voor de meldingen en de lijst "wat wijkt af".
+NAMES = {
+    "weights": "gewicht", "frame": "frame", "drivetrain": "aandrijving", "brakes": "remmen",
+    "wheels": "wielen", "extras": "extra's", "upgrade": "upgrade",
+    "material_score": "materiaal", "material_score_unknown": "materiaal onbekend",
+    "tier_multiplier": "frameklasse", "tier_multiplier_unknown": "frameklasse onbekend",
+    "age_decay_per_year": "leeftijd per jaar", "age_decay_max": "leeftijd hooguit",
+    "tier_score": "groepsetniveau", "tier_score_unknown": "groepset onbekend",
+    "electronic_bonus": "elektronisch", "speeds_bonus_per_speed_above_10": "per versnelling boven 10",
+    "score": "", "score_unknown": "onbekend", "aluminium": "aluminium", "carbon_naamloos": "naamloos carbon",
+    "carbon_merk": "merk-carbon", "merk_materiaal_onbekend": "merk, materiaal onbekend",
+    "eigen_wielen": "jouw eigen wielen", "powermeter": "powermeter", "computer": "fietscomputer",
+    "computer_owned_discount": "computer als je er al een hebt", "extra_wheelset": "extra wielset",
+    "pedals": "pedalen", "max": "hooguit", "marge": "marge", "onbekend": "onbekend telt als",
+}
+
+
+def path_name(path: tuple) -> str:
+    return " ".join(n for n in (NAMES.get(str(k), str(k)) for k in path) if n)
+
+
+def _bounds(path: tuple) -> tuple[float, float]:
+    key = path[-1]
+    if path[0] == "weights":
+        return 0.0, 10.0
+    if key == "age_decay_per_year":
+        return 0.0, 0.2
+    if key in ("age_decay_max", "computer_owned_discount"):
+        return 0.0, 1.0
+    if path[:2] == ("frame", "tier_multiplier") or key == "tier_multiplier_unknown":
+        return 0.0, 3.0
+    if key == "marge":
+        return -20.0, 50.0
+    return 0.0, 100.0
+
+
+def _number(value, path: tuple) -> float:
+    if isinstance(value, bool):
+        raise RuleError(f"{path_name(path)} moet een getal zijn")
+    try:
+        number = float(str(value).strip().replace(",", ".")) if isinstance(value, str) else float(value)
+    except (TypeError, ValueError):
+        raise RuleError(f"{path_name(path)} moet een getal zijn") from None
+    if not math.isfinite(number):
+        raise RuleError(f"{path_name(path)} moet een getal zijn")
+    low, high = _bounds(path)
+    if not low <= number <= high:
+        raise RuleError(f"{path_name(path)} moet tussen {low:g} en {high:g} liggen")
+    return number
+
+
+def clean_rule(raw, shape: dict) -> dict:
+    """Een gecontroleerde regel in de vorm van `shape` (scoring_config.json):
+    elke sleutel die `shape` kent, uit `raw` als die hem heeft (anders uit
+    `shape`), elk getal eindig en binnen redelijke grenzen. Sleutels die
+    `shape` niet kent vallen weg — zo blijft een opgeslagen regel werken als
+    scoring_config.json later een sleutel krijgt of verliest. RuleError bij
+    iets wat niet kan."""
+    def walk(shape_part: dict, raw_part, path: tuple) -> dict:
+        out = {}
+        raw_part = raw_part if isinstance(raw_part, dict) else {}
+        for key, default in shape_part.items():
+            here = path + (key,)
+            value = raw_part.get(key, default)
+            if isinstance(default, dict):
+                out[key] = walk(default, value, here)
+            elif key == "onbekend":
+                if value not in UNKNOWN_MODES:
+                    raise RuleError(f"onbekend telt als: kies {' of '.join(UNKNOWN_MODES)}")
+                out[key] = value
+            elif key == "eigen_wielen":
+                out[key] = None if value in (None, "") else _number(value, here)
+            else:
+                out[key] = _number(value, here)
+        return out
+
+    if not isinstance(raw, dict):
+        raise RuleError("geen regel meegestuurd")
+    clean = walk(shape, raw, ())
+    if sum(clean["weights"].values()) <= 0:
+        raise RuleError("minstens één gewicht moet boven 0 liggen")
+    return clean
+
+
+def default_config() -> dict:
+    return sc.load_config()
+
+
+def _read_setting(db_path) -> Optional[str]:
+    if not db_path or not Path(db_path).exists():
+        return None
+    try:
+        conn = db.connect_readonly(db_path)
+    except sqlite3.Error:
+        return None
+    try:
+        return db.get_setting(conn, RULE_KEY)
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def load_rule(db_path) -> tuple[Optional[dict], Optional[str]]:
+    """(opgeslagen regel, wanneer opgeslagen) of (None, None)."""
+    raw = _read_setting(db_path)
+    if not raw:
+        return None, None
+    try:
+        data = json.loads(raw)
+    except (ValueError, RecursionError):
+        return None, None
+    if not isinstance(data, dict) or not isinstance(data.get("config"), dict):
+        return None, None
+    return data["config"], data.get("opgeslagen")
+
+
+def rule_stamp(db_path) -> str:
+    """Verandert als de opgeslagen regel verandert (voor de LiveCache)."""
+    return _read_setting(db_path) or ""
+
+
+def apply_saved_rule(config: dict, db_path) -> tuple[dict, Optional[str]]:
+    """(config met de opgeslagen regel erover, wanneer opgeslagen). Geen of
+    een onleesbare regel: `config` zelf — een kapotte regel mag een ronde
+    of pagina nooit laten stoppen."""
+    saved, at = load_rule(db_path)
+    if saved is None:
+        return config, None
+    try:
+        return clean_rule(saved, config), at
+    except RuleError:
+        return config, None
+
+
+def save_rule(db_path, raw) -> dict:
+    """Controleren en opslaan; geeft de opgeslagen regel terug."""
+    clean = clean_rule(raw, default_config())
+    conn = db.connect(str(db_path))
+    try:
+        db.set_setting(conn, RULE_KEY, json.dumps(
+            {"config": clean, "opgeslagen": datetime.now(timezone.utc).isoformat(timespec="seconds")},
+            sort_keys=True))
+    finally:
+        conn.close()
+    return clean
+
+
+def reset_rule(db_path) -> None:
+    conn = db.connect(str(db_path))
+    try:
+        db.set_setting(conn, RULE_KEY, None)
+    finally:
+        conn.close()
+
+
 # --- Database ---------------------------------------------------------------
 
 
@@ -1136,9 +1308,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.config == sc.BUNDLED_CONFIG_PATH:
         # De regel die de eigenaar op /upgrade opsloeg; met een eigen
         # --config rekent het script op die en niets anders.
-        import upgrade_test as ut
-
-        config, saved_at = ut.apply_saved_rule(config, args.db)
+        config, saved_at = apply_saved_rule(config, args.db)
         if saved_at:
             print(f"Jouw regel van /upgrade (opgeslagen {saved_at[:10]})")
     owner_build = sc.owner_build(bike.specs, label=bike.label, config=config)

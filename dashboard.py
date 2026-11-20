@@ -348,7 +348,7 @@ class LiveCache:
         niet, een ronde of controleer wel. Een nieuwe regel op /upgrade
         rekent alleen het upgradeoordeel opnieuw (racebikes.rescore())."""
         stamp = data_stamp(db_path, trades=False)
-        rule = ut.rule_stamp(db_path)
+        rule = up.rule_stamp(db_path)
         key = ("racefietsen", str(Path(db_path).resolve()), str(intake_path))
         with self._build_lock(key):
             with self._lock:
@@ -4038,7 +4038,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _upgrade_page(self, path: str, message: str) -> None:
         owner, problem, bikes = self._upgrade_context()
         if path == ut.PATH:
-            return self._send(200, ut.render(owner, problem, bikes, ut.load_rule(self.db_path)[1], self.token,
+            return self._send(200, ut.render(owner, problem, bikes, up.load_rule(self.db_path)[1], self.token,
                                              message), "text/html; charset=utf-8")
         if owner is None:
             return self._send(404, f"Geen eigen fiets: {problem}")

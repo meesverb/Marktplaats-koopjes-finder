@@ -100,9 +100,7 @@ def load_owner_context(
     if db_path is not None and Path(config_path) == SCORING_CONFIG_PATH:
         # De regel die de eigenaar op /upgrade opsloeg (upgrade_test.py):
         # daarmee rekenen /racefietsen, het rapport en het overzicht.
-        import upgrade_test as ut
-
-        config, _ = ut.apply_saved_rule(config, db_path)
+        config, _ = up.apply_saved_rule(config, db_path)
 
     build = sc.owner_build(bike.specs, label=bike.label, config=config)
     context = OwnerContext(

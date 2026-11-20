@@ -178,15 +178,15 @@ class RuleTest(unittest.TestCase):
         self.shape = sc.load_config()
 
     def test_clean_rule_keeps_the_shape(self):
-        rule = ut.clean_rule({"weights": {"frame": "0,5", "nieuw": 3}, "onzin": 1}, self.shape)
+        rule = up.clean_rule({"weights": {"frame": "0,5", "nieuw": 3}, "onzin": 1}, self.shape)
         self.assertEqual(rule["weights"]["frame"], 0.5)
         self.assertEqual(rule["weights"]["drivetrain"], 0.25)  # niet meegestuurd: uit de vorm
         self.assertNotIn("nieuw", rule["weights"])
         self.assertNotIn("onzin", rule)
         self.assertEqual(rule["upgrade"]["onbekend"], "neutraal")
         self.assertIsNone(rule["wheels"]["eigen_wielen"])
-        self.assertEqual(ut.clean_rule({"wheels": {"eigen_wielen": ""}}, self.shape)["wheels"]["eigen_wielen"], None)
-        self.assertEqual(ut.clean_rule({"wheels": {"eigen_wielen": 60}}, self.shape)["wheels"]["eigen_wielen"], 60)
+        self.assertEqual(up.clean_rule({"wheels": {"eigen_wielen": ""}}, self.shape)["wheels"]["eigen_wielen"], None)
+        self.assertEqual(up.clean_rule({"wheels": {"eigen_wielen": 60}}, self.shape)["wheels"]["eigen_wielen"], 60)
 
     def test_clean_rule_refuses_what_cannot_be(self):
         bad = [
@@ -197,36 +197,36 @@ class RuleTest(unittest.TestCase):
             {"weights": {"frame": "veel"}}, "geen dict",
         ]
         for raw in bad:
-            with self.subTest(raw=raw), self.assertRaises(ut.RuleError):
-                ut.clean_rule(raw, self.shape)
+            with self.subTest(raw=raw), self.assertRaises(up.RuleError):
+                up.clean_rule(raw, self.shape)
 
     def test_save_load_apply_and_reset(self):
-        self.assertEqual(ut.apply_saved_rule(self.shape, self.db), (self.shape, None))
-        before = ut.rule_stamp(self.db)
-        saved = ut.save_rule(self.db, {"weights": {"frame": 0.6}, "upgrade": {"marge": 2}})
+        self.assertEqual(up.apply_saved_rule(self.shape, self.db), (self.shape, None))
+        before = up.rule_stamp(self.db)
+        saved = up.save_rule(self.db, {"weights": {"frame": 0.6}, "upgrade": {"marge": 2}})
         self.assertEqual(saved["weights"]["frame"], 0.6)
-        self.assertNotEqual(ut.rule_stamp(self.db), before)
-        applied, at = ut.apply_saved_rule(sc.load_config(), self.db)
+        self.assertNotEqual(up.rule_stamp(self.db), before)
+        applied, at = up.apply_saved_rule(sc.load_config(), self.db)
         self.assertEqual(applied["weights"]["frame"], 0.6)
         self.assertEqual(up.config_margin(applied), 2)
         self.assertTrue(at)
         self.assertIn("gewicht frame: 0,3 → 0,6", ut.rule_changes(applied))
         self.assertIn("upgrade marge: 5 → 2", ut.rule_changes(applied))
-        ut.reset_rule(self.db)
-        self.assertEqual(ut.apply_saved_rule(self.shape, self.db)[1], None)
+        up.reset_rule(self.db)
+        self.assertEqual(up.apply_saved_rule(self.shape, self.db)[1], None)
 
     def test_a_broken_stored_rule_is_ignored(self):
         conn = db.connect(self.db)
         try:
             for raw in ("{niet json", json.dumps({"config": {"weights": {"frame": "x"}}}), json.dumps([1])):
-                db.set_setting(conn, ut.RULE_KEY, raw)
-                self.assertEqual(ut.apply_saved_rule(self.shape, self.db), (self.shape, None))
+                db.set_setting(conn, up.RULE_KEY, raw)
+                self.assertEqual(up.apply_saved_rule(self.shape, self.db), (self.shape, None))
         finally:
             conn.close()
-        self.assertEqual(ut.apply_saved_rule(self.shape, str(self.dir / "bestaat_niet.db")), (self.shape, None))
+        self.assertEqual(up.apply_saved_rule(self.shape, str(self.dir / "bestaat_niet.db")), (self.shape, None))
 
     def test_the_owner_context_uses_the_saved_rule(self):
-        ut.save_rule(self.db, {"weights": {"wheels": 0}, "upgrade": {"marge": 1}, "wheels": {"eigen_wielen": 60}})
+        up.save_rule(self.db, {"weights": {"wheels": 0}, "upgrade": {"marge": 1}, "wheels": {"eigen_wielen": 60}})
         owner, problem = report.load_owner_context(repo_file("mijn_fiets.md"), self.db)
         self.assertEqual(owner.config["weights"]["wheels"], 0)
         self.assertEqual(owner.build.wheel_score, 60)
@@ -314,7 +314,7 @@ class AssessTest(BikesCase):
                      {"upgrade": {"marge": 0}, "wheels": {"eigen_wielen": 50}, "drivetrain": {"age_decay_per_year": 0.03}}):
             with self.subTest(rule=rule):
                 if rule:
-                    ut.save_rule(self.db, rule)
+                    up.save_rule(self.db, rule)
                 owner, judge = self.judge()
                 base = rb.build_base(self.db, self.intake)
                 verdicts = {a.bike.listing.item_id: a for a in ut.assess_all(ut.load_bikes(self.db), judge)}
@@ -459,7 +459,7 @@ class OutputTest(BikesCase):
         self.assertFalse((self.dir / "nee.db").exists())
 
     def test_upgrade_cli_says_it_uses_the_saved_rule(self):
-        ut.save_rule(self.db, {"upgrade": {"marge": 0}})
+        up.save_rule(self.db, {"upgrade": {"marge": 0}})
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             up.main(["--db", self.db, "--mijn-fiets", self.intake])
@@ -471,7 +471,7 @@ class CacheTest(BikesCase):
         cache = dashboard.LiveCache()
         base = cache.racebikes(self.db, self.intake)
         before = {r.listing.item_id: r.upgrade_ok for r in base.rows}
-        ut.save_rule(self.db, {"upgrade": {"marge": -20, "onbekend": "gelijk"}})
+        up.save_rule(self.db, {"upgrade": {"marge": -20, "onbekend": "gelijk"}})
         with mock.patch.object(rb, "build_base", side_effect=AssertionError("alles opnieuw")):
             again = cache.racebikes(self.db, self.intake)
         self.assertIs(again, base)
@@ -480,7 +480,7 @@ class CacheTest(BikesCase):
         self.assertTrue(after["tcr"])
         self.assertEqual(up.config_margin(again.owner.config), -20)
         # en terug
-        ut.reset_rule(self.db)
+        up.reset_rule(self.db)
         self.assertEqual({r.listing.item_id: r.upgrade_ok for r in cache.racebikes(self.db, self.intake).rows}, before)
 
     def test_upgrade_bikes_come_from_the_cache(self):
@@ -556,21 +556,21 @@ class ServerTest(BikesCase):
         tried = self.post(ut.TRY_PATH, regel=json.dumps(rule))
         self.assertEqual(tried["s"]["tcr"][2], 1)
         self.assertIn("upgrade marge: 5 → -20", tried["changes"])
-        self.assertEqual(ut.load_rule(self.db), (None, None))  # proef slaat niets op
+        self.assertEqual(up.load_rule(self.db), (None, None))  # proef slaat niets op
         self.assertIn("niet te lezen", self.post(ut.TRY_PATH, regel="{kapot")["message"])
         # diep geneste haken: RecursionError in json, geen traceback (9 kB past nog in een formulier)
         self.assertIn("niet te lezen", self.post(ut.TRY_PATH, regel="[" * 3000)["message"])
         self.assertIn("tussen", self.post(ut.TRY_PATH, regel=json.dumps({"weights": {"frame": 99}}))["message"])
         saved = self.post(ut.RULE_PATH, actie="opslaan", regel=json.dumps(rule))
         self.assertIn("Opgeslagen", saved["message"])
-        self.assertEqual(up.config_margin(ut.load_rule(self.db)[0]), -20)
+        self.assertEqual(up.config_margin(up.load_rule(self.db)[0]), -20)
         # /racefietsen rekent er meteen mee
         status, _, race = self.request("GET", rb.PATH)
         bikes = json.loads(re.search(r"<script type='application/json' id='bikes'>(.*?)</script>", race, re.S).group(1))
         self.assertTrue(next(b for b in bikes if b["id"] == "tcr")["uo"])
         back = self.post(ut.RULE_PATH, actie="standaard")
         self.assertIn("standaard", back["message"])
-        self.assertEqual(ut.load_rule(self.db), (None, None))
+        self.assertEqual(up.load_rule(self.db), (None, None))
         self.assertEqual(back["s"]["tcr"][2], 0)
         self.assertEqual(self.post(ut.LABEL_PATH, item_id="tcr", oordeel="")["message"], "Oordeel weggehaald.")
 

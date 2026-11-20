@@ -16,7 +16,7 @@ Drie dingen:
    meteen hoeveel van zijn oordelen de regel goed heeft; `search()` zoekt de
    regel die het best past. Opgeslagen in `setting` (`upgrade_regel`); dan
    rekenen /racefietsen, het rapport, het overzicht en `upgrade.py` ermee
-   (`apply_saved_rule()`). Zonder opgeslagen regel: scoring_config.json.
+   (`up.apply_saved_rule()`). Zonder opgeslagen regel: scoring_config.json.
 3. **De uitdraai.** Elke racefiets met de score per onderdeel, het verschil
    met de eigen fiets, de winst, het oordeel en waarom: op de pagina, als
    CSV en met `python upgrade_test.py uitdraai`.
@@ -39,7 +39,6 @@ import math
 import sqlite3
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -49,7 +48,6 @@ import scoring as sc
 import upgrade as up
 import util
 
-RULE_KEY = "upgrade_regel"
 LABELS = ("ja", "nee", "twijfel")
 LABEL_TEXT = {"ja": "upgrade", "nee": "geen upgrade", "twijfel": "twijfel"}
 DIMENSIONS = ("frame", "drivetrain", "brakes", "wheels", "extras")
@@ -57,168 +55,6 @@ DIMENSION_LABELS = {"frame": "frame", "drivetrain": "aandrijving", "brakes": "re
                     "extras": "extra's"}
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = HERE / "lijsten" / "upgrade_uitdraai.csv"
-
-
-class RuleError(ValueError):
-    """Een regel die niet kan; de tekst gaat terug naar de pagina."""
-
-
-# --- De regel -------------------------------------------------------------------
-
-# Leesbare namen voor de meldingen en de lijst "wat wijkt af".
-NAMES = {
-    "weights": "gewicht", "frame": "frame", "drivetrain": "aandrijving", "brakes": "remmen",
-    "wheels": "wielen", "extras": "extra's", "upgrade": "upgrade",
-    "material_score": "materiaal", "material_score_unknown": "materiaal onbekend",
-    "tier_multiplier": "frameklasse", "tier_multiplier_unknown": "frameklasse onbekend",
-    "age_decay_per_year": "leeftijd per jaar", "age_decay_max": "leeftijd hooguit",
-    "tier_score": "groepsetniveau", "tier_score_unknown": "groepset onbekend",
-    "electronic_bonus": "elektronisch", "speeds_bonus_per_speed_above_10": "per versnelling boven 10",
-    "score": "", "score_unknown": "onbekend", "aluminium": "aluminium", "carbon_naamloos": "naamloos carbon",
-    "carbon_merk": "merk-carbon", "merk_materiaal_onbekend": "merk, materiaal onbekend",
-    "eigen_wielen": "jouw eigen wielen", "powermeter": "powermeter", "computer": "fietscomputer",
-    "computer_owned_discount": "computer als je er al een hebt", "extra_wheelset": "extra wielset",
-    "pedals": "pedalen", "max": "hooguit", "marge": "marge", "onbekend": "onbekend telt als",
-}
-
-
-def path_name(path: tuple) -> str:
-    return " ".join(n for n in (NAMES.get(str(k), str(k)) for k in path) if n)
-
-
-def _bounds(path: tuple) -> tuple[float, float]:
-    key = path[-1]
-    if path[0] == "weights":
-        return 0.0, 10.0
-    if key == "age_decay_per_year":
-        return 0.0, 0.2
-    if key in ("age_decay_max", "computer_owned_discount"):
-        return 0.0, 1.0
-    if path[:2] == ("frame", "tier_multiplier") or key == "tier_multiplier_unknown":
-        return 0.0, 3.0
-    if key == "marge":
-        return -20.0, 50.0
-    return 0.0, 100.0
-
-
-def _number(value, path: tuple) -> float:
-    if isinstance(value, bool):
-        raise RuleError(f"{path_name(path)} moet een getal zijn")
-    try:
-        number = float(str(value).strip().replace(",", ".")) if isinstance(value, str) else float(value)
-    except (TypeError, ValueError):
-        raise RuleError(f"{path_name(path)} moet een getal zijn") from None
-    if not math.isfinite(number):
-        raise RuleError(f"{path_name(path)} moet een getal zijn")
-    low, high = _bounds(path)
-    if not low <= number <= high:
-        raise RuleError(f"{path_name(path)} moet tussen {low:g} en {high:g} liggen")
-    return number
-
-
-def clean_rule(raw, shape: dict) -> dict:
-    """Een gecontroleerde regel in de vorm van `shape` (scoring_config.json):
-    elke sleutel die `shape` kent, uit `raw` als die hem heeft (anders uit
-    `shape`), elk getal eindig en binnen redelijke grenzen. Sleutels die
-    `shape` niet kent vallen weg — zo blijft een opgeslagen regel werken als
-    scoring_config.json later een sleutel krijgt of verliest. RuleError bij
-    iets wat niet kan."""
-    def walk(shape_part: dict, raw_part, path: tuple) -> dict:
-        out = {}
-        raw_part = raw_part if isinstance(raw_part, dict) else {}
-        for key, default in shape_part.items():
-            here = path + (key,)
-            value = raw_part.get(key, default)
-            if isinstance(default, dict):
-                out[key] = walk(default, value, here)
-            elif key == "onbekend":
-                if value not in up.UNKNOWN_MODES:
-                    raise RuleError(f"onbekend telt als: kies {' of '.join(up.UNKNOWN_MODES)}")
-                out[key] = value
-            elif key == "eigen_wielen":
-                out[key] = None if value in (None, "") else _number(value, here)
-            else:
-                out[key] = _number(value, here)
-        return out
-
-    if not isinstance(raw, dict):
-        raise RuleError("geen regel meegestuurd")
-    clean = walk(shape, raw, ())
-    if sum(clean["weights"].values()) <= 0:
-        raise RuleError("minstens één gewicht moet boven 0 liggen")
-    return clean
-
-
-def default_config() -> dict:
-    return sc.load_config()
-
-
-def _read_setting(db_path) -> Optional[str]:
-    if not db_path or not Path(db_path).exists():
-        return None
-    try:
-        conn = db.connect_readonly(db_path)
-    except sqlite3.Error:
-        return None
-    try:
-        return db.get_setting(conn, RULE_KEY)
-    except sqlite3.Error:
-        return None
-    finally:
-        conn.close()
-
-
-def load_rule(db_path) -> tuple[Optional[dict], Optional[str]]:
-    """(opgeslagen regel, wanneer opgeslagen) of (None, None)."""
-    raw = _read_setting(db_path)
-    if not raw:
-        return None, None
-    try:
-        data = json.loads(raw)
-    except (ValueError, RecursionError):
-        return None, None
-    if not isinstance(data, dict) or not isinstance(data.get("config"), dict):
-        return None, None
-    return data["config"], data.get("opgeslagen")
-
-
-def rule_stamp(db_path) -> str:
-    """Verandert als de opgeslagen regel verandert (voor de LiveCache)."""
-    return _read_setting(db_path) or ""
-
-
-def apply_saved_rule(config: dict, db_path) -> tuple[dict, Optional[str]]:
-    """(config met de opgeslagen regel erover, wanneer opgeslagen). Geen of
-    een onleesbare regel: `config` zelf — een kapotte regel mag een ronde
-    of pagina nooit laten stoppen."""
-    saved, at = load_rule(db_path)
-    if saved is None:
-        return config, None
-    try:
-        return clean_rule(saved, config), at
-    except RuleError:
-        return config, None
-
-
-def save_rule(db_path, raw) -> dict:
-    """Controleren en opslaan; geeft de opgeslagen regel terug."""
-    clean = clean_rule(raw, default_config())
-    conn = db.connect(str(db_path))
-    try:
-        db.set_setting(conn, RULE_KEY, json.dumps(
-            {"config": clean, "opgeslagen": datetime.now(timezone.utc).isoformat(timespec="seconds")},
-            sort_keys=True))
-    finally:
-        conn.close()
-    return clean
-
-
-def reset_rule(db_path) -> None:
-    conn = db.connect(str(db_path))
-    try:
-        db.set_setting(conn, RULE_KEY, None)
-    finally:
-        conn.close()
 
 
 def _flat(config, path=()) -> dict:
@@ -240,9 +76,9 @@ def _show(value) -> str:
 
 def rule_changes(config: dict, standard: Optional[dict] = None) -> list[str]:
     """Wat deze regel anders doet dan scoring_config.json, leesbaar."""
-    standard = standard if standard is not None else default_config()
+    standard = standard if standard is not None else up.default_config()
     mine, base = _flat(config), _flat(standard)
-    return [f"{path_name(path)}: {_show(base.get(path))} → {_show(value)}"
+    return [f"{up.path_name(path)}: {_show(base.get(path))} → {_show(value)}"
             for path, value in mine.items() if path in base and base[path] != value]
 
 
@@ -596,7 +432,7 @@ def search(bikes: Sequence[Bike], owner, config: dict) -> Suggestion:
     vast; de eigenaar kijkt en slaat op."""
     judged = [b for b in bikes if b.label in ("ja", "nee")]
     yes = [b.label == "ja" for b in judged]
-    current = clean_rule(config, default_config())
+    current = up.clean_rule(config, up.default_config())
     before = agreement(assess_all(judged, make_judge(owner, current))).correct
     if len(judged) < MIN_JUDGED or sum(yes) < MIN_EACH or len(yes) - sum(yes) < MIN_EACH:
         return Suggestion(current, before, len(judged), before, [],
@@ -639,7 +475,7 @@ def search(bikes: Sequence[Bike], owner, config: dict) -> Suggestion:
     rule.setdefault("upgrade", {})["marge"] = next(
         (m for m in (round(margin, 1), round(margin, 2), round(margin, 3))
          if sum((g > m) if y else (g <= m) for g, y in zip(gains, yes)) == count), margin)
-    rule = clean_rule(rule, default_config())
+    rule = up.clean_rule(rule, up.default_config())
     correct = agreement(assess_all(judged, make_judge(owner, rule))).correct
     note = ""
     if len(judged) < 30:
@@ -778,12 +614,12 @@ def form_groups(config: dict) -> list:
                                   "12-speed uit 2022); leeftijd hier aanzetten laat het bouwjaar dat doen.", drive))
     groups.append(("Remmen", "", [(("brakes", "score", b), b, "num") for b in config["brakes"]["score"]]
                    + [(("brakes", "score_unknown"), "remtype onbekend", "num")]))
-    wheels = [(("wheels", k), path_name((k,)), "num") for k in config["wheels"] if k != "eigen_wielen"]
+    wheels = [(("wheels", k), up.path_name((k,)), "num") for k in config["wheels"] if k != "eigen_wielen"]
     wheels.append((("wheels", "eigen_wielen"), "jouw eigen wielen (leeg = zoals de tekst ze leest)", "num"))
     groups.append(("Wielen", "Jouw CSC-set telt zonder eigen getal als merk-carbon, omdat CSC in de lijst met "
                              "wielmerken staat. Bij een velremfiets verhuist hij mee.", wheels))
     groups.append(("Extra's", "Opgeteld, tot het maximum.",
-                   [(("extras", k), path_name((k,)), "pct" if k == "computer_owned_discount" else "num")
+                   [(("extras", k), up.path_name((k,)), "pct" if k == "computer_owned_discount" else "num")
                     for k in config["extras"]]))
     return groups
 
@@ -878,7 +714,7 @@ def render(owner, problem: str, bikes: Sequence[Bike], saved_at: Optional[str], 
     if not any(b.active for b in bikes):
         notices += ("<div class='banner'>Nog geen racefietsen in de database. Draai eerst een ronde: "
                     "<code>python koopjes.py run overdag</code>.</div>")
-    data = {"bikes": bikes_json(bikes), **rule_state(judge, assessments), "std": default_config(),
+    data = {"bikes": bikes_json(bikes), **rule_state(judge, assessments), "std": up.default_config(),
             "saved": saved_at or "", "queue": queue(assessments), "label": judge.label,
             "dimnames": [DIMENSION_LABELS[d] for d in DIMENSIONS], "minJudged": MIN_JUDGED,
             "paths": {"label": LABEL_PATH, "try": TRY_PATH, "rule": RULE_PATH, "search": SEARCH_PATH,
@@ -937,15 +773,15 @@ def _form_rule(form: dict) -> dict:
     try:
         data = json.loads(raw) if raw else None
     except (ValueError, RecursionError):  # diep geneste haken geven RecursionError
-        raise RuleError("de regel was niet te lezen") from None
-    return clean_rule(data, default_config())
+        raise up.RuleError("de regel was niet te lezen") from None
+    return up.clean_rule(data, up.default_config())
 
 
 def try_rule(owner, bikes: Sequence[Bike], form: dict) -> dict:
     """POST /upgrade/proef: de regel uit het formulier doorrekenen, niets opslaan."""
     try:
         rule = _form_rule(form)
-    except RuleError as exc:
+    except up.RuleError as exc:
         return {"message": f"Niet doorgerekend: {exc}.", "error": True}
     judge = make_judge(owner, rule)
     return rule_state(judge, assess_all(bikes, judge))
@@ -954,15 +790,15 @@ def try_rule(owner, bikes: Sequence[Bike], form: dict) -> dict:
 def rule_action(db_path, owner, bikes: Sequence[Bike], form: dict) -> dict:
     """POST /upgrade/regel: opslaan (actie=opslaan) of terug naar de standaard."""
     if form.get("actie") == "standaard":
-        reset_rule(db_path)
-        rule, message, saved = default_config(), "Terug naar de standaard (scoring_config.json).", ""
+        up.reset_rule(db_path)
+        rule, message, saved = up.default_config(), "Terug naar de standaard (scoring_config.json).", ""
     else:
         try:
-            rule = save_rule(db_path, _form_rule(form))
-        except RuleError as exc:
+            rule = up.save_rule(db_path, _form_rule(form))
+        except up.RuleError as exc:
             return {"message": f"Niet opgeslagen: {exc}.", "error": True}
         message = "Opgeslagen: /racefietsen, het rapport en het overzicht rekenen nu met jouw regel."
-        saved = load_rule(db_path)[1] or ""
+        saved = up.load_rule(db_path)[1] or ""
     judge = make_judge(owner, rule)
     return {"message": message, "saved": saved, **rule_state(judge, assess_all(bikes, judge))}
 
@@ -970,7 +806,7 @@ def rule_action(db_path, owner, bikes: Sequence[Bike], form: dict) -> dict:
 def search_action(owner, bikes: Sequence[Bike], form: dict) -> dict:
     try:
         rule = _form_rule(form)
-    except RuleError as exc:
+    except up.RuleError as exc:
         return {"message": f"Niet gezocht: {exc}.", "error": True}
     found = search(bikes, owner, rule)
     return {"rule": found.config, "correct": found.correct, "judged": found.judged, "before": found.before,
@@ -986,7 +822,7 @@ def explain_action(owner, bikes: Sequence[Bike], form: dict) -> dict:
         return {"message": "Deze fiets staat er niet (meer) bij.", "error": True}
     try:
         rule = _form_rule(form) if form.get("regel") else owner.config
-    except RuleError as exc:
+    except up.RuleError as exc:
         return {"message": f"Niet doorgerekend: {exc}.", "error": True}
     judge = make_judge(owner, rule)
     l = found.listing
@@ -1543,7 +1379,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if owner is None:
         print(f"fout: {problem}", file=sys.stderr)
         return 1
-    _, saved_at = load_rule(args.db)
+    _, saved_at = up.load_rule(args.db)
     judge = make_judge(owner, owner.config)
     bikes = load_bikes(args.db)
     assessments = assess_all(bikes, judge)
