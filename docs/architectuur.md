@@ -72,7 +72,7 @@ Wat meer dan één module hetzelfde nodig had: `parse_time()` / `parse_time_utc(
 
 ## De live server en de dashboards
 
-Naslag: [dashboards.md](dashboards.md).
+Naslag: [live.md](live.md), [fietscomputers.md](fietscomputers.md), [horloges.md](horloges.md).
 
 ### `dashboard.py`
 

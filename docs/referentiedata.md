@@ -2,7 +2,7 @@
 
 [← README](../README.md) · [alle naslag](README.md)
 
-De CSV-bestanden waartegen advertenties herkend en vergeleken worden, en de hulpscripts om ze te onderhouden. De catalogus van sporthorloges (`reference_sport_watches.csv`) staat bij de horloges in [dashboards.md](dashboards.md).
+De CSV-bestanden waartegen advertenties herkend en vergeleken worden, en de hulpscripts om ze te onderhouden. De catalogus van sporthorloges (`reference_sport_watches.csv`) staat bij de horloges in [horloges.md](horloges.md).
 
 ## Comparing against original prices — `--reference-file`
 

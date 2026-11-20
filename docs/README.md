@@ -11,7 +11,9 @@ met de metingen aan Marktplaats waar de keuzes op rusten.
 | [rondes.md](rondes.md) | `koopjes.py` en `schedule.json`: tijdsloten, wat een ronde doet, het overzicht, de logboeken |
 | [zoeken.md](zoeken.md) | `racefiets_jev.py`: alle vlaggen, categorieën, sortering, `--split`, watchlists, biedadvertenties, groepsetherkenning |
 | [rapport.md](rapport.md) | het rapport per zoekopdracht: dealscore, slapers, prijsverlagingen, de tabs Biedpaneel / Upgrade / Mijn fiets |
-| [dashboards.md](dashboards.md) | `dashboard.py`: fietscomputers en sporthorloges, de live server en `/start`, favoriet/weg, Mijn flips, Vinted, Patronen, afstand, eigen biedingen, weergaven en likes |
+| [live.md](live.md) | `python dashboard.py --serve`: `/start`, rondes starten, eigen aan- en verkopen, favoriet/weg en notities, controleer, afstand, eigen biedingen, weergaven en likes, waarom het snel is |
+| [fietscomputers.md](fietscomputers.md) | `dashboard.html`: de tabs, hoe de winst berekend wordt, wat telt als computer, het referentiebestand, Vinted |
+| [horloges.md](horloges.md) | `dashboard_horloges.html`: zoekopdrachten, de flips met zorg lezen, de catalogus `reference_sport_watches.csv` |
 | [racefietsen.md](racefietsen.md) | `/racefietsen`: de kaarten, de schatting, het dossier voor Claude, fietsmodellen en regels |
 | [eigen-fiets.md](eigen-fiets.md) | de eigen fiets: taxatie (`valuation.py`, `/fiets`), kwaliteitsscore (`scoring.py`), upgrade-finder (`upgrade.py`), de upgradetest (`/upgrade`) |
 | [flips.md](flips.md) | `/flips`: fases, klussen, aanbiedingen, foto's, biedingen van kopers |

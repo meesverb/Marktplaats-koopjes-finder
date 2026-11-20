@@ -15,7 +15,7 @@ python koopjes.py dashboard         # dashboard.html en dashboard_horloges.html 
 Plak eenmalig wat `schedule` print in een opdrachtprompt (Windows) of
 `crontab -e` (macOS/Linux), en de rondes draaien vanzelf. Een ronde starten
 kan ook met de knoppen onder *Rondes* op `/start` (zie
-[dashboards.md](dashboards.md)).
+[live.md](live.md)).
 
 `schedule.json` beschrijft elke zoekopdracht (een query met filters) en de
 tijdsloten waarin ze draaien. Het is de enige plek om ze te veranderen.
@@ -30,14 +30,14 @@ tijdsloten waarin ze draaien. Het is de enige plek om ze te veranderen.
    slot, met de `pages`, `sort` en `bid_lookup` van het slot — en nog een keer
    met `--no-html` voor de zoekopdrachten met `"report": false` (zie onder).
    Een zoekopdracht met een eigen `"bid_lookup"` gaat voor die van het slot
-   (de sporthorloges hebben `"fast"`, ook overdag; zie "Sport watches" in
-   [dashboards.md](dashboards.md)) en draait dan in een eigen aanroep.
+   (de sporthorloges hebben `"fast"`, ook overdag; zie
+   [horloges.md](horloges.md)) en draait dan in een eigen aanroep.
 4. **Opzoeken met een budget.** Met `"year_budget"`: `racebikes.py jaar
    <budget>` — hooguit zoveel advertentiepagina's om het bouwjaar te vinden
    van racefietsen die goedkoop lijken maar hun jaar niet noemen (zie
    [racefietsen.md](racefietsen.md)). Met `"views_budget"`: `views.py meet
    <budget>` — hooguit zoveel pagina's om weergaven en likes te meten (zie
-   "Views and saves" in [dashboards.md](dashboards.md)). Met `"valuation":
+   "Weergaven en likes" in [live.md](live.md)). Met `"valuation":
    true`: `valuation.py`, zodat de taxatiegeschiedenis vanzelf groeit.
 5. **`overzicht.html` opnieuw**: per zoekopdracht de laatste run, hoeveel
    advertenties nieuw / beter dan je referentie / topdeal / goedkoper dan
@@ -47,7 +47,7 @@ tijdsloten waarin ze draaien. Het is de enige plek om ze te veranderen.
    van je eigen fiets en het schema.
 6. **`dashboard.html` en `dashboard_horloges.html` opnieuw**: alle
    fietscomputers resp. sporthorloges op Marktplaats (zie
-   [dashboards.md](dashboards.md)). Het overzicht linkt naar beide, en elk
+   [fietscomputers.md](fietscomputers.md) en [horloges.md](horloges.md)). Het overzicht linkt naar beide, en elk
    dashboard naar het andere. Een nieuwe flip komt in het logboek ("Nieuwe
    flip: …" of "Nieuwe flip (horloges): …") en opent, in een slot met
    `"open_browser": "auto"`, het dashboard waar hij op staat.

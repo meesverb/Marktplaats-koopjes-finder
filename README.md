@@ -13,9 +13,9 @@ reageert nooit op een advertentie.
 
 | Pagina | Wat je er doet | Meer |
 | --- | --- | --- |
-| `/start` | beginpunt: de laatste ronde, wat je flips opleverden, je lopende biedingen, een knop per ronde | [dashboards](docs/dashboards.md) |
+| `/start` | beginpunt: de laatste ronde, wat je flips opleverden, je lopende biedingen, een knop per ronde | [live pagina's](docs/live.md) |
 | `/racefietsen` | alle racefietsen als kaarten met foto's, een verkoopschatting, of het een upgrade is; beoordelen, wegzetten, bod vastleggen, dossier voor Claude | [racefietsen](docs/racefietsen.md) |
-| `/` en `/horloges` | fietscomputers en sporthorloges: flips (onder de verwachte verkoopprijs), upgrades, favorieten, marktprijzen per model, patronen | [dashboards](docs/dashboards.md) |
+| `/` en `/horloges` | fietscomputers en sporthorloges: flips (onder de verwachte verkoopprijs), upgrades, favorieten, marktprijzen per model, patronen | [fietscomputers](docs/fietscomputers.md), [horloges](docs/horloges.md) |
 | `/fiets` | welke advertenties meetellen in de taxatie van je eigen fiets | [eigen fiets](docs/eigen-fiets.md) |
 | `/upgrade` | de upgradetest: jij zegt wat een upgrade is, de regel volgt jou | [eigen fiets](docs/eigen-fiets.md) |
 | `/flips` | wat je kocht om door te verkopen: fase, klussen, onderdelen, foto's, opbrengst | [flips](docs/flips.md) |

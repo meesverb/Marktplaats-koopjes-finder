@@ -107,7 +107,7 @@ actually hunting for. Disable with `--no-notify-better`.
 
 Next to the listings table (which keeps its row filters and sortable columns
 as before) the HTML report has more tabs: **Slapers**, **Fietscomputers**
-(only when the run has any; see "Slapers" above and [dashboards.md](dashboards.md)) and the three below
+(only when the run has any; see "Slapers" above and [fietscomputers.md](fietscomputers.md)) and the three below
 (PLAN_FIETSWAARDE.md fase 6).
 The chosen tab is kept in the URL (`#upgrade`), so reloading the report after
 a new run lands on the same one.

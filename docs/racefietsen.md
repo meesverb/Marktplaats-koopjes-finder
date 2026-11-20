@@ -218,8 +218,8 @@ De volledige omschrijving wordt bewaard (dezelfde kolom die `--detail-lookup`
 vult), en `/racefietsen` en het upgradeoordeel lezen het jaar daaruit na de
 volgende ronde. Net als bij een ronde ook de framehoogte uit de *Kenmerken*
 als de zoekresultaten er geen hadden, en materiaal en remmen waar die niets
-zeiden. Ook de weergaven en likes op de pagina worden bewaard (zie "Views and
-saves" in [dashboards.md](dashboards.md)). Met de hand: `python racebikes.py
+zeiden. Ook de weergaven en likes op de pagina worden bewaard (zie "Weergaven en
+likes" in [live.md](live.md)). Met de hand: `python racebikes.py
 plan 20` toont welke fietsen het zouden zijn, `python racebikes.py jaar 20`
 haalt ze op (hooguit 20).
 
@@ -260,8 +260,8 @@ haalt ze op (hooguit 20).
   zoekopdracht in de categorie `fietsonderdelen` in `schedule.json` (een
   nachtslot met `pages: 2` is ~2 verzoeken per zoekopdracht per nacht); dat
   zijn meer verzoeken aan Marktplaats, dus eerst afwegen.
-- **Patronen** — weergaven en likes van racefietsen (zie "Views and saves" in
-  [dashboards.md](dashboards.md)).
+- **Patronen** — weergaven en likes van racefietsen (zie "Weergaven en likes" in
+  [live.md](live.md)).
 
 **Filters:** zoeken (titel, specs, plaats, je notitie), volgorde (nieuwste,
 beste flip, beste waardescore, beste upgrade, dichtstbij, goedkoopste),
