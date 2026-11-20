@@ -233,7 +233,7 @@ gebruikt.
   `--budget-extra` zet het geld bovenop de verkoop (standaard: de regel
   `budget_extra` in `mijn_fiets.md`).
 - **Effectieve prijs.** Een vraagprijs maal de onderhandelingsfactor, of wat
-  het kost om een bod binnen te komen (zie `RUIMTE` onder "Bidding listings" in
+  het kost om een bod binnen te komen (zie `RUIMTE` onder "Biedadvertenties" in
   [zoeken.md](zoeken.md)). De vraagprijs staat ernaast, zodat een gecorrigeerd
   getal er nooit voor wordt aangezien.
 - **Modeljaar.** Een gelabeld jaar in de tekst ("bouwjaar 2016") wint; zonder

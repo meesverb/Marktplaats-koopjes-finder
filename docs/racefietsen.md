@@ -40,7 +40,7 @@ elkaar:
     kaart zegt dat). Anders de mediaan van alle vraagprijzen × 0,875, met
     "(nog geen snelle verkopen)".
   - Verdwenen staat pas vast na een volledige crawl (de zondagronde `week`,
-    zie "Everything in a category" in [zoeken.md](zoeken.md)), dus de eerste
+    zie "Alles in een categorie" in [zoeken.md](zoeken.md)), dus de eerste
     weken zijn er weinig snelle verkopen.
   - De kaart zegt waar de fiets aan hangt en hoe hij zich verhoudt, bijv.
     *Trek Domane SL6 · 6 snel verkocht (≤7 d), mediaan €620 · 14 te koop,

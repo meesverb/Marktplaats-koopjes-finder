@@ -126,7 +126,7 @@ fietsen"). Nooit een mediaan van alle racefietsen.
   `racebikes.SELECT` en zet een vlag in het `extra`-tuple van elk
   pool-item.
 - Let op: verdwijnen wordt alleen vastgesteld na een **complete** crawl (de
-  zondagronde `week` met `--split`, zie `docs/zoeken.md` → "Everything in a category").
+  zondagronde `week` met `--split`, zie `docs/zoeken.md` → "Alles in een categorie").
   De eerste weken zijn er dus weinig snelle verkopen.
 - Schatting binnen de gekozen trede:
   - **≥ 3 snel verkochte** → verwachte verkoopprijs = mediaan van hun
