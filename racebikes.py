@@ -67,6 +67,7 @@ import flips as fl
 from koopjes import YEAR_BUDGET_MAX
 import marks as mr
 import own_bids as ob
+import pages as pg
 import racefiets_jev as mp
 import recheck as rc
 import report
@@ -77,7 +78,7 @@ import valuation as val
 import views as vw
 
 MARKET_KEY = "racefietsen"
-PATH = "/racefietsen"
+PATH = pg.RACEBIKES_PATH
 CATEGORY = mp.ROAD_BIKE_CATEGORY
 ACTIVE_DAYS = 8
 NEW_HOURS = 24
@@ -1695,8 +1696,6 @@ def own_flips_html(db_path) -> tuple[int, str]:
 
 
 def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
-    import dashboard as dash
-
     with base.lock:
         bikes = [bike_json(r, fresh, comps=False) for r in base.rows]
         models = model_list(base)
@@ -1722,7 +1721,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     else:
         where = "Nog geen postcode: vul hem in om op afstand te filteren en te sorteren. "
         km_filter = "<input type='hidden' id='km' value='250' max='250'><input type='checkbox' id='nokm' hidden checked>"
-    postcode = (dash.act("/afstand", "postcode",
+    postcode = (pg.act("/afstand", "postcode",
                          f"<span class='muted'>{where}</span><input name='postcode' size='7' "
                          f"value='{esc(home.postcode if home else '', quote=True)}' placeholder='bv. 3511AB' "
                          "aria-label='Postcode'><button class='quiet'>opslaan</button>")
@@ -1749,9 +1748,9 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>Racefietsen</title><style>{dash.CSS}{dash.SITE_CSS}{CSS}</style></head><body>"
+        f"<title>Racefietsen</title><style>{pg.CSS}{pg.SITE_CSS}{CSS}</style></head><body>"
         f"<main data-token='{esc(token, quote=True)}' data-markt='{MARKET_KEY}'>"
-        f"{dash.site_nav(PATH) if token else ''}<h1>Racefietsen op Marktplaats</h1>"
+        f"{pg.site_nav(PATH) if token else ''}<h1>Racefietsen op Marktplaats</h1>"
         f"<div class='meta'>{meta}</div>{notices}{postcode}"
         "<div class='bar'>"
         f"<div class='views'>{views_bar}</div>"
@@ -1793,7 +1792,7 @@ def render(base: Base, fresh: Fresh, token: str = "", message: str = "") -> str:
         "<p class='muted'>Plak het in een gesprek met Claude. De vragen staan bovenaan; pas ze gerust aan. "
         "Kan Claude de foto's niet openen, sleep ze dan in de chat.</p>"
         "<textarea id='dtext' readonly spellcheck='false'></textarea></div></div>"
-        f"</main><div id='toast' role='status' hidden></div><script>{dash.LIVE_JS}{JS}</script>"
+        f"</main><div id='toast' role='status' hidden></div><script>{pg.LIVE_JS}{JS}</script>"
         "</body></html>")
 
 

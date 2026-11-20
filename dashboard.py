@@ -39,9 +39,7 @@ from __future__ import annotations
 
 import argparse
 import hmac
-import html
 import json
-import math
 import re
 import secrets
 import sqlite3
@@ -68,6 +66,7 @@ import launcher
 import markets as mk
 import marks as mr
 import own_bids as ob
+import pages as pg
 import patterns as pt
 import racebikes as rb
 import racefiets_jev as mp
@@ -85,8 +84,6 @@ import vinted as vn
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = "dashboard.html"
-
-esc = html.escape
 
 
 @dataclass
@@ -566,30 +563,6 @@ def band(low: Optional[float], high: Optional[float]) -> str:
     return f"{euro(low)} tot {euro(high)}"
 
 
-def web_link(url: Optional[str]) -> str:
-    """De link als hij met http(s):// begint, anders "". Links die de
-    eigenaar zelf invult (Mijn flips, /flips, en via de Google Sheet die in
-    twee richtingen gaat) komen in een href; "javascript:..." zou daar code
-    worden op een pagina met het token."""
-    return url if url and re.match(r"https?://", url, re.I) else ""
-
-
-MONTHS = ("jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec")
-
-
-def nl_date(value: Optional[str]) -> str:
-    day = util.parse_day(value)
-    return f"{day.day} {MONTHS[day.month - 1]} {day.year}" if day else (value or "?")
-
-
-def thumb(listing) -> str:
-    url = (listing.image_urls or "").split()
-    if not url:
-        return "<div class='thumb empty' aria-hidden='true'></div>"
-    return (f"<a href='{esc(listing.url, quote=True)}' target='_blank' rel='noopener'>"
-            f"<img class='thumb' src='{esc(url[0], quote=True)}' alt='' loading='lazy'></a>")
-
-
 def comp_text(c) -> str:
     """Waarmee de verkoopprijs is vergeleken, kort: dezelfde uitvoering of het
     hele model, en of hij op de snel verkochte rust
@@ -624,7 +597,7 @@ def mark_badges(listing, d: Dashboard) -> str:
     zodat de live pagina ze na een klik kan vervangen zonder te herladen."""
     out = "<span class='badge fav'>★ favoriet</span> " if d.is_favorite(listing) else ""
     if d.is_dismissed(listing):
-        out += f"<span class='badge reserved'>{esc(d.marks[listing.item_id].label)}</span> "
+        out += f"<span class='badge reserved'>{pg.esc(d.marks[listing.item_id].label)}</span> "
     return out
 
 
@@ -639,8 +612,8 @@ def stats_line(item_id: str, d: Dashboard) -> str:
     if latest is None or not latest.label:
         return ""
     delta = (f" ({'+' if latest.fav_delta > 0 else ''}{latest.fav_delta} bewaard sinds "
-             f"{nl_date(latest.previous_at)})" if latest.fav_delta else "")
-    return f"<div class='note'>{esc(latest.label)}{esc(delta)} · gemeten {esc(nl_date(latest.observed_at))}</div>"
+             f"{pg.nl_date(latest.previous_at)})" if latest.fav_delta else "")
+    return f"<div class='note'>{pg.esc(latest.label)}{pg.esc(delta)} · gemeten {pg.esc(pg.nl_date(latest.observed_at))}</div>"
 
 
 def km_of(listing, d: Dashboard) -> Optional[dm.Distance]:
@@ -650,44 +623,32 @@ def km_of(listing, d: Dashboard) -> Optional[dm.Distance]:
 def km_cell(listing, d: Dashboard) -> str:
     dist = km_of(listing, d)
     return (f"<td class='num' data-sort='{'' if dist is None else f'{dist.km:.1f}'}'>"
-            f"{'—' if dist is None else esc(dist.label)}</td>")
+            f"{'—' if dist is None else pg.esc(dist.label)}</td>")
 
 
 def listing_cell(listing, d: Dashboard, model_label: str, note: str = "") -> str:
-    item = esc(listing.item_id, quote=True)
+    item = pg.esc(listing.item_id, quote=True)
     new = f"<span class='markbadge' data-item='{item}'>{mark_badges(listing, d)}</span>"
     new += "<span class='badge'>nieuw</span> " if listing.item_id in d.new_ids else ""
     if listing.reserved:
         new += "<span class='badge reserved'>gereserveerd</span> "
     dist = km_of(listing, d)
-    place = f" · {esc(listing.city)}" if listing.city else ""
-    place += f" · {esc(dist.label)}" if dist else ""
-    note_html = f"<div class='note'>{esc(note)}</div>" if note else ""
+    place = f" · {pg.esc(listing.city)}" if listing.city else ""
+    place += f" · {pg.esc(dist.label)}" if dist else ""
+    note_html = f"<div class='note'>{pg.esc(note)}</div>" if note else ""
     # data-km: voor het schuifje "max. afstand" bovenaan (JS), op elke tab.
     km = "" if dist is None else f"{dist.km:.1f}"
     return (
-        f"<td class='what' data-km='{km}'><div class='model'>{new}{esc(model_label)}</div>"
-        f"<a href='{esc(listing.url, quote=True)}' target='_blank' rel='noopener'>{esc(listing.title)}</a>"
+        f"<td class='what' data-km='{km}'><div class='model'>{new}{pg.esc(model_label)}</div>"
+        f"<a href='{pg.esc(listing.url, quote=True)}' target='_blank' rel='noopener'>{pg.esc(listing.title)}</a>"
         f"<span class='muted'>{place}</span>{note_html}{stats_line(listing.item_id, d)}"
         f"<div class='mine' data-item='{item}'>{own_controls(listing, d)}</div>{buy_control(listing, d)}</td>"
     )
 
 
-def act(action: str, item_id: str, inner: str, cls: str = "") -> str:
-    """Knoppen (en invulvelden) die iets versturen, zonder <form>: de pagina
-    had er drie per advertentie, en een browser doet met ~7400 formulieren
-    op de horlogepagina tot twintig seconden over het laden (gemeten in
-    Chromium, 29-09-2026; zonder formulieren 2,5 s). De klik gaat via de
-    JavaScript onderaan (LIVE_JS), met het geheim en de markt uit <main>;
-    de server krijgt dezelfde velden als van een formulier. Een knop met
-    een eigen data-action (controleer) gaat daarheen."""
-    return (f"<div class='inline act{f' {cls}' if cls else ''}' data-action='{action}' "
-            f"data-item='{esc(item_id, quote=True)}'>{inner}</div>")
-
-
 def hidden(d: Dashboard, **values) -> str:
     fields = {"token": d.token, "markt": d.market.key, **values}
-    return "".join(f"<input type='hidden' name='{k}' value='{esc(str(v), quote=True)}'>" for k, v in fields.items())
+    return "".join(f"<input type='hidden' name='{k}' value='{pg.esc(str(v), quote=True)}'>" for k, v in fields.items())
 
 
 def buy_control(listing, d: Dashboard) -> str:
@@ -695,12 +656,12 @@ def buy_control(listing, d: Dashboard) -> str:
     staat, anders (alleen live) een knop met de prijs alvast ingevuld."""
     trade = d.bought.get(listing.item_id)
     if trade:
-        return (f"<div class='owned'>✓ gekocht op {esc(nl_date(trade.bought_at))} voor "
+        return (f"<div class='owned'>✓ gekocht op {pg.esc(pg.nl_date(trade.bought_at))} voor "
                 f"{euro(trade.buy_price_eur)}</div>")
     if not d.editable:
         return ""
     price = "" if listing.price_eur is None else f"{listing.price_eur:.0f}"
-    return act("/gekocht", listing.item_id,
+    return pg.act("/gekocht", listing.item_id,
                f"<label>€<input name='prijs' value='{price}' inputmode='decimal' size='5' "
                "aria-label='Inkoopprijs'></label><button>Gekocht</button>")
 
@@ -712,13 +673,13 @@ def mark_control(listing, d: Dashboard) -> str:
     mark = d.marks.get(listing.item_id)
     back = mark is not None and mark.mark == mr.DISMISSED and mr.price_dropped(mark, listing)
     note = (f"<div class='note'>Weer terug: de prijs zakte van {euro(mark.price_eur)} naar "
-            f"{euro(listing.price_eur)} sinds je hem wegzette ({esc(mark.reason or 'weg')}).</div>"
+            f"{euro(listing.price_eur)} sinds je hem wegzette ({pg.esc(mark.reason or 'weg')}).</div>"
             if back else "")
     if not d.editable:
         return note
 
     def button(value: str, label: str) -> str:
-        return f"<button class='quiet' name='soort' value='{esc(value, quote=True)}'>{esc(label)}</button>"
+        return f"<button class='quiet' name='soort' value='{pg.esc(value, quote=True)}'>{pg.esc(label)}</button>"
 
     away = "<span class='muted'>weg:</span>" + "".join(button(r, r) for r in mr.REASONS)
     if d.is_dismissed(listing):
@@ -727,7 +688,7 @@ def mark_control(listing, d: Dashboard) -> str:
         buttons = button("geen", "★ uit favorieten") + away
     else:
         buttons = button(mr.FAVORITE, "☆ favoriet") + away + (button("geen", "wissen") if back else "")
-    return note + act("/markeer", listing.item_id, buttons + check_button(listing), "mark")
+    return note + pg.act("/markeer", listing.item_id, buttons + check_button(listing), "mark")
 
 
 def check_button(listing) -> str:
@@ -735,7 +696,7 @@ def check_button(listing) -> str:
     Bij favoriet/weg, met een eigen data-action, zodat het op dezelfde regel
     staat en na de klik op dezelfde tab en plek terugkomt."""
     checked = getattr(listing, "checked_at", None)
-    when = f"<span class='muted'>gecontroleerd {esc(local_time(checked))}</span>" if checked else ""
+    when = f"<span class='muted'>gecontroleerd {pg.esc(local_time(checked))}</span>" if checked else ""
     # Het puntje scheidt hem van "weg: niet waard / gereserveerd", waar hij
     # anders een derde reden om weg te zetten lijkt.
     return ("<span class='muted'>·</span><button class='quiet' data-action='/controleer' "
@@ -746,7 +707,7 @@ def check_button(listing) -> str:
 def bid_summary(trail) -> str:
     """"jouw bod €120 (open) · eerder €100" en of er intussen hoger geboden is."""
     last = trail.latest
-    text = f"jouw bod {euro(last.amount_eur)} ({last.status}, {nl_date(last.bid_at)})"
+    text = f"jouw bod {euro(last.amount_eur)} ({last.status}, {pg.nl_date(last.bid_at)})"
     if len(trail.bids) > 1:
         text += " · eerder " + ", ".join(euro(b.amount_eur) for b in trail.bids[:-1])
     if trail.outbid and trail.active:
@@ -759,18 +720,18 @@ def bid_control(item_id: str, d: Dashboard) -> str:
     (live) een veld om een bod vast te leggen en knoppen voor de status.
     Ingeklapt tot je erop klikt, net als de notitie."""
     trail = d.bids.get(item_id)
-    shown = f"<div class='mynote'>{esc(bid_summary(trail))}</div>" if trail else ""
+    shown = f"<div class='mynote'>{pg.esc(bid_summary(trail))}</div>" if trail else ""
     if not d.editable:
         return shown
     status = ""
     if trail:
         status = "".join(
-            f"<button class='quiet' data-action='/bod/status' name='status' value='{esc(st, quote=True)}'>"
-            f"{esc(st)}</button>" for st in ob.STATUSES if st != trail.status)
-        status = act("/bod/status", item_id, "<span class='muted'>status:</span>" + status, "mark")
+            f"<button class='quiet' data-action='/bod/status' name='status' value='{pg.esc(st, quote=True)}'>"
+            f"{pg.esc(st)}</button>" for st in ob.STATUSES if st != trail.status)
+        status = pg.act("/bod/status", item_id, "<span class='muted'>status:</span>" + status, "mark")
     return (
         f"{shown}<details class='note-edit'><summary>{'bod wijzigen' if trail else 'ik heb geboden'}</summary>"
-        + act("/bod", item_id,
+        + pg.act("/bod", item_id,
               "<label>€<input name='bedrag' inputmode='decimal' size='5' aria-label='Bod'></label>"
               f"<button class='quiet'>{'nieuw bod' if trail else 'bod vastleggen'}</button>", "mark")
         + status + "</details>"
@@ -782,7 +743,7 @@ def bids_panel(d: Dashboard) -> str:
     trails = d.bid_trails()
     parts = [f"<p class='explain'>Wat je zelf op Marktplaats bood (bieden doe je daar, het script nooit). Leg een "
              f"bod vast bij een advertentie met <em>ik heb geboden</em>; zet de status als je antwoord krijgt. "
-             f"<em>Geaccepteerd</em> zet hem meteen op <a href='{FLIPS_PATH}'>/flips</a>, met je bod als "
+             f"<em>Geaccepteerd</em> zet hem meteen op <a href='{pg.FLIPS_PATH}'>/flips</a>, met je bod als "
              "inkoopprijs. <em>Er staat al … op</em>: volgens de laatste biedopvraging of controleer.</p>"]
     if not trails:
         parts.append("<p class='empty'>Nog geen biedingen vastgelegd.</p>")
@@ -793,17 +754,17 @@ def bids_panel(d: Dashboard) -> str:
         found = by_id.get(t.item_id)
         if found:
             l, label = found
-            rows.append(f"<tr><td class='pic'>{thumb(l)}</td>{price_cell(l)}{km_cell(l, d)}"
+            rows.append(f"<tr><td class='pic'>{pg.thumb(l)}</td>{price_cell(l)}{km_cell(l, d)}"
                         f"{listing_cell(l, d, label)}</tr>")
         else:
-            when = f"verdwenen {nl_date(t.disappeared_at)}" if t.gone else f"laatst gezien {nl_date(t.last_seen)}"
-            link = (f"<a href='{esc(web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
-                    if web_link(t.url) else esc(t.title))
+            when = f"verdwenen {pg.nl_date(t.disappeared_at)}" if t.gone else f"laatst gezien {pg.nl_date(t.last_seen)}"
+            link = (f"<a href='{pg.esc(pg.web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{pg.esc(t.title)}</a>"
+                    if pg.web_link(t.url) else pg.esc(t.title))
             rows.append(f"<tr><td class='pic'></td><td class='num'>{euro(t.price_eur)}</td><td class='num'>—</td>"
-                        f"<td class='what'>{link}<div class='note'>{esc(when)}</div>"
-                        f"<div class='mine' data-item='{esc(t.item_id, quote=True)}'>"
+                        f"<td class='what'>{link}<div class='note'>{pg.esc(when)}</div>"
+                        f"<div class='mine' data-item='{pg.esc(t.item_id, quote=True)}'>"
                         f"{bid_control(t.item_id, d)}</div></td></tr>")
-    parts.append(table([("", ""), ("Prijs", "num"), ("Afstand", "num"), ("Advertentie", "text")], rows))
+    parts.append(pg.table([("", ""), ("Prijs", "num"), ("Afstand", "num"), ("Advertentie", "text")], rows))
     return "\n".join(parts)
 
 
@@ -812,14 +773,14 @@ def note_control(item_id: str, d: Dashboard) -> str:
     zetten. Ingeklapt tot je erop klikt: de meeste rijen hebben er geen, en
     een invulveld per rij maakt Flips onleesbaar."""
     note = d.notes.get(item_id)
-    shown = f"<div class='mynote'>{esc(note)}</div>" if note else ""
+    shown = f"<div class='mynote'>{pg.esc(note)}</div>" if note else ""
     if not d.editable:
         return shown
     return (
         f"{shown}<details class='note-edit'><summary>{'notitie wijzigen' if note else 'notitie toevoegen'}"
         "</summary>"
-        + act("/notitie", item_id,
-              f"<input name='notitie' value='{esc(note or '', quote=True)}' maxlength='{mr.NOTE_MAX_CHARS}' "
+        + pg.act("/notitie", item_id,
+              f"<input name='notitie' value='{pg.esc(note or '', quote=True)}' maxlength='{mr.NOTE_MAX_CHARS}' "
               "size='36' aria-label='Notitie' placeholder='bv. gevraagd of €120 kan'>"
               "<button class='quiet'>opslaan</button>", "mark")
         + "</details>"
@@ -847,37 +808,16 @@ def price_cell(listing, extra: str = "") -> str:
     kind = pc.price_kind(listing)
     note = bid_note(listing)
     return (f"<td class='num' data-sort='{listing.price_eur if listing.price_eur is not None else ''}'>"
-            f"{euro(listing.price_eur)}<div class='sub'>{esc(kind)}</div>"
-            f"{f'<div class=sub>{esc(note)}</div>' if note else ''}"
-            f"{f'<div class=sub>{esc(extra)}</div>' if extra else ''}</td>")
-
-
-def tiles(items: list[tuple[str, str, str]]) -> str:
-    """Een rij stat-tegels: (label, waarde, toelichting)."""
-    return "<div class='tiles'>" + "".join(
-        f"<div class='tile'><div class='label'>{esc(label)}</div><div class='value'>{value}</div>"
-        f"<div class='sub'>{esc(sub)}</div></div>"
-        for label, value, sub in items
-    ) + "</div>"
-
-
-def table(head: list[tuple[str, str]], rows: list[str], table_id: str = "") -> str:
-    """head: (kop, 'num'|'text'|'') — alleen kolommen met een soort zijn sorteerbaar."""
-    ths = "".join(
-        f"<th{' class=num' if kind == 'num' else ''}"
-        f"{f' data-type={kind}' if kind else ''}>{esc(title)}</th>"
-        for title, kind in head
-    )
-    ident = f" id='{table_id}'" if table_id else ""
-    return (f"<div class='table-wrap'><table class='sortable'{ident}><thead><tr>{ths}</tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody></table></div>")
+            f"{euro(listing.price_eur)}<div class='sub'>{pg.esc(kind)}</div>"
+            f"{f'<div class=sub>{pg.esc(note)}</div>' if note else ''}"
+            f"{f'<div class=sub>{pg.esc(extra)}</div>' if extra else ''}</td>")
 
 
 def flips_tiles(d: Dashboard) -> str:
     flip = d.config["flip"]
     flips = d.flips
     best = flips[0] if flips else None
-    return tiles([
+    return pg.tiles([
         ("Flips met winst", str(len(flips)), f"na {euro(flip.get('costs_eur', 0))} verzendkosten per stuk"),
         ("Beste flip", euro(best.computer.profit_eur, sign=True) if best else "—",
          best.computer.model.label if best else "nog niets"),
@@ -895,7 +835,7 @@ def flips_away(d: Dashboard) -> str:
         return "<div class='away'></div>"
     return (
         f"<div class='away'><p class='explain'>{len(away)} flip{'s' if len(away) != 1 else ''} weggezet (niet "
-        f"waard of gereserveerd): terug te vinden in Alle {esc(d.market.items)} met <em>Toon: weggezet</em>. "
+        f"waard of gereserveerd): terug te vinden in Alle {pg.esc(d.market.items)} met <em>Toon: weggezet</em>. "
         "Zakt de prijs onder die van toen je hem wegzette, dan staat hij hier weer.</p></div>")
 
 
@@ -937,17 +877,17 @@ def flips_panel(d: Dashboard) -> str:
             c = l.computer
             rows.append(
                 "<tr>"
-                f"<td class='pic'>{thumb(l)}</td>"
+                f"<td class='pic'>{pg.thumb(l)}</td>"
                 f"<td class='num profit' data-sort='{c.profit_eur}'>"
                 f"<span class='gain' aria-hidden='true'>▲</span>{euro(c.profit_eur, sign=True)}"
                 f"<div class='sub'>{band(c.profit_low_eur, c.profit_high_eur)}</div></td>"
                 f"{price_cell(l)}"
-                f"<td class='num' data-sort='{c.resale_eur}' title='{esc(c.comp_note, quote=True)}'>{euro(c.resale_eur)}"
-                f"<div class='sub'>{esc(comp_text(c))}</div></td>"
+                f"<td class='num' data-sort='{c.resale_eur}' title='{pg.esc(c.comp_note, quote=True)}'>{euro(c.resale_eur)}"
+                f"<div class='sub'>{pg.esc(comp_text(c))}</div></td>"
                 f"{km_cell(l, d)}{listing_cell(l, d, c.model.label, c.reason)}"
                 "</tr>"
             )
-        parts.append(table([("", ""), ("Winst", "num"), ("Inkoop", "num"), ("Verkoop", "num"),
+        parts.append(pg.table([("", ""), ("Winst", "num"), ("Inkoop", "num"), ("Verkoop", "num"),
                             ("Afstand", "num"), ("Advertentie", "text")], rows))
     else:
         parts.append(f"<p class='empty'>Geen {d.market.item} die onder de verwachte verkoopprijs staat.</p>")
@@ -958,15 +898,15 @@ def flips_panel(d: Dashboard) -> str:
                      "lage verkoopschatting min verzendkosten: daarboven speel je bij een tegenvaller verlies.</p>")
         rows = [
             "<tr>"
-            f"<td class='pic'>{thumb(l)}</td>"
+            f"<td class='pic'>{pg.thumb(l)}</td>"
             f"<td class='num' data-sort='{l.computer.max_bid_eur}'><strong>{euro(l.computer.max_bid_eur)}</strong>"
-            f"<div class='sub'>verkoop ±{euro(l.computer.resale_eur)}, {esc(comp_text(l.computer))}</div></td>"
-            f"<td class='num'>{esc(pc.price_kind(l))}</td>"
+            f"<div class='sub'>verkoop ±{euro(l.computer.resale_eur)}, {pg.esc(comp_text(l.computer))}</div></td>"
+            f"<td class='num'>{pg.esc(pc.price_kind(l))}</td>"
             f"{listing_cell(l, d, l.computer.model.label, l.computer.reason)}"
             "</tr>"
             for l in d.open_bids
         ]
-        parts.append(table([("", ""), ("Bied max.", "num"), ("Prijs", ""), ("Advertentie", "text")], rows))
+        parts.append(pg.table([("", ""), ("Bied max.", "num"), ("Prijs", ""), ("Advertentie", "text")], rows))
     return "\n".join(parts)
 
 
@@ -976,7 +916,7 @@ def upgrades_tiles(d: Dashboard) -> str:
     own = ups[0].computer.own_resale_eur if ups else None
     nets = [l.computer.net_upgrade_cost_eur for l in ups if l.computer.net_upgrade_cost_eur is not None]
     base_label = base.label if base else "eigen computer"
-    return tiles([
+    return pg.tiles([
         ("Upgrades te koop", str(len(ups)), f"kunnen meer dan je {base_label}"),
         (f"Je {base.model if base else 'computer'} levert op", euro(own) if own is not None else "—",
          ("zelf ingesteld (eigen_verkoopprijs_eur)" if d.config["baseline"].get("eigen_verkoopprijs_eur") is not None
@@ -993,7 +933,7 @@ def upgrades_panel(d: Dashboard) -> str:
     parts = [upgrades_tiles(d)]
     parts.append(
         "<p class='explain'><strong>+punten</strong> = functiescore min die van je eigen computer "
-        f"({esc(base_label)}). Rerouting, plannen op het apparaat en training wegen het zwaarst, knoppen "
+        f"({pg.esc(base_label)}). Rerouting, plannen op het apparaat en training wegen het zwaarst, knoppen "
         "gaan voor touch, geen updates kost punten (<code>python computers.py</code> toont de score per model). "
         "<strong>Netto</strong> = prijs min wat je eigen computer oplevert als je hem verkoopt.</p>"
     )
@@ -1004,12 +944,12 @@ def upgrades_panel(d: Dashboard) -> str:
     for l in ups:
         c = l.computer
         gains, losses = pc.feature_changes(c.model, base, d.config)
-        changes = "".join(f"<li class='plus'>{esc(g)}</li>" for g in gains)
-        changes += "".join(f"<li class='minus'>{esc(x)}</li>" for x in losses)
+        changes = "".join(f"<li class='plus'>{pg.esc(g)}</li>" for g in gains)
+        changes += "".join(f"<li class='minus'>{pg.esc(x)}</li>" for x in losses)
         unknown = f"<div class='sub'>{len(c.features.unknown)} velden onbekend</div>" if c.features.unknown else ""
         rows.append(
             "<tr>"
-            f"<td class='pic'>{thumb(l)}</td>"
+            f"<td class='pic'>{pg.thumb(l)}</td>"
             f"<td class='num' data-sort='{c.upgrade_delta}'><strong>+{c.upgrade_delta:.0f}</strong>"
             f"<div class='sub'>score {c.features.score:.0f}</div>{unknown}</td>"
             f"{price_cell(l)}"
@@ -1019,7 +959,7 @@ def upgrades_panel(d: Dashboard) -> str:
             f"{listing_cell(l, d, c.model.label, c.reason)}"
             "</tr>"
         )
-    parts.append(table([("", ""), ("+punten", "num"), ("Prijs", "num"), ("Netto", "num"),
+    parts.append(pg.table([("", ""), ("+punten", "num"), ("Prijs", "num"), ("Netto", "num"),
                         ("Wat je erbij krijgt / inlevert", ""), ("Advertentie", "text")], rows))
     return "\n".join(parts)
 
@@ -1068,7 +1008,7 @@ def all_panel(d: Dashboard) -> str:
     scored = d.market.has_score
     items = d.all_rows
     brands = sorted({label.split(" ")[0] for _, label, c in items if c is not None})
-    options = "".join(f"<option value='{esc(b)}'>{esc(b)}</option>" for b in brands)
+    options = "".join(f"<option value='{pg.esc(b)}'>{pg.esc(b)}</option>" for b in brands)
     parts = [
         "<div class='filters'>"
         "<input type='search' id='all-search' placeholder='Zoek in titel of model' aria-label='Zoeken'>"
@@ -1088,12 +1028,12 @@ def all_panel(d: Dashboard) -> str:
         score = c.features.score if c else None
         note = c.reason if c else reasons[id(l)]
         rows.append(
-            f"<tr data-item='{esc(l.item_id, quote=True)}' "
-            f"data-brand='{esc(brand, quote=True)}' data-new='{int(l.item_id in d.new_ids)}' "
+            f"<tr data-item='{pg.esc(l.item_id, quote=True)}' "
+            f"data-brand='{pg.esc(brand, quote=True)}' data-new='{int(l.item_id in d.new_ids)}' "
             f"data-mark='{mark_state(l, d)}' data-note='{int(l.item_id in d.notes)}' "
             f"data-review='{int(d.to_review(l))}' data-price='{'' if l.price_eur is None else l.price_eur}' "
-            f"data-text='{esc(search_text(l, d, label), quote=True)}'>"
-            f"<td class='pic'>{thumb(l)}</td>"
+            f"data-text='{pg.esc(search_text(l, d, label), quote=True)}'>"
+            f"<td class='pic'>{pg.thumb(l)}</td>"
             f"{price_cell(l)}"
             f"<td class='num' data-sort='{profit if profit is not None else ''}'>{euro(profit, sign=True)}</td>"
             + (f"<td class='num' data-sort='{delta if delta is not None else ''}'>"
@@ -1106,7 +1046,7 @@ def all_panel(d: Dashboard) -> str:
     head = [("", ""), ("Prijs", "num"), ("Winst", "num")]
     if scored:
         head += [("Upgrade", "num"), ("Score", "num")]
-    parts.append(table(head + [("Afstand", "num"), ("Advertentie", "text")], rows, "all-table"))
+    parts.append(pg.table(head + [("Afstand", "num"), ("Advertentie", "text")], rows, "all-table"))
     return "\n".join(parts)
 
 
@@ -1116,7 +1056,7 @@ def favorites_panel(d: Dashboard) -> str:
            "<em>niet waard</em> of <em>gereserveerd</em>: dan verdwijnt hij uit Flips"
            + (" en Upgrades" if d.market.has_upgrades else "")
            + " tot de prijs zakt. Bij elke advertentie kun je een <em>notitie</em> kwijt (wat de verkoper "
-           f"zei, wat je bood); het zoekvak in Alle {esc(d.market.items)} zoekt er ook in, en "
+           f"zei, wat je bood); het zoekvak in Alle {pg.esc(d.market.items)} zoekt er ook in, en "
            "<em>Toon: met notitie</em> laat ze allemaal zien.")
     if not d.editable:
         how = ("Bewaren en wegzetten doe je in de live versie: <code>python dashboard.py --serve</code>. " + how)
@@ -1133,13 +1073,13 @@ def favorites_panel(d: Dashboard) -> str:
             profit = c.profit_eur if c else None
             rows.append(
                 "<tr>"
-                f"<td class='pic'>{thumb(l)}</td>"
+                f"<td class='pic'>{pg.thumb(l)}</td>"
                 f"{price_cell(l, then)}"
                 f"<td class='num' data-sort='{profit if profit is not None else ''}'>{euro(profit, sign=True)}</td>"
                 f"{listing_cell(l, d, label, note)}"
                 "</tr>"
             )
-        parts.append(table([("", ""), ("Prijs", "num"), ("Winst", "num"), ("Advertentie", "text")], rows))
+        parts.append(pg.table([("", ""), ("Prijs", "num"), ("Winst", "num"), ("Advertentie", "text")], rows))
     else:
         parts.append("<p class='empty'>Nog geen favorieten.</p>")
 
@@ -1150,21 +1090,21 @@ def favorites_panel(d: Dashboard) -> str:
                      "ingetrokken zijn.</p>")
         rows = []
         for m in gone:
-            link = (f"<a href='{esc(m.url, quote=True)}' target='_blank' rel='noopener'>{esc(m.title or m.item_id)}</a>"
-                    if m.url else esc(m.title or m.item_id))
-            when = (f"verdwenen {nl_date(m.disappeared_at)}" if m.disappeared_at
-                    else f"laatst gezien {nl_date(m.last_seen)}")
-            remove = (act("/markeer", m.item_id,
+            link = (f"<a href='{pg.esc(m.url, quote=True)}' target='_blank' rel='noopener'>{pg.esc(m.title or m.item_id)}</a>"
+                    if m.url else pg.esc(m.title or m.item_id))
+            when = (f"verdwenen {pg.nl_date(m.disappeared_at)}" if m.disappeared_at
+                    else f"laatst gezien {pg.nl_date(m.last_seen)}")
+            remove = (pg.act("/markeer", m.item_id,
                           "<button class='quiet' name='soort' value='geen'>weghalen</button>", "mark")
                       if d.editable else "")
             rows.append(
                 "<tr>"
                 f"<td class='num' data-sort='{m.current_price_eur if m.current_price_eur is not None else ''}'>"
                 f"{euro(m.current_price_eur)}</td>"
-                f"<td class='what'>{link}<div class='note'>{esc(when)}</div>{remove}{note_control(m.item_id, d)}</td>"
+                f"<td class='what'>{link}<div class='note'>{pg.esc(when)}</div>{remove}{note_control(m.item_id, d)}</td>"
                 "</tr>"
             )
-        parts.append(table([("Laatste prijs", "num"), ("Advertentie", "text")], rows))
+        parts.append(pg.table([("Laatste prijs", "num"), ("Advertentie", "text")], rows))
     return "\n".join(parts)
 
 
@@ -1191,9 +1131,9 @@ def market_panel(d: Dashboard) -> str:
         fast_median = statistics.median(fast) if fast else None
         rows.append(
             "<tr>"
-            f"<td class='what'><div class='model'>{esc(label)}</div>"
-            f"<span class='muted'>{esc(model.get('introductiejaar') or '')}</span>"
-            + (f"<div class='sub'>{esc(variants)}</div>" if variants else "")
+            f"<td class='what'><div class='model'>{pg.esc(label)}</div>"
+            f"<span class='muted'>{pg.esc(model.get('introductiejaar') or '')}</span>"
+            + (f"<div class='sub'>{pg.esc(variants)}</div>" if variants else "")
             + "</td>"
             f"<td class='num' data-sort='{len(items)}'>{len(items)}</td>"
             f"<td class='num' data-sort='{min(asking) if asking else ''}'>{euro(min(asking) if asking else None)}</td>"
@@ -1215,17 +1155,17 @@ def market_panel(d: Dashboard) -> str:
              f"{d.config['flip']['comp_window_days']} dagen (ook verkochte); een flip rekent per uitvoering als "
              "die er genoeg heeft. Onder het model staan de uitvoeringen die nu te koop staan, met hun "
              "mediaan-vraagprijs. Nieuwprijs alleen waar een bron "
-             f"hem gaf (<code>{esc(d.market.catalog_path.name)}</code>).</p>")
+             f"hem gaf (<code>{pg.esc(d.market.catalog_path.name)}</code>).</p>")
     head = [("Model", "text"), ("Te koop", "num"), ("Laagste", "num"), ("Mediaan vraag", "num"),
             ("Snel verkocht", "num"), ("Verwacht verkoop", "num"), ("Nieuwprijs", "num")]
-    return intro + table(head + ([("Score", "num")] if scored else []), rows)
+    return intro + pg.table(head + ([("Score", "num")] if scored else []), rows)
 
 
 def _vinted_thumb(item: vn.VintedItem) -> str:
     if not item.row.image_url:
         return "<div class='thumb empty' aria-hidden='true'></div>"
-    return (f"<a href='{esc(web_link(item.row.url), quote=True)}' target='_blank' rel='noopener'>"
-            f"<img class='thumb' src='{esc(web_link(item.row.image_url), quote=True)}' alt='' loading='lazy'></a>")
+    return (f"<a href='{pg.esc(pg.web_link(item.row.url), quote=True)}' target='_blank' rel='noopener'>"
+            f"<img class='thumb' src='{pg.esc(pg.web_link(item.row.image_url), quote=True)}' alt='' loading='lazy'></a>")
 
 
 def _vinted_cell(item: vn.VintedItem, label: str) -> str:
@@ -1233,9 +1173,9 @@ def _vinted_cell(item: vn.VintedItem, label: str) -> str:
     extra = [item.row.condition, f"{item.row.favorites} fav." if item.row.favorites is not None else "",
              "zakelijke verkoper" if item.row.is_business else ""]
     muted = " · ".join(x for x in extra if x)
-    return (f"<td class='what'><div class='model'>{new}{esc(label)}</div>"
-            f"<a href='{esc(web_link(item.row.url), quote=True)}' target='_blank' rel='noopener'>{esc(item.row.title)}</a>"
-            f"{f'<span class=muted> · {esc(muted)}</span>' if muted else ''}</td>")
+    return (f"<td class='what'><div class='model'>{new}{pg.esc(label)}</div>"
+            f"<a href='{pg.esc(pg.web_link(item.row.url), quote=True)}' target='_blank' rel='noopener'>{pg.esc(item.row.title)}</a>"
+            f"{f'<span class=muted> · {pg.esc(muted)}</span>' if muted else ''}</td>")
 
 
 def _ratio(value: Optional[float]) -> str:
@@ -1248,11 +1188,11 @@ def vinted_panel(d: Dashboard) -> str:
         # Altijd een tab, ook zonder export: zo is te zien dat de import in een
         # andere database belandde dan deze, in plaats van dat de tab ontbreekt.
         return ("<p class='empty'>Nog geen Vinted-export in deze database "
-                f"(<code>{esc(d.db_path)}</code>). Lees er een in met "
+                f"(<code>{pg.esc(d.db_path)}</code>). Lees er een in met "
                 "<code>python vinted.py import productsList_....csv</code> en ververs deze pagina.</p>")
     flip = d.config["flip"]
     flips = v.flips
-    parts = [tiles([
+    parts = [pg.tiles([
         ("Op Vinted", str(len(v.computers)), f"computers met bekend model, export {local_time(v.newest_export)}"),
         ("Vinted ÷ Marktplaats", _ratio(v.median_ratio), "mediaan over de modellen met genoeg vergelijking"),
         ("Koop op Vinted", str(len(flips)), "onder de Marktplaats-verkoopprijs"),
@@ -1284,7 +1224,7 @@ def vinted_panel(d: Dashboard) -> str:
             for i in flips
         ]
         parts.append("<h3>Koop op Vinted, verkoop op Marktplaats</h3>")
-        parts.append(table([("", ""), ("Winst", "num"), ("Je betaalt", "num"), ("Verkoop MP", "num"),
+        parts.append(pg.table([("", ""), ("Winst", "num"), ("Je betaalt", "num"), ("Verkoop MP", "num"),
                             ("Advertentie", "text")], rows))
     else:
         parts.append("<p class='empty'>Geen Vinted-advertentie onder de Marktplaats-verkoopprijs.</p>")
@@ -1294,7 +1234,7 @@ def vinted_panel(d: Dashboard) -> str:
         ratio = m.ratio
         rows.append(
             "<tr>"
-            f"<td class='what'><div class='model'>{esc(m.model.label)}</div></td>"
+            f"<td class='what'><div class='model'>{pg.esc(m.model.label)}</div></td>"
             f"<td class='num' data-sort='{len(m.vinted)}'>{len(m.vinted)}</td>"
             f"<td class='num' data-sort='{m.vinted[0]}'>{euro(m.vinted[0])}</td>"
             f"<td class='num' data-sort='{m.vinted_median}'>{euro(m.vinted_median)}</td>"
@@ -1308,7 +1248,7 @@ def vinted_panel(d: Dashboard) -> str:
                  f"{flip['comp_window_days']} dagen, verkochte meegeteld). Vinted ÷ MP pas vanaf "
                  f"{flip['min_comps']} Marktplaats-advertenties. Op Vinted blijven dure advertenties vaak lang "
                  "staan, dus een hogere mediaan daar is nog geen hogere verkoopprijs.</p>")
-    parts.append(table([("Model", "text"), ("Vinted", "num"), ("Laagste", "num"), ("Mediaan", "num"),
+    parts.append(pg.table([("Model", "text"), ("Vinted", "num"), ("Laagste", "num"), ("Mediaan", "num"),
                         ("MP", "num"), ("Mediaan MP", "num"), ("Verkoop MP", "num"), ("Vinted ÷ MP", "num")], rows))
     counts: dict[str, int] = {}
     for i in v.excluded:
@@ -1316,7 +1256,7 @@ def vinted_panel(d: Dashboard) -> str:
     if counts or v.unknown:
         summary = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items(), key=lambda kv: -kv[1]))
         parts.append(f"<p class='explain'>Niet meegeteld: {len(v.unknown)} zonder bekend model"
-                     f"{', ' + esc(summary) if summary else ''} (horloges, trainers, kleding, houders en fietsen "
+                     f"{', ' + pg.esc(summary) if summary else ''} (horloges, trainers, kleding, houders en fietsen "
                      "die Vinted bij de zoekopdracht meegaf).</p>")
     return "\n".join(parts)
 
@@ -1329,13 +1269,13 @@ def excluded_panel(d: Dashboard) -> str:
     summary = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items(), key=lambda kv: -kv[1]))
     if d.market is not mk.COMPUTERS:
         parts = [
-            f"<p class='explain'>Wat níet als {esc(d.market.item)} meetelt, met de reden — om na te kijken dat er "
-            f"geen echt {esc(d.market.item)} tussen zit. Bandjes, laders en hoesjes herkent het filter aan hun "
+            f"<p class='explain'>Wat níet als {pg.esc(d.market.item)} meetelt, met de reden — om na te kijken dat er "
+            f"geen echt {pg.esc(d.market.item)} tussen zit. Bandjes, laders en hoesjes herkent het filter aan hun "
             "plek in de titel: <em>vóór</em> de modelnaam (\"Bandje voor Garmin Fenix 6\") is een accessoire, "
             "<em>erna met</em> \"met\"/\"incl.\"/\"+\" (\"Fenix 6 met siliconen polsband\") een horloge met "
             "extra's. Staat het woord er direct achter (\"Fenix 6 Pro bandje\"), dan beslist de prijs t.o.v. "
             "hetzelfde model. Andere merken en Garmin-producten die geen horloge zijn (weegschaal, "
-            f"hartslagband, navigatie) staan hier als <em>overig</em>. Nu: {esc(summary) or 'niets'}.</p>"
+            f"hartslagband, navigatie) staan hier als <em>overig</em>. Nu: {pg.esc(summary) or 'niets'}.</p>"
         ]
     else:
         parts = [
@@ -1344,19 +1284,19 @@ def excluded_panel(d: Dashboard) -> str:
         "<em>vóór</em> de modelnaam (\"Hoesje voor Garmin 1000\") is een accessoire, <em>erna met</em> "
         "\"met\"/\"incl.\"/\"+\" (\"Edge 530 + stuurmount\") een computer met extra's. Staat het "
         "woord er direct achter (\"Karoo 3 houder nieuw\"), dan beslist de prijs t.o.v. hetzelfde model. "
-        f"Nu: {esc(summary) or 'niets'}.</p>"
+        f"Nu: {pg.esc(summary) or 'niets'}.</p>"
         ]
     rows = [
         "<tr>"
-        f"<td class='pic'>{thumb(l)}</td>"
-        f"<td>{esc(kind)}</td>"
+        f"<td class='pic'>{pg.thumb(l)}</td>"
+        f"<td>{pg.esc(kind)}</td>"
         f"<td class='num' data-sort='{l.price_eur if l.price_eur is not None else ''}'>{euro(l.price_eur)}</td>"
-        f"<td class='what'><a href='{esc(l.url, quote=True)}' target='_blank' rel='noopener'>{esc(l.title)}</a>"
-        f"<div class='note'>{esc(reason)}</div></td>"
+        f"<td class='what'><a href='{pg.esc(l.url, quote=True)}' target='_blank' rel='noopener'>{pg.esc(l.title)}</a>"
+        f"<div class='note'>{pg.esc(reason)}</div></td>"
         "</tr>"
         for l, kind, reason in rows_data
     ]
-    parts.append(table([("", ""), ("Soort", "text"), ("Prijs", "num"), ("Advertentie en reden", "text")], rows))
+    parts.append(pg.table([("", ""), ("Soort", "text"), ("Prijs", "num"), ("Advertentie en reden", "text")], rows))
     return "\n".join(parts)
 
 
@@ -1381,13 +1321,13 @@ def month_chart(monthly: list) -> str:
         h = abs(value) / span * plot
         y = zero - h if value >= 0 else zero
         year, mon = month.split("-")
-        label = f"{MONTHS[int(mon) - 1]} '{year[2:]}"
+        label = f"{pg.MONTHS[int(mon) - 1]} '{year[2:]}"
         parts.append(
-            f"<g><title>{esc(label)}: {esc(euro(value, sign=True))}</title>"
+            f"<g><title>{pg.esc(label)}: {pg.esc(euro(value, sign=True))}</title>"
             f"<rect x='{x:.1f}' y='{y:.1f}' width='{bar:.1f}' height='{max(h, 1):.1f}' rx='3' class='bar'/>"
             f"<text x='{x + bar / 2:.1f}' y='{(y - 6) if value >= 0 else (y + h + 14):.1f}' "
-            f"class='val'>{esc(euro(value, sign=True))}</text>"
-            f"<text x='{x + bar / 2:.1f}' y='{height - 8}' class='lab'>{esc(label)}</text></g>"
+            f"class='val'>{pg.esc(euro(value, sign=True))}</text>"
+            f"<text x='{x + bar / 2:.1f}' y='{height - 8}' class='lab'>{pg.esc(label)}</text></g>"
         )
     parts.append("</svg>")
     return "".join(parts)
@@ -1401,7 +1341,7 @@ def mine_panel(d: Dashboard) -> str:
     if p.estimate_error is not None:
         direction = "boven" if p.estimate_error >= 0 else "onder"
         error = f"{abs(p.estimate_error):.0%} {direction} de schatting (n={p.estimate_n})"
-    parts = [tiles([
+    parts = [pg.tiles([
         ("Gerealiseerde winst", euro(p.realized_profit_eur, sign=True) if p.sold else "—",
          f"{len(p.sold)} verkocht, samen {euro(p.revenue_eur)} omzet" if p.sold else "nog niets verkocht"),
         ("Op voorraad", str(len(p.stock)), f"{euro(p.invested_in_stock_eur)} erin gestoken" if p.stock else "niets"),
@@ -1412,7 +1352,7 @@ def mine_panel(d: Dashboard) -> str:
     ])]
     if d.editable:
         parts.append("<p class='explain'>Alle flips samen, met fietsen, klussenlijsten, investeringen en een "
-                     f"Google Sheet: <a href='{FLIPS_PATH}'>Flips</a>.</p>")
+                     f"Google Sheet: <a href='{pg.FLIPS_PATH}'>Flips</a>.</p>")
     if not d.editable:
         parts.append("<p class='explain'>Invoeren doe je in de live versie: <code>python dashboard.py --serve</code>. "
                      "Die opent dit dashboard met knoppen <em>Gekocht</em> en <em>Verkocht</em>.</p>")
@@ -1439,13 +1379,13 @@ def mine_panel(d: Dashboard) -> str:
                     "<option>anders</option></select><button>Verkocht</button></form>"
                     + delete_form(d, t.id)
                 )
-            link = (f"<a href='{esc(web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
-                    if web_link(t.url) else esc(t.title))
+            link = (f"<a href='{pg.esc(pg.web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{pg.esc(t.title)}</a>"
+                    if pg.web_link(t.url) else pg.esc(t.title))
             rows.append(
                 "<tr>"
-                f"<td class='what'><div class='model'>{esc(t.model or 'model onbekend')}</div>{link}"
-                f"{'<div class=note>' + esc(t.notes) + '</div>' if t.notes else ''}{sell}</td>"
-                f"<td data-sort='{t.bought_at}'>{esc(nl_date(t.bought_at))}"
+                f"<td class='what'><div class='model'>{pg.esc(t.model or 'model onbekend')}</div>{link}"
+                f"{'<div class=note>' + pg.esc(t.notes) + '</div>' if t.notes else ''}{sell}</td>"
+                f"<td data-sort='{t.bought_at}'>{pg.esc(pg.nl_date(t.bought_at))}"
                 f"<div class='sub'>{t.days_held()} dagen</div></td>"
                 f"<td class='num' data-sort='{t.cost_basis_eur}'>{euro(t.cost_basis_eur)}</td>"
                 f"<td class='num' data-sort='{s.expected_resale_eur or ''}'>{euro(s.expected_resale_eur)}</td>"
@@ -1453,7 +1393,7 @@ def mine_panel(d: Dashboard) -> str:
                 f"{euro(s.expected_profit_eur, sign=True)}</td>"
                 "</tr>"
             )
-        parts.append(table([("Wat", "text"), ("Gekocht", "text"), ("Inkoop", "num"), ("Verwacht verkoop", "num"),
+        parts.append(pg.table([("Wat", "text"), ("Gekocht", "text"), ("Inkoop", "num"), ("Verwacht verkoop", "num"),
                             ("Verwachte winst", "num")], rows))
     else:
         parts.append("<p class='empty'>Niets op voorraad. Klik bij een advertentie op <em>Gekocht</em>, of voeg "
@@ -1470,34 +1410,34 @@ def mine_panel(d: Dashboard) -> str:
                     f"{hidden(d, id=t.id)}<button class='quiet'>terug naar voorraad</button></form>"
                     + delete_form(d, t.id)
                 )
-            link = (f"<a href='{esc(web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{esc(t.title)}</a>"
-                    if web_link(t.url) else esc(t.title))
+            link = (f"<a href='{pg.esc(pg.web_link(t.url), quote=True)}' target='_blank' rel='noopener'>{pg.esc(t.title)}</a>"
+                    if pg.web_link(t.url) else pg.esc(t.title))
             vs = ""
             if t.expected_resale_eur:
                 vs = f"<div class='sub'>verwacht {euro(t.expected_resale_eur)}</div>"
             rows.append(
                 "<tr>"
-                f"<td class='what'><div class='model'>{esc(t.model or 'model onbekend')}</div>{link}{actions}</td>"
-                f"<td data-sort='{t.sold_at}'>{esc(nl_date(t.sold_at))}"
-                f"<div class='sub'>{t.days_held()} dagen · {esc(t.sold_via or '')}</div></td>"
+                f"<td class='what'><div class='model'>{pg.esc(t.model or 'model onbekend')}</div>{link}{actions}</td>"
+                f"<td data-sort='{t.sold_at}'>{pg.esc(pg.nl_date(t.sold_at))}"
+                f"<div class='sub'>{t.days_held()} dagen · {pg.esc(t.sold_via or '')}</div></td>"
                 f"<td class='num' data-sort='{t.cost_basis_eur}'>{euro(t.cost_basis_eur)}</td>"
                 f"<td class='num' data-sort='{t.sell_price_eur}'>{euro(t.sell_price_eur)}"
                 f"<div class='sub'>−{euro(t.sell_costs_eur or 0)} kosten</div>{vs}</td>"
                 f"<td class='num profit' data-sort='{t.profit_eur}'>{euro(t.profit_eur, sign=True)}</td>"
                 "</tr>"
             )
-        parts.append(table([("Wat", "text"), ("Verkocht", "text"), ("Inkoop", "num"), ("Verkoopprijs", "num"),
+        parts.append(pg.table([("Wat", "text"), ("Verkocht", "text"), ("Inkoop", "num"), ("Verkoopprijs", "num"),
                             ("Winst", "num")], rows))
 
     if d.editable:
         labels = [m.label for m in d.market.catalog()]
-        options = "".join(f"<option>{esc(l)}</option>" for l in labels)
+        options = "".join(f"<option>{pg.esc(l)}</option>" for l in labels)
         parts.append(
             "<h3>Zelf toevoegen</h3><p class='explain'>Voor wat je niet via een advertentie hierboven kocht, "
             "zoals een aankoop op Vinted.</p>"
             "<form class='addform' method='post' action='/toevoegen'>"
             f"{hidden(d)}"
-            f"<label>Wat<input name='titel' required placeholder='{esc(d.market.example_title, quote=True)}'></label>"
+            f"<label>Wat<input name='titel' required placeholder='{pg.esc(d.market.example_title, quote=True)}'></label>"
             f"<label>Model<select name='model'><option value=''>model onbekend</option>{options}</select></label>"
             "<label>Inkoop €<input name='prijs' inputmode='decimal' size='6' required></label>"
             "<label>Kosten €<input name='kosten' inputmode='decimal' size='4' value='0'></label>"
@@ -1526,8 +1466,8 @@ def patterns_panel(d: Dashboard) -> str:
         factor_sub = f"nog {max(pt.MIN_FOR_FACTOR - p.measured_n, 0)} snel verdwenen advertenties nodig (nu {p.measured_n})"
     flip_sub = (f"de rest: {p.other_days:.0f} dagen" if p.other_days is not None
                 else "van de rest is nog niets verdwenen" if p.flip_days is not None else "nog niets verdwenen")
-    parts = [tiles([
-        ("Gegevens", f"{p.days_of_data} dagen", f"sinds {nl_date(p.since.date().isoformat())}" if p.since else "nog niets"),
+    parts = [pg.tiles([
+        ("Gegevens", f"{p.days_of_data} dagen", f"sinds {pg.nl_date(p.since.date().isoformat())}" if p.since else "nog niets"),
         ("Verdwenen", str(p.gone), f"van {p.total} {d.market.items} ooit gezien; {p.gone_reserved} eerst gereserveerd"),
         ("Gemeten afdingfactor", factor_value, factor_sub),
         ("Flips weg na", f"{p.flip_days:.0f} dagen" if p.flip_days is not None else "—",
@@ -1552,7 +1492,7 @@ def patterns_panel(d: Dashboard) -> str:
         pct = lambda x: "—" if x is None else f"{x:.0%}"
         rows.append(
             "<tr>"
-            f"<td class='what'><div class='model'>{esc(m.model)}</div></td>"
+            f"<td class='what'><div class='model'>{pg.esc(m.model)}</div></td>"
             f"<td class='num' data-sort='{m.seen}'>{m.seen}</td>"
             f"<td class='num' data-sort='{m.gone}'>{m.gone}"
             f"{f'<div class=sub>{m.gone_reserved} gereserveerd</div>' if m.gone_reserved else ''}</td>"
@@ -1565,7 +1505,7 @@ def patterns_panel(d: Dashboard) -> str:
             f"<td class='num' data-sort='{m.dropped_share if m.dropped_share is not None else ''}'>{pct(m.dropped_share)}</td>"
             "</tr>")
     parts.append("<h3>Per model</h3>")
-    parts.append(table([("Model", "text"), ("Gezien", "num"), ("Verdwenen", "num"), ("Dagen online", "num"),
+    parts.append(pg.table([("Model", "text"), ("Gezien", "num"), ("Verdwenen", "num"), ("Dagen online", "num"),
                         (f"Weg ≤{pt.QUICK_DAYS} d", "num"), ("Mediaan vraag", "num"), ("Snel weg voor", "num"),
                         ("Prijs verlaagd", "num")], rows))
 
@@ -1580,14 +1520,14 @@ def patterns_panel(d: Dashboard) -> str:
                 f"<td class='num'>{euro(months[m][0]) if m in months else '—'}"
                 f"{'<div class=sub>n=' + str(months[m][1]) + '</div>' if m in months else ''}</td>"
                 for m in p.months)
-            rows.append(f"<tr><td class='what'><div class='model'>{esc(model)}</div></td>{cells}</tr>")
-        heads = [("Model", "text")] + [(f"{MONTHS[int(m[5:]) - 1]} '{m[2:4]}", "") for m in p.months]
-        parts.append(table(heads, rows))
+            rows.append(f"<tr><td class='what'><div class='model'>{pg.esc(model)}</div></td>{cells}</tr>")
+        heads = [("Model", "text")] + [(f"{pg.MONTHS[int(m[5:]) - 1]} '{m[2:4]}", "") for m in p.months]
+        parts.append(pg.table(heads, rows))
 
     if p.weekday_new:
         top = max(v for _, v, _ in p.weekday_new) or 1
         rows = "".join(
-            f"<tr><td>{esc(day)}</td><td class='num'>{avg:.1f}".replace(".", ",") + "</td>"
+            f"<tr><td>{pg.esc(day)}</td><td class='num'>{avg:.1f}".replace(".", ",") + "</td>"
             f"<td><div class='meter' style='width:{avg / top * 100:.0f}%'></div></td>"
             f"<td class='num sub'>{n} dagen</td></tr>"
             for day, avg, n in p.weekday_new)
@@ -1597,431 +1537,6 @@ def patterns_panel(d: Dashboard) -> str:
                      f"<div class='table-wrap'><table><tbody>{rows}</tbody></table></div>")
     parts.append(vw.patterns_html(d.view_patterns or vw.ViewPatterns(), d.market.items))
     return "\n".join(parts)
-
-
-CSS = """
-:root { color-scheme: light; --surface: #fcfcfb; --card: #ffffff; --line: #e4e3df;
-  --text: #0b0b0b; --text-2: #52514e; --muted: #6b6a66; --accent: #2a78d6; --good: #0ca30c;
-  --bad: #d03b3b; --badge: #e8f0fb; --fav: #fbeec2; }
-@media (prefers-color-scheme: dark) { :root { color-scheme: dark; --surface: #1a1a19; --card: #222221;
-  --line: #3a3a38; --text: #ffffff; --text-2: #c3c2b7; --muted: #a3a29a; --accent: #3987e5;
-  --good: #0ca30c; --bad: #e06666; --badge: #23344a; --fav: #4a3c10; } }
-* { box-sizing: border-box; }
-body { margin: 0; padding: 20px 16px 48px; background: var(--surface); color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-main { max-width: 1200px; margin: 0 auto; }
-h1 { font-size: 1.5rem; margin: 0 0 4px; }
-h3 { font-size: 1.05rem; margin: 28px 0 6px; }
-a { color: var(--accent); }
-.meta, .muted, .sub, .note { color: var(--muted); }
-.meta { font-size: .9rem; margin-bottom: 14px; }
-.sub { font-size: .78rem; margin-top: 2px; }
-.note { font-size: .78rem; margin-top: 3px; }
-nav.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
-nav.tabs button { background: none; border: 0; border-bottom: 3px solid transparent; color: var(--text-2);
-  font: inherit; padding: 8px 12px; cursor: pointer; }
-nav.tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
-.panel[hidden] { display: none; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 4px 0 14px; }
-.tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-.tile .label { font-size: .85rem; color: var(--text-2); }
-.tile .value { font-size: 1.7rem; font-weight: 600; margin-top: 2px; }
-.explain { color: var(--text-2); font-size: .88rem; max-width: 90ch; }
-.table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
-tbody tr:last-child td { border-bottom: 0; }
-th { font-size: .82rem; color: var(--text-2); font-weight: 600; white-space: nowrap; }
-th[data-type] { cursor: pointer; }
-th[data-type]::after { content: " ↕"; color: var(--muted); font-weight: 400; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-td.profit { font-size: 1.15rem; font-weight: 600; }
-.gain { color: var(--good); font-size: .75rem; margin-right: 4px; }
-td.pic { width: 76px; padding-right: 0; }
-img.thumb, .thumb.empty { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; display: block;
-  background: var(--line); }
-td.what { min-width: 260px; }
-.model { font-weight: 600; }
-.badge { display: inline-block; font-size: .7rem; font-weight: 700; padding: 1px 6px; border-radius: 8px;
-  background: var(--badge); color: var(--text); vertical-align: 1px; }
-.badge.reserved { background: var(--line); color: var(--text-2); }
-.badge.fav { background: var(--fav); }
-.mark { margin-top: 4px; gap: 4px; }
-.mark button { font-size: .78rem; padding: 2px 8px; }
-.mynote { margin-top: 5px; padding: 2px 8px; border-left: 3px solid var(--fav); font-size: .85rem;
-  color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
-details.note-edit summary { margin-top: 4px; font-size: .78rem; color: var(--text-2); cursor: pointer; }
-ul.changes { margin: 0; padding: 0; list-style: none; font-size: .82rem; }
-ul.changes li::before { display: inline-block; width: 1.1em; font-weight: 700; }
-ul.changes li.plus::before { content: "+"; color: var(--good); }
-ul.changes li.minus::before { content: "−"; color: var(--bad); }
-.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
-.filters input[type=search], .filters select { font: inherit; padding: 6px 8px; border: 1px solid var(--line);
-  border-radius: 6px; background: var(--card); color: var(--text); }
-.filters input[type=search] { min-width: 240px; }
-tr.hidden, tr.far { display: none; }
-.empty { color: var(--muted); padding: 12px 0; }
-code { font-size: .85em; }
-.banner { background: var(--badge); border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
-.owned { margin-top: 4px; font-size: .82rem; font-weight: 600; }
-#toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: min(90vw, 640px);
-  background: var(--text); color: var(--surface); border-radius: 8px; padding: 10px 16px; font-size: .9rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .25); z-index: 10; }
-#toast[hidden] { display: none; }
-.busy { opacity: .5; pointer-events: none; }
-button.quiet.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.sub.warn { color: var(--bad); }
-ul.evidence { margin: 6px 0 0; padding-left: 20px; font-size: .85rem; color: var(--text-2); }
-details.how > summary { cursor: pointer; color: var(--text-2); font-size: .88rem; margin: 4px 0 12px; }
-.inline { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: .85rem; }
-.inline input, .inline select, .addform input, .addform select { font: inherit; padding: 3px 6px;
-  border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
-.inline input[size] { width: auto; }
-button { font: inherit; font-size: .85rem; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--accent);
-  background: var(--accent); color: #fff; cursor: pointer; }
-button.quiet { background: none; color: var(--text-2); border-color: var(--line); }
-nav.tabs button { font-size: inherit; border-radius: 0; }
-.addform { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; background: var(--card);
-  border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-.addform label { display: flex; flex-direction: column; font-size: .8rem; color: var(--text-2); gap: 3px; }
-svg.chart { width: 100%; max-width: 720px; height: auto; background: var(--card); border: 1px solid var(--line);
-  border-radius: 10px; }
-.meter { height: 10px; border-radius: 4px; background: var(--accent); min-width: 2px; }
-svg.chart .bar { fill: var(--accent); }
-svg.chart .axis { stroke: var(--line); }
-svg.chart text { font-size: 15px; text-anchor: middle; fill: var(--text-2); }
-svg.chart text.val { fill: var(--text); font-weight: 600; }
-"""
-
-JS = """
-const buttons = document.querySelectorAll('nav.tabs button');
-// Te beoordelen en Weggezet zijn Alle met een filter (data-mark): de knop
-// zet Toon zodra de tabel er is; Alle zelf zet hem terug.
-let presetMark = null;
-function applyPreset() {
-  if (presetMark === null || !markFilter) return;
-  markFilter.value = presetMark; presetMark = null; filterAll();
-}
-// preset: zet Toon voor Te beoordelen/Weggezet; niet bij terugkomen na
-// controleer, dan gelden de bewaarde filters.
-function show(name, preset = true) {
-  const view = Array.from(buttons).find(b => b.dataset.tab === name);
-  const button = view || Array.from(buttons).find(b => b.dataset.panel === name && !b.dataset.tab);
-  if (view) { if (preset) presetMark = view.dataset.mark; name = view.dataset.panel; }
-  const target = document.getElementById('panel-' + name);
-  if (!target) return;
-  document.querySelectorAll('.panel').forEach(p => p.hidden = p !== target);
-  buttons.forEach(b => b.classList.toggle('active', b === button));
-  if (target.dataset.lazy) loadPanel(target, name); else applyPreset();
-}
-buttons.forEach(b => b.addEventListener('click', () => {
-  // Van Te beoordelen of Weggezet naar Alle: Toon terug op de standaard;
-  // anders houdt Alle wat je zelf koos.
-  const from = document.querySelector('nav.tabs button.active');
-  if (!b.dataset.tab && b.dataset.panel === 'alle' && from && from.dataset.tab) presetMark = '';
-  const name = b.dataset.tab || b.dataset.panel;
-  show(name); history.replaceState(null, '', '#' + name);
-}));
-window.addEventListener('hashchange', () => show(location.hash.slice(1)));
-
-// Een tab uit LAZY_PANELS (dashboard.py) staat op de live pagina leeg en
-// komt pas van de server als je hem opent. Alle computers is ruim de helft
-// van de pagina, en de browser las hem bij elke keer laden terwijl je
-// meestal alleen Flips bekijkt. Wat je tijdens het laden aanklikt, wordt
-// daarna nog eens op de nieuwe rijen gezet.
-let loading = 0, pendingItems = [], pendingOptions = null, pendingScroll = null;
-function loadPanel(panel, name) {
-  if (panel.dataset.loading) return;
-  panel.dataset.loading = '1';
-  loading++;
-  panel.innerHTML = "<p class='empty'>Laden…</p>";
-  const url = '/paneel?markt=' + encodeURIComponent(pageData.markt || '') + '&naam=' + encodeURIComponent(name);
-  fetch(url)
-    .then(r => r.ok ? r.text() : Promise.reject(r.status))
-    .then(html => {
-      delete panel.dataset.lazy;
-      panel.innerHTML = html;
-      initSortable(panel);
-      initAll();
-      applyPreset();
-      pendingItems.splice(0).forEach(applyItem);
-      if (pendingOptions !== null) { setMarkOptions(pendingOptions); pendingOptions = null; }
-      if (search) filterAll();
-      filterKm(panel);
-      if (pendingScroll !== null && !panel.hidden) { window.scrollTo(0, pendingScroll); pendingScroll = null; }
-    }, () => {
-      panel.innerHTML = "<p class='empty'>Laden lukte niet; herlaad de pagina.</p>";
-    })
-    .finally(() => { delete panel.dataset.loading; loading--; });
-}
-
-// Controleer en Gekocht laden de pagina opnieuw (controleer haalt de
-// advertentie bij Marktplaats en kan prijs, bod en reservering veranderen).
-// Na controleer wil je terug waar je was: dezelfde tab (de server stuurt
-// terug naar de tab die meegaat), en dezelfde plek en filters (via
-// sessionStorage). Favoriet/weg en de notitie herladen niet: zie LIVE.
-const RESTORE = 'koopjes-terug';
-let restore = null;
-try {
-  restore = JSON.parse(sessionStorage.getItem(RESTORE) || 'null');
-  sessionStorage.removeItem(RESTORE);
-  if (restore && restore.path !== location.pathname) restore = null;
-} catch (_) { restore = null; }
-function rememberPlace() {
-  const filters = {};
-  document.querySelectorAll('.filters [id]').forEach(el => {
-    if (el.matches('input, select')) filters[el.id] = el.type === 'checkbox' ? el.checked : el.value;
-  });
-  try {
-    sessionStorage.setItem(RESTORE, JSON.stringify({path: location.pathname, y: window.scrollY, filters}));
-  } catch (_) {}
-}
-// De bewaarde filters weer invullen, voor zover ze er al staan; die van een
-// tab die nog moet laden, zodra hij er is.
-function restoreFilters() {
-  if (!restore) return;
-  const filters = restore.filters || {};
-  Object.keys(filters).forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const value = filters[id];
-    if (el.type === 'checkbox') el.checked = !!value;
-    else if (el.tagName !== 'SELECT' || Array.from(el.options).some(o => o.value === value)) el.value = value;
-    delete filters[id];
-  });
-}
-STAY['/controleer'] = rememberPlace;
-LIVE['/markeer'] = applyMark;
-LIVE['/notitie'] = applyMark;
-LIVE['/bod'] = applyMark;
-LIVE['/bod/status'] = applyMark;
-
-// Max. afstand (schuifje bovenaan): verbergt op elke tab de rijen verder weg.
-// Los van de filters van Alle (class far, niet hidden), zodat ze samengaan.
-const kmMax = document.getElementById('km-max');
-const kmNone = document.getElementById('km-none');
-const kmOut = document.getElementById('km-out');
-function filterKm(root) {
-  if (!kmMax) return;
-  const max = +kmMax.value, all = max >= +kmMax.max;
-  kmOut.textContent = all ? 'alles' : 'max ' + max + ' km';
-  (root || document).querySelectorAll('td.what[data-km]').forEach(td => {
-    const km = td.dataset.km === '' ? null : parseFloat(td.dataset.km);
-    const far = !all && (km === null ? !kmNone.checked : km > max);
-    td.closest('tr').classList.toggle('far', far);
-  });
-  try { localStorage.setItem('koopjes-km', JSON.stringify({max, none: kmNone.checked})); } catch (_) {}
-}
-if (kmMax) {
-  try {
-    const saved = JSON.parse(localStorage.getItem('koopjes-km') || 'null');
-    if (saved) { kmMax.value = saved.max; kmNone.checked = saved.none; }
-  } catch (_) {}
-  [kmMax, kmNone].forEach(el => el.addEventListener('input', () => filterKm()));
-  filterKm();
-}
-
-// Sorteren: de sleutel één keer per rij (niet bij elke vergelijking
-// opnieuw uit de cel), en de rijen in één keer op hun nieuwe plek.
-function initSortable(root) {
- root.querySelectorAll('table.sortable').forEach(table => {
-  const tbody = table.querySelector('tbody');
-  table.querySelectorAll('th[data-type]').forEach((th, index) => {
-    let asc = th.dataset.type !== 'num';
-    th.addEventListener('click', () => {
-      const col = Array.from(th.parentNode.children).indexOf(th);
-      const num = th.dataset.type === 'num';
-      const keyed = Array.from(tbody.rows, r => {
-        const cell = r.cells[col];
-        if (!num) return [cell.textContent.trim().toLowerCase(), r];
-        const v = parseFloat(cell.dataset.sort);
-        return [Number.isNaN(v) ? null : v, r];
-      });
-      keyed.sort((a, b) => {
-        const x = a[0], y = b[0];
-        if (x === null) return 1;
-        if (y === null) return -1;
-        return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1);
-      });
-      tbody.append(...keyed.map(k => k[1]));
-      asc = !asc;
-    });
-  });
- });
-}
-initSortable(document);
-
-// De filters van Alle computers; op de live pagina pas als die tab geladen is.
-let search = null, brand = null, markFilter = null, onlyNew = null, count = null, maxPrice = null;
-function filterAll() {
-  if (!search) return;
-  const q = search.value.trim().toLowerCase();
-  const pmax = parseFloat(maxPrice ? maxPrice.value : '');
-  const which = markFilter.value;
-  let shown = 0;
-  document.querySelectorAll('#all-table tbody tr').forEach(r => {
-    // Standaard zonder weggezette; 'alles' toont ze erbij, 'notitie' alles met een notitie.
-    const markOk = which === 'alles' || (which === 'notitie' ? r.dataset.note === '1'
-      : which === 'beoordelen' ? r.dataset.review === '1'
-      : which ? r.dataset.mark === which : r.dataset.mark !== 'weg');
-    const price = r.dataset.price === '' ? null : parseFloat(r.dataset.price);
-    const ok = (!q || r.dataset.text.includes(q)) && (!brand.value || r.dataset.brand === brand.value)
-      && (!onlyNew.checked || r.dataset.new === '1') && markOk
-      && (Number.isNaN(pmax) || price === null || price <= pmax);
-    r.classList.toggle('hidden', !ok);
-    if (ok) shown++;
-  });
-  count.textContent = shown + ' getoond';
-}
-function initAll() {
-  const box = document.getElementById('all-search');
-  if (!box || box === search) return;
-  search = box;
-  brand = document.getElementById('all-brand');
-  markFilter = document.getElementById('all-mark');
-  onlyNew = document.getElementById('all-new');
-  maxPrice = document.getElementById('all-pmax');
-  count = document.getElementById('all-count');
-  restoreFilters();
-  // Typen filtert als je even stopt: elke toets liep anders alle rijen langs.
-  let typing = null;
-  search.addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(filterAll, 150); });
-  [brand, markFilter, onlyNew, maxPrice].filter(Boolean).forEach(el => el.addEventListener('input', filterAll));
-  filterAll();
-}
-function setMarkOptions(html) {
-  if (!markFilter) return;
-  const value = markFilter.value;
-  markFilter.innerHTML = html;
-  markFilter.value = value;
-}
-
-// Na favoriet/weg of een notitie: de server stuurt de stukjes die
-// veranderden (live_update in dashboard.py).
-function applyItem(it) {
-  const sel = `[data-item="${CSS.escape(it.id)}"]`;
-  // Weggezet (of gekocht, gereserveerd): weg uit Flips en Upgrades.
-  document.querySelectorAll(`#panel-flips .mine${sel}, #panel-upgrades .mine${sel}`).forEach(el => {
-    el.closest('tr').classList.toggle('hidden', !it.available);
-  });
-  document.querySelectorAll('.markbadge' + sel).forEach(el => { el.innerHTML = it.badge; });
-  document.querySelectorAll('.mine' + sel).forEach(el => { el.innerHTML = it.mine; });
-  document.querySelectorAll('#all-table tr' + sel).forEach(r => {
-    r.dataset.mark = it.mark; r.dataset.note = String(it.note); r.dataset.text = it.text;
-    if (it.review !== undefined) r.dataset.review = String(it.review);
-  });
-}
-function applyMark(data) {
-  Object.entries(data.panels || {}).forEach(([name, html]) => {
-    const panel = document.getElementById('panel-' + name);
-    if (panel) { panel.innerHTML = html; initSortable(panel); filterKm(panel); }
-  });
-  Object.entries(data.tabs || {}).forEach(([name, label]) => {
-    const button = document.querySelector(`nav.tabs button[data-tab="${name}"]`)
-      || document.querySelector(`nav.tabs button[data-panel="${name}"]:not([data-tab])`);
-    if (button) button.textContent = label;
-  });
-  Object.entries(data.tiles || {}).forEach(([name, html]) => {
-    const old = document.querySelector(`#panel-${name} .tiles`);
-    if (old && !data.panels[name]) old.outerHTML = html;
-  });
-  const away = document.querySelector('#panel-flips .away');
-  if (away && data.away !== undefined && !(data.panels || {}).flips) away.outerHTML = data.away;
-  if (data.item) {
-    applyItem(data.item);
-    if (loading) pendingItems.push(data.item);
-  }
-  if (data.markOptions) {
-    setMarkOptions(data.markOptions);
-    if (loading) pendingOptions = data.markOptions;
-  }
-  if (search) filterAll();
-  filterKm();
-}
-
-restoreFilters();
-initAll();
-if (location.hash) show(location.hash.slice(1), !restore);
-if (restore) {
-  // Terug op een tab die nog laadt: pas scrollen als hij er is.
-  if (document.querySelector('.panel:not([hidden])[data-lazy]')) pendingScroll = restore.y || 0;
-  else window.scrollTo(0, restore.y || 0);
-}
-"""
-
-# Gedeeld door alle live pagina's: een formulier versturen zonder te
-# herladen, en de melding onderin in plaats van bovenaan een nieuwe pagina.
-LIVE_JS = """
-const toast = document.getElementById('toast');
-let toastTimer = null;
-function say(message) {
-  if (!toast || !message) return;
-  toast.textContent = message;
-  toast.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.hidden = true; }, 3500);
-}
-// Een knop in een .act (zie act() in dashboard.py) verstuurt de velden van
-// zijn rij. Acties in LIVE gaan zonder herladen: de server antwoordt met
-// JSON en de functie in LIVE werkt de pagina bij. De rest (Gekocht,
-// controleer) gaat als gewoon formulier, met herladen; STAY onthoudt dan
-// eerst waar je was.
-const LIVE = {}, STAY = {};
-const pageData = (document.querySelector('main') || document.body).dataset;
-function fields(box, button) {
-  const body = new URLSearchParams();
-  body.set('token', pageData.token || '');
-  if (pageData.markt) body.set('markt', pageData.markt);
-  body.set('item_id', box.dataset.item || '');
-  const active = document.querySelector('nav.tabs button.active');
-  body.set('tab', active ? active.dataset.tab || active.dataset.panel : '');
-  box.querySelectorAll('input[name], select[name]').forEach(el => body.set(el.name, el.value));
-  if (button.name) body.set(button.name, button.value);
-  return body;
-}
-function navigate(action, body) {
-  if (STAY[action]) STAY[action]();
-  const form = document.createElement('form');
-  form.method = 'post';
-  form.action = action;
-  body.forEach((value, name) => {
-    const input = document.createElement('input');
-    input.type = 'hidden'; input.name = name; input.value = value;
-    form.appendChild(input);
-  });
-  document.body.appendChild(form);
-  form.submit();
-}
-function send(box, action, body) {
-  box.classList.add('busy');
-  fetch(action, {method: 'POST', body, headers: {'X-Live': '1'}})
-    .then(r => r.ok ? r.json() : Promise.reject(r.status))
-    .then(data => {
-      if (data.reload) { location.reload(); return; }
-      say(data.message);
-      LIVE[action](data);
-    // Geen antwoord zoals verwacht: dan gewoon zoals vroeger, met herladen.
-    // Alleen dan; een fout bij het bijwerken zou anders de klik nog eens sturen.
-    }, () => navigate(action, body))
-    .finally(() => box.classList.remove('busy'));
-}
-document.addEventListener('click', e => {
-  const button = e.target.closest('.act button');
-  if (!button) return;
-  const box = button.closest('.act');
-  const action = button.dataset.action || box.dataset.action;
-  const body = fields(box, button);
-  if (LIVE[action]) send(box, action, body);
-  else navigate(action, body);
-});
-// Enter in een invulveld (notitie, inkoopprijs) is de knop ernaast.
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Enter' || !e.target.matches('.act input')) return;
-  e.preventDefault();
-  const button = e.target.closest('.act').querySelector('button');
-  if (button) button.click();
-});
-"""
 
 
 def bids_label(d: Dashboard) -> str:
@@ -2061,11 +1576,11 @@ def distance_bar(d: Dashboard) -> str:
         slider = ("<label>Afstand <input type='range' id='km-max' min='5' max='250' step='5' value='250'> "
                   "<output id='km-out'></output></label>"
                   "<label><input type='checkbox' id='km-none' checked> ook zonder plek</label>")
-        where = f"hemelsbreed vanaf {esc(d.home.postcode)}"
+        where = f"hemelsbreed vanaf {pg.esc(d.home.postcode)}"
     else:
         slider, where = "", "vul je postcode in om op afstand te filteren en te sorteren (kolom Afstand)"
-    form = (act("/afstand", "postcode",
-                f"<input name='postcode' size='7' value='{esc(d.home.postcode if d.home else '', quote=True)}' "
+    form = (pg.act("/afstand", "postcode",
+                f"<input name='postcode' size='7' value='{pg.esc(d.home.postcode if d.home else '', quote=True)}' "
                 "placeholder='bv. 3511AB' aria-label='Postcode'><button class='quiet'>opslaan</button>")
             if d.editable else "")
     if not slider and not form:
@@ -2096,11 +1611,11 @@ def render(d: Dashboard, overview_link: Optional[str] = None, lazy: Sequence[str
     for i, (name, label, _) in enumerate(tabs):
         if name == "favorieten":
             nav += (f"<button data-panel='alle' data-tab='beoordelen' data-mark='beoordelen'>"
-                    f"{esc(view_labels['beoordelen'])}</button>")
-        nav += f"<button data-panel='{name}'{' class=active' if i == 0 else ''}>{esc(label)}</button>"
+                    f"{pg.esc(view_labels['beoordelen'])}</button>")
+        nav += f"<button data-panel='{name}'{' class=active' if i == 0 else ''}>{pg.esc(label)}</button>"
         if name == "alle":
             nav += (f"<button data-panel='alle' data-tab='weggezet' data-mark='{mr.DISMISSED}'>"
-                    f"{esc(view_labels['weggezet'])}</button>")
+                    f"{pg.esc(view_labels['weggezet'])}</button>")
     panels = "".join(
         f"<section class='panel' id='panel-{name}'{'' if i == 0 else ' hidden'}"
         f"{' data-lazy=1' if body is None else ''}>{body or ''}</section>"
@@ -2108,12 +1623,12 @@ def render(d: Dashboard, overview_link: Optional[str] = None, lazy: Sequence[str
     )
     notices = ""
     if d.message:
-        notices += f"<div class='banner' role='status'>{esc(d.message)}</div>"
+        notices += f"<div class='banner' role='status'>{pg.esc(d.message)}</div>"
     if not d.listings:
-        notices += (f"<div class='banner'>Nog geen {esc(m.short.lower())} in de database. Draai eerst een ronde: "
+        notices += (f"<div class='banner'>Nog geen {pg.esc(m.short.lower())} in de database. Draai eerst een ronde: "
                     "<code>python koopjes.py run nacht</code>.</div>")
-    link = f" · <a href='{esc(overview_link, quote=True)}'>racefietsen: overzicht</a>" if overview_link else ""
-    link += "".join(f" · <a href='{esc(href, quote=True)}'>{esc(label)}</a>" for label, href in d.other_links)
+    link = f" · <a href='{pg.esc(overview_link, quote=True)}'>racefietsen: overzicht</a>" if overview_link else ""
+    link += "".join(f" · <a href='{pg.esc(href, quote=True)}'>{pg.esc(label)}</a>" for label, href in d.other_links)
     new = f" ({len(d.new_ids)} nieuw)" if d.new_ids else ""
     live = " · <strong>live</strong> (wijzigingen gaan in koopjes.db)" if d.editable else ""
     meta = (f"Bijgewerkt {datetime.now().strftime('%d-%m-%Y %H:%M')} · {computers} {m.items} te koop{new} "
@@ -2122,12 +1637,12 @@ def render(d: Dashboard, overview_link: Optional[str] = None, lazy: Sequence[str
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>{esc(m.short)}</title><style>{CSS}{SITE_CSS if d.editable else ''}</style></head><body>"
-        f"<main data-token='{esc(d.token, quote=True)}' data-markt='{esc(m.key, quote=True)}'>"
-        f"{site_nav(m.serve_path) if d.editable else ''}<h1>{esc(m.title)}</h1>"
+        f"<title>{pg.esc(m.short)}</title><style>{pg.CSS}{pg.SITE_CSS if d.editable else ''}</style></head><body>"
+        f"<main data-token='{pg.esc(d.token, quote=True)}' data-markt='{pg.esc(m.key, quote=True)}'>"
+        f"{pg.site_nav(m.serve_path) if d.editable else ''}<h1>{pg.esc(m.title)}</h1>"
         f"<div class='meta'>{meta}</div>{notices}"
         f"<nav class='tabs'>{nav}</nav>{panels}"
-        f"</main><div id='toast' role='status' hidden></div><script>{LIVE_JS}{JS}</script></body></html>"
+        f"</main><div id='toast' role='status' hidden></div><script>{pg.LIVE_JS}{pg.JS}</script></body></html>"
     )
 
 
@@ -2194,7 +1709,6 @@ def write_dashboard(db_path, out_path, overview_link: Optional[str] = None,
 # en het overzicht.
 
 INTAKE_PATH = HERE / "mijn_fiets.md"
-BIKE_PATH = "/fiets"
 BIKE_CHOICE_PATH = "/fiets/keuze"
 BIKE_SHOW = (("open", "Te beoordelen"), (bc.MEE, "Meegenomen"), (bc.NIET, "Niet"), ("alles", "Alles"))
 
@@ -2256,7 +1770,7 @@ def bike_row(r: bc.Row) -> str:
         badges += "<span class='badge reserved'>gereserveerd</span> "
     if r.gone:
         days = f", {r.days_online} dagen online" if r.days_online is not None else ""
-        badges += f"<span class='badge reserved'>weg sinds {esc(nl_date(r.disappeared_at))}{esc(days)}</span> "
+        badges += f"<span class='badge reserved'>weg sinds {pg.esc(pg.nl_date(r.disappeared_at))}{pg.esc(days)}</span> "
     facts = [r.model_label,
              str(r.year) if r.year else "",
              f"maat {r.frame_height}" if r.frame_height else "",
@@ -2264,30 +1778,30 @@ def bike_row(r: bc.Row) -> str:
              f"in {r.category_label}" if r.category_label else "",
              "" if r.family_in_text else "gevonden door de zoekopdracht, de modelnaam staat niet in de tekst",
              r.city,
-             f"sinds {nl_date(r.first_seen)}" if r.first_seen and not r.gone else ""]
+             f"sinds {pg.nl_date(r.first_seen)}" if r.first_seen and not r.gone else ""]
     bids = ""
     if r.bid_count:
         high = f", hoogste {euro(r.bid_high)}" if r.bid_high is not None else ""
-        bids = f"<div class='sub'>{r.bid_count} bieding{'en' if r.bid_count != 1 else ''}{esc(high)}</div>"
-    why = f"<div class='sub warn'>telt niet mee: {esc(r.why_not)}</div>" if r.why_not else ""
+        bids = f"<div class='sub'>{r.bid_count} bieding{'en' if r.bid_count != 1 else ''}{pg.esc(high)}</div>"
+    why = f"<div class='sub warn'>telt niet mee: {pg.esc(r.why_not)}</div>" if r.why_not else ""
     price = f"{r.price_eur}" if r.price_eur is not None else ""
 
     def button(value: str, label: str) -> str:
         on = r.choice == value
         # Nog eens op de gekozen knop: terug naar te beoordelen.
         return (f"<button class='quiet{' on' if on else ''}' name='keuze' value='{'' if on else value}' "
-                f"aria-pressed='{'true' if on else 'false'}'>{esc(label)}</button>")
+                f"aria-pressed='{'true' if on else 'false'}'>{pg.esc(label)}</button>")
 
-    item = esc(r.item_id, quote=True)
+    item = pg.esc(r.item_id, quote=True)
     return (
         f"<tr data-item='{item}' data-choice='{choice}'>"
-        f"<td class='pic'>{thumb(r)}</td>"
-        f"<td class='num' data-sort='{price}'>{euro(r.price_eur)}<div class='sub'>{esc(bike_price_kind(r))}</div>"
+        f"<td class='pic'>{pg.thumb(r)}</td>"
+        f"<td class='num' data-sort='{price}'>{euro(r.price_eur)}<div class='sub'>{pg.esc(bike_price_kind(r))}</div>"
         f"{bids}{why}</td>"
         f"<td class='what'><div class='model'>{badges}</div>"
-        f"<a href='{esc(r.url, quote=True)}' target='_blank' rel='noopener'>{esc(r.title)}</a>"
-        f"<div class='note'>{esc(' · '.join(f for f in facts if f))}</div></td>"
-        f"<td>{act(BIKE_CHOICE_PATH, r.item_id, button(bc.MEE, '✓ meenemen') + button(bc.NIET, '✗ niet'))}</td>"
+        f"<a href='{pg.esc(r.url, quote=True)}' target='_blank' rel='noopener'>{pg.esc(r.title)}</a>"
+        f"<div class='note'>{pg.esc(' · '.join(f for f in facts if f))}</div></td>"
+        f"<td>{pg.act(BIKE_CHOICE_PATH, r.item_id, button(bc.MEE, '✓ meenemen') + button(bc.NIET, '✗ niet'))}</td>"
         "</tr>"
     )
 
@@ -2305,7 +1819,7 @@ def bike_summary(view: BikeView) -> str:
         manual = up.manual_sale_price_from(owner.bike.specs) if owner else None
         sub = ("nog niets meegenomen met een vraagprijs"
                + (f"; tot dan rekent de upgrade-finder met {euro(manual)} uit mijn_fiets.md" if manual else ""))
-    parts = [tiles([
+    parts = [pg.tiles([
         ("Jouw fiets, originele wielen", value, sub),
         ("Meegenomen", str(len(taken)), f"{counting} met een vraagprijs, die tellen mee"),
         ("Te beoordelen", str(view.count("open")), "nieuw of nog niet bekeken"),
@@ -2318,25 +1832,25 @@ def bike_summary(view: BikeView) -> str:
                 parts.append(f"<p class='explain'>Onder de {val.MIN_COMPS_FOR_A_HARD_NUMBER} meegenomen "
                              f"advertenties is dit een richting, geen prijs: de upgrade-finder rekent nog met "
                              f"{euro(manual)} uit mijn_fiets.md.</p>")
-        lines = "".join(f"<li>{esc(e.note)}</li>" for e in b.evidence if e.kind != "comp" or not e.ref_id)
+        lines = "".join(f"<li>{pg.esc(e.note)}</li>" for e in b.evidence if e.kind != "comp" or not e.ref_id)
         parts.append(f"<details class='how'><summary>Hoe dit bedrag ontstaat</summary><ul class='evidence'>{lines}</ul>"
                      "</details>")
     return "".join(parts)
 
 
 def bike_show_options(view: BikeView) -> str:
-    return "".join(f"<option value='{key}'>{esc(label)} ({view.count(key)})</option>" for key, label in BIKE_SHOW)
+    return "".join(f"<option value='{key}'>{pg.esc(label)} ({view.count(key)})</option>" for key, label in BIKE_SHOW)
 
 
 def render_bike(view: BikeView, token: str = "", message: str = "", other_links: Sequence = ()) -> str:
     owner = view.owner
-    links = "".join(f" · <a href='{esc(href, quote=True)}'>{esc(label)}</a>" for label, href in other_links)
+    links = "".join(f" · <a href='{pg.esc(href, quote=True)}'>{pg.esc(label)}</a>" for label, href in other_links)
     if owner is None:
-        body = f"<div class='banner'>{esc(view.problem)}</div>"
+        body = f"<div class='banner'>{pg.esc(view.problem)}</div>"
         about = ""
     else:
         specs = owner.bike.specs
-        about = " · ".join(esc(x) for x in (
+        about = " · ".join(pg.esc(x) for x in (
             owner.bike.label, specs.get("model_year", ""), specs.get("frame_material", ""),
             f"maat {specs['size_cm']}" if specs.get("size_cm") else "") if x)
         subject = val.subject_from_owner_bike(owner.bike)
@@ -2346,7 +1860,7 @@ def render_bike(view: BikeView, token: str = "", message: str = "", other_links:
         body = (
             f"<div id='bike-summary'>{bike_summary(view)}</div>"
             "<p class='explain'>Alle advertenties van de laatste "
-            f"{val.DEFAULT_COMP_WINDOW_DAYS} dagen met <strong>{esc(family)}</strong> in de tekst of gevonden "
+            f"{val.DEFAULT_COMP_WINDOW_DAYS} dagen met <strong>{pg.esc(family)}</strong> in de tekst of gevonden "
             "door een zoekopdracht met dat woord erin, ook die al weg zijn (verkocht of ingetrokken), uit elke "
             "categorie behalve onderdelen en accessoires, en van "
             "elk materiaal. Het materiaal staat erbij: van het model (Defy 0-5 en Aluxx zijn aluminium, "
@@ -2358,18 +1872,18 @@ def render_bike(view: BikeView, token: str = "", message: str = "", other_links:
             "<div class='filters'>"
             f"<select id='bike-show' aria-label='Toon' data-default='{show}'>{bike_show_options(view)}</select>"
             "<span class='muted' id='bike-count'></span></div>"
-            + table([("", ""), ("Prijs", "num"), ("Advertentie", "text"), ("Vergelijken?", "")], rows, "bike-table")
+            + pg.table([("", ""), ("Prijs", "num"), ("Advertentie", "text"), ("Vergelijken?", "")], rows, "bike-table")
             + "<p class='empty' id='bike-empty' hidden>Niets in deze selectie.</p>"
         )
-    notice = f"<div class='banner' role='status'>{esc(message)}</div>" if message else ""
+    notice = f"<div class='banner' role='status'>{pg.esc(message)}</div>" if message else ""
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>Mijn fiets</title><style>{CSS}{SITE_CSS}</style></head><body>"
-        f"<main data-token='{esc(token, quote=True)}'>{site_nav(BIKE_PATH)}"
+        f"<title>Mijn fiets</title><style>{pg.CSS}{pg.SITE_CSS}</style></head><body>"
+        f"<main data-token='{pg.esc(token, quote=True)}'>{pg.site_nav(pg.BIKE_PATH)}"
         "<h1>Mijn fiets: vergelijkbare advertenties</h1>"
         f"<div class='meta'>{about}{links} · <strong>live</strong> (keuzes gaan in koopjes.db)</div>{notice}{body}"
-        f"</main><div id='toast' role='status' hidden></div><script>{LIVE_JS}{JS}{BIKE_JS}</script></body></html>"
+        f"</main><div id='toast' role='status' hidden></div><script>{pg.LIVE_JS}{pg.JS}{BIKE_JS}</script></body></html>"
     )
 
 
@@ -2409,12 +1923,12 @@ def action_choice(db_path, form: dict) -> str:
     item_id = form.get("item_id", "")
     choice = form.get("keuze", "")
     if choice and choice not in bc.CHOICES:
-        raise FormError(f"Onbekende keuze '{choice}'.")
+        raise pg.FormError(f"Onbekende keuze '{choice}'.")
     conn = db.connect(str(db_path))
     try:
         row = conn.execute("SELECT title FROM listing WHERE item_id = ?", (item_id,)).fetchone()
         if row is None:
-            raise FormError("Onbekende advertentie.")
+            raise pg.FormError("Onbekende advertentie.")
         db.set_comp_choice(conn, item_id, choice or None)
     finally:
         conn.close()
@@ -2439,7 +1953,6 @@ def bike_update(view: BikeView, item_id: str, message: str) -> dict:
 # wat erin zit, de klussenlijst en de verkoop, en bovenaan de totalen. Alleen
 # live, net als /fiets: zonder knoppen is een afvinklijst niets waard.
 
-FLIPS_PATH = "/flips"
 FLIPS_PHOTO_PATH = "/flips/foto"
 
 
@@ -2447,15 +1960,15 @@ def flip_input(name: str, value, label: str, size: int = 6, kind: str = "text", 
     shown = "" if value is None else (f"{value:.2f}".replace(".", ",") if isinstance(value, float) else str(value))
     mode = " inputmode='decimal'" if kind == "euro" else ""
     typ = "date" if kind == "date" else "text"
-    ph = f" placeholder='{esc(placeholder, quote=True)}'" if placeholder else ""
-    return (f"<input type='{typ}' name='{name}' value='{esc(shown, quote=True)}' size='{size}'{mode}{ph} "
-            f"aria-label='{esc(label, quote=True)}'>")
+    ph = f" placeholder='{pg.esc(placeholder, quote=True)}'" if placeholder else ""
+    return (f"<input type='{typ}' name='{name}' value='{pg.esc(shown, quote=True)}' size='{size}'{mode}{ph} "
+            f"aria-label='{pg.esc(label, quote=True)}'>")
 
 
 def flip_select(name: str, options, chosen: str, label: str) -> str:
-    opts = "".join(f"<option value='{esc(k, quote=True)}'{' selected' if k == chosen else ''}>{esc(v)}</option>"
+    opts = "".join(f"<option value='{pg.esc(k, quote=True)}'{' selected' if k == chosen else ''}>{pg.esc(v)}</option>"
                    for k, v in options)
-    return f"<select name='{name}' aria-label='{esc(label, quote=True)}'>{opts}</select>"
+    return f"<select name='{name}' aria-label='{pg.esc(label, quote=True)}'>{opts}</select>"
 
 
 def flip_totals(book: fl.FlipBook) -> str:
@@ -2465,7 +1978,7 @@ def flip_totals(book: fl.FlipBook) -> str:
     tools = f"{euro(t.tools_spent_eur, cents=True)} uitgegeven"
     if t.tools_planned_eur:
         tools += f", {euro(t.tools_planned_eur, cents=True)} nog gepland"
-    return tiles([
+    return pg.tiles([
         ("Verdiend", euro(t.realized_eur, cents=True, sign=True) if t.sold else "—",
          f"{t.sold} verkocht, {euro(t.revenue_eur, cents=True)} omzet" if t.sold else "nog niets verkocht"),
         ("Netto na investeringen", euro(t.net_eur, cents=True, sign=True), "verdiend min gereedschap en voorraad"),
@@ -2481,18 +1994,18 @@ def flip_task_row(k: fl.Task) -> str:
     """Eén regel van de klussenlijst: afvinken, de echte prijs, en wat erbij hoort."""
     item = str(k.id)
     done = "on" if k.done else ""
-    check = act("/flips/klus", item, f"<button class='quiet tick {done}' name='doe' value='gedaan' "
+    check = pg.act("/flips/klus", item, f"<button class='quiet tick {done}' name='doe' value='gedaan' "
                                      f"aria-pressed='{'true' if k.done else 'false'}' title='gedaan'>✓</button>")
     facts = []
     if k.shop:
-        facts.append(esc(k.shop))
+        facts.append(pg.esc(k.shop))
     if k.price_source in fl.SOURCES:
         facts.append(f"<span class='badge{' est' if k.price_source == 'schatting' else ''}'>"
-                     f"{esc(fl.SOURCES[k.price_source])}</span>")
-    if web_link(k.url):
-        facts.append(f"<a href='{esc(web_link(k.url), quote=True)}' target='_blank' rel='noopener'>link</a>")
+                     f"{pg.esc(fl.SOURCES[k.price_source])}</span>")
+    if pg.web_link(k.url):
+        facts.append(f"<a href='{pg.esc(pg.web_link(k.url), quote=True)}' target='_blank' rel='noopener'>link</a>")
     if k.notes:
-        facts.append(esc(k.notes))
+        facts.append(pg.esc(k.notes))
     offers = flip_offers(k) if k.kind == "onderdeel" else ""
     status = {"gedaan": "gedaan", "gekocht": "gekocht, nog niet gemonteerd", "open": ""}[k.status]
     if k.kind == "onderdeel" and k.status == "open" and k.est_eur is not None:
@@ -2502,15 +2015,15 @@ def flip_task_row(k: fl.Task) -> str:
         status = "in bezit" if k.bought else "nog kopen"
         check = ""
     if status:
-        facts.insert(0, f"<strong>{esc(status)}</strong>")
-    what = (f"<div class='{'struck' if k.done else ''}'>{esc(k.title)}</div>"
+        facts.insert(0, f"<strong>{pg.esc(status)}</strong>")
+    what = (f"<div class='{'struck' if k.done else ''}'>{pg.esc(k.title)}</div>"
             f"<div class='note'>{' · '.join(facts)}</div>{offers}")
     if k.kind == "reis":
         cost = (flip_input("tarief", k.fare_eur, "Vol tarief", 5, "euro", "vol tarief")
                 + flip_select("korting", fl.DISCOUNT_LABELS.items(), k.discount or "vol", "Korting")
                 + "<button class='quiet' name='doe' value='prijs'>opslaan</button>")
         money = (f"<td class='num'>{euro(k.cost_eur, cents=True)}"
-                 f"<div class='sub'>{esc(fl.DISCOUNT_LABELS.get(k.discount or 'vol', ''))}</div></td>")
+                 f"<div class='sub'>{pg.esc(fl.DISCOUNT_LABELS.get(k.discount or 'vol', ''))}</div></td>")
     elif k.kind == "klus" and k.price_eur is None:
         # Een klus kost meestal niets; wie er toch iets voor betaalde kan
         # het als onderdeel toevoegen.
@@ -2528,9 +2041,9 @@ def flip_task_row(k: fl.Task) -> str:
     toggle = "" if k.trade_id is None else (
                f"<button class='quiet' name='doe' value='investering' title='{'terug naar de kosten van de flip' if k.investment else 'gereedschap: telt niet bij deze flip, wel bij de investeringen'}'>"
                f"{'naar flip' if k.investment else 'gereedschap'}</button>")
-    menu = act("/flips/klus", item, toggle + "<button class='quiet' name='doe' value='weg'>weg</button>", "menu")
+    menu = pg.act("/flips/klus", item, toggle + "<button class='quiet' name='doe' value='weg'>weg</button>", "menu")
     return (f"<tr data-task='{item}' class='{k.status}'><td class='tickcell'>{check}</td>"
-            f"<td class='what'>{what}</td>{money}<td>{act('/flips/klus', item, cost) if cost else ''}</td><td>{menu}</td></tr>")
+            f"<td class='what'>{what}</td>{money}<td>{pg.act('/flips/klus', item, cost) if cost else ''}</td><td>{menu}</td></tr>")
 
 
 def flip_offers(k: fl.Task) -> str:
@@ -2540,26 +2053,26 @@ def flip_offers(k: fl.Task) -> str:
     items = []
     for o in k.offers:
         chosen = (o.url == k.url) if o.url else (o.shop == k.shop and o.total_eur == k.est_eur)
-        link = (f"<a href='{esc(web_link(o.url), quote=True)}' target='_blank' rel='noopener'>{esc(o.domain)}</a>"
-                if web_link(o.url)
+        link = (f"<a href='{pg.esc(pg.web_link(o.url), quote=True)}' target='_blank' rel='noopener'>{pg.esc(o.domain)}</a>"
+                if pg.web_link(o.url)
                 else "<span class='badge est'>geen link</span>")
         ship = (f" + {euro(o.shipping_eur, cents=True)} verzending = {euro(o.total_eur, cents=True)}" if o.shipping_eur
                 else (" incl. verzending" if o.shipping_eur == 0 else ""))
         source = " <span class='badge est'>schatting</span>" if o.source == "schatting" else ""
-        extra = " · ".join(x for x in (esc(o.note), f"bekeken {esc(nl_date(o.checked_at))}" if o.checked_at else "") if x)
+        extra = " · ".join(x for x in (pg.esc(o.note), f"bekeken {pg.esc(pg.nl_date(o.checked_at))}" if o.checked_at else "") if x)
         pick = ("<span class='badge'>gekozen</span>" if chosen
-                else act("/flips/aanbod-kies", str(o.id), "<button class='quiet'>kies deze</button>", "tiny"))
-        items.append(f"<li><strong>{euro(o.price_eur, cents=True)}</strong>{ship} · {esc(o.shop or '')} {link}{source} "
+                else pg.act("/flips/aanbod-kies", str(o.id), "<button class='quiet'>kies deze</button>", "tiny"))
+        items.append(f"<li><strong>{euro(o.price_eur, cents=True)}</strong>{ship} · {pg.esc(o.shop or '')} {link}{source} "
                      f"<span class='muted'>{extra}</span> {pick}"
-                     f"{act('/flips/aanbod-weg', str(o.id), '<button class=quiet>weg</button>', 'tiny')}</li>")
-    add = act("/flips/aanbod", str(k.id),
+                     f"{pg.act('/flips/aanbod-weg', str(o.id), '<button class=quiet>weg</button>', 'tiny')}</li>")
+    add = pg.act("/flips/aanbod", str(k.id),
               flip_input("link", "", "Link plakken", 26, placeholder="link plakken")
               + flip_input("prijs", "", "Prijs", 5, "euro", "prijs €")
               + flip_input("verzending", "", "Verzending", 5, "euro", "verzending €")
               + flip_input("winkel", "", "Winkel", 10, placeholder="winkel (uit de link)")
               + flip_input("notitie", "", "Notitie", 16, placeholder="notitie, bv. variant")
               + "<button>toevoegen</button>", "addoffer")
-    own = act("/flips/klus", str(k.id),
+    own = pg.act("/flips/klus", str(k.id),
               "<span class='sub'>deze regel:</span>"
               + flip_input("winkel", k.shop, "Winkel van deze regel", 10, placeholder="winkel")
               + flip_input("url", k.url, "Link van deze regel", 26, placeholder="link")
@@ -2589,7 +2102,7 @@ def flip_add_task(trade_id: Optional[int], investment: bool = False) -> str:
              + flip_input("prijs", "", "Echte prijs", 5, "euro", "echt €")
              + ("<input type='hidden' name='investering' value='1'>" if investment else "")
              + "<button name='doe' value='nieuw'>toevoegen</button>")
-    return act("/flips/klus-nieuw", "" if trade_id is None else str(trade_id), inner, "addtask")
+    return pg.act("/flips/klus-nieuw", "" if trade_id is None else str(trade_id), inner, "addtask")
 
 
 def flip_basket(tasks: list) -> str:
@@ -2600,17 +2113,17 @@ def flip_basket(tasks: list) -> str:
     for shop, items, subtotal, short in groups:
         warn = (f"<div class='sub warn'>nog {euro(short, cents=True)} tot gratis verzending</div>" if short is not None
                 else "")
-        names = "".join(f"<li>{esc(k.title)} <span class='muted'>{euro(k.est_eur, cents=True)}</span></li>" for k in items)
-        out.append(f"<div class='shop'><div class='model'>{esc(shop)} · {euro(subtotal, cents=True)}</div>{warn}"
+        names = "".join(f"<li>{pg.esc(k.title)} <span class='muted'>{euro(k.est_eur, cents=True)}</span></li>" for k in items)
+        out.append(f"<div class='shop'><div class='model'>{pg.esc(shop)} · {euro(subtotal, cents=True)}</div>{warn}"
                    f"<ul>{names}</ul></div>")
     return "<div class='shops'>" + "".join(out) + "</div>"
 
 
 def flip_stage_buttons(f: fl.Flip) -> str:
     buttons = "".join(
-        f"<button class='quiet{' on' if f.stage == key else ''}' name='fase' value='{key}'>{esc(label)}</button>"
+        f"<button class='quiet{' on' if f.stage == key else ''}' name='fase' value='{key}'>{pg.esc(label)}</button>"
         for key, label in fl.STAGES if key != "verkocht")
-    return act("/flips/fase", str(f.id), buttons, "stages")
+    return pg.act("/flips/fase", str(f.id), buttons, "stages")
 
 
 def flip_money_grid(f: fl.Flip) -> str:
@@ -2643,12 +2156,12 @@ def flip_money_grid(f: fl.Flip) -> str:
                           f"winst bij dat bod {euro(f.expected_profit(top['amount_eur']), cents=True, sign=True)}"))
     else:
         cells.append(("Verkocht voor", euro(t.sell_price_eur, cents=True),
-                      f"− {euro(t.sell_costs_eur, cents=True)} kosten" if t.sell_costs_eur else esc(t.sold_via or "")))
+                      f"− {euro(t.sell_costs_eur, cents=True)} kosten" if t.sell_costs_eur else pg.esc(t.sold_via or "")))
         cells.append(("Winst", euro(f.profit_eur, cents=True, sign=True), f"in {t.days_held()} dagen"))
     if f.hours:
         cells.append(("Uren", f"{f.hours:g}", f"{euro(f.per_hour_eur, cents=True)} per uur" if f.per_hour_eur is not None else ""))
     return "<div class='money'>" + "".join(
-        f"<div><div class='label'>{esc(a)}</div><div class='value'>{b}</div><div class='sub'>{esc(c)}</div></div>"
+        f"<div><div class='label'>{pg.esc(a)}</div><div class='value'>{b}</div><div class='sub'>{pg.esc(c)}</div></div>"
         for a, b, c in cells) + "</div>"
 
 
@@ -2663,10 +2176,10 @@ def flip_progress(f: fl.Flip) -> str:
 
 
 def flip_specs(f: fl.Flip) -> str:
-    fields = "".join(f"<label>{esc(label)}{flip_input('spec_' + key, f.specs.get(key, ''), label, 22)}</label>"
+    fields = "".join(f"<label>{pg.esc(label)}{flip_input('spec_' + key, f.specs.get(key, ''), label, 22)}</label>"
                      for key, label in fl.SPEC_FIELDS)
-    form = act("/flips/gegevens", str(f.id), fields + "<button name='doe' value='specs'>opslaan</button>", "specform")
-    draft = esc(fl.ad_draft(f))
+    form = pg.act("/flips/gegevens", str(f.id), fields + "<button name='doe' value='specs'>opslaan</button>", "specform")
+    draft = pg.esc(fl.ad_draft(f))
     return (f"{form}<h4>Concept voor je advertentie</h4>"
             f"<textarea class='draft' rows='8' readonly>{draft}</textarea>"
             "<div class='inline'><button class='quiet copy'>kopiëren</button>"
@@ -2685,22 +2198,22 @@ def flip_details_form(f: fl.Flip) -> str:
              f"<label>Jouw advertentie (link){flip_input('verkooplink', f.sale_url, 'Verkooplink', 28)}</label>"
              f"<label>Notitie{flip_input('notitie', t.notes or '', 'Notitie', 28)}</label>"
              "<button name='doe' value='gegevens'>opslaan</button>")
-    return act("/flips/gegevens", str(f.id), inner, "specform")
+    return pg.act("/flips/gegevens", str(f.id), inner, "specform")
 
 
 def flip_sale(f: fl.Flip) -> str:
     bids = "".join(
-        f"<li>{euro(b['amount_eur'], cents=True)} <span class='muted'>{esc(local_time(b['at']))}"
-        f"{' · ' + esc(b['note']) if b['note'] else ''}</span> "
-        f"{act('/flips/bod-weg', str(b['id']), '<button class=quiet>weg</button>', 'tiny')}</li>"
+        f"<li>{euro(b['amount_eur'], cents=True)} <span class='muted'>{pg.esc(local_time(b['at']))}"
+        f"{' · ' + pg.esc(b['note']) if b['note'] else ''}</span> "
+        f"{pg.act('/flips/bod-weg', str(b['id']), '<button class=quiet>weg</button>', 'tiny')}</li>"
         for b in f.bids)
-    add_bid = act("/flips/bod", str(f.id),
+    add_bid = pg.act("/flips/bod", str(f.id),
                   flip_input("bedrag", "", "Bod", 6, "euro", "bod €") + flip_input("wie", "", "Van wie / notitie", 18,
                                                                                   placeholder="van wie, notitie")
                   + "<button>bod noteren</button>")
     today = date.today().isoformat()
     guess = f.top_bid["amount_eur"] if f.top_bid else f.target_mid_eur
-    sell = act("/flips/verkocht", str(f.id),
+    sell = pg.act("/flips/verkocht", str(f.id),
                flip_input("prijs", guess, "Verkoopprijs", 6, "euro", "verkoopprijs")
                + flip_input("kosten", None, "Verkoopkosten", 4, "euro", "kosten")
                + f"<input type='date' name='datum' value='{today}' aria-label='Verkocht op'>"
@@ -2714,8 +2227,8 @@ def flip_sale(f: fl.Flip) -> str:
 def flip_photos(f: fl.Flip) -> str:
     pics = "".join(
         f"<figure><a href='{FLIPS_PHOTO_PATH}/{p['id']}' target='_blank'><img src='{FLIPS_PHOTO_PATH}/{p['id']}' "
-        f"alt='' loading='lazy'></a><figcaption>{esc(p['kind'])} "
-        f"{act('/flips/foto-weg', str(p['id']), '<button class=quiet>weg</button>', 'tiny')}</figcaption></figure>"
+        f"alt='' loading='lazy'></a><figcaption>{pg.esc(p['kind'])} "
+        f"{pg.act('/flips/foto-weg', str(p['id']), '<button class=quiet>weg</button>', 'tiny')}</figcaption></figure>"
         for p in f.photos)
     upload = (f"<div class='inline upload' data-flip='{f.id}'>"
               "<select aria-label='Voor of na'><option value='voor'>voor</option><option value='na'>na</option></select>"
@@ -2729,13 +2242,13 @@ def flip_card(f: fl.Flip) -> str:
     days = f.days_in_stage
     since = f" · {days} dag{'en' if days != 1 else ''}" if days is not None else ""
     links = []
-    if web_link(t.url):
-        links.append(f"<a href='{esc(web_link(t.url), quote=True)}' target='_blank' rel='noopener'>"
+    if pg.web_link(t.url):
+        links.append(f"<a href='{pg.esc(pg.web_link(t.url), quote=True)}' target='_blank' rel='noopener'>"
                      "gekocht via deze advertentie</a>")
-    if web_link(f.sale_url):
-        links.append(f"<a href='{esc(web_link(f.sale_url), quote=True)}' target='_blank' rel='noopener'>"
+    if pg.web_link(f.sale_url):
+        links.append(f"<a href='{pg.esc(pg.web_link(f.sale_url), quote=True)}' target='_blank' rel='noopener'>"
                      "jouw advertentie</a>")
-    meta = [esc(f.kind_label), f"gekocht {esc(nl_date(t.bought_at))}", *links]
+    meta = [pg.esc(f.kind_label), f"gekocht {pg.esc(pg.nl_date(t.bought_at))}", *links]
     views_html = flip_views(f)
     cover = next((p for p in reversed(f.photos) if p["kind"] == "na"), f.photos[0] if f.photos else None)
     img = (f"<img class='cover' src='{FLIPS_PHOTO_PATH}/{cover['id']}' alt=''>" if cover else "")
@@ -2757,16 +2270,16 @@ def flip_card(f: fl.Flip) -> str:
     else:
         body = (f"<details><summary>Klussenlijst ({len(f.tasks)})</summary>{flip_task_table(tasks)}</details>"
                 f"<details><summary>Foto's ({len(f.photos)})</summary>{flip_photos(f)}</details>"
-                + act("/flips/fase", str(f.id), "<button class='quiet' name='fase' value='te_koop'>"
+                + pg.act("/flips/fase", str(f.id), "<button class='quiet' name='fase' value='te_koop'>"
                                                 "verkoop ongedaan maken</button>"))
-    delete = act("/flips/weg", str(f.id), "<button class='quiet' name='doe' value='weg'>flip verwijderen</button>",
+    delete = pg.act("/flips/weg", str(f.id), "<button class='quiet' name='doe' value='weg'>flip verwijderen</button>",
                  "tiny right")
     return (
         f"<section class='flipcard stage-{f.stage}' id='flip-{f.id}' data-flip='{f.id}'>"
-        f"<header>{img}<div><h2>{esc(t.title)}</h2>"
-        f"<div class='meta'><span class='pill'>{esc(fl.STAGE_LABELS[f.stage])}{since}</span> "
+        f"<header>{img}<div><h2>{pg.esc(t.title)}</h2>"
+        f"<div class='meta'><span class='pill'>{pg.esc(fl.STAGE_LABELS[f.stage])}{since}</span> "
         f"{' · '.join(meta)}</div>"
-        f"{'<div class=note>' + esc(t.notes) + '</div>' if t.notes else ''}{views_html}</div></header>"
+        f"{'<div class=note>' + pg.esc(t.notes) + '</div>' if t.notes else ''}{views_html}</div></header>"
         f"{flip_money_grid(f)}{flip_progress(f)}{body}{delete}</section>"
     )
 
@@ -2782,12 +2295,12 @@ def flip_views(f: fl.Flip) -> str:
     first = f.views[0]
     grew = ""
     if len(f.views) > 1 and latest.views is not None and first.get("views") is not None:
-        grew = (f" · sinds {nl_date(first['observed_at'])}: +{latest.views - first['views']} bekeken, "
+        grew = (f" · sinds {pg.nl_date(first['observed_at'])}: +{latest.views - first['views']} bekeken, "
                 f"+{(latest.favorites or 0) - (first.get('favorites') or 0)} bewaard")
     lines = (vw.sparkline([o.get("views") for o in f.views], color="var(--accent)")
              + vw.sparkline([o.get("favorites") for o in f.views], color="var(--good)"))
     legend = "<span class='sub'>blauw bekeken, groen bewaard</span>" if lines else ""
-    return (f"<div class='note'>{esc(latest.label)} (gemeten {esc(nl_date(latest.observed_at))}){esc(grew)}</div>"
+    return (f"<div class='note'>{pg.esc(latest.label)} (gemeten {pg.esc(pg.nl_date(latest.observed_at))}){pg.esc(grew)}</div>"
             f"<div class='sparks'>{lines}{legend}</div>")
 
 
@@ -2795,11 +2308,11 @@ def flip_stock_row(f: fl.Flip) -> str:
     t = f.trade
     buttons = ("<button name='fase' value='te_koop'>flippen</button>"
                "<button class='quiet' name='fase' value='opknappen'>eerst opknappen</button>")
-    note = f"<div class='note'>{esc(t.notes)}</div>" if t.notes else ""
-    return (f"<tr data-flip='{f.id}'><td class='what'>{esc(t.title)}{note}</td>"
+    note = f"<div class='note'>{pg.esc(t.notes)}</div>" if t.notes else ""
+    return (f"<tr data-flip='{f.id}'><td class='what'>{pg.esc(t.title)}{note}</td>"
             f"<td class='num'>{euro(t.cost_basis_eur, cents=True)}</td>"
-            f"<td>{act('/flips/fase', str(f.id), buttons)}</td>"
-            f"<td>{act('/flips/weg', str(f.id), '<button class=quiet name=doe value=weg>weg</button>')}</td></tr>")
+            f"<td>{pg.act('/flips/fase', str(f.id), buttons)}</td>"
+            f"<td>{pg.act('/flips/weg', str(f.id), '<button class=quiet name=doe value=weg>weg</button>')}</td></tr>")
 
 
 def flip_tools(book: fl.FlipBook) -> str:
@@ -2839,7 +2352,7 @@ def flip_new_form() -> str:
 
 def render_flips(book: fl.FlipBook, token: str = "", message: str = "", other_links: Sequence = (),
                  sheets: str = "") -> str:
-    links = "".join(f" · <a href='{esc(href, quote=True)}'>{esc(label)}</a>" for label, href in other_links)
+    links = "".join(f" · <a href='{pg.esc(href, quote=True)}'>{pg.esc(label)}</a>" for label, href in other_links)
     running = [f for key in ("te_koop", "opknappen", "gekocht") for f in book.by_stage(key)]
     stock = book.by_stage("voorraad")
     sold = sorted(book.by_stage("verkocht"), key=lambda f: f.trade.sold_at or "", reverse=True)
@@ -2857,19 +2370,19 @@ def render_flips(book: fl.FlipBook, token: str = "", message: str = "", other_li
     parts.append(f"<h3>Verkocht ({len(sold)})</h3>")
     parts.append("".join(flip_card(f) for f in sold) or "<p class='empty'>Nog niets verkocht.</p>")
     parts.append(f"<h3>Investeringen</h3><div id='flip-tools'>{flip_tools(book)}</div>")
-    parts.append("<h3>Nieuwe flip</h3>" + flip_new_form().replace("TOKEN", esc(token, quote=True)))
+    parts.append("<h3>Nieuwe flip</h3>" + flip_new_form().replace("TOKEN", pg.esc(token, quote=True)))
     if sheets:
         parts.append(f"<h3>Google Sheets</h3>{sheets}")
-    notice = f"<div class='banner' role='status'>{esc(message)}</div>" if message else ""
+    notice = f"<div class='banner' role='status'>{pg.esc(message)}</div>" if message else ""
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>Flips</title><style>{CSS}{FLIPS_CSS}{SITE_CSS}</style></head><body>"
-        f"<main data-token='{esc(token, quote=True)}'>{site_nav(FLIPS_PATH)}"
+        f"<title>Flips</title><style>{pg.CSS}{FLIPS_CSS}{pg.SITE_CSS}</style></head><body>"
+        f"<main data-token='{pg.esc(token, quote=True)}'>{pg.site_nav(pg.FLIPS_PATH)}"
         "<h1>Flips</h1>"
         f"<div class='meta'>Alles wat je kocht om te verkopen{links} · <strong>live</strong> (gaat in koopjes.db)</div>"
         f"{notice}{''.join(parts)}"
-        f"</main><div id='toast' role='status' hidden></div><script>{LIVE_JS}{JS}{FLIPS_JS}</script></body></html>"
+        f"</main><div id='toast' role='status' hidden></div><script>{pg.LIVE_JS}{pg.JS}{FLIPS_JS}</script></body></html>"
     )
 
 
@@ -3021,7 +2534,7 @@ def flips_update(book: fl.FlipBook, trade_id: Optional[int], message: str) -> di
 
 
 def _flip_id(form: dict, key: str = "item_id") -> int:
-    return parse_id(form.get(key))
+    return pg.parse_id(form.get(key))
 
 
 def flip_action_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
@@ -3031,22 +2544,22 @@ def flip_action_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
     try:
         row = conn.execute("SELECT * FROM flip_task WHERE id = ? AND deleted_at IS NULL", (task_id,)).fetchone()
         if row is None:
-            raise FormError("Onbekende regel.")
+            raise pg.FormError("Onbekende regel.")
         task = fl.task_from_row(row)
         if what == "gedaan":
             fl.update_task(conn, task_id, done_at=None if task.done else date.today().isoformat())
             message = f"{'Weer open' if task.done else 'Gedaan'}: {task.title}."
         elif what == "prijs":
             if task.kind == "reis":
-                fare = parse_euro(form.get("tarief"), "Tarief", required=False)
+                fare = pg.parse_euro(form.get("tarief"), "Tarief", required=False)
                 discount = form.get("korting") or "vol"
                 if discount not in fl.DISCOUNTS:
-                    raise FormError("Onbekende korting.")
+                    raise pg.FormError("Onbekende korting.")
                 fl.update_task(conn, task_id, fare_eur=fare, discount=discount)
                 cost = None if fare is None else round(fare * fl.DISCOUNTS[discount], 2)
                 message = f"{task.title}: {euro(cost, cents=True)} ({fl.DISCOUNT_LABELS[discount]})."
             else:
-                price = parse_euro(form.get("prijs"), "Prijs", required=False)
+                price = pg.parse_euro(form.get("prijs"), "Prijs", required=False)
                 values = {"price_eur": price}
                 if price is None:
                     values["bought_at"] = None
@@ -3067,9 +2580,9 @@ def flip_action_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
             fl.update_task(conn, task_id, shop=shop, url=url)
             message = f"{task.title}: {shop or 'winkel onbekend'}{', met link' if url else ''}."
         else:
-            raise FormError("Onbekende knop.")
+            raise pg.FormError("Onbekende knop.")
     except ValueError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
     finally:
         conn.close()
     return message, task.trade_id
@@ -3078,18 +2591,18 @@ def flip_action_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
 def flip_action_offer(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
     """Een aanbieding bij een regel: een geplakte link en de prijs die je zag."""
     task_id = _flip_id(form)
-    price = parse_euro(form.get("prijs"), "Prijs")
-    shipping = parse_euro(form.get("verzending"), "Verzending", required=False)
+    price = pg.parse_euro(form.get("prijs"), "Prijs")
+    shipping = pg.parse_euro(form.get("verzending"), "Verzending", required=False)
     conn = db.connect(str(db_path))
     try:
         row = conn.execute("SELECT title, trade_id FROM flip_task WHERE id = ? AND deleted_at IS NULL",
                            (task_id,)).fetchone()
         if row is None:
-            raise FormError("Onbekende regel.")
+            raise pg.FormError("Onbekende regel.")
         fl.add_offer(conn, task_id, url=form.get("link", ""), price_eur=price, shipping_eur=shipping,
                      shop=form.get("winkel", ""), note=form.get("notitie", ""))
     except ValueError as exc:
-        raise FormError(str(exc)[:1].upper() + str(exc)[1:] + ".") from None
+        raise pg.FormError(str(exc)[:1].upper() + str(exc)[1:] + ".") from None
     finally:
         conn.close()
     return f"Aanbieding bij {row['title']}: {euro(price, cents=True)}.", row["trade_id"]
@@ -3100,7 +2613,7 @@ def flip_action_offer_choose(db_path, form: dict, ctx=None) -> tuple[str, Option
     try:
         offer = fl.choose_offer(conn, _flip_id(form))
         if offer is None:
-            raise FormError("Onbekende aanbieding.")
+            raise pg.FormError("Onbekende aanbieding.")
         row = conn.execute("SELECT title, trade_id FROM flip_task WHERE id = ?", (offer.task_id,)).fetchone()
     finally:
         conn.close()
@@ -3113,7 +2626,7 @@ def flip_action_offer_delete(db_path, form: dict, ctx=None) -> tuple[str, Option
     try:
         offer = fl.delete_offer(conn, _flip_id(form))
         if offer is None:
-            raise FormError("Onbekende aanbieding.")
+            raise pg.FormError("Onbekende aanbieding.")
         trade_id = fl.task_trade(conn, offer.task_id)
     finally:
         conn.close()
@@ -3121,15 +2634,15 @@ def flip_action_offer_delete(db_path, form: dict, ctx=None) -> tuple[str, Option
 
 
 def flip_action_new_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
-    trade_id = parse_id(form["item_id"]) if form.get("item_id") else None
+    trade_id = pg.parse_id(form["item_id"]) if form.get("item_id") else None
     title = " ".join((form.get("titel") or "").split())
     if not title:
-        raise FormError("Vul in wat het is.")
+        raise pg.FormError("Vul in wat het is.")
     kind = form.get("soort", "onderdeel")
     values = {"shop": (form.get("winkel") or "").strip() or None,
               "investment": form.get("investering") == "1"}
-    est = parse_euro(form.get("geschat"), "Geschatte prijs", required=False)
-    price = parse_euro(form.get("prijs"), "Echte prijs", required=False)
+    est = pg.parse_euro(form.get("geschat"), "Geschatte prijs", required=False)
+    price = pg.parse_euro(form.get("prijs"), "Echte prijs", required=False)
     if kind == "reis":
         values.update(fare_eur=price if price is not None else est, discount="vol")
     else:
@@ -3142,7 +2655,7 @@ def flip_action_new_task(db_path, form: dict, ctx=None) -> tuple[str, Optional[i
     try:
         fl.add_task(conn, trade_id, kind=kind, title=title, **values)
     except ValueError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
     finally:
         conn.close()
     return f"Op de lijst: {title}.", trade_id
@@ -3159,9 +2672,9 @@ def flip_action_details(db_path, form: dict, ctx=None) -> tuple[str, Optional[in
             message = "Specs opgeslagen."
         else:
             values = {
-                "target_low_eur": parse_euro(form.get("doel_laag"), "Doelprijs laag", required=False),
-                "target_high_eur": parse_euro(form.get("doel_hoog"), "Doelprijs hoog", required=False),
-                "hours": parse_euro(form.get("uren"), "Uren", required=False),
+                "target_low_eur": pg.parse_euro(form.get("doel_laag"), "Doelprijs laag", required=False),
+                "target_high_eur": pg.parse_euro(form.get("doel_hoog"), "Doelprijs hoog", required=False),
+                "hours": pg.parse_euro(form.get("uren"), "Uren", required=False),
                 "comp_words": " ".join((form.get("zoekwoorden") or "").split()),
                 "sale_url": (form.get("verkooplink") or "").strip(),
                 "notes": " ".join((form.get("notitie") or "").split()),
@@ -3169,30 +2682,30 @@ def flip_action_details(db_path, form: dict, ctx=None) -> tuple[str, Optional[in
             if "titel" in form:
                 values["title"] = " ".join(form["titel"].split())
             if "inkoop" in form:
-                values["buy_price_eur"] = parse_euro(form.get("inkoop"), "Inkoop")
+                values["buy_price_eur"] = pg.parse_euro(form.get("inkoop"), "Inkoop")
             if "inkoopkosten" in form:
-                values["buy_costs_eur"] = parse_euro(form.get("inkoopkosten"), "Inkoopkosten", required=False) or 0.0
+                values["buy_costs_eur"] = pg.parse_euro(form.get("inkoopkosten"), "Inkoopkosten", required=False) or 0.0
             if values["sale_url"] and not values["sale_url"].startswith(("http://", "https://")):
-                raise FormError("De link naar je advertentie moet met http(s):// beginnen.")
+                raise pg.FormError("De link naar je advertentie moet met http(s):// beginnen.")
             ok = fl.update_flip(conn, trade_id, **values)
             message = "Opgeslagen."
     except ValueError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
     finally:
         conn.close()
     if not ok:
-        raise FormError("Onbekende flip.")
+        raise pg.FormError("Onbekende flip.")
     return message, trade_id
 
 
 def flip_action_bid(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
     trade_id = _flip_id(form)
-    amount = parse_euro(form.get("bedrag"), "Bod")
+    amount = pg.parse_euro(form.get("bedrag"), "Bod")
     conn = db.connect(str(db_path))
     try:
         fl.add_bid(conn, trade_id, amount, " ".join((form.get("wie") or "").split()))
     except ValueError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
     finally:
         conn.close()
     return f"Bod van {euro(amount, cents=True)} genoteerd.", trade_id
@@ -3205,7 +2718,7 @@ def flip_action_bid_delete(db_path, form: dict, ctx=None) -> tuple[str, Optional
     finally:
         conn.close()
     if trade_id is None:
-        raise FormError("Onbekend bod.")
+        raise pg.FormError("Onbekend bod.")
     return "Bod weggehaald.", trade_id
 
 
@@ -3216,7 +2729,7 @@ def flip_action_photo_delete(db_path, form: dict, ctx=None) -> tuple[str, Option
     finally:
         conn.close()
     if trade_id is None:
-        raise FormError("Onbekende foto.")
+        raise pg.FormError("Onbekende foto.")
     return "Foto weggehaald.", trade_id
 
 
@@ -3229,7 +2742,7 @@ def flip_action_stage(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]
     finally:
         conn.close()
     if not ok:
-        raise FormError("Onbekende flip of fase.")
+        raise pg.FormError("Onbekende flip of fase.")
     return f"Naar {fl.STAGE_LABELS[stage]}.", trade_id
 
 
@@ -3247,11 +2760,11 @@ def flip_action_sold(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
 def flip_action_new(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
     title = " ".join((form.get("titel") or "").split())
     if not title:
-        raise FormError("Vul in wat het is.")
+        raise pg.FormError("Vul in wat het is.")
     market = form.get("markt") if form.get("markt") in (*fl.OWN_MARKETS, *mk.MARKETS) else "fietsen"
     url = (form.get("url") or "").strip() or None
     if url and not url.startswith(("http://", "https://")):
-        raise FormError("De link moet met http(s):// beginnen.")
+        raise pg.FormError("De link moet met http(s):// beginnen.")
     # Een Marktplaats-link zonder de volgcodes erachter (?_gl=..., honderden tekens).
     if url and "marktplaats.nl" in url:
         url = url.split("?")[0].split("#")[0]
@@ -3262,14 +2775,14 @@ def flip_action_new(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
     conn = db.connect(str(db_path))
     try:
         trade_id = fl.create_flip(
-            conn, title=title, market=market, bought_at=parse_day(form.get("datum")),
-            buy_price_eur=parse_euro(form.get("prijs"), "Inkoopprijs"), url=url, item_id=item_id,
+            conn, title=title, market=market, bought_at=pg.parse_day(form.get("datum")),
+            buy_price_eur=pg.parse_euro(form.get("prijs"), "Inkoopprijs"), url=url, item_id=item_id,
             stage=form.get("fase") or "gekocht",
-            target_low_eur=parse_euro(form.get("doel_laag"), "Doelprijs laag", required=False),
-            target_high_eur=parse_euro(form.get("doel_hoog"), "Doelprijs hoog", required=False),
+            target_low_eur=pg.parse_euro(form.get("doel_laag"), "Doelprijs laag", required=False),
+            target_high_eur=pg.parse_euro(form.get("doel_hoog"), "Doelprijs hoog", required=False),
             comp_words=" ".join((form.get("zoekwoorden") or "").split()))
     except ValueError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
     finally:
         conn.close()
     return f"Toegevoegd: {title}.", trade_id
@@ -3281,7 +2794,7 @@ def flip_action_delete(db_path, form: dict, ctx=None) -> tuple[str, Optional[int
     try:
         title = conn.execute("SELECT title FROM trade WHERE id = ?", (trade_id,)).fetchone()
         if title is None or not db.delete_trade(conn, trade_id):
-            raise FormError("Onbekende flip.")
+            raise pg.FormError("Onbekende flip.")
         # De klussen, biedingen en fasen horen bij de flip; de foto's op
         # schijf blijven staan (je gooit geen foto's weg met een klik).
         conn.execute("UPDATE flip_task SET deleted_at = ?, updated_at = ? WHERE trade_id = ? AND deleted_at IS NULL",
@@ -3298,7 +2811,7 @@ def flip_action_sync(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]
     try:
         result = fs.sync(db_path, config_path=ctx.sheets_config if ctx else DashboardHandler.sheets_config)
     except fs.SheetError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
     return result.summary(), None
 
 
@@ -3328,68 +2841,6 @@ FLIP_RELOAD = {"/flips/fase", "/flips/verkocht", "/flips/nieuw", "/flips/weg"}
 # die de rondes schrijven (overzicht, rapporten, lijsten), zodat je niet meer
 # in de map hoeft te zoeken welk html-bestand je moet openen.
 
-START_PATH = "/start"
-FILES_PATH = "/bestanden"
-
-
-def site_pages() -> list:
-    return ([("Start", START_PATH), ("Racefietsen", rb.PATH)] + [(m.short, m.serve_path) for m in mk.MARKETS.values()]
-            + [("Mijn fiets", BIKE_PATH), ("Upgrade", ut.PATH), ("Flips", FLIPS_PATH),
-               ("Overzicht", f"{FILES_PATH}/overzicht.html")])
-
-
-def site_nav(current: str) -> str:
-    """De balk bovenaan elke live pagina. Op de telefoon ingeklapt tot één
-    knop met de naam van de pagina (SITE_CSS; een vinkje, geen JavaScript):
-    zeven links op een rij namen daar drie regels voor de inhoud weg."""
-    pages = site_pages()
-    here = next((label for label, href in pages if href == current), "Menu")
-    links = "".join(
-        f"<a href='{esc(href, quote=True)}'{' aria-current=page' if href == current else ''}>{esc(label)}</a>"
-        for label, href in pages)
-    return (f"<nav class='site'><input type='checkbox' id='site-open' class='site-open' hidden>"
-            f"<label for='site-open' class='site-menu'>☰ {esc(here)}</label>"
-            f"<div class='site-links'>{links}</div></nav>")
-
-
-SITE_CSS = """
-nav.site { margin: -6px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: .92rem; }
-nav.site .site-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
-nav.site .site-menu { display: none; }
-nav.site a { text-decoration: none; color: var(--text-2); }
-nav.site a[aria-current] { color: var(--text); font-weight: 700; }
-nav.site a:hover { color: var(--accent); }
-/* Telefoon (de eigenaar, 02-10-2026): de balk bovenaan ingeklapt, rijen
-   tabknoppen die zijwaarts scrollen in plaats van vier regels hoog, en
-   knoppen en velden groot genoeg voor een duim. */
-@media (max-width: 700px) {
-  nav.site { margin-top: -10px; padding-bottom: 0; }
-  nav.site .site-menu { display: flex; align-items: center; min-height: 44px; font-weight: 700; cursor: pointer;
-    user-select: none; }
-  nav.site .site-links { display: none; flex-direction: column; gap: 0; }
-  nav.site .site-open:checked ~ .site-links { display: flex; }
-  nav.site .site-links a { padding: 11px 0; border-top: 1px solid var(--line); }
-  nav.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  nav.tabs::-webkit-scrollbar { display: none; }
-  nav.tabs button { flex: none; }
-  button, select, input[type=text], input[type=search], input[type=number], input[type=date], input:not([type]) {
-    min-height: 40px; }
-  input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }
-  summary { padding: 8px 0; }
-}
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
-.card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-  padding: 12px 14px; text-decoration: none; color: var(--text); }
-a.card:hover { border-color: var(--accent); }
-.card .model { font-size: 1.05rem; }
-ul.files { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line);
-  border-radius: 10px; }
-ul.files li { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap; }
-ul.files li:last-child { border-bottom: 0; }
-pre.log { max-height: 320px; overflow: auto; background: var(--card); border: 1px solid var(--line);
-  border-radius: 10px; padding: 10px 12px; font-size: .8rem; white-space: pre-wrap; }
-"""
 
 # Wat /bestanden/ laat zien: alleen wat de rondes voor jou schrijven, nooit
 # de database, sheets.json of de broncode. Een pad met een map erin moet in
@@ -3422,8 +2873,8 @@ def with_file_nav(data: bytes) -> bytes:
     de server; hier komt een smalle balk bovenaan, met eigen stijl zodat
     die van het rapport hem niet raakt. Het bestand op schijf blijft zoals het
     is (dat opent ook zonder server)."""
-    links = " · ".join(f"<a href='{esc(href, quote=True)}' style='color:inherit'>{esc(label)}</a>"
-                       for label, href in site_pages())
+    links = " · ".join(f"<a href='{pg.esc(href, quote=True)}' style='color:inherit'>{pg.esc(label)}</a>"
+                       for label, href in pg.site_pages())
     bar = (f"<div style='font:14px/1.6 system-ui,sans-serif;padding:6px 16px;background:#2a78d6;color:#fff'>"
            f"{links}</div>").encode("utf-8")
     at = data.lower().find(b"<body")
@@ -3489,21 +2940,21 @@ def rounds_panel(files_dir, running: str = "") -> str:
     rows = []
     for info in launcher.slots(config):
         last = info.last
-        when = (f"{esc(local_time(last.get('started_at', '')))}"
-                f"<div class='sub'>{esc(str(last.get('status', '?')))}, {int(last.get('new', 0) or 0)} nieuw</div>"
+        when = (f"{pg.esc(local_time(last.get('started_at', '')))}"
+                f"<div class='sub'>{pg.esc(str(last.get('status', '?')))}, {int(last.get('new', 0) or 0)} nieuw</div>"
                 if last else "<span class='muted'>nog nooit</span>")
         depth = "alles" if info.full else f"{info.pages} pagina's"
         if running:
             button = "<span class='muted'>er draait een ronde</span>"
         elif info.ready_at is not None:
-            button = (f"<span class='muted'>weer vanaf {esc(info.ready_at.astimezone().strftime('%H:%M'))}</span>")
+            button = (f"<span class='muted'>weer vanaf {pg.esc(info.ready_at.astimezone().strftime('%H:%M'))}</span>")
         else:
             warn = (" data-confirm='Deze ronde haalt alles op en duurt lang (vaak meer dan een uur). Starten?'"
                     if info.full else "")
-            button = act("/start/ronde", info.name, f"<button name='doe' value='start'{warn}>starten</button>")
+            button = pg.act("/start/ronde", info.name, f"<button name='doe' value='start'{warn}>starten</button>")
         rows.append(
-            f"<tr><td><div class='model'>{esc(info.name)}</div><div class='sub'>{esc(info.times)}</div></td>"
-            f"<td>{esc(', '.join(info.searches))}<div class='sub'>{esc(depth)}</div></td>"
+            f"<tr><td><div class='model'>{pg.esc(info.name)}</div><div class='sub'>{pg.esc(info.times)}</div></td>"
+            f"<td>{pg.esc(', '.join(info.searches))}<div class='sub'>{pg.esc(depth)}</div></td>"
             f"<td>{when}</td><td>{button}</td></tr>")
     table_html = ("<div class='table-wrap'><table><thead><tr><th>Ronde</th><th>Zoekt</th><th>Laatst</th><th></th>"
                   f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>")
@@ -3511,9 +2962,9 @@ def rounds_panel(files_dir, running: str = "") -> str:
     if running:
         tail = launcher.log_tail(config)
         label = f"Ronde '{running}' draait" if running != "ja" else "Er draait een ronde"
-        status = (f"<div class='banner' id='round-running' role='status'><strong>{esc(label)}.</strong> "
+        status = (f"<div class='banner' id='round-running' role='status'><strong>{pg.esc(label)}.</strong> "
                   "Deze pagina ververst vanzelf als hij klaar is. Je kunt intussen gewoon verder op de andere "
-                  f"pagina's.</div><pre class='log' id='round-log'>{esc(tail)}</pre>")
+                  f"pagina's.</div><pre class='log' id='round-log'>{pg.esc(tail)}</pre>")
     explain = ("<p class='explain'>Zelfde als de taakplanner: <code>python koopjes.py run &lt;ronde&gt;</code>, op de "
                "achtergrond. Nooit twee tegelijk, en per ronde een wachttijd sinds de vorige (een half uur, zes uur "
                "voor een ronde die alles ophaalt), zodat Marktplaats niet vaker bevraagd wordt dan nodig. Hij "
@@ -3548,7 +2999,7 @@ def render_start(db_path, files_dir, message: str = "", token: str = "", running
     last = rounds[0] if rounds else None
     t = book.totals if book else None
     tile_list = [
-        ("Laatste ronde", esc(local_time(last.get("finished_at") or last.get("started_at", ""))) if last else "—",
+        ("Laatste ronde", pg.esc(local_time(last.get("finished_at") or last.get("started_at", ""))) if last else "—",
          f"{last.get('slot', '?')}: {last.get('status', '?')}, {last.get('new', 0)} nieuw" if last
          else "nog geen ronde gedraaid (python koopjes.py run nacht)"),
     ]
@@ -3570,45 +3021,41 @@ def render_start(db_path, files_dir, message: str = "", token: str = "", running
         (rb.PATH, "Racefietsen", "alle racefietsen: snel beoordelen, wegzetten, bod vastleggen, afstand"),
         *[(m.serve_path, m.short, f"alle {m.items} te koop, flips, favorieten, marktprijzen")
           for m in mk.MARKETS.values()],
-        (BIKE_PATH, "Mijn fiets", "vergelijkbare advertenties voor de taxatie van je eigen fiets"),
-        (FLIPS_PATH, "Flips", "je eigen flips: klussenlijst, kosten, winst, investeringen, Google Sheet"),
+        (pg.BIKE_PATH, "Mijn fiets", "vergelijkbare advertenties voor de taxatie van je eigen fiets"),
+        (pg.FLIPS_PATH, "Flips", "je eigen flips: klussenlijst, kosten, winst, investeringen, Google Sheet"),
     ]
-    cards = "".join(f"<a class='card' href='{esc(href, quote=True)}'><div class='model'>{esc(label)}</div>"
-                    f"<div class='sub'>{esc(sub)}</div></a>" for href, label, sub in live)
+    cards = "".join(f"<a class='card' href='{pg.esc(href, quote=True)}'><div class='model'>{pg.esc(label)}</div>"
+                    f"<div class='sub'>{pg.esc(sub)}</div></a>" for href, label, sub in live)
     files = list_files(files_dir)
     if files:
         rows = "".join(
-            f"<li><a href='{FILES_PATH}/{quote(name)}'>{esc(_file_label(name))}</a>"
-            f"<span class='muted'>{esc(datetime.fromtimestamp(mtime).strftime('%d-%m-%Y %H:%M'))}</span></li>"
+            f"<li><a href='{pg.FILES_PATH}/{quote(name)}'>{pg.esc(_file_label(name))}</a>"
+            f"<span class='muted'>{pg.esc(datetime.fromtimestamp(mtime).strftime('%d-%m-%Y %H:%M'))}</span></li>"
             for name, mtime in files)
         file_list = f"<ul class='files'>{rows}</ul>"
     else:
         file_list = "<p class='empty'>Nog geen rapporten. Die schrijft een ronde: <code>python koopjes.py run nacht</code>.</p>"
     round_rows = "".join(
-        f"<li><span>{esc(r.get('slot', '?'))} — {esc(str(r.get('status', '?')))}, {int(r.get('new', 0) or 0)} nieuw"
-        f"</span><span class='muted'>{esc(local_time(r.get('started_at', '')))}</span></li>" for r in rounds)
-    notice = f"<div class='banner' role='status'>{esc(message)}</div>" if message else ""
+        f"<li><span>{pg.esc(r.get('slot', '?'))} — {pg.esc(str(r.get('status', '?')))}, {int(r.get('new', 0) or 0)} nieuw"
+        f"</span><span class='muted'>{pg.esc(local_time(r.get('started_at', '')))}</span></li>" for r in rounds)
+    notice = f"<div class='banner' role='status'>{pg.esc(message)}</div>" if message else ""
     return (
         "<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>Koopjes</title><style>{CSS}{SITE_CSS}</style></head><body>"
-        f"<main data-token='{esc(token, quote=True)}'>"
-        f"{site_nav(START_PATH)}<h1>Koopjes</h1>"
+        f"<title>Koopjes</title><style>{pg.CSS}{pg.SITE_CSS}</style></head><body>"
+        f"<main data-token='{pg.esc(token, quote=True)}'>"
+        f"{pg.site_nav(pg.START_PATH)}<h1>Koopjes</h1>"
         "<div class='meta'>Alles op één plek. Deze pagina draait op je eigen computer "
         "(<code>python dashboard.py --serve</code>); stoppen met Ctrl+C in dat venster.</div>"
-        f"{notice}{tiles(tile_list)}<h3>Live</h3><div class='cards'>{cards}</div>"
+        f"{notice}{pg.tiles(tile_list)}<h3>Live</h3><div class='cards'>{cards}</div>"
         f"<h3>Rondes</h3>{rounds_panel(files_dir, running)}"
         f"<h3>Rapporten en lijsten</h3>{file_list}"
         + (f"<h3>Laatste rondes</h3><ul class='files'>{round_rows}</ul>" if rounds else "")
-        + f"</main><div id='toast' role='status' hidden></div><script>{LIVE_JS}{START_JS}</script></body></html>"
+        + f"</main><div id='toast' role='status' hidden></div><script>{pg.LIVE_JS}{START_JS}</script></body></html>"
     )
 
 
 # --- Live: --serve --------------------------------------------------------------
-
-
-class FormError(ValueError):
-    """Een formulier met iets dat niet klopt; de tekst gaat terug naar de pagina."""
 
 
 # Als een ander proces koopjes.db langer dan db.BUSY_TIMEOUT_S vasthoudt (een
@@ -3622,53 +3069,20 @@ def db_busy(exc: Exception) -> bool:
     return isinstance(exc, sqlite3.OperationalError) and ("locked" in str(exc) or "busy" in str(exc))
 
 
-def parse_euro(value: str, what: str, required: bool = True) -> Optional[float]:
-    text = (value or "").replace("€", "").replace(" ", "").replace(",", ".")
-    if not text:
-        if required:
-            raise FormError(f"{what} ontbreekt.")
-        return None
-    try:
-        amount = float(text)
-    except ValueError:
-        raise FormError(f"{what} '{value}' is geen bedrag.") from None
-    if not math.isfinite(amount):  # "1e309" en "nan" zijn voor float() ook getallen
-        raise FormError(f"{what} '{value}' is geen bedrag.")
-    if amount < 0:
-        raise FormError(f"{what} kan niet negatief zijn.")
-    return round(amount, 2)
-
-
-def parse_day(value: str) -> str:
-    if not value:
-        return date.today().isoformat()
-    try:
-        return date.fromisoformat(value).isoformat()
-    except ValueError:
-        raise FormError(f"Datum '{value}' klopt niet (jjjj-mm-dd).") from None
-
-
-def parse_id(value: str) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        raise FormError("Onbekende regel.") from None
-
-
 def action_bought(db_path, form: dict) -> str:
     item_id = form.get("item_id", "")
-    price = parse_euro(form.get("prijs"), "Inkoopprijs")
+    price = pg.parse_euro(form.get("prijs"), "Inkoopprijs")
     market = mk.by_key(form.get("markt"))
     d = load_dashboard(db_path, market=market)
     listing = next((l for l in d.listings if l.item_id == item_id), None)
     if listing is None:
-        raise FormError("Die advertentie staat niet (meer) in het dashboard; voeg hem zelf toe onder Mijn flips.")
+        raise pg.FormError("Die advertentie staat niet (meer) in het dashboard; voeg hem zelf toe onder Mijn flips.")
     if item_id in d.bought:
-        raise FormError(f"'{listing.title}' staat al in Mijn flips.")
+        raise pg.FormError(f"'{listing.title}' staat al in Mijn flips.")
     c = listing.computer
     conn = db.connect(str(db_path))
     try:
-        db.add_trade(conn, title=listing.title, bought_at=parse_day(form.get("datum")), buy_price_eur=price,
+        db.add_trade(conn, title=listing.title, bought_at=pg.parse_day(form.get("datum")), buy_price_eur=price,
                      item_id=item_id, url=listing.url, model=c.model.label if c else None,
                      expected_resale_eur=c.resale_eur if c else None, market=market.key)
     finally:
@@ -3690,10 +3104,10 @@ def action_mark(db_path, form: dict) -> str:
         finally:
             conn.close()
         if not known:
-            raise FormError("Die advertentie had geen markering.")
+            raise pg.FormError("Die advertentie had geen markering.")
         return "Markering weggehaald."
     if choice != mr.FAVORITE and choice not in mr.ALL_REASONS:
-        raise FormError(f"Onbekende keuze '{choice}'.")
+        raise pg.FormError(f"Onbekende keuze '{choice}'.")
     if form.get("markt") == rb.MARKET_KEY:
         # Een racefiets, of een los onderdeel uit de weergave Onderdelen (spares.py).
         listing = rb.find_listing(db_path, item_id) or sp.find_listing(db_path, item_id)
@@ -3703,7 +3117,7 @@ def action_mark(db_path, form: dict) -> str:
         listings, _, _ = load_active_listings(db_path, market.categories, config["dashboard"])
         listing = next((l for l in listings if l.item_id == item_id), None)
     if listing is None:
-        raise FormError("Die advertentie staat niet (meer) in het dashboard.")
+        raise pg.FormError("Die advertentie staat niet (meer) in het dashboard.")
     conn = db.connect(str(db_path))
     try:
         if choice == mr.FAVORITE:
@@ -3726,11 +3140,11 @@ def action_note(db_path, form: dict) -> str:
     # Eén regel: een Enter uit een geplakte chat wordt een spatie.
     note = " ".join((form.get("notitie") or "").split())
     if len(note) > mr.NOTE_MAX_CHARS:
-        raise FormError(f"De notitie is te lang ({len(note)} tekens, hooguit {mr.NOTE_MAX_CHARS}).")
+        raise pg.FormError(f"De notitie is te lang ({len(note)} tekens, hooguit {mr.NOTE_MAX_CHARS}).")
     conn = db.connect(str(db_path))
     try:
         if note and conn.execute("SELECT 1 FROM listing WHERE item_id = ?", (item_id,)).fetchone() is None:
-            raise FormError("Onbekende advertentie.")
+            raise pg.FormError("Onbekende advertentie.")
         db.set_note(conn, item_id, note)
     finally:
         conn.close()
@@ -3744,20 +3158,20 @@ def action_check(db_path, form: dict) -> str:
     try:
         return rc.recheck_listing(db_path, form.get("item_id", "")).summary()
     except rc.RecheckError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
 
 
 def action_bid(db_path, form: dict) -> str:
     """Een bod dat je zelf op Marktplaats deed, vastleggen (own_bids.py). Het
     script biedt nooit zelf."""
     item_id = form.get("item_id", "")
-    amount = parse_euro(form.get("bedrag"), "Bod")
+    amount = pg.parse_euro(form.get("bedrag"), "Bod")
     conn = db.connect(str(db_path))
     try:
         ob.place(conn, item_id, amount, bid_at=None)
         title = (conn.execute("SELECT title FROM listing WHERE item_id = ?", (item_id,)).fetchone() or [item_id])[0]
     except ValueError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
     finally:
         conn.close()
     return f"Bod van {euro(amount)} vastgelegd op {title}."
@@ -3780,14 +3194,14 @@ def expected_resale(db_path, form: dict, item_id: str) -> tuple[str, Optional[fl
 def action_bid_status(db_path, form: dict) -> str:
     item_id, status = form.get("item_id", ""), form.get("status", "")
     if status not in ob.STATUSES:
-        raise FormError(f"Onbekende status '{status}'.")
+        raise pg.FormError(f"Onbekende status '{status}'.")
     market, resale = expected_resale(db_path, form, item_id) if status == ob.ACCEPTED else ("", None)
     conn = db.connect(str(db_path))
     try:
         bid, trade_id = ob.set_status(conn, item_id, status, market=market or rb.FLIP_MARKET,
                                       expected_resale_eur=resale)
     except ValueError as exc:
-        raise FormError(str(exc)) from None
+        raise pg.FormError(str(exc)) from None
     finally:
         conn.close()
     if status == ob.ACCEPTED and trade_id is not None:
@@ -3807,7 +3221,7 @@ def action_postcode(db_path, form: dict) -> str:
         try:
             home = dm.locate_postcode(text)
         except dm.LocateError as exc:
-            raise FormError(str(exc)) from None
+            raise pg.FormError(str(exc)) from None
         dm.save_home(conn, home)
     finally:
         conn.close()
@@ -3817,18 +3231,18 @@ def action_postcode(db_path, form: dict) -> str:
 def action_add(db_path, form: dict) -> str:
     title = (form.get("titel") or "").strip()
     if not title:
-        raise FormError("Vul in wat het is.")
+        raise pg.FormError("Vul in wat het is.")
     model = form.get("model") or None
     target = mk.by_key(form.get("markt"))
     if model and model not in target.labels():
-        raise FormError(f"Onbekend model '{model}'.")
-    price = parse_euro(form.get("prijs"), "Inkoopprijs")
-    costs = parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
+        raise pg.FormError(f"Onbekend model '{model}'.")
+    price = pg.parse_euro(form.get("prijs"), "Inkoopprijs")
+    costs = pg.parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
     market = (pc.market_resale(db_path, catalog=target.catalog(), categories=target.comp_categories)
               if model else {})
     conn = db.connect(str(db_path))
     try:
-        db.add_trade(conn, title=title, bought_at=parse_day(form.get("datum")), buy_price_eur=price,
+        db.add_trade(conn, title=title, bought_at=pg.parse_day(form.get("datum")), buy_price_eur=price,
                      buy_costs_eur=costs, model=model, expected_resale_eur=market.get(model),
                      notes=(form.get("notitie") or "").strip(), market=target.key)
     finally:
@@ -3840,26 +3254,26 @@ def parse_sale(db_path, form: dict, trade_id: int, unknown: str) -> tuple:
     """(prijs, kosten, via, datum, de aankoop) uit een verkocht-formulier, voor
     Mijn flips en /flips. `unknown` is de melding bij een aankoop die niet
     bestaat."""
-    price = parse_euro(form.get("prijs"), "Verkoopprijs")
-    costs = parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
+    price = pg.parse_euro(form.get("prijs"), "Verkoopprijs")
+    costs = pg.parse_euro(form.get("kosten"), "Kosten", required=False) or 0.0
     via = form.get("via") if form.get("via") in ("marktplaats", "vinted", "anders") else "anders"
-    sold_at = parse_day(form.get("datum"))
+    sold_at = pg.parse_day(form.get("datum"))
     bought = next((t for t in tr.load_trades(db_path) if t.id == trade_id), None)
     if bought is None:
-        raise FormError(unknown)
+        raise pg.FormError(unknown)
     if sold_at < bought.bought_at[:10]:
-        raise FormError(f"Verkocht op {nl_date(sold_at)} ligt vóór de aankoop ({nl_date(bought.bought_at)}).")
+        raise pg.FormError(f"Verkocht op {pg.nl_date(sold_at)} ligt vóór de aankoop ({pg.nl_date(bought.bought_at)}).")
     return price, costs, via, sold_at, bought
 
 
 def action_sold(db_path, form: dict) -> str:
-    trade_id = parse_id(form.get("id"))
+    trade_id = pg.parse_id(form.get("id"))
     price, costs, via, sold_at, _ = parse_sale(db_path, form, trade_id, "Onbekende regel.")
     conn = db.connect(str(db_path))
     try:
         if not db.sell_trade(conn, trade_id, sold_at=sold_at, sell_price_eur=price,
                              sell_costs_eur=costs, sold_via=via):
-            raise FormError("Onbekende regel.")
+            raise pg.FormError("Onbekende regel.")
     finally:
         conn.close()
     return f"Verkocht voor {euro(price)}."
@@ -3868,8 +3282,8 @@ def action_sold(db_path, form: dict) -> str:
 def action_unsell(db_path, form: dict) -> str:
     conn = db.connect(str(db_path))
     try:
-        if not db.unsell_trade(conn, parse_id(form.get("id"))):
-            raise FormError("Onbekende regel.")
+        if not db.unsell_trade(conn, pg.parse_id(form.get("id"))):
+            raise pg.FormError("Onbekende regel.")
     finally:
         conn.close()
     return "Terug naar voorraad."
@@ -3878,8 +3292,8 @@ def action_unsell(db_path, form: dict) -> str:
 def action_delete(db_path, form: dict) -> str:
     conn = db.connect(str(db_path))
     try:
-        if not db.delete_trade(conn, parse_id(form.get("id"))):
-            raise FormError("Onbekende regel.")
+        if not db.delete_trade(conn, pg.parse_id(form.get("id"))):
+            raise pg.FormError("Onbekende regel.")
     finally:
         conn.close()
     return "Verwijderd."
@@ -3974,8 +3388,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = "/" if url.path == "/index.html" else url.path.rstrip("/") or "/"
         market = next((m for m in mk.MARKETS.values() if m.serve_path == path), None)
         is_photo = path.startswith(FLIPS_PHOTO_PATH + "/")
-        is_file = path.startswith(FILES_PATH + "/")
-        pages = (BIKE_PATH, FLIPS_PATH, START_PATH, START_PATH + "/status", rb.PATH, PANEL_PATH, rb.COMPS_PATH,
+        is_file = path.startswith(pg.FILES_PATH + "/")
+        pages = (pg.BIKE_PATH, pg.FLIPS_PATH, pg.START_PATH, pg.START_PATH + "/status", rb.PATH, PANEL_PATH, rb.COMPS_PATH,
                  ut.PATH, ut.CSV_PATH)
         if path == "/favicon.ico":
             # De browser vraagt hem zelf bij elke eerste pagina; zonder dit
@@ -3991,11 +3405,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if is_photo:
             return self._send_photo(path[len(FLIPS_PHOTO_PATH) + 1:])
         if is_file:
-            return self._send_file(unquote(path[len(FILES_PATH) + 1:]))
-        if path == START_PATH:
+            return self._send_file(unquote(path[len(pg.FILES_PATH) + 1:]))
+        if path == pg.START_PATH:
             return self._send(200, render_start(self.db_path, self.files_dir, message, self.token,
                                                 self._running_round()), "text/html; charset=utf-8")
-        if path == START_PATH + "/status":
+        if path == pg.START_PATH + "/status":
 
             config = load_schedule(self.files_dir)
             return self._json({"running": bool(self._running_round()),
@@ -4011,7 +3425,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             base = self.cache.racebikes(self.db_path, self.intake_path)
             return self._send(200, rb.render(base, rb.load_fresh(self.db_path), self.token, message),
                               "text/html; charset=utf-8")
-        if path == FLIPS_PATH:
+        if path == pg.FLIPS_PATH:
             book = fl.load_book(self.db_path)
             return self._send(200, render_flips(book, self.token, message,
                                                 sheets=fs.panel(self.sheets_config)),
@@ -4098,7 +3512,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         if not hmac.compare_digest(form.get("token", ""), self.token):
             return self._back("De pagina was verouderd; er is niets gestart. Probeer het opnieuw.", tab="",
-                              path=START_PATH)
+                              path=pg.START_PATH)
         slot = form.get("item_id", "")
         config = load_schedule(self.files_dir)
         with self.launch_lock:
@@ -4111,7 +3525,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 message = f"Ronde '{slot}' gestart."
             except launcher.LaunchError as exc:
                 message = f"Niet gestart: {exc}"
-        self._back(message, tab="", path=START_PATH)
+        self._back(message, tab="", path=pg.START_PATH)
 
     def _send_file(self, name: str) -> None:
         if name in LIVE_INSTEAD:
@@ -4166,11 +3580,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             message = "De pagina was verouderd; er is niets opgeslagen. Probeer het opnieuw."
             if live:
                 return self._json({"message": message, "reload": True})
-            return self._back(message, path=FLIPS_PATH)
+            return self._back(message, path=pg.FLIPS_PATH)
         try:
             message, trade_id = FLIP_ACTIONS[path](self.db_path, form, self)
             failed = False
-        except FormError as exc:
+        except pg.FormError as exc:
             message, trade_id, failed = f"Niet opgeslagen: {exc}", None, True
         except sqlite3.OperationalError as exc:
             if not db_busy(exc):
@@ -4179,7 +3593,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not live:
             anchor = f"#flip-{trade_id}" if trade_id is not None and not failed else ""
             self.send_response(303)
-            self.send_header("Location", FLIPS_PATH + "?melding=" + quote(message) + anchor)
+            self.send_header("Location", pg.FLIPS_PATH + "?melding=" + quote(message) + anchor)
             self.send_header("Content-Length", "0")
             return self.end_headers()
         if failed:
@@ -4242,7 +3656,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = url.path
         if path == FLIPS_PHOTO_PATH:
             return self._upload_photo(url)
-        if path == START_PATH + "/ronde":
+        if path == pg.START_PATH + "/ronde":
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_FORM_BYTES:
                 return self._send(413, "Te groot")
@@ -4296,7 +3710,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         form = {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
         market = mk.by_key(form.get("markt"))
         race = form.get("markt") == rb.MARKET_KEY
-        back = BIKE_PATH if path == BIKE_CHOICE_PATH else rb.PATH if race else None
+        back = pg.BIKE_PATH if path == BIKE_CHOICE_PATH else rb.PATH if race else None
         tab = form.get("tab", "") if path in STAY_ON_TAB else ("" if back else "mijn")
         # Van de pagina zelf, zonder herladen (fetch met deze kop): het
         # antwoord is JSON met de stukjes die veranderden.
@@ -4312,7 +3726,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             message = action(self.db_path, form)
             failed = False
-        except FormError as exc:
+        except pg.FormError as exc:
             message, failed = f"Niet opgeslagen: {exc}", True
         except sqlite3.OperationalError as exc:
             if not db_busy(exc):
@@ -4369,10 +3783,10 @@ def serve(db_path, port: int, open_browser: bool) -> int:
         print(f"Kan niet starten op poort {port}: {exc}. Probeer --port met een ander getal.", file=sys.stderr)
         return 1
     url = f"http://127.0.0.1:{httpd.server_address[1]}"
-    print(f"Alles live op {url}{START_PATH} (fietscomputers {url}/, sporthorloges {url}/horloges, mijn fiets "
+    print(f"Alles live op {url}{pg.START_PATH} (fietscomputers {url}/, sporthorloges {url}/horloges, mijn fiets "
           f"{url}/fiets, flips {url}/flips, rapporten via de startpagina) — stoppen met Ctrl+C.")
     if open_browser:
-        webbrowser.open(url + START_PATH)
+        webbrowser.open(url + pg.START_PATH)
     stop = threading.Event()
     handler = httpd.RequestHandlerClass
     threading.Thread(target=keep_warm, args=(handler.cache, handler.db_path, handler.intake_path, stop),

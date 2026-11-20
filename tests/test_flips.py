@@ -18,6 +18,7 @@ import dashboard
 import db
 import flips as fl
 import flips_sheets as fs
+import pages as pg
 
 HERE = Path(__file__).resolve().parent.parent
 CUBE = HERE / "flips_import" / "cube_peloton_pro.json"
@@ -189,9 +190,9 @@ class AmountTest(FlipTest):
 
     def test_not_infinite_and_not_nan(self):
         for text in ("1e309", "nan", "inf", "-inf"):
-            with self.assertRaises(dashboard.FormError, msg=text):
-                dashboard.parse_euro(text, "Prijs")
-        self.assertEqual(dashboard.parse_euro("€ 12,50", "Prijs"), 12.5)
+            with self.assertRaises(pg.FormError, msg=text):
+                pg.parse_euro(text, "Prijs")
+        self.assertEqual(pg.parse_euro("€ 12,50", "Prijs"), 12.5)
         trade = self.bike()
         task = fl.add_task(self.conn, trade, kind="onderdeel", title="Ketting")
         with self.assertRaises(ValueError):
@@ -359,8 +360,8 @@ class ServeTest(FlipTest):
         fl.update_task(self.conn, self.task, url="https://www.futurumshop.nl/cassette")
         _, _, page = self.request("GET", "/flips")
         self.assertIn("href='https://www.futurumshop.nl/cassette'", page.decode())
-        self.assertEqual(dashboard.web_link(" https://x.nl"), "")
-        self.assertEqual(dashboard.web_link("HTTP://x.nl"), "HTTP://x.nl")
+        self.assertEqual(pg.web_link(" https://x.nl"), "")
+        self.assertEqual(pg.web_link("HTTP://x.nl"), "HTTP://x.nl")
 
     def test_a_price_and_a_tick_without_reloading(self):
         token = self.token()

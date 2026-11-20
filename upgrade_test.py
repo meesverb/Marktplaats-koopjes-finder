@@ -45,6 +45,7 @@ from typing import Optional, Sequence
 import computers as pc
 import db
 import marks as mr
+import pages as pg
 import racebikes as rb
 import racefiets_jev as mp
 import report
@@ -564,7 +565,7 @@ def csv_text(assessments: Sequence[Assessment], judge: Judge) -> str:
 
 # --- De pagina /upgrade (dashboard.py --serve) -------------------------------------
 
-PATH = "/upgrade"
+PATH = pg.UPGRADE_PATH
 LABEL_PATH = PATH + "/oordeel"
 TRY_PATH = PATH + "/proef"
 RULE_PATH = PATH + "/regel"
@@ -696,13 +697,11 @@ def _page_json(data) -> str:
 
 def render(owner, problem: str, bikes: Sequence[Bike], saved_at: Optional[str], token: str = "",
            message: str = "") -> str:
-    import dashboard as dash
-
     notices = f"<div class='banner' role='status'>{html.escape(message)}</div>" if message else ""
     head = ("<!doctype html><html lang='nl'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-            f"<title>Upgradetest</title><style>{dash.CSS}{dash.SITE_CSS}{CSS}</style></head><body>"
-            f"<main data-token='{html.escape(token, quote=True)}'>{dash.site_nav(PATH) if token else ''}"
+            f"<title>Upgradetest</title><style>{pg.CSS}{pg.SITE_CSS}{CSS}</style></head><body>"
+            f"<main data-token='{html.escape(token, quote=True)}'>{pg.site_nav(PATH) if token else ''}"
             "<h1>Upgradetest</h1>")
     if owner is None:
         return (head + notices + f"<div class='banner'>Geen eigen fiets om mee te vergelijken: "
