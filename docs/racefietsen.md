@@ -1,261 +1,297 @@
-# Racefietsen — `/racefietsen`
+# Racefietsen — `/racefietsen` (`racebikes.py`)
 
 [← README](../README.md) · [alle naslag](README.md)
 
-Alle racefietsen op één live pagina: kaarten met foto's, schatting, upgrade-oordeel, het dossier voor Claude en de fietsmodellen (koppelen, regels, vergelijken op model).
+## Zo gebruik je het
 
-## Racefietsen — `/racefietsen` (`racebikes.py`)
+Start `python dashboard.py --serve` en open `/racefietsen`. Werk de weergave
+**Te beoordelen** af: per fiets favoriet (**f**), weg met een reden (**w**,
+**1**-**6**), een bod vastleggen (**b**) of een notitie (**n**). Twijfel je:
+**c** controleert de advertentie opnieuw, **d** maakt een dossier om aan
+Claude te geven. Klopt het model niet, dan kies je een ander (**m**).
 
-`python dashboard.py --serve` also serves **`/racefietsen`**: every road bike
-in `koopjes.db` (category racefietsen, whichever search found it:
-`racefietsen`, `giant-defy`, `ultegra-6700`) on one live page, to decide
-quickly whether a bike is worth it. The per-round report
-(`racefiets_report.html`) stays as it is; it has no buttons and only shows
-that one round. Active here means: not gone and seen within 8 days of the
-newest road bike — wider than the computers' 3 days, because by day only
-the newest pages come by and an older bike is only seen again by the Sunday
-round (`week`).
+Alle racefietsen uit `koopjes.db` staan op één live pagina (categorie
+racefietsen, welke zoekopdracht ze ook vond: `racefietsen`, `giant-defy`,
+`ultegra-6700`). Het rapport per ronde (`racefiets_report.html`) blijft zoals
+het is: zonder knoppen, alleen die ene ronde.
 
-Each bike is a card with three photos (all the search results give), price
-and kind of price, distance, the specs on one line (size, material,
-groupset, brakes, year, wheels, weight, condition), the seller's text
-(*beschrijving*, the full text where `--detail-lookup` fetched it) and two
-verdicts side by side:
+**Actief** betekent hier: niet verdwenen en gezien binnen 8 dagen van de
+nieuwste racefiets — ruimer dan de 3 dagen van de computers, omdat overdag
+alleen de nieuwste pagina's langskomen en een oudere fiets pas door de
+zondagronde (`week`) weer gezien wordt.
 
-- **flip** — expected selling price minus what it costs you, from the
-  other listings of **the same bike model** (`bike_identity.py`), every road
-  bike of the last 180 days, gone ones included. See *Bike models* below for
-  what a model is and how the comparison steps down when there are too few.
-  Within the chosen step: when at least 3 of them **sold fast** — gone within
-  7 days of first being seen, or reserved and then gone — the estimate is the
-  median of their last price, without a negotiation factor (it is roughly
-  what was paid; the real price isn't known, the card says so). Otherwise
-  the median of all asking prices × 0,875, with "(nog geen snelle
-  verkopen)". Gone is only established after a complete crawl (the Sunday
-  round `week`, see *Everything in a category*), so the first weeks there are
-  few fast sales. The card says what the bike hangs on and how it compares,
-  e.g. *Trek Domane SL6 · 6 snel verkocht (≤7 d), mediaan €620 · 14 te koop,
-  mediaan €690 — deze €480 (−23% t.o.v. de schatting)*; *vergeleken met N
-  fietsen* lists the fast sales and the cheapest others, with links. No
-  model, no estimate ("model niet herkend", "te weinig vergelijkbare
-  fietsen") — never a median of all road bikes (the owner, 30-09-2026: a 2024
-  carbon bike is not comparable to a 2014 one). No costs are subtracted:
-  parts and travel you work out per bike on `/flips`.
-- **upgrade** — `upgrade.find_upgrades()` against your own bike in
-  `mijn_fiets.md`, exactly as the report's Upgrade tab: better than yours by
-  more than the margin, within budget, size not wrong. A bike without a
-  known year is never a green upgrade: the score has no age to discount
-  then, so an old bike with good parts looked new ("bouwjaar onbekend — vraag
-  het jaar na"). Without a readable `mijn_fiets.md` the page says why there
-  is no verdict.
+## De kaart
 
-Plus the **waardescore** (estimated value / price). Not the dealscore: that
-belongs to the report.
+Per fiets drie foto's (alles wat de zoekresultaten geven), prijs en soort
+prijs, afstand, de specs op één regel (maat, materiaal, groepset, remmen,
+jaar, wielen, gewicht, staat), de tekst van de verkoper (*beschrijving*; de
+volledige tekst waar `--detail-lookup` hem ophaalde) en twee oordelen naast
+elkaar:
 
-### Dossier for Claude — `dossier.py`
+- **flip** — de verwachte verkoopprijs min wat hij je kost, uit de andere
+  advertenties van **hetzelfde fietsmodel** (`bike_identity.py`): elke
+  racefiets van de laatste 180 dagen, verdwenen meegerekend. Zie
+  *Fietsmodellen* hieronder voor wat een model is en hoe de vergelijking een
+  trede grover gaat als er te weinig zijn.
+  - Binnen de gekozen trede: zijn er minstens 3 **snel verkocht** — verdwenen
+    binnen 7 dagen na de eerste keer gezien, of gereserveerd en daarna
+    verdwenen — dan is de schatting de mediaan van hun laatste prijs, zonder
+    afdingfactor (ongeveer wat betaald is; de echte prijs is niet bekend, de
+    kaart zegt dat). Anders de mediaan van alle vraagprijzen × 0,875, met
+    "(nog geen snelle verkopen)".
+  - Verdwenen staat pas vast na een volledige crawl (de zondagronde `week`,
+    zie "Everything in a category" in [zoeken.md](zoeken.md)), dus de eerste
+    weken zijn er weinig snelle verkopen.
+  - De kaart zegt waar de fiets aan hangt en hoe hij zich verhoudt, bijv.
+    *Trek Domane SL6 · 6 snel verkocht (≤7 d), mediaan €620 · 14 te koop,
+    mediaan €690 — deze €480 (−23% t.o.v. de schatting)*; *vergeleken met N
+    fietsen* toont de snelle verkopen en de goedkoopste andere, met links.
+  - Geen model, geen schatting ("model niet herkend", "te weinig
+    vergelijkbare fietsen") — nooit een mediaan van alle racefietsen (de
+    eigenaar, 30-09-2026: een carbon fiets van 2024 is niet te vergelijken
+    met een van 2014). Er gaan geen kosten af: onderdelen en reizen reken je
+    per fiets uit op `/flips`.
+- **upgrade** — `upgrade.find_upgrades()` tegen je eigen fiets in
+  `mijn_fiets.md`, precies als de tab Upgrade van het rapport: beter dan de
+  jouwe met meer dan de marge, binnen budget, maat niet fout. Een fiets
+  zonder bekend bouwjaar is nooit een groene upgrade: de score heeft dan geen
+  leeftijd om af te trekken, en een oude fiets met goede onderdelen leek nieuw
+  ("bouwjaar onbekend — vraag het jaar na"). Zonder leesbare `mijn_fiets.md`
+  zegt de pagina waarom er geen oordeel is.
 
-The card shows part of what is known about a bike. The **dossier** button
-next to *controleer* (key **d**) gathers all of it as one Markdown text to
-paste into a conversation with Claude, with the questions on top: is it a
-good deal (as a flip and as an upgrade), what needs replacing and roughly
-what that costs (with sources, no made-up prices), an analysis of the
-comparables, and what to ask the seller. Like controleer it first fetches
-the listing page — one request per click, the same rules (`recheck.py`) —
-and stores what controleer stores, plus what a round stores when it fetches
-a listing page: the full description (`details_fetched_at`, as the year
-lookup does), the frame height from the *Kenmerken* when the search results
-had none, and material and brakes from the *Kenmerken* where the search
-results said nothing (`spec`, source `marktplaats`) — without those a fetched
-page would never be fetched again by a round, and a bike without a size in
-the search results would stay "maat onbekend". So the estimate and upgrade
-verdict in the dossier (and on the card after it) already use them. The
-page also gives every photo (the search results give three; here the
-largest size the page lists), the rest of the *Kenmerken*, private seller or
-not and how long on Marktplaats, whether shipping is possible, and the bids
-with their dates; those go into the dossier only, not into the database.
-The seller's and bidders' names don't go in at all. If fetching fails (no connection, gone, page structure
-changed) the dossier still comes, from the database, and says so on top.
+Plus de **waardescore** (geschatte waarde / prijs). Niet de dealscore: die
+hoort bij het rapport.
 
-What it holds: the listing (price with what kind of price it is, the asking
-price only where it is certain — from the page just fetched, or a price
-without bidding; a minimum bid or running bid is never called an asking
-price — bids, reserved, place and distance, condition, size, days online,
-price history, views and saves; times on your own clock), the
-*Kenmerken* and what the finder read from the text, the description, the
-photo links, which bike it is (model and where that came from, year,
-material, groupset, brakes), the estimate exactly as on the card (resale,
-step, median, fast sales, flip, waardescore, negotiation factor), the
-upgrade verdict with the quality score per part next to your own bike, the
-table you filled in `mijn_fiets.md` with your size and budget, your mark,
-note and bids, the part prices from your own flips (`/flips`, kind
-*onderdeel*: what you paid or estimated), and the **comparables**: a summary
-(spread, fast sold, still for sale, per year; over all of them) and a CSV
-with every bike of the estimate's step plus the rest of the same model and
-model family (all years, all materials; `in_schatting`, `relatie`), at most
-300: when there are more, first every fast sale of the estimate, then the
-rest shared over the groups in proportion (each at least one where there is
-room), each group spread evenly over its prices (not just the cheapest),
-each with
-price, year, material, groupset, speeds, brakes, size, condition, first and
-last seen, gone, days online, reserved, sold fast and link. It computes
-nothing new; it only puts more side by side.
+## Dossier voor Claude — `dossier.py`
 
-The page copies it to the clipboard and shows it in a window with *kopieer*
-and *bewaar als .md*. The same from the command line:
+De kaart toont een deel van wat er over een fiets bekend is. De knop
+**dossier** naast *controleer* (toets **d**) zet alles op een rij als één
+Markdown-tekst om in een gesprek met Claude te plakken, met de vragen
+bovenaan: is het een goede deal (als flip en als upgrade), wat moet er
+vervangen worden en wat kost dat ongeveer (met bronnen, geen verzonnen
+prijzen), een analyse van de vergelijkingsfietsen, en wat je de verkoper
+vraagt.
+
+**Ophalen.** Net als controleer haalt hij eerst de advertentiepagina op — één
+verzoek per klik, dezelfde regels (`recheck.py`) — en bewaart hij wat
+controleer bewaart, plus wat een ronde bewaart bij een opgehaalde pagina: de
+volledige omschrijving (`details_fetched_at`, net als het opzoeken van het
+bouwjaar), de framehoogte uit de *Kenmerken* als de zoekresultaten er geen
+hadden, en materiaal en remmen uit de *Kenmerken* waar de zoekresultaten
+niets zeiden (`spec`, bron `marktplaats`). Zonder dat zou een ronde een
+opgehaalde pagina nooit opnieuw ophalen, en bleef een fiets zonder maat in
+de zoekresultaten "maat onbekend". De schatting en het upgradeoordeel in het
+dossier (en daarna op de kaart) gebruiken ze dus al.
+
+De pagina geeft ook elke foto (de zoekresultaten geven er drie; hier de
+grootste maat die de pagina noemt), de rest van de *Kenmerken*, particulier
+of niet en hoe lang op Marktplaats, of verzenden kan, en de biedingen met hun
+datum; die gaan alleen in het dossier, niet in de database. Namen van
+verkoper en bieders gaan er helemaal niet in. Lukt ophalen niet (geen
+verbinding, verdwenen, paginastructuur veranderd), dan komt het dossier toch,
+uit de database, en zegt dat bovenaan.
+
+**Wat erin staat:**
+
+- de advertentie: prijs met wat voor prijs het is, de vraagprijs alleen waar
+  die zeker is (van de net opgehaalde pagina, of een prijs zonder bieden; een
+  minimumbod of lopend bod heet nooit vraagprijs), biedingen, gereserveerd,
+  plaats en afstand, staat, maat, dagen online, prijsverloop, weergaven en
+  likes; tijden op je eigen klok;
+- de *Kenmerken* en wat de koopjesfinder uit de tekst las, de omschrijving,
+  de fotolinks;
+- welke fiets het is (model en waar dat vandaan komt, jaar, materiaal,
+  groepset, remmen);
+- de schatting precies als op de kaart (verkoopprijs, trede, mediaan, snelle
+  verkopen, flip, waardescore, afdingfactor), het upgradeoordeel met de
+  kwaliteitsscore per onderdeel naast je eigen fiets;
+- de tabel uit `mijn_fiets.md` met je maat en budget, je markering, notitie en
+  biedingen, de onderdeelprijzen uit je eigen flips (`/flips`, soort
+  *onderdeel*: wat je betaalde of schatte);
+- de **vergelijkingsfietsen**: een samenvatting (spreiding, snel verkocht, nog
+  te koop, per jaar; over allemaal) en een CSV met elke fiets van de trede
+  van de schatting plus de rest van hetzelfde model en dezelfde modelfamilie
+  (alle jaren, alle materialen; `in_schatting`, `relatie`), hooguit 300. Zijn
+  het er meer, dan eerst elke snelle verkoop van de schatting, daarna de rest
+  naar verhouding over de groepen verdeeld (elk minstens één waar er ruimte
+  is), elke groep gelijkmatig over zijn prijzen (niet alleen de goedkoopste).
+  Per fiets prijs, jaar, materiaal, groepset, versnellingen, remmen, maat,
+  staat, eerst en laatst gezien, verdwenen, dagen online, gereserveerd, snel
+  verkocht en link.
+
+Het rekent niets nieuws; het zet alleen meer naast elkaar. De pagina zet het
+op het klembord en toont het in een venster met *kopieer* en *bewaar als
+.md*. Hetzelfde op de commandoregel:
 
 ```bash
-python dossier.py m2449549680                 # from the database, no request
-python dossier.py m2449549680 --ophalen --uit dossier.md   # fetch the page first, write a UTF-8 file
+python dossier.py m2449549680                 # uit de database, geen verzoek
+python dossier.py m2449549680 --ophalen --uit dossier.md   # eerst de pagina ophalen, UTF-8-bestand schrijven
 ```
 
-### Bike models
+## Fietsmodellen
 
-Every bike hangs on a **model**: brand + model + *uitvoering* (variant), e.g.
-"Trek Domane SL6", "Giant Defy Advanced 2", "Canyon Aeroad CF SLX 8". Where
-it comes from, first match wins:
+Elke fiets hangt aan een **model**: merk + model + *uitvoering*, bijv. "Trek
+Domane SL6", "Giant Defy Advanced 2", "Canyon Aeroad CF SLX 8". Waar het
+vandaan komt, de eerste die past:
 
-1. **your own link** (`bike_link`, migration 19), set on the card;
-2. a **rule** you applied (see *Rules* below);
-3. a **reference model** from `reference_bikes.csv` whose pattern matches —
-   unless the title says more: some reference models cover a whole line
-   ("Trek Domane", "Giant Defy (overig)"), and then "Trek Domane SL6" from
-   the title is the model; a more precise reference model ("Giant Defy
-   Composite 1") stays;
-4. brand + model + variant from the title: the brand as the sleepers know
-   it, the model word from `reference_bike_catalog.csv` or the word after the
-   brand ("Koga Kinsei"), and as variant the 1-3 words right after it that
-   look like one (`sl`, `slr`, `al`, `cf`, `slx`, `advanced`, `pro`, `comp`,
-   `sport`, `elite`, `expert`, `disc`, `team`, `ltd`, a one- or two-digit
-   number, letters with a digit like `sl7`) — not "105" (groupset), not a
-   year, and it stops at the first other word. A number with a unit after
-   it ("28 inch", "56 cm"), a decimal from 20 up ("55.5") and a model-year
-   code ("MY16") are sizes or years, not a variant; "2.0" counts as "2",
-   `disc` always goes last and doesn't count towards the three words
-   ("Advanced Disc 1" = "Advanced 1 Disc"), and "Tcr-team" is "TCR Team".
+1. **je eigen koppeling** (`bike_link`, migratie 19), gezet op de kaart;
+2. een **regel** die je toepaste (zie *Regels* hieronder);
+3. een **referentiemodel** uit `reference_bikes.csv` waarvan het patroon
+   past — tenzij de titel meer zegt: sommige referentiemodellen dekken een
+   hele lijn ("Trek Domane", "Giant Defy (overig)"), en dan is "Trek Domane
+   SL6" uit de titel het model; een preciezer referentiemodel ("Giant Defy
+   Composite 1") blijft;
+4. merk + model + uitvoering uit de titel: het merk zoals de slapers het
+   kennen, het modelwoord uit `reference_bike_catalog.csv` of het woord na het
+   merk ("Koga Kinsei"), en als uitvoering de 1-3 woorden direct erna die er
+   een lijken (`sl`, `slr`, `al`, `cf`, `slx`, `advanced`, `pro`, `comp`,
+   `sport`, `elite`, `expert`, `disc`, `team`, `ltd`, een getal van een of
+   twee cijfers, letters met een cijfer zoals `sl7`) — niet "105" (groepset),
+   geen jaartal, en het stopt bij het eerste andere woord. Een getal met een
+   eenheid erachter ("28 inch", "56 cm"), een decimaal vanaf 20 ("55.5") en
+   een modeljaarcode ("MY16") zijn maten of jaren, geen uitvoering; "2.0"
+   telt als "2", `disc` gaat altijd achteraan en telt niet mee in de drie
+   woorden ("Advanced Disc 1" = "Advanced 1 Disc"), en "Tcr-team" is "TCR
+   Team".
 
-Models compare without spaces and without what is in brackets ("SL 6" =
-"SL6", "Trek Émonda (overig)" = "Trek Emonda"). The year comes from the text
-or the title, or from your own link, which goes first — also for the
-upgrade verdict, so the age discount counts.
+Modellen vergelijken zonder spaties en zonder wat tussen haakjes staat ("SL
+6" = "SL6", "Trek Émonda (overig)" = "Trek Emonda"). Het jaar komt uit de
+tekst of de titel, of uit je eigen koppeling, die voorgaat — ook voor het
+upgradeoordeel, zodat de leeftijdskorting telt.
 
-The comparison wants **at least 5** listings per step and otherwise goes one
-step coarser; the card says which step:
+De vergelijking wil **minstens 5** advertenties per trede en gaat anders een
+trede grover; de kaart zegt welke:
 
-1. same model + variant, year ±2 (both known) — *model, ±2 jaar*
-2. same model + variant where one of the two has no year, plus those of 1 — *model*
-3. same brand + model (any variant), same material, year ±2 — *modelfamilie, ±2 jaar*
-4. same brand + model, same material, same era when a year is missing (disc
-   or rim, electronic or not, speeds when both say) — *modelfamilie, zelfde tijdperk*
-5. any model, same material, groupset tier and brakes, year ±2 — *zelfde opbouw, ±2 jaar*
-6. only when the bike itself says neither year nor brakes: same brand +
-   model of any year — *onzeker*, with the range, never green.
+1. hetzelfde model + uitvoering, jaar ±2 (beide bekend) — *model, ±2 jaar*
+2. hetzelfde model + uitvoering waar een van beide geen jaar heeft, plus die van 1 — *model*
+3. hetzelfde merk + model (elke uitvoering), zelfde materiaal, jaar ±2 — *modelfamilie, ±2 jaar*
+4. hetzelfde merk + model, zelfde materiaal, zelfde tijdperk als een jaar
+   ontbreekt (schijf- of velgrem, elektronisch of niet, versnellingen als
+   beide het zeggen) — *modelfamilie, zelfde tijdperk*
+5. elk model, zelfde materiaal, groepsetniveau en remmen, jaar ±2 — *zelfde opbouw, ±2 jaar*
+6. alleen als de fiets zelf jaar noch remmen noemt: hetzelfde merk + model
+   van elk jaar — *onzeker*, met de spreiding, nooit groen.
 
-When no step has 5, the ladder runs again with 3 and the step gets
-*(weinig)*. The ±2 years is the generation; no generation years are looked
-up or invented (CLAUDE.md).
+Heeft geen trede er 5, dan loopt de ladder nog eens met 3 en krijgt de trede
+*(weinig)*. De ±2 jaar is de generatie; er worden geen generatiejaren
+opgezocht of verzonnen (CLAUDE.md).
 
-**Correcting, on the card**, under *gekoppeld aan …*:
+**Corrigeren op de kaart**, onder *gekoppeld aan …*:
 
-- **klopt** — the model is right: it becomes one of your models
-  (`bike_model`) and the link is marked checked (*✓ gecontroleerd*);
-- **ander model** (key **m**) — a search field and a scrolling list of all
-  models with how many listings hang on each; pick one to link, or type a
-  new one ("merk model uitvoering", e.g. "Koga Kinsei Pro": 3-80 characters,
-  brand plus at least one word) to create and link it;
-- **bouwjaar** — your year (1970 to next year), empty to remove it;
-- **ontkoppelen** — back to what the listing says.
+- **klopt** — het model klopt: het wordt een van je modellen (`bike_model`)
+  en de koppeling is gecontroleerd (*✓ gecontroleerd*);
+- **ander model** (toets **m**) — een zoekveld en een scrollende lijst van
+  alle modellen met hoeveel advertenties eraan hangen; kies er een om te
+  koppelen, of typ een nieuw ("merk model uitvoering", bijv. "Koga Kinsei
+  Pro": 3-80 tekens, merk plus minstens één woord) om het te maken en te
+  koppelen;
+- **bouwjaar** — jouw jaar (1970 tot volgend jaar), leeg om het weg te halen;
+- **ontkoppelen** — terug naar wat de advertentie zegt.
 
-A correction recomputes only that bike (about 0,1 s, also with 14.000 bikes);
-the comparison of the other bikes of the old and new model is updated after
-the next round, the message says so.
+Een correctie rekent alleen die fiets opnieuw (ongeveer 0,1 s, ook met 14.000
+fietsen); de vergelijking van de andere fietsen van het oude en nieuwe model
+wordt na de volgende ronde bijgewerkt, de melding zegt dat.
 
-**Rules.** When you link 3 listings that were recognised as the same model
-("Trek Domane") to the same model of yours ("Trek Domane AL 2"), the view
-**Modellen** proposes a rule at the top — "advertenties die als *Trek
-Domane* herkend worden → *Trek Domane AL 2*?" — and the button says
-*Modellen (1 voorstel)*. **toepassen** makes it work for every listing
-recognised that way, gone ones included (`bike_rule`, migration 20; the card
-says *eigen model via een regel*); **nee** is remembered, so it isn't asked
-again. Your own link on a single listing still goes before a rule. Applied
-rules are listed under the proposals, each with **weghalen**. *klopt* on the
-recognised model is not a correction and never makes a proposal.
+**Regels.** Koppel je 3 advertenties die als hetzelfde model herkend werden
+("Trek Domane") aan hetzelfde model van jou ("Trek Domane AL 2"), dan stelt de
+weergave **Modellen** bovenaan een regel voor — "advertenties die als *Trek
+Domane* herkend worden → *Trek Domane AL 2*?" — en zegt de knop *Modellen (1
+voorstel)*. **toepassen** laat hem werken voor elke advertentie die zo herkend
+wordt, verdwenen meegerekend (`bike_rule`, migratie 20; de kaart zegt *eigen
+model via een regel*); **nee** wordt onthouden. Je eigen koppeling op één
+advertentie gaat nog steeds voor een regel. Toegepaste regels staan onder de
+voorstellen, elk met **weghalen**. *klopt* op het herkende model is geen
+correctie en doet nooit een voorstel.
 
-**The year for the likely bargains.** The year is rarely in the title (about
-6 in 100), and without it a bike stays on a coarse step. After the searches,
-the `overdag` and `nacht` rounds (`"year_budget": 20` in `schedule.json`)
-fetch the listing page of at most 20 road bikes that are active, have a
-price, are not reserved or put away, don't have a known year, look cheap —
-at least 15% below the estimate of their step, or below the median on the
-*onzeker* step — and whose page was never fetched before; cheapest first,
-with the usual 1,5 s between requests, stopping at a 403. The full
-description is stored (the same column `--detail-lookup` fills), and
-`/racefietsen` and the upgrade verdict read the year from it after the next
-round. So is what a round keeps from a listing page: the frame height from
-the *Kenmerken* when the search results had none, and material and brakes
-where they said nothing — a fetched page is never fetched again, so without
-that a bike without a size in the search results stayed "maat onbekend". The views and saves on the page are stored too (see *Views and
-saves*). By hand: `python racebikes.py plan 20` shows which bikes it would
-be, `python racebikes.py jaar 20` fetches them (at most 20).
+## Het bouwjaar van de waarschijnlijke koopjes
 
-**Onderdelen** (view): spare parts for your flips. Loose parts the rounds come
-across anyway, by kind — cassettes, chains, saddles, pedals, tyres, inner
-tubes, wheels, chainrings/cranks, derailleurs, shifters, brakes, groupsets,
-bars/stems, seatposts, bar tape, bottle cages (`spares.KINDS`). Switch on the
-kinds you want spares of (stored in `koopjes.db`, table `setting`; at first
-cassettes, chains, saddles and pedals); per kind the cheapest that are for
-sale now (at most 40), with photo, price, place, distance, and favourite /
-put away / your bid as for the bikes. A kind counts when the title names it
-("zadel", not "zadelpen"); outside the category fietsonderdelen a title that
-is a whole bike ("racefiets", "maat 56") doesn't count, and neither does a
-wanted ad, a tool named right after the part ("cassette sleutel",
-"kettingzweep"; "cassette met afnemer" is still a cassette), a mount
-("houder voor stuur") or shoes. **No search was added** (the owner's choice, 02-10-2026): the
-parts come from what the rounds find anyway — between the road bikes, the
-`category: alle` searches (giant-defy) and the powermeter search — so there
-are few. For more, add a search in the category `fietsonderdelen` to
-`schedule.json` (a night slot with `pages: 2` is ~2 requests per search per
-night); that is more requests to Marktplaats, so weigh it first.
+Het jaar staat zelden in de titel (ongeveer 6 op 100), en zonder blijft een
+fiets op een grove trede. Na de zoekopdrachten halen de rondes `overdag` en
+`nacht` (`"year_budget": 20` in `schedule.json`) de advertentiepagina op van
+hooguit 20 racefietsen die actief zijn, een prijs hebben, niet gereserveerd
+of weggezet zijn, geen bekend jaar hebben, goedkoop lijken — minstens 15%
+onder de schatting van hun trede, of onder de mediaan op de trede *onzeker* —
+en waarvan de pagina nooit eerder is opgehaald; goedkoopste eerst, met de
+gewone 1,5 s tussen verzoeken, stoppen bij een 403.
 
-**Modellen** (view) is the list of all models: your own (also without
-listings), the reference models and the recognised ones, with *te koop*,
-*gekoppeld* (180 days, gone ones included), *snel verkocht*, the median of
-the fast sales, the median asking price and the lowest price for sale. A
-search field, click a column to sort, drawn 200 rows at a time as you
-scroll, and a field to **add a new model**. Click a model to see its bikes.
+De volledige omschrijving wordt bewaard (dezelfde kolom die `--detail-lookup`
+vult), en `/racefietsen` en het upgradeoordeel lezen het jaar daaruit na de
+volgende ronde. Net als bij een ronde ook de framehoogte uit de *Kenmerken*
+als de zoekresultaten er geen hadden, en materiaal en remmen waar die niets
+zeiden. Ook de weergaven en likes op de pagina worden bewaard (zie "Views and
+saves" in [dashboards.md](dashboards.md)). Met de hand: `python racebikes.py
+plan 20` toont welke fietsen het zouden zijn, `python racebikes.py jaar 20`
+haalt ze op (hooguit 20).
 
-Views: **Te beoordelen** (no mark, no bid, not bought, not reserved — mark a
-bike and it leaves this view, so you work down the list), **Favorieten**,
-**Mijn biedingen** (with bids on bikes that are gone below), **Mijn flips**
-(your own bikes from `/flips`: stage, bought for, what's in it, target price,
-profit — expected at the middle of the target for a running one; editing is
-on `/flips`), **Alle** (without the ones you put away), **Weggezet**,
-**Modellen**, **Onderdelen** (above) and **Patronen** (views and saves of road
-bikes, see below). Filters: search (title, specs, place, your
-note), order (newest, best flip, best waardescore, best upgrade, nearest,
-cheapest), frame size (default your size ± 2 cm, with *maat onbekend* on),
-maximum price, maximum distance, *gereserveerd*, *alleen nieuw*. The page
-remembers your view and filters (per browser).
+## Weergaven, filters en toetsen
 
-Keys: **j**/**↓** next, **k**/**↑** previous, **f** favourite, **w** not worth
-it, **1**-**6** put away with a reason, **u** put back (the bike under the cursor;
-if that has no mark — in Te beoordelen a marked bike leaves the list at once —
-it undoes your last marking and puts that bike back), **b** enter a bid,
-**n** note, **space** description, **o** open on Marktplaats, **c**
-controleer, **d** dossier for Claude (below *Plus the waardescore*), **m**
-another model, **Esc** out of a field. The reasons to put a bike away are *niet
-waard*, *gereserveerd*, *niet doorverkoopbaar*, *te hoge vraagprijs*,
-*slechte staat* and *geen racefiets* (`marks.BIKE_REASONS`), stored in
-`listing_mark` like the computers' marks, so you can look back later at
-which bikes you dismissed and why. As there, a bike you put away comes back
-when its price drops below the price at that moment — except *geen
-racefiets*: a frame or an e-bike doesn't become a road bike by getting
-cheaper.
+- **Te beoordelen** — geen markering, geen bod, niet gekocht, niet
+  gereserveerd; markeer een fiets en hij verdwijnt uit deze weergave, zo werk
+  je de lijst af.
+- **Favorieten**, **Mijn biedingen** (met biedingen op verdwenen fietsen
+  eronder), **Mijn flips** (je eigen fietsen van `/flips`: fase, gekocht voor,
+  wat erin zit, doelprijs, winst — verwacht op het midden van het doel voor
+  een lopende; bewerken op `/flips`), **Alle** (zonder wat je wegzette),
+  **Weggezet**.
+- **Modellen** — de lijst van alle modellen: je eigen (ook zonder
+  advertenties), de referentiemodellen en de herkende, met *te koop*,
+  *gekoppeld* (180 dagen, verdwenen meegerekend), *snel verkocht*, de mediaan
+  van de snelle verkopen, de mediaan vraagprijs en de laagste prijs te koop.
+  Een zoekveld, klik op een kolom om te sorteren, 200 rijen tegelijk getekend
+  terwijl je scrolt, en een veld om **een nieuw model toe te voegen**. Klik op
+  een model om zijn fietsen te zien.
+- **Onderdelen** — reserves voor je flips: losse onderdelen die de rondes
+  toch al tegenkomen, per soort — cassettes, kettingen, zadels, pedalen,
+  banden, binnenbanden, wielen, kettingbladen/cranks, derailleurs, shifters,
+  remmen, groepsets, sturen/stuurpennen, zadelpennen, stuurlint,
+  bidonhouders (`spares.KINDS`). Zet de soorten aan waar je reserves van wilt
+  (bewaard in `koopjes.db`, tabel `setting`; eerst cassettes, kettingen,
+  zadels en pedalen); per soort de goedkoopste die nu te koop zijn (hooguit
+  40), met foto, prijs, plaats, afstand, en favoriet / wegzetten / je bod
+  zoals bij de fietsen. Een soort telt als de titel hem noemt ("zadel", niet
+  "zadelpen"); buiten de categorie fietsonderdelen telt een titel die een hele
+  fiets is ("racefiets", "maat 56") niet, en evenmin een gezocht-advertentie,
+  gereedschap direct na het onderdeel ("cassette sleutel", "kettingzweep";
+  "cassette met afnemer" is nog een cassette), een houder ("houder voor
+  stuur") of schoenen. **Er is geen zoekopdracht voor toegevoegd** (keuze van
+  de eigenaar, 02-10-2026): de onderdelen komen uit wat de rondes toch vinden
+  — tussen de racefietsen, de zoekopdrachten met `category: alle`
+  (giant-defy) en powermeter — dus het zijn er weinig. Voor meer: zet een
+  zoekopdracht in de categorie `fietsonderdelen` in `schedule.json` (een
+  nachtslot met `pages: 2` is ~2 verzoeken per zoekopdracht per nacht); dat
+  zijn meer verzoeken aan Marktplaats, dus eerst afwegen.
+- **Patronen** — weergaven en likes van racefietsen (zie "Views and saves" in
+  [dashboards.md](dashboards.md)).
 
-Fast on purpose: the heavy part (comparables, upgrade scores) is computed
-once per round and kept by the server; the page gets the bikes as JSON and
-draws 40 cards at a time, more as you scroll; a click sends back only that
-one bike. Measured on a test database with 2000 bikes (Chromium): the page
-loads in about half a second, putting a bike away takes ~150 ms. With models
-(01-10-2026): 2000 bikes, page ~1,2 s on the first load (the computation,
-0,8 s) and a model correction 80-110 ms; 14.000 bikes, the computation ~5,6
-s once per round and a correction 110-150 ms.
+**Filters:** zoeken (titel, specs, plaats, je notitie), volgorde (nieuwste,
+beste flip, beste waardescore, beste upgrade, dichtstbij, goedkoopste),
+framemaat (standaard je maat ± 2 cm, met *maat onbekend* aan), maximumprijs,
+maximumafstand, *gereserveerd*, *alleen nieuw*. De pagina onthoudt je weergave
+en filters (per browser).
+
+**Toetsen:** **j**/**↓** volgende, **k**/**↑** vorige, **f** favoriet, **w**
+niet waard, **1**-**6** wegzetten met een reden, **u** terugzetten (de fiets
+onder de cursor; heeft die geen markering — in Te beoordelen verdwijnt een
+gemarkeerde fiets meteen — dan maakt hij je laatste markering ongedaan en zet
+die fiets terug), **b** bod invullen, **n** notitie, **spatie** omschrijving,
+**o** openen op Marktplaats, **c** controleer, **d** dossier voor Claude,
+**m** ander model, **Esc** uit een veld.
+
+De redenen om een fiets weg te zetten zijn *niet waard*, *gereserveerd*,
+*niet doorverkoopbaar*, *te hoge vraagprijs*, *slechte staat* en *geen
+racefiets* (`marks.BIKE_REASONS`), bewaard in `listing_mark` net als de
+markeringen van de computers, zodat je later kunt terugzien welke fietsen je
+afwees en waarom. Ook hier komt een weggezette fiets terug als zijn prijs
+onder die van dat moment zakt — behalve *geen racefiets*: een frame of e-bike
+wordt geen racefiets door goedkoper te worden.
+
+## Snelheid
+
+Met opzet snel: het zware deel (vergelijkingsfietsen, upgradescores) rekent
+één keer per ronde en de server onthoudt het; de pagina krijgt de fietsen als
+JSON en tekent er 40 tegelijk, meer terwijl je scrolt; een klik stuurt alleen
+die ene fiets terug. Gemeten op een testdatabase met 2000 fietsen (Chromium):
+de pagina laadt in ongeveer een halve seconde, een fiets wegzetten kost ~150
+ms. Met modellen (01-10-2026): 2000 fietsen, pagina ~1,2 s bij de eerste keer
+(de berekening, 0,8 s) en een modelcorrectie 80-110 ms; 14.000 fietsen, de
+berekening ~5,6 s één keer per ronde en een correctie 110-150 ms.
