@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 import computers as pc
+import sleepers
 import util
 
 HERE = Path(__file__).resolve().parent
@@ -152,7 +153,6 @@ def classify_unknown(title: str, description: str = "") -> tuple[str, str]:
 def main(argv: Optional[list[str]] = None) -> int:
     import dashboard  # hier, want dashboard.py leest markets.py en dat leest dit bestand
     import markets
-    import sleepers  # price_text()
 
     parser = argparse.ArgumentParser(
         description="Sporthorloges (Garmin, Polar, Suunto, Coros) uit koopjes.db: markt per model en flips, "

@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Callable, Iterator, Optional
 
 import db
+import markets
 import racefiets_jev as mp
 import util
 
@@ -728,7 +729,6 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
             if report:
                 link = f"<a href='{esc(report)}'>openen</a>"
             elif not search.get("report", True):
-                import markets
 
                 market = markets.for_search(search["filters"]) or markets.COMPUTERS
                 link = f"<a href='{esc(dashboard_file(config, market), quote=True)}'>dashboard</a>"
@@ -861,7 +861,6 @@ def render_overview(config: Config, summaries: dict[str, dict], valuations: list
 
 
 def dashboard_markets() -> list:
-    import markets
 
     return list(markets.MARKETS.values())
 
@@ -875,7 +874,6 @@ def write_dashboard(config: Config, market=None):
     `market` de sporthorloges (dashboard_horloges.html). Geeft (pad,
     dashboard.Dashboard) terug. Elk dashboard linkt naar de andere."""
     import dashboard
-    import markets
 
     market = market or markets.COMPUTERS
     path = config.base_dir / dashboard_file(config, market)

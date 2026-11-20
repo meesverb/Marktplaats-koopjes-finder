@@ -42,8 +42,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
+import computers as pc
 import db
+import marks as mr
+import racebikes as rb
 import racefiets_jev as mp
+import report
 import scoring as sc
 import upgrade as up
 import util
@@ -127,7 +131,6 @@ class Bike:
 def _listings_by_id(conn: sqlite3.Connection, ids: Sequence[str]) -> list[mp.Listing]:
     """Fietsen die je beoordeelde maar die niet meer te koop zijn: uit de
     database, zoals racebikes ze leest."""
-    import racebikes as rb
 
     if not ids:
         return []
@@ -149,8 +152,6 @@ def load_bikes(db_path, listings: Optional[Sequence[mp.Listing]] = None,
     bouwjaar dat de eigenaar zelf invulde en zijn oordeel. `prepared`: een
     dict om de gelezen tekst in te onthouden ({(item_id, jaar): Prepared},
     LiveCache), zolang de database niet verandert."""
-    import marks as mr
-    import racebikes as rb
 
     if listings is None:
         listings, _, _ = rb.load_listings(db_path)
@@ -536,7 +537,6 @@ def _nl(value, decimals: int = 1) -> str:
 def csv_text(assessments: Sequence[Assessment], judge: Judge) -> str:
     """De uitdraai als CSV voor Excel: puntkomma's, komma als decimaalteken,
     met een BOM zodat é en € goed aankomen. Hoogste winst eerst."""
-    import computers as pc
 
     own = dims(judge.quality)
     buffer = io.StringIO()
@@ -672,8 +672,6 @@ def own_json(judge: Judge) -> dict:
 
 
 def bikes_json(bikes: Sequence[Bike]) -> list:
-    import computers as pc
-    import racebikes as rb
 
     out = []
     for b in bikes:
@@ -1335,7 +1333,6 @@ showTab(location.hash.slice(1) || 'test');
 def load_owner(db_path, intake_path):
     """(OwnerContext of None, probleem): de eigen fiets met de opgeslagen
     regel (report.load_owner_context() past hem toe)."""
-    import report
 
     return report.load_owner_context(str(intake_path), str(db_path))
 

@@ -45,6 +45,7 @@ import requests
 
 import db
 import racefiets_jev as mp
+import recheck as rc
 
 EARTH_RADIUS_KM = 6371.0088
 POSTCODE_RE = re.compile(r"^\s*(\d{4})\s*([A-Za-z]{2})?\s*$")
@@ -120,7 +121,6 @@ def locate_postcode(postcode: str, session=None) -> Home:
     """Eén zoekverzoek aan Marktplaats met de postcode, en daaruit de plek.
     Via recheck._get(): nooit tegelijk met of vlak na een klik op
     controleer."""
-    import recheck as rc
 
     code = normalize_postcode(postcode)
     if code is None:

@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Optional
 
 import db
+import flips as fl
 
 OPEN = "open"
 ACCEPTED = "geaccepteerd"
@@ -134,7 +135,6 @@ def set_status(conn: sqlite3.Connection, item_id: str, status: str, *, market: s
                expected_resale_eur: Optional[float] = None, today: Optional[str] = None) -> tuple[Bid, Optional[int]]:
     """Zet de status van het laatste bod. Geaccepteerd maakt (één keer) een
     flip aan in /flips; geeft (bod, trade_id van die flip of None)."""
-    import flips as fl
 
     if status not in STATUSES:
         raise ValueError(f"onbekende status {status!r}")

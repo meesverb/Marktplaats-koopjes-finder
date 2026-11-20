@@ -133,11 +133,11 @@ niet raden.
   het werkpad wijzen. Geef ze alle drie expliciet mee; laat je er een weg, dan
   leest hij stilzwijgend het echte bestand uit de repo in plaats van dat wat
   je bedoelde. Dat is bij het schrijven van de tests al een keer gebeurd.
-- **De imports lopen in een kring** (`racefiets_jev` ↔ `report` ↔ `upgrade` ↔
-  `upgrade_test` ↔ `dashboard` ↔ `racebikes` ↔ `koopjes`). Het werkt doordat
-  een deel binnen een functie importeert. Zet zo'n import niet zomaar bovenaan
-  de module; draai na elke nieuwe import `python <module>.py --help` van de
-  modules die je raakte, niet alleen de tests.
+- **Imports bovenaan, behalve waar dat een kring maakt.** Op topniveau is er
+  geen kring; een handvol imports staat binnen een functie omdat die module
+  er zelf weer onder hangt (zie `docs/architectuur.md`). Draai na een nieuwe
+  import `python <module>.py --help` van de modules die je raakte, niet alleen
+  de tests.
 - **De live server onthoudt het zware rekenwerk** (`dashboard.LiveCache`) tot
   een ronde de database verandert. Een actie die iets wijzigt moet de cache
   bijwerken (`live_update()`, `racebikes.refresh()`), anders ziet de eigenaar

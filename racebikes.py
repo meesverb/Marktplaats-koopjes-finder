@@ -60,11 +60,16 @@ from pathlib import Path
 from typing import Optional
 
 import bike_identity as bi
+import computers as pc
 import db
 import distance as dm
+import flips as fl
+from koopjes import YEAR_BUDGET_MAX
 import marks as mr
 import own_bids as ob
 import racefiets_jev as mp
+import recheck as rc
+import report
 import spares as sp
 import upgrade as up
 import util
@@ -455,7 +460,6 @@ def build_base(db_path, intake_path, comps: Optional[list] = None) -> Base:
     """Het zware deel: per fiets flip, waardescore en upgrade. `comps`: de
     vergelijkingskandidaten voor de taxatie van de eigen fiets, als de
     aanroeper ze al heeft (LiveCache)."""
-    import report
 
     read = _read(db_path)
     listings, newest, new_ids = load_listings(db_path, _read_result=read)
@@ -493,7 +497,6 @@ def rescore(base: Base, db_path, intake_path, comps: Optional[list] = None) -> B
     upgradeoordeel opnieuw, met de eigen fiets onder die regel. Flip,
     waardescore en vergelijking hangen niet van de regel af; alles opnieuw
     zou seconden kosten."""
-    import report
 
     owner, problem = report.load_owner_context(str(intake_path), str(db_path), comps=comps)
     with base.lock:
@@ -840,7 +843,6 @@ def load_fresh(db_path) -> Fresh:
 
 
 def price_kind(l: mp.Listing) -> str:
-    import computers as pc
     return pc.price_kind(l)
 
 
@@ -1652,7 +1654,6 @@ def own_flips_html(db_path) -> tuple[int, str]:
     staat wat erin zit en wat het oplevert, zodat elke pagina dezelfde
     weergaven heeft (de eigenaar, 02-10-2026). Gelezen bij elk verzoek: het
     zijn er een handvol."""
-    import flips as fl
 
     book = fl.load_book(db_path, with_market_check=False) if db_path and Path(db_path).exists() else None
     bikes = [f for f in (book.flips if book else []) if (f.trade.market or "") == "fietsen"]
@@ -2014,7 +2015,6 @@ def lookup_years(db_path, budget: int, session=None, log=print) -> int:
     pagina gaan mee (views.py: meeliften). Geeft het aantal verzoeken. Stopt
     bij een 403, bij een pagina die niet meer te lezen is en bij drie
     mislukte verzoeken achter elkaar."""
-    import recheck as rc
     import requests
 
     targets = plan_years(db_path, budget)
@@ -2074,8 +2074,6 @@ def main(argv=None) -> int:
     """`python racebikes.py jaar 20`: een ronde bouwjaren opzoeken met de hand
     (hooguit 20); `plan 20` toont alleen welke het zouden zijn."""
     import argparse
-
-    from koopjes import YEAR_BUDGET_MAX
 
     parser = argparse.ArgumentParser(
         description="Racefietsen: het bouwjaar opzoeken van fietsen zonder jaar die goedkoop lijken.")

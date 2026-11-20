@@ -46,6 +46,7 @@ import requests
 
 import db
 import racefiets_jev as mp
+import recheck as rc
 import util
 
 # 1 op zoveel nieuwe advertenties doet mee aan de steekproef. Met ~300
@@ -154,7 +155,6 @@ def plan(conn: sqlite3.Connection, budget: int, now: Optional[datetime] = None) 
 def measure(conn: sqlite3.Connection, target: Target, session=None, now: Optional[str] = None) -> str:
     """Eén meting: de pagina ophalen en de weergaven en likes vastleggen.
     Geeft kort terug wat er gebeurde ("158× bekeken, 4× bewaard", "weg")."""
-    import recheck as rc
 
     now = now or datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:

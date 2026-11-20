@@ -59,18 +59,21 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 import bike_comps as bc
 import computers as pc
 import db
-import flips as fl
-import markets as mk
-import marks as mr
-import racefiets_jev as mp
 import distance as dm
 import dossier as ds
+import flips as fl
+import flips_sheets as fs
+import koopjes
+import launcher
+import markets as mk
+import marks as mr
 import own_bids as ob
 import patterns as pt
 import racebikes as rb
-import spares as sp
+import racefiets_jev as mp
 import recheck as rc
 import report
+import spares as sp
 import trades as tr
 import upgrade as up
 import upgrade_test as ut
@@ -3292,7 +3295,6 @@ def flip_action_delete(db_path, form: dict, ctx=None) -> tuple[str, Optional[int
 
 
 def flip_action_sync(db_path, form: dict, ctx=None) -> tuple[str, Optional[int]]:
-    import flips_sheets as fs
     try:
         result = fs.sync(db_path, config_path=ctx.sheets_config if ctx else DashboardHandler.sheets_config)
     except fs.SheetError as exc:
@@ -3458,7 +3460,6 @@ def _file_label(name: str) -> str:
 
 
 def load_recent_rounds(files_dir, limit: int = 5) -> list:
-    import koopjes
 
     try:
         config = koopjes.load_config(Path(files_dir) / "schedule.json")
@@ -3470,7 +3471,6 @@ def load_recent_rounds(files_dir, limit: int = 5) -> list:
 
 def load_schedule(files_dir):
     """schedule.json naast de rapporten, of None (dan geen knoppen)."""
-    import koopjes
 
     try:
         return koopjes.load_config(Path(files_dir) / "schedule.json")
@@ -3482,7 +3482,6 @@ def rounds_panel(files_dir, running: str = "") -> str:
     """Per tijdslot een knop starten, met wat hij doet en wanneer hij het
     laatst draaide. `running`: het slot dat de server net startte, of
     "ja" als een andere ronde (de taakplanner) bezig is."""
-    import launcher
 
     config = load_schedule(files_dir)
     if config is None:
@@ -3997,7 +3996,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._send(200, render_start(self.db_path, self.files_dir, message, self.token,
                                                 self._running_round()), "text/html; charset=utf-8")
         if path == START_PATH + "/status":
-            import launcher
 
             config = load_schedule(self.files_dir)
             return self._json({"running": bool(self._running_round()),
@@ -4014,7 +4012,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._send(200, rb.render(base, rb.load_fresh(self.db_path), self.token, message),
                               "text/html; charset=utf-8")
         if path == FLIPS_PATH:
-            import flips_sheets as fs
             book = fl.load_book(self.db_path)
             return self._send(200, render_flips(book, self.token, message,
                                                 sheets=fs.panel(self.sheets_config)),
@@ -4090,7 +4087,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _running_round(self) -> str:
         """Het slot dat deze server startte en nog loopt, "ja" voor een
         andere ronde (de taakplanner), of "" als er niets draait."""
-        import launcher
 
         proc, slot = self.launched.get("proc"), self.launched.get("slot", "")
         if proc is not None and proc.poll() is None:
@@ -4099,7 +4095,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return "ja" if config is not None and launcher.is_running(config) else ""
 
     def _start_round(self, form: dict) -> None:
-        import launcher
 
         if not hmac.compare_digest(form.get("token", ""), self.token):
             return self._back("De pagina was verouderd; er is niets gestart. Probeer het opnieuw.", tab="",

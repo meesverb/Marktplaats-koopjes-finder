@@ -32,6 +32,8 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
+import valuation as val
+
 DEFAULT_CONFIG_PATH = "scoring_config.json"
 # Naast dit bestand, niet in de werkmap: upgrade.py en scoring.py worden ook
 # met de hand gestart vanuit een andere map, en dan vond een kale bestandsnaam
@@ -518,8 +520,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--mijn-fiets", default="mijn_fiets.md")
     parser.add_argument("--config", default=BUNDLED_CONFIG_PATH)
     args = parser.parse_args(argv)
-
-    import valuation as val
 
     _, bike = val.read_owner_bike(args.mijn_fiets)
     if bike is None:

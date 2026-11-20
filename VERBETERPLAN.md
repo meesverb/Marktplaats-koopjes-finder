@@ -210,7 +210,7 @@ rest veiliger.
 
 ## C. Structuur (elk een eigen sessie, in deze volgorde)
 
-- [ ] **C1 — De kring van imports doorknippen.**
+- [x] **C1 — De kring van imports doorknippen.**
   *Bevinding:* bijna alles importeert `racefiets_jev` voor de dataclass
   `Listing` en een paar leesfuncties, en `racefiets_jev` importeert zelf
   `report`, `upgrade` en `computers`. Daardoor staan er imports binnen
@@ -229,6 +229,7 @@ rest veiliger.
   3. **C1c** kijken welke imports-binnen-functies daarna naar boven kunnen.
   *Klaar als:* `python -c "import <module>"` voor elke module werkt in elke
   volgorde, en het aantal imports binnen functies is gedaald (nu 14 modules).
+  *Gedaan 20-11-2026:* Anders dan gepland: op topniveau bleek er al geen kring te zijn; hij liep alleen via 28 imports binnen functies, en `Listing` naar `listing.py` verplaatsen haalde daar geen enkele van weg. Daarom (C1a) de opgeslagen upgraderegel van `upgrade_test.py` naar `upgrade.py` (`upgrade` en `report` hingen daardoor niet meer onder `upgrade_test` → `dashboard`), en (C1b) elke import binnen een functie die zonder kring naar boven kon, naar boven: nog 7 in 5 modules (was 28 in 14). Over: `racefiets_jev → report/upgrade` (het rapport, C3), `racebikes/upgrade_test → dashboard` (de gedeelde paginaschil, C2), `watches/koopjes → dashboard` (hun commando bouwt het dashboard: zo hoort het).
 
 - [ ] **C2 — `dashboard.py` (4.500 regels) per pagina opdelen.**
   *Bevinding:* één bestand bevat de twee dashboards, de startpagina, de

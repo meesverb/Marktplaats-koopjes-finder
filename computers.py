@@ -37,6 +37,7 @@ from typing import NamedTuple, Optional, Sequence
 from urllib.parse import urlsplit
 
 import db
+import sleepers
 import util
 
 HERE = Path(__file__).resolve().parent
@@ -1156,7 +1157,6 @@ def print_computers(listings, limit: int = 10) -> None:
     found = active_computers(listings)
     if not found:
         return
-    import sleepers  # price_text(); hier geïmporteerd zodat dit bestand los te draaien is
 
     skipped = len(filtered_out(listings))
     print(f"\n=== Fietscomputers: {len(found)} herkend"
@@ -1182,7 +1182,6 @@ def print_computers(listings, limit: int = 10) -> None:
 def render_panel(listings, config: Optional[dict] = None) -> tuple[int, str]:
     """(aantal, html) voor de tab Fietscomputers in het gewone rapport. Het
     volledige overzicht staat in dashboard.html (dashboard.py)."""
-    import sleepers
 
     config = config or default_config()
     found = active_computers(listings)
