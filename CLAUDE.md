@@ -133,11 +133,11 @@ niet raden.
   het werkpad wijzen. Geef ze alle drie expliciet mee; laat je er een weg, dan
   leest hij stilzwijgend het echte bestand uit de repo in plaats van dat wat
   je bedoelde. Dat is bij het schrijven van de tests al een keer gebeurd.
-- **Imports bovenaan, behalve waar dat een kring maakt.** Op topniveau is er
-  geen kring; een handvol imports staat binnen een functie omdat die module
-  er zelf weer onder hangt (zie `docs/architectuur.md`). Draai na een nieuwe
-  import `python <module>.py --help` van de modules die je raakte, niet alleen
-  de tests.
+- **Imports staan bovenaan en lopen in lagen** (`util`/`db`/`crawl` onderop,
+  pagina's en commando's bovenop; zie `docs/architectuur.md`). Alleen
+  `dashboard.main` en `watches.main` importeren binnen de functie, omdat wat
+  ze bouwen zelf op hen bouwt. Importeer geen laag die hoger ligt; draai na
+  een nieuwe import `python <module>.py --help`, niet alleen de tests.
 - **De live server onthoudt het zware rekenwerk** (`server.LiveCache`) tot
   een ronde de database verandert. Een actie die iets wijzigt moet de cache
   bijwerken (`live_update()`, `racebikes.refresh()`), anders ziet de eigenaar
@@ -150,7 +150,7 @@ De lange versie, met tabellen, migraties en ingangen per bestand:
 
 | Gebied | Bestanden | Naslag |
 | --- | --- | --- |
-| Crawlen, scoren, rapport | `racefiets_jev.py` (het script, alle vlaggen), `report.py` + `report_template.html` (rapportpanelen), `sleepers.py` (slapers) | `docs/zoeken.md`, `docs/rapport.md` |
+| Crawlen, scoren, rapport | `racefiets_jev.py` (het commando, alle vlaggen), `crawl.py` (`Listing`, ophalen, parsen, biedingen, specs), `dealscore.py`, `console.py`, `report.py` + `report_template.html` (het rapport en zijn panelen), `sleepers.py` (slapers) | `docs/zoeken.md`, `docs/rapport.md` |
 | Rondes | `koopjes.py` + `schedule.json` (tijdsloten, overzicht, logboek), `launcher.py` (knoppen op `/start`) | `docs/rondes.md` |
 | Database, gedeeld | `db.py` (schema, migraties, alle queries), `util.py` (tijd, euro) | `docs/database.md` |
 | Live server | `server.py` (`--serve`: routes, knoppen, `LiveCache`), `pages.py` (paden, balk bovenaan, gedeelde CSS/JS, formulieren), `dashboard.py` (de dashboards per markt), `start_page.py`, `bike_page.py` (`/fiets`), `flips_page.py` (`/flips`) | `docs/dashboards.md` |

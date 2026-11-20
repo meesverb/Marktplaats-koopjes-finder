@@ -22,13 +22,18 @@ tegenspreken.
 from __future__ import annotations
 
 import html
+import string
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence
 
+import computers
+import crawl
 import db
-import racefiets_jev as mp
+import dealscore
 import scoring as sc
+import sleepers
 import upgrade as up
 from util import euro
 import valuation as val
@@ -416,7 +421,7 @@ def render_bid_panel(
             f"<td class='num' title='{esc(row.estimate.basis)}'>{euro(row.estimate.amount)}</td>"
             f"<td class='num'>{score_cell}</td>"
             f"<td class='num' title='{esc(l.deal_reasons)}'>{deal}</td>"
-            f"<td>{esc(mp.format_bid_info(l)) or '—'}</td>"
+            f"<td>{esc(crawl.format_bid_info(l)) or '—'}</td>"
             f"<td><a href='{esc(l.url)}' target='_blank' rel='noopener'>{esc(l.title)}</a></td>"
             "</tr>"
         )
@@ -450,7 +455,7 @@ class Panels:
 
 
 def build_panels(
-    listings: Sequence[mp.Listing],
+    listings: Sequence[crawl.Listing],
     median_eur: Optional[float] = None,
     *,
     owner: Optional[OwnerContext] = None,
@@ -483,4 +488,219 @@ def build_panels(
         bids_html=render_bid_panel(bid_rows, median_eur, segments),
         bid_row_count=len(bid_rows),
         upgrades=result.candidates if result else (),
+    )
+
+
+# The report's HTML lives in its own file (PLAN_FIETSWAARDE.md §8). It used to
+# be a str.format() string in here, where every brace in the CSS and the
+# JavaScript had to be doubled — writing an object literal in that was an
+# accident waiting to happen. string.Template's $-placeholders leave braces
+# alone; the one character to watch in the template is now `$` itself (write
+# `$$` for a literal one).
+REPORT_TEMPLATE_PATH = Path(__file__).resolve().parent / "report_template.html"
+
+
+def load_report_template(path: Path = REPORT_TEMPLATE_PATH) -> string.Template:
+    """Read the template at render time rather than at import, so a missing
+    file only matters to a run that actually writes a report (--no-html runs
+    and the tools that import this module don't need it)."""
+    try:
+        return string.Template(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise SystemExit(
+            f"error: HTML-sjabloon {path} ontbreekt — dat bestand hoort naast "
+            f"{Path(__file__).name}; zet het terug of draai met --no-html"
+        ) from None
+
+
+def score_css_class(score: Optional[float]) -> str:
+    """The pill colour for a score — same tiers as its label."""
+    if score is not None:
+        for threshold, _, css_class in dealscore.SCORE_LABELS:
+            if score >= threshold:
+                return css_class
+    return "low"
+
+
+def render_html(
+    listings: list[crawl.Listing], query: str, stats: Optional[dict] = None, panels=None
+) -> str:
+    """`panels` is a Panels (the Biedpaneel / Upgrade / Mijn fiets tabs).
+    Left out, only the bid panel is filled — it needs nothing but the
+    listings — and the other two say there is no bike to compare against."""
+    rows_sorted = dealscore.sort_by_score(listings)
+
+    row_html = []
+    for l in rows_sorted:
+        price_str = (
+            html.escape(l.price_type) if l.price_eur is None
+            else f"€{l.price_eur:.2f}" if l.price_eur < 1
+            else f"€{l.price_eur:.0f}"
+        )
+        if l.price_is_bid and l.price_eur is not None:
+            price_str += ' <span class="bid-tag">bod</span>'
+        badges = ""
+        if l.is_new:
+            badges += '<span class="badge new">NIEUW</span>'
+        if l.is_bargain:
+            badges += '<span class="badge bargain">KOOPJE</span>'
+        if l.ref_better:
+            badges += '<span class="badge better">BETER</span>'
+        if l.price_dropped:
+            badges += f'<span class="badge dropped">-€{l.price_drop_from - l.price_eur:.0f}</span>'
+        if l.bid_open:
+            badges += '<span class="badge bid">VRIJ TE BIEDEN</span>'
+        price_sort_value = l.price_eur if l.price_eur is not None else -1
+
+        if l.deal_score is not None:
+            score_cell = (
+                f"<span class='score-pill {score_css_class(l.deal_score)}'>{l.deal_score:.0f}</span>"
+                f"<div class='score-label'>{html.escape(l.deal_label)}</div>"
+            )
+        else:
+            score_cell = "<span class='score-pill low'>—</span>"
+        score_sort = l.deal_score if l.deal_score is not None else -1
+        score_title = html.escape(l.deal_reasons, quote=True)
+
+        bid_str = html.escape(crawl.format_bid_info(l)) or "—"
+        # Sort the Bod column by what it would cost to bid right now.
+        if l.bid_minimum is not None:
+            bid_sort = l.bid_minimum
+        elif l.price_is_bid and l.price_eur is not None:
+            bid_sort = l.price_eur
+        else:
+            bid_sort = -1
+
+        ref_str = html.escape(l.ref_label) if l.ref_label else "—"
+        ref_sort = l.ref_pct_of_original if l.ref_pct_of_original is not None else 1e9
+
+        if l.ref_pct_of_original is not None:
+            ref_price_str = f"€{l.ref_original_price:.0f} ({l.ref_pct_of_original:.0f}% nu)"
+        elif l.ref_original_price is not None:
+            ref_price_str = f"€{l.ref_original_price:.0f}"
+        else:
+            ref_price_str = "—" if not l.ref_label else "onbekend"
+        if l.ref_market_count > 0:
+            ref_price_str += f" · 2e-hands gem. €{l.ref_market_avg:.0f} (n={l.ref_market_count})"
+        ref_specs_str = html.escape(l.ref_score) if l.ref_score else (
+            html.escape(l.ref_specs) if l.ref_specs else "—"
+        )
+        if l.ref_specs and l.ref_score:
+            ref_specs_str = html.escape(f"{l.ref_specs} — {l.ref_score}")
+
+        pct_median_str = f"{l.pct_of_median:.0f}%" if l.pct_of_median is not None else "—"
+        pct_median_sort = l.pct_of_median if l.pct_of_median is not None else 1e9
+
+        row_html.append(
+            "<tr data-new='{is_new}' data-bargain='{is_bargain}' data-better='{is_better}' "
+            "data-dropped='{is_dropped}' data-topdeal='{is_topdeal}' "
+            "data-bidding='{is_bidding}' data-openbid='{is_openbid}' "
+            "data-price='{price_sort}' data-title='{title_attr}' "
+            "data-frame='{frame_attr}' data-groupset='{groupset_sort}' "
+            "data-condition='{condition_attr}' data-city='{city_attr}' data-ref='{ref_sort}' "
+            "data-pctmedian='{pct_median_sort}' data-score='{score_sort}' data-bid='{bid_sort}'>"
+            "<td>{badges}</td>"
+            "<td class='score' title='{score_title}'>{score_cell}</td>"
+            "<td class='price'>{price}</td>"
+            "<td>{bid}</td>"
+            "<td>{pct_median}</td>"
+            "<td><a href='{url}' target='_blank' rel='noopener'>{title}</a></td>"
+            "<td>{frame}</td>"
+            "<td>{groupset}</td>"
+            "<td>{condition}</td>"
+            "<td>{city}</td>"
+            "<td>{ref}</td>"
+            "<td>{ref_price}</td>"
+            "<td>{ref_specs}</td>"
+            "</tr>".format(
+                is_new="1" if l.is_new else "0",
+                is_bargain="1" if l.is_bargain else "0",
+                is_better="1" if l.ref_better else "0",
+                is_dropped="1" if l.price_dropped else "0",
+                is_topdeal="1" if (l.deal_score is not None and l.deal_score >= dealscore.TOP_DEAL_SCORE) else "0",
+                is_bidding="1" if l.price_is_bid else "0",
+                is_openbid="1" if l.bid_open else "0",
+                price_sort=price_sort_value,
+                score_sort=score_sort,
+                score_title=score_title,
+                score_cell=score_cell,
+                bid=bid_str,
+                bid_sort=bid_sort,
+                title_attr=html.escape(l.title, quote=True),
+                frame_attr=html.escape(l.frame_height, quote=True),
+                groupset_sort=l.groupset_tier if l.groupset_tier is not None else -1,
+                condition_attr=html.escape(l.condition, quote=True),
+                city_attr=html.escape(l.city, quote=True),
+                ref_sort=ref_sort,
+                pct_median_sort=pct_median_sort,
+                badges=badges,
+                frame=html.escape(l.frame_height) or "—",
+                groupset=html.escape(l.groupset) or "—",
+                price=price_str,
+                pct_median=pct_median_str,
+                url=html.escape(l.url, quote=True),
+                title=html.escape(l.title),
+                condition=html.escape(l.condition),
+                city=html.escape(l.city),
+                ref=ref_str,
+                ref_price=ref_price_str,
+                ref_specs=ref_specs_str,
+            )
+        )
+
+    if stats is None:
+        stats = dealscore.price_stats(listings)
+    price_stats_str = (
+        f" · gemiddeld €{stats['mean']:.0f} · mediaan €{stats['median']:.0f}"
+        if stats["count"] >= 2
+        else ""
+    )
+    if panels is None:
+        panels = build_panels(
+            listings, stats.get("median"),
+            owner_problem="Geen eigen fiets meegegeven aan dit rapport.",
+        )
+
+    sleeper_count, sleeper_panel = sleepers.render_panel(listings)
+    computer_count, computer_panel = computers.render_panel(listings)
+
+    # substitute(), not safe_substitute(): a placeholder in the template that
+    # nobody fills in should fail here, not end up as literal text in the page.
+    return load_report_template().substitute(
+        query=html.escape(query),
+        generated=datetime.now().strftime("%d-%m-%Y %H:%M"),
+        total=len(listings),
+        new_count=sum(1 for l in listings if l.is_new),
+        bargain_count=sum(1 for l in listings if l.is_bargain),
+        better_count=sum(1 for l in listings if l.ref_better),
+        dropped_count=sum(1 for l in listings if l.price_dropped),
+        topdeal_count=sum(
+            1 for l in listings if l.deal_score is not None and l.deal_score >= dealscore.TOP_DEAL_SCORE
+        ),
+        bid_count=len(crawl.bid_listings(listings)),
+        open_bid_count=len(crawl.open_bid_listings(listings)),
+        price_stats_str=price_stats_str,
+        rows="\n".join(row_html),
+        bidpanel_count=panels.bid_row_count,
+        upgrade_count=panels.upgrade_count,
+        bid_panel=panels.bids_html,
+        upgrade_panel=panels.upgrade_html,
+        bike_panel=panels.bike_html,
+        sleeper_count=sleeper_count,
+        sleeper_panel=sleeper_panel,
+        # Only when this run has bike computers: on a racefiets run the tab
+        # would always read "(0)". The full picture is dashboard.html.
+        computer_tab=(
+            f'  <button data-panel="computers">Fietscomputers ({computer_count})</button>\n'
+            if computer_count else ""
+        ),
+        computer_panel=computer_panel,
+    )
+
+
+def write_html(
+    listings: list[crawl.Listing], path: str, query: str, stats: Optional[dict] = None, panels=None
+) -> None:
+    Path(path).write_text(
+        render_html(listings, query, stats=stats, panels=panels), encoding="utf-8"
     )

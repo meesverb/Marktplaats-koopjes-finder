@@ -16,9 +16,9 @@ import requests
 from helpers import FakeResponse, FakeSession, make_listing
 
 import computers as pc
+import crawl
 import dashboard
 import db
-import racefiets_jev as mp
 import recheck as rc
 import server
 import util
@@ -309,7 +309,7 @@ class BidHighFromTheCrawlTest(unittest.TestCase):
         listing = make_listing(price_eur=90.0, price_type="MIN_BID", price_is_bid=True)
         session = FakeSession({listing.url: listing_page("m1", 9000, "MIN_BID", bids_info=bids(12000, 10000))})
         with contextlib.redirect_stderr(io.StringIO()):
-            mp.enrich_bid_listings([listing], delay=0, mode="all", session=session)
+            crawl.enrich_bid_listings([listing], delay=0, mode="all", session=session)
         self.assertEqual((listing.price_eur, listing.bid_high, listing.bid_count), (120.0, 120.0, 2))
 
     def test_sync_keeps_it_until_the_next_lookup(self):

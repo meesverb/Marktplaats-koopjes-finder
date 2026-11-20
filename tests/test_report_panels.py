@@ -14,13 +14,14 @@ from pathlib import Path
 
 from helpers import make_listing, mp, repo_file
 
+import crawl
 import db
 import report
 import upgrade as up
 
 
 def render(listings, panels=None, query="racefiets"):
-    return mp.render_html(listings, query, panels=panels)
+    return report.render_html(listings, query, panels=panels)
 
 
 def panel(html, name):
@@ -265,7 +266,7 @@ class OwnerPanelsTest(unittest.TestCase):
             ),
         ]
         for listing in listings:
-            listing.groupset, listing.groupset_tier = mp.detect_groupset(listing.title)
+            listing.groupset, listing.groupset_tier = crawl.detect_groupset(listing.title)
         panels = report.build_panels(listings, 1000.0, owner=context)
         html = render(listings, panels=panels)
         section = panel(html, "upgrade")
@@ -334,7 +335,7 @@ class ManualBudgetTest(unittest.TestCase):
             item_id="goed", title="Carbon racefiets Ultegra Di2 11 speed schijfrem",
             price_eur=300.0, frame_height="56 cm",
         )
-        listing.groupset, listing.groupset_tier = mp.detect_groupset(listing.title)
+        listing.groupset, listing.groupset_tier = crawl.detect_groupset(listing.title)
         panels = report.build_panels([listing], 1000.0, owner=context)
         self.assertEqual(panels.upgrade_count, 1)
 

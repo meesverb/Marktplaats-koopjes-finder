@@ -13,33 +13,36 @@ from unittest import mock
 
 from helpers import FakeSession, config_page, make_listing, mp, read_csv_rows
 
+import console
+import crawl
+
 
 class ResolveBidPriceTest(unittest.TestCase):
     def test_highest_bid_wins_over_the_minimum(self):
         info = {"currentMinimumBid": 5000, "bids": [{"value": 6000}, {"value": 8000}]}
-        self.assertEqual(mp.resolve_bid_price(info), 80.0)
+        self.assertEqual(crawl.resolve_bid_price(info), 80.0)
 
     def test_falls_back_to_the_minimum_bid(self):
-        self.assertEqual(mp.resolve_bid_price({"currentMinimumBid": 3500, "bids": []}), 35.0)
+        self.assertEqual(crawl.resolve_bid_price({"currentMinimumBid": 3500, "bids": []}), 35.0)
 
     def test_nothing_to_go_on(self):
-        self.assertIsNone(mp.resolve_bid_price({"bids": []}))
-        self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": 0, "bids": []}))
+        self.assertIsNone(crawl.resolve_bid_price({"bids": []}))
+        self.assertIsNone(crawl.resolve_bid_price({"currentMinimumBid": 0, "bids": []}))
 
     def test_minus_one_means_no_minimum_not_a_negative_price(self):
         # What Marktplaats actually sends for "bieden zonder minimum". It used
         # to become a price of EUR -0.01 and a 100/100 Topdeal.
-        self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": -1, "bids": []}))
+        self.assertIsNone(crawl.resolve_bid_price({"currentMinimumBid": -1, "bids": []}))
 
     def test_values_that_are_not_numbers_are_not_bids(self):
         # bool passes an isinstance(x, (int, float)) check, so a "value": true
         # would count as a bid of one cent and win over a real minimum.
         info = {"currentMinimumBid": 5000, "bids": [{"value": True}, {"value": "6000"}]}
-        self.assertEqual(mp.resolve_bid_price(info), 50.0)
+        self.assertEqual(crawl.resolve_bid_price(info), 50.0)
 
     def test_a_minimum_that_is_not_a_number_is_no_minimum(self):
-        self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": "3500", "bids": []}))
-        self.assertIsNone(mp.resolve_bid_price({"currentMinimumBid": True, "bids": []}))
+        self.assertIsNone(crawl.resolve_bid_price({"currentMinimumBid": "3500", "bids": []}))
+        self.assertIsNone(crawl.resolve_bid_price({"currentMinimumBid": True, "bids": []}))
 
 
 class EnrichBidListingsTest(unittest.TestCase):
@@ -48,7 +51,7 @@ class EnrichBidListingsTest(unittest.TestCase):
         # The lookup reports its progress on stderr; silence it so the suite's
         # own output stays readable.
         with contextlib.redirect_stderr(io.StringIO()):
-            mp.enrich_bid_listings([listing], delay=0, mode=mode, session=session)
+            crawl.enrich_bid_listings([listing], delay=0, mode=mode, session=session)
         return session
 
     def test_fast_bid_without_minimum_or_bids_stays_priceless(self):
@@ -101,7 +104,7 @@ class EnrichBidListingsTest(unittest.TestCase):
             "all",
         )
         self.assertEqual(listing.bid_count, 0)
-        mp.apply_bid_flags([listing])
+        crawl.apply_bid_flags([listing])
         self.assertTrue(listing.bid_open)
 
     def test_entries_without_a_value_do_not_count_as_bids(self):
@@ -138,7 +141,7 @@ class EnrichBidListingsTest(unittest.TestCase):
         listing = make_listing(price_eur=None, price_type="FAST_BID", price_is_bid=True)
         session = FakeSession({listing.url: "<html>geen config</html>"})
         with contextlib.redirect_stderr(io.StringIO()):
-            mp.enrich_bid_listings([listing], delay=0, mode="fast", session=session)
+            crawl.enrich_bid_listings([listing], delay=0, mode="fast", session=session)
         self.assertIsNone(listing.price_eur)
         self.assertIsNone(listing.bid_count)
 
@@ -151,19 +154,19 @@ class MalformedPageTest(unittest.TestCase):
         url = "https://www.marktplaats.nl/v/x/m1-test"
         page = '<html><script>window.__CONFIG__ = {"listing": null};</script></html>'
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertIsNone(mp.fetch_bid_info(FakeSession({url: page}), url))
+            self.assertIsNone(crawl.fetch_bid_info(FakeSession({url: page}), url))
 
     def test_a_bid_without_a_value_falls_back_to_the_minimum(self):
         info = {"currentMinimumBid": 3500, "bids": [{"bidder": "iemand"}]}
-        self.assertEqual(mp.resolve_bid_price(info), 35.0)
+        self.assertEqual(crawl.resolve_bid_price(info), 35.0)
 
     def test_a_usable_bid_next_to_a_broken_one_still_counts(self):
         info = {"currentMinimumBid": 3500, "bids": [{"bidder": "x"}, {"value": 8000}]}
-        self.assertEqual(mp.resolve_bid_price(info), 80.0)
+        self.assertEqual(crawl.resolve_bid_price(info), 80.0)
 
     def test_null_attributes_are_not_a_crash(self):
         raw = {"attributes": None, "extendedAttributes": [{"key": "condition", "value": "Gebruikt"}]}
-        self.assertEqual(mp.extract_attribute(raw, "condition"), "Gebruikt")
+        self.assertEqual(crawl.extract_attribute(raw, "condition"), "Gebruikt")
 
 
 class BidStructureWarningTest(unittest.TestCase):
@@ -172,7 +175,7 @@ class BidStructureWarningTest(unittest.TestCase):
     the bid columns would just quietly go empty for weeks."""
 
     def setUp(self):
-        mp._bid_structure_warned = False
+        crawl._bid_structure_warned = False
         self.addCleanup(setattr, mp, "_bid_structure_warned", False)
 
     def fetch(self, page: str):
@@ -180,7 +183,7 @@ class BidStructureWarningTest(unittest.TestCase):
         session = FakeSession({url: page})
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            info = mp.fetch_bid_info(session, url)
+            info = crawl.fetch_bid_info(session, url)
         return info, stderr.getvalue()
 
     def test_a_missing_marker_is_reported(self):
@@ -204,7 +207,7 @@ class BidStructureWarningTest(unittest.TestCase):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             for _ in range(3):
-                mp.fetch_bid_info(session, url)
+                crawl.fetch_bid_info(session, url)
         self.assertEqual(stderr.getvalue().count("paginastructuur"), 1)
 
 
@@ -223,7 +226,7 @@ class LookupOrderTest(unittest.TestCase):
         handed_to_lookup = []
 
         def fake_collect(query, pages, delay, **crawl_options):
-            return mp.CrawlResult(listings, complete=True)
+            return crawl.CrawlResult(listings, complete=True)
 
         def fake_enrich(ls, delay, mode, session=None):
             handed_to_lookup.extend(l.item_id for l in ls)
@@ -240,8 +243,8 @@ class LookupOrderTest(unittest.TestCase):
         ] + extra_argv
         args = mp.parse_args(argv)
 
-        with mock.patch.object(mp, "collect_listings", fake_collect), mock.patch.object(
-            mp, "enrich_bid_listings", fake_enrich
+        with mock.patch.object(crawl, "collect_listings", fake_collect), mock.patch.object(
+            crawl, "enrich_bid_listings", fake_enrich
         ):
             with contextlib.redirect_stdout(io.StringIO()):
                 mp.run_for_query(args, "test", False)
@@ -297,34 +300,34 @@ class OpenBidTest(unittest.TestCase):
         fixed_price = make_listing(price_is_bid=False, bid_count=0)
 
         listings = [looked_up, has_bids, never_looked_up, fixed_price]
-        mp.apply_bid_flags(listings)
+        crawl.apply_bid_flags(listings)
 
         self.assertTrue(looked_up.bid_open)
         self.assertFalse(has_bids.bid_open)
         self.assertFalse(never_looked_up.bid_open, "unknown is not the same as zero")
         self.assertFalse(fixed_price.bid_open)
 
-        self.assertEqual(len(mp.bid_listings(listings)), 3)
-        self.assertEqual(len(mp.open_bid_listings(listings)), 1)
+        self.assertEqual(len(crawl.bid_listings(listings)), 3)
+        self.assertEqual(len(crawl.open_bid_listings(listings)), 1)
 
 
 class FormatBidInfoTest(unittest.TestCase):
     def test_nothing_for_a_fixed_price_listing(self):
-        self.assertEqual(mp.format_bid_info(make_listing(price_is_bid=False)), "")
+        self.assertEqual(crawl.format_bid_info(make_listing(price_is_bid=False)), "")
 
     def test_bid_counts_are_spelled_out(self):
         cases = {None: "biedingen onbekend", 0: "nog geen bod", 1: "1 bod", 4: "4 biedingen"}
         for count, expected in cases.items():
             with self.subTest(count=count):
                 listing = make_listing(price_is_bid=True, bid_count=count)
-                self.assertIn(expected, mp.format_bid_info(listing))
+                self.assertIn(expected, crawl.format_bid_info(listing))
 
     def test_a_real_discount_is_shown_against_the_median(self):
         listing = make_listing(
             price_eur=200.0, price_is_bid=True, bid_count=0,
             bid_minimum=120.0, bid_minimum_pct_of_median=35.0,
         )
-        self.assertIn("min. €120 (35% v. mediaan)", mp.format_bid_info(listing))
+        self.assertIn("min. €120 (35% v. mediaan)", crawl.format_bid_info(listing))
 
     def test_the_minimum_stops_being_a_discount_once_someone_has_bid(self):
         # With a standing bid the price column already shows that bid, and the
@@ -334,7 +337,7 @@ class FormatBidInfoTest(unittest.TestCase):
             price_eur=150.0, price_is_bid=True, bid_count=1,
             bid_minimum=80.0, bid_minimum_pct_of_median=30.0,
         )
-        info = mp.format_bid_info(listing)
+        info = crawl.format_bid_info(listing)
         self.assertIn("min. €80", info)
         self.assertNotIn("mediaan", info)
         self.assertIn("1 bod", info)
@@ -347,7 +350,7 @@ class FormatBidInfoTest(unittest.TestCase):
             price_eur=200.0, price_is_bid=True, bid_count=None,
             bid_minimum=120.0, bid_minimum_pct_of_median=35.0,
         )
-        info = mp.format_bid_info(listing)
+        info = crawl.format_bid_info(listing)
         self.assertIn("min. €120", info)
         self.assertNotIn("mediaan", info)
         self.assertIn("biedingen onbekend", info)
@@ -359,7 +362,7 @@ class FormatBidInfoTest(unittest.TestCase):
             price_eur=175.0, price_is_bid=True, bid_count=0,
             bid_minimum=174.99, bid_minimum_pct_of_median=51.0,
         )
-        info = mp.format_bid_info(listing)
+        info = crawl.format_bid_info(listing)
         self.assertIn("min. €175", info)
         self.assertNotIn("v. mediaan", info)
 
@@ -376,13 +379,13 @@ class BidOverviewOrderTest(unittest.TestCase):
     def test_without_headroom_the_open_bids_still_come_first(self):
         bid_on = self.bid("bid_on", bid_count=2, deal_score=90.0)
         still_open = self.bid("open", bid_count=0, bid_open=True, deal_score=10.0)
-        order = mp.bid_overview_order([bid_on, still_open])
+        order = console.bid_overview_order([bid_on, still_open])
         self.assertEqual([l.item_id for l in order], ["open", "bid_on"])
 
     def test_headroom_decides_the_order(self):
         small = self.bid("small", deal_score=90.0)
         large = self.bid("large", deal_score=10.0)
-        order = mp.bid_overview_order([small, large], {"small": 50.0, "large": 400.0})
+        order = console.bid_overview_order([small, large], {"small": 50.0, "large": 400.0})
         self.assertEqual([l.item_id for l in order], ["large", "small"])
 
     def test_unknown_headroom_sinks_below_the_known_ones(self):
@@ -390,12 +393,12 @@ class BidOverviewOrderTest(unittest.TestCase):
         # panel — but it doesn't disappear either.
         known = self.bid("known", deal_score=10.0)
         unknown = self.bid("unknown", bid_count=0, bid_open=True, deal_score=99.0)
-        order = mp.bid_overview_order([known, unknown], {"known": 25.0, "unknown": None})
+        order = console.bid_overview_order([known, unknown], {"known": 25.0, "unknown": None})
         self.assertEqual([l.item_id for l in order], ["known", "unknown"])
 
     def test_every_bid_listing_stays_in_the_panel(self):
         listings = [self.bid("a", deal_score=1.0), self.bid("b"), self.bid("c")]
-        order = mp.bid_overview_order(listings, {"a": 10.0})
+        order = console.bid_overview_order(listings, {"a": 10.0})
         self.assertEqual({l.item_id for l in order}, {"a", "b", "c"})
 
 
@@ -409,7 +412,7 @@ class BidHeadroomWiringTest(unittest.TestCase):
             make_listing(item_id="bid", price_is_bid=True, price_type="FAST_BID",
                          price_eur=100.0, bid_count=1, **ultegra),
         ] + [make_listing(item_id=f"fixed{i}", price_eur=500.0, **ultegra) for i in range(5)]
-        headroom = mp.bid_headroom_by_id(listings, median=1000.0)
+        headroom = console.bid_headroom_by_id(listings, median=1000.0)
         # Only bidding listings get a row, and the number is the value estimate
         # minus what it costs to get in — not the raw median.
         self.assertEqual(set(headroom), {"bid"})
@@ -422,14 +425,14 @@ class BidHeadroomWiringTest(unittest.TestCase):
             make_listing(item_id="bid", title="Zadelpen carbon", price_is_bid=True,
                          price_type="FAST_BID", price_eur=20.0, bid_count=1),
         ]
-        self.assertIsNone(mp.bid_headroom_by_id(listings, median=1000.0)["bid"])
+        self.assertIsNone(console.bid_headroom_by_id(listings, median=1000.0)["bid"])
 
     def test_a_bid_that_was_never_looked_up_has_no_headroom(self):
         listings = [
             make_listing(item_id="bid", price_is_bid=True, price_type="FAST_BID",
                          price_eur=None, bid_count=None),
         ]
-        self.assertIsNone(mp.bid_headroom_by_id(listings, median=1000.0)["bid"])
+        self.assertIsNone(console.bid_headroom_by_id(listings, median=1000.0)["bid"])
 
     def test_printing_the_overview_with_headroom_shows_the_column(self):
         listings = [
@@ -438,7 +441,7 @@ class BidHeadroomWiringTest(unittest.TestCase):
         ]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            mp.print_bid_overview(listings, headroom={"bid": 250.0})
+            console.print_bid_overview(listings, headroom={"bid": 250.0})
         printed = out.getvalue()
         self.assertIn("RUIMTE", printed)
         self.assertIn("€250", printed)
@@ -450,7 +453,7 @@ class BidHeadroomWiringTest(unittest.TestCase):
         ]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            mp.print_bid_overview(listings, headroom={"bid": None})
+            console.print_bid_overview(listings, headroom={"bid": None})
         self.assertNotIn("€0", out.getvalue())
 
 

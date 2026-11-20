@@ -12,6 +12,8 @@ sys.path.insert(0, str(REPO_ROOT))
 import racefiets_jev as mp  # noqa: E402
 import requests  # noqa: E402
 
+import crawl
+
 
 def _no_listing_pages(session, url):
     # A test that runs a whole query (run_for_query/main) with a database and
@@ -58,7 +60,7 @@ def repo_file(name: str) -> str:
     return str(REPO_ROOT / name)
 
 
-def make_listing(**overrides) -> mp.Listing:
+def make_listing(**overrides) -> crawl.Listing:
     """A Listing with sensible defaults; pass only the fields a test cares about."""
     fields = dict(
         item_id="m1",
@@ -75,7 +77,7 @@ def make_listing(**overrides) -> mp.Listing:
         url="https://www.marktplaats.nl/v/x/m1-test",
     )
     fields.update(overrides)
-    return mp.Listing(**fields)
+    return crawl.Listing(**fields)
 
 
 def raw_listing(**overrides) -> dict:

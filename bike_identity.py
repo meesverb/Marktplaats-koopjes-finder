@@ -44,6 +44,7 @@ from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Optional
 
+import crawl
 import racefiets_jev as mp
 import sleepers
 import upgrade as up
@@ -120,7 +121,7 @@ def reference_index(path: str = str(REFERENCE_PATH)) -> tuple:
     return rows, tuple(sorted({w for _, _, words in rows if words for w in words}))
 
 
-def reference_model(listing: mp.Listing) -> Optional[str]:
+def reference_model(listing: crawl.Listing) -> Optional[str]:
     """Het eerste referentiemodel waarvan het patroon past, in bestandsvolgorde
     — dezelfde regel als racefiets_jev.apply_reference_data(). Een patroon
     waarvan geen beginwoord in de tekst staat, wordt overgeslagen
@@ -487,7 +488,7 @@ class Identity:
         return " ".join(parts)
 
 
-def identify(listing: mp.Listing, link: Optional[dict] = None, rules: Optional[dict] = None) -> Identity:
+def identify(listing: crawl.Listing, link: Optional[dict] = None, rules: Optional[dict] = None) -> Identity:
     """Merk, model, uitvoering, bouwjaar en tijdperk van een advertentie.
     `link`: de eigen koppeling uit bike_link (db.list_bike_links()), die gaat
     voor wat de advertentie zegt. `rules`: {herkende sleutel: eigen model}
@@ -496,9 +497,9 @@ def identify(listing: mp.Listing, link: Optional[dict] = None, rules: Optional[d
     return resolve(recognize(listing), link, rules)
 
 
-def recognize(listing: mp.Listing) -> Identity:
+def recognize(listing: crawl.Listing) -> Identity:
     """Wat de advertentie zelf zegt, zonder koppeling of regel."""
-    title, text = listing.title or "", mp.spec_text(listing)
+    title, text = listing.title or "", crawl.spec_text(listing)
     brand = sleepers.named_brand(title) or sleepers.named_brand(text)
     brand = fold(brand) if brand else None
     title_words, text_words = _words(title), _words(text)

@@ -39,9 +39,9 @@ from pathlib import Path
 from typing import Optional
 
 import bike_identity as bi
+import crawl
 import db
 import racebikes as rb
-import racefiets_jev as mp
 import recheck as rc
 import upgrade as up
 import util
@@ -118,7 +118,7 @@ NOT_A_BIKE = "Die fiets staat niet in de database (alleen racefietsen hebben een
 @dataclass
 class Stored:
     """Wat de database over de fiets zelf weet."""
-    listing: mp.Listing
+    listing: crawl.Listing
     asking: Optional[float] = None  # de vraagprijs als die zeker is (asking_from_row()); anders None
     posted: str = ""
     first_seen: str = ""
@@ -165,7 +165,7 @@ def load_stored(db_path, item_id: str) -> Optional[Stored]:
             (item_id,))] if "listing_stats" in tables else [])
     finally:
         conn.close()
-    listing = mp.listing_from_row(row, site, {item_id: tuple(place)} if place else {})
+    listing = crawl.listing_from_row(row, site, {item_id: tuple(place)} if place else {})
     return Stored(listing, asking=asking_from_row(row), posted=extra["posted_date"] or "", first_seen=row["first_seen"] or "",
                   last_seen=row["last_seen"] or "", disappeared_at=row["disappeared_at"] or "",
                   days_online=row["days_online"], reserved_at=row["reserved_at"] or "",
@@ -304,8 +304,8 @@ def page_bids(page: Optional[dict]) -> list[tuple]:
         return []
     out = []
     for b in info.get("bids") or []:
-        if isinstance(b, dict) and mp.as_number(b.get("value")) is not None:
-            out.append((mp.as_number(b["value"]) / 100, day(mp.text_value(b.get("date")))))
+        if isinstance(b, dict) and crawl.as_number(b.get("value")) is not None:
+            out.append((crawl.as_number(b["value"]) / 100, day(crawl.text_value(b.get("date")))))
     return sorted(out, key=lambda b: b[1])
 
 
@@ -315,15 +315,15 @@ def page_facts(page: Optional[dict]) -> list[tuple]:
         return []
     facts = []
     seller = page.get("seller") if isinstance(page.get("seller"), dict) else {}
-    kind = mp.text_value(seller.get("sellerType"))
-    since = mp.text_value(seller.get("activeSinceDiff"))
+    kind = crawl.text_value(seller.get("sellerType"))
+    since = crawl.text_value(seller.get("activeSinceDiff"))
     if kind or since:
         who = SELLER_TYPES.get(kind, kind.lower() if kind else "")
         facts.append(("Verkoper", ", ".join(p for p in (who, f"op Marktplaats sinds {since}" if since else "") if p)))
     flags = page.get("flags") if isinstance(page.get("flags"), dict) else {}
     if isinstance(flags.get("shippable"), bool):
         facts.append(("Verzenden", "kan (volgens Marktplaats)" if flags["shippable"] else "alleen ophalen"))
-    tip = mp.text_value(((page.get("gallery") or {}) if isinstance(page.get("gallery"), dict) else {}).get(
+    tip = crawl.text_value(((page.get("gallery") or {}) if isinstance(page.get("gallery"), dict) else {}).get(
         "microTipText"))
     if tip:
         facts.append(("Label van de verkoper", f"„{tip}”"))
@@ -479,7 +479,7 @@ def comps_csv(comps: list, db_path) -> str:
     for c in comps:
         r = rows.get(c.item_id)
         text = f"{c.title} {(r['full_description'] or r['description'] or '') if r else ''}"
-        groupset = mp.detect_groupset(text)[0]
+        groupset = crawl.detect_groupset(text)[0]
         i = c.ident
         writer.writerow((
             c.item_id, c.title, f"{c.price:.0f}", i.year or "", i.material or "", groupset, i.speeds or "",
@@ -506,7 +506,7 @@ def owner_facts(intake_path) -> str:
     return (body if end == -1 else body[:end]).strip()
 
 
-def _bid_line(l: mp.Listing) -> str:
+def _bid_line(l: crawl.Listing) -> str:
     if l.bid_count is None:
         return "niet opgevraagd" if l.price_is_bid else ""
     parts = [f"{l.bid_count} bieding{'en' if l.bid_count != 1 else ''}" if l.bid_count else "nog geen bod"]
@@ -526,7 +526,7 @@ def _online_days(stored: Stored, page: Optional[dict], now: datetime) -> str:
     if stored.disappeared_at:
         return (f"{stored.days_online} dagen, verdwenen {day(stored.disappeared_at)}"
                 if stored.days_online is not None else f"verdwenen {day(stored.disappeared_at)}")
-    since = (mp.page_stats(page) or {}).get("since") if page else None
+    since = (crawl.page_stats(page) or {}).get("since") if page else None
     since = since or next((s[3] for s in reversed(stored.stats) if s[3]), None)
     start, how = (since, "volgens de advertentiepagina") if since else (stored.first_seen, "sinds de eerste ronde die hem zag")
     first = util.parse_time_utc(start)

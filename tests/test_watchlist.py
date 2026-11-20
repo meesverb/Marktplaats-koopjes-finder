@@ -18,6 +18,7 @@ from unittest import mock
 
 from helpers import make_listing, mp, repo_file
 
+import crawl
 import db
 
 
@@ -51,14 +52,14 @@ class TempDirTest(unittest.TestCase):
         def fake_collect(query, pages, delay, **crawl_options):
             crawled.append(query)
             self.crawl_options.append(crawl_options)
-            return mp.CrawlResult(listings_by_query.get(query, []), complete=True)
+            return crawl.CrawlResult(listings_by_query.get(query, []), complete=True)
 
         def fake_enrich(ls, delay, mode, session=None):
             pass
 
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.object(mp, "collect_listings", fake_collect), mock.patch.object(
-            mp, "enrich_bid_listings", fake_enrich
+        with mock.patch.object(crawl, "collect_listings", fake_collect), mock.patch.object(
+            crawl, "enrich_bid_listings", fake_enrich
         ):
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 code = mp.main(argv)

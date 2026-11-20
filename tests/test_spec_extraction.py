@@ -11,7 +11,9 @@ import json
 import unittest
 from pathlib import Path
 
-from helpers import mp
+from helpers import mp  # noqa: F401  (zet de repo-root in sys.path)
+
+import crawl
 
 FIXTURES_PATH = Path(__file__).parent / "fixtures" / "spec_extraction.json"
 
@@ -29,7 +31,7 @@ class ExtractSpecsFixtureTest(unittest.TestCase):
         )
         failures = []
         for i, fixture in enumerate(fixtures):
-            got = mp.extract_specs(fixture["text"])
+            got = crawl.extract_specs(fixture["text"])
             if got != fixture["expected"]:
                 failures.append(
                     f"[{i}] {fixture.get('note', '')}\n"
@@ -49,27 +51,27 @@ class ExtractSpecsUnitTest(unittest.TestCase):
         for text in ("Trek Emonda SL5 Disc 2022 - Maat 54", "Giant Defy Advanced Pro 1 Disc racefiets",
                      "Canyon Ultimate CF SL Disc 8.0"):
             with self.subTest(text=text):
-                self.assertEqual(mp.extract_specs(text).get("brake_type"), "schijfrem")
+                self.assertEqual(crawl.extract_specs(text).get("brake_type"), "schijfrem")
 
     def test_every_call_gets_its_own_dict(self):
         # The reading is remembered per text; a caller changing its dict must
         # not change what the next caller gets.
         text = "Cube Attain carbon, Shimano 105, schijfrem"
-        first = mp.extract_specs(text)
+        first = crawl.extract_specs(text)
         first["frame_material"] = "staal"
-        self.assertEqual(mp.extract_specs(text).get("frame_material"), "carbon")
+        self.assertEqual(crawl.extract_specs(text).get("frame_material"), "carbon")
 
     def test_a_disc_wheel_is_not_a_brake(self):
         for text in ("Tijdritfiets met disc wiel", "Cervelo P3 met disc achterwiel", "Zipp disc wheel"):
             with self.subTest(text=text):
-                self.assertNotIn("brake_type", mp.extract_specs(text))
+                self.assertNotIn("brake_type", crawl.extract_specs(text))
 
     def test_hydraulic_wording_still_wins_over_a_bare_disc(self):
-        specs = mp.extract_specs("Cube Attain SL Disc, hydraulische schijfremmen")
+        specs = crawl.extract_specs("Cube Attain SL Disc, hydraulische schijfremmen")
         self.assertEqual(specs.get("brake_type"), "hydraulische schijfrem")
 
     def test_no_specs_returns_empty_dict(self):
-        self.assertEqual(mp.extract_specs("Racefiets te koop, nette staat."), {})
+        self.assertEqual(crawl.extract_specs("Racefiets te koop, nette staat."), {})
 
     def test_frame_material_ignores_a_wheel_only_carbon_mention(self):
         # The known pitfall this fase's acceptance criteria calls out:
@@ -77,20 +79,20 @@ class ExtractSpecsUnitTest(unittest.TestCase):
         # the wheels are carbon. See mijn_fiets.md — Giant Defy Composite
         # 2012, carbon frame, *and* a separately-bought carbon wheelset is
         # exactly this shape of ad.
-        specs = mp.extract_specs(
+        specs = crawl.extract_specs(
             "Aluminium frame, later voorzien van een carbon wielset."
         )
         self.assertEqual(specs.get("frame_material"), "aluminium")
         self.assertEqual(specs.get("wheel_type"), "carbon")
 
     def test_frame_material_matches_a_structured_frame_clause(self):
-        specs = mp.extract_specs("Frame: carbon. Wielen: aluminium.")
+        specs = crawl.extract_specs("Frame: carbon. Wielen: aluminium.")
         self.assertEqual(specs.get("frame_material"), "carbon")
 
     def test_frame_material_uses_proximity_with_reversed_word_order(self):
         # Same ambiguity as test_frame_material_ignores_a_wheel_only_carbon_mention,
         # but the wheel word now comes before the frame word within the clause.
-        specs = mp.extract_specs(
+        specs = crawl.extract_specs(
             "Racefiets met carbon wielset gemonteerd op een aluminium frame."
         )
         self.assertEqual(specs.get("frame_material"), "aluminium")
@@ -99,18 +101,18 @@ class ExtractSpecsUnitTest(unittest.TestCase):
     def test_frame_material_stays_none_for_wheel_word_without_frame_word(self):
         # A clause naming only a wheel word, even with a material next to
         # it, is a wheel mention and must not be read as frame_material.
-        specs = mp.extract_specs("Nieuwe carbon wielset erop gemonteerd.")
+        specs = crawl.extract_specs("Nieuwe carbon wielset erop gemonteerd.")
         self.assertIsNone(specs.get("frame_material"))
         self.assertEqual(specs.get("wheel_type"), "carbon")
 
     def test_speeds_outside_racefiets_range_is_not_extracted(self):
-        self.assertNotIn("speeds", mp.extract_specs("21 speed kinderfiets"))
-        self.assertNotIn("speeds", mp.extract_specs("7 speed oldtimer"))
+        self.assertNotIn("speeds", crawl.extract_specs("21 speed kinderfiets"))
+        self.assertNotIn("speeds", crawl.extract_specs("7 speed oldtimer"))
 
     def test_model_year_requires_an_explicit_label(self):
-        self.assertNotIn("model_year", mp.extract_specs("Sinds 2015 in mijn bezit"))
+        self.assertNotIn("model_year", crawl.extract_specs("Sinds 2015 in mijn bezit"))
         self.assertEqual(
-            mp.extract_specs("Bouwjaar 2015").get("model_year"), "2015"
+            crawl.extract_specs("Bouwjaar 2015").get("model_year"), "2015"
         )
 
 
@@ -122,7 +124,7 @@ class ExtractListingSpecsTest(unittest.TestCase):
             make_listing(item_id="a", title="Carbon frame", description="velgrem"),
             make_listing(item_id="b", title="Niks bijzonders", description=""),
         ]
-        result = mp.extract_listing_specs(listings)
+        result = crawl.extract_listing_specs(listings)
         self.assertEqual(result["a"]["frame_material"], "carbon")
         self.assertEqual(result["a"]["brake_type"], "velrem")
         self.assertEqual(result["b"], {})
@@ -135,7 +137,7 @@ class SiteSpecsTest(unittest.TestCase):
 
     def parse(self, *attrs, title="Racefiets", description=""):
         from helpers import raw_listing
-        return mp.parse_listing(raw_listing(
+        return crawl.parse_listing(raw_listing(
             title=title, description=description,
             extendedAttributes=[{"key": k, "value": v} for k, v in attrs],
         ))
@@ -153,14 +155,14 @@ class SiteSpecsTest(unittest.TestCase):
         listing = self.parse(("material", "Carbon"), ("brakeType", "Schijfrem"),
                              title="Racefiets hydraulische schijfrem")
         self.assertEqual(
-            mp.listing_spec_dict(listing),
+            crawl.listing_spec_dict(listing),
             {"frame_material": "carbon", "brake_type": "hydraulische schijfrem"},
         )
 
     def test_site_specs_is_not_a_csv_column(self):
         # A new column would make every existing bargains log warn each run.
-        self.assertNotIn("site_specs", mp.LISTING_FIELDS)
-        self.assertEqual(mp.LISTING_FIELDS[-1], "sleeper_reasons")
+        self.assertNotIn("site_specs", crawl.LISTING_FIELDS)
+        self.assertEqual(crawl.LISTING_FIELDS[-1], "sleeper_reasons")
 
 
 if __name__ == "__main__":

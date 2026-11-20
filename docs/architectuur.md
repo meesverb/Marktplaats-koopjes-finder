@@ -20,7 +20,7 @@ Marktplaats ──► racefiets_jev.py ──► koopjes.db ──► dashboard.
 - **Wat alleen toont, kan niets veranderen**: pagina's lezen `koopjes.db` via `db.connect_readonly()`; alleen een ronde en een actie van de eigenaar openen hem met `db.connect()`.
 - **De server schrijft alleen wat de eigenaar zelf invoert**: markeringen, notities, biedingen, aan- en verkopen, keuzes op `/fiets`, oordelen op `/upgrade`, alles op `/flips`.
 - **Geen framework, geen build**: de HTML, CSS en JavaScript van de live pagina's staan als tekst in de Python-modules (`dashboard.py`, `racebikes.py`, `upgrade_test.py`, het overzicht in `koopjes.py`); alleen het rapport heeft een los sjabloon (`report_template.html`).
-- **Imports lopen in een kring** (`racefiets_jev` ↔ `report` ↔ `upgrade` ↔ `upgrade_test` ↔ `dashboard` ↔ `racebikes` ↔ `koopjes`); dat werkt omdat een deel binnen functies importeert. Zie stap C1 in `VERBETERPLAN.md` voordat je een nieuwe import bovenaan een module zet.
+- **Imports in lagen, zonder kring**: onderop `util`, `db`, `crawl` (Marktplaats lezen), daarboven het rekenwerk (`dealscore`, `valuation`, `scoring`, `upgrade`, `computers`, ...), dan de pagina's (`pages` en wat erop bouwt) en bovenaan de commando's (`racefiets_jev`, `koopjes`, `server`). Alle imports staan bovenaan, op drie na die een commando het dashboard laten bouwen dat zelf op dat commando bouwt (`dashboard.main → server`, `watches.main → dashboard, markets`). Een nieuwe import die een kring maakt: zie je aan `python <module>.py --help`.
 
 ## Crawlen en het rapport per zoekopdracht
 
@@ -28,11 +28,19 @@ Naslag: [zoeken.md](zoeken.md), [rapport.md](rapport.md), [rondes.md](rondes.md)
 
 ### `racefiets_jev.py`
 
-Het hele script: crawlen, scoren, rapporteren.
+Het commando: alle vlaggen (`parse_args()`), watchlists, per zoekopdracht `run_for_query()` (ophalen, filteren, scoren, wegschrijven naar de database, de oude CSV/JSON-bestanden en het rapport), `--detail-lookup`, en de regel per zoekopdracht voor het overzicht (`--summary-file`). Het werk zelf zit in de lagen hieronder.
+
+### `crawl.py`
+
+Alles wat Marktplaats leest: `Listing`, de zoekpagina's ophalen (`collect_listings()`, `collect_split()` voor een hele categorie), biedingen ophalen en toepassen (`enrich_bid_listings()`, `apply_bid_info()`), de advertentiepagina lezen, specs en groepset uit de tekst (`extract_specs()`, `detect_groupset()`), categorieën, en een rij uit `koopjes.db` terug als `Listing` (`listing_from_row()`). Hangt alleen van `db`, `computers` en `sleepers` af, zodat elke laag erboven hem kan gebruiken.
+
+### `dealscore.py`, `console.py`
+
+De dealscore (0-100, `score_listing()`), de koopjesvlag en de prijsstatistiek van een zoekopdracht; en wat een ronde in de console schrijft (de tabel, het bied-overzicht, de slapers).
 
 ### `report.py`
 
-Rapportpanelen (fase 6): Biedpaneel, Upgrade, Mijn fiets, plus de waardescore-kolom; alleen lezen uit `koopjes.db`.
+Het HTML-rapport per zoekopdracht (`render_html()`, `write_html()` met `report_template.html`) en zijn panelen (fase 6): Biedpaneel, Upgrade, Mijn fiets, plus de waardescore-kolom; alleen lezen uit `koopjes.db`.
 
 ### `report_template.html`
 

@@ -61,6 +61,7 @@ from typing import Optional
 
 import bike_identity as bi
 import computers as pc
+import crawl
 import db
 import distance as dm
 import flips as fl
@@ -68,7 +69,6 @@ from koopjes import YEAR_BUDGET_MAX
 import marks as mr
 import own_bids as ob
 import pages as pg
-import racefiets_jev as mp
 import recheck as rc
 import report
 import spares as sp
@@ -79,7 +79,7 @@ import views as vw
 
 MARKET_KEY = "racefietsen"
 PATH = pg.RACEBIKES_PATH
-CATEGORY = mp.ROAD_BIKE_CATEGORY
+CATEGORY = crawl.ROAD_BIKE_CATEGORY
 ACTIVE_DAYS = 8
 NEW_HOURS = 24
 # Waar een geaccepteerd bod heen gaat: een fiets op /flips (flips.OWN_MARKETS).
@@ -109,7 +109,7 @@ esc = html.escape
 @dataclass
 class Row:
     """Eén fiets met wat het zware deel uitrekende."""
-    listing: mp.Listing
+    listing: crawl.Listing
     frame: Optional[tuple]  # (laag, hoog) in cm, of None
     specs: str
     text: str  # de beschrijving: volledig als die opgehaald is, anders het fragment
@@ -236,7 +236,7 @@ def _recent(read: Read, rows: list, days: int) -> tuple[Optional[datetime], list
     if not seen:
         return None, []
     since = max(seen) - timedelta(days=days)
-    return max(seen), [(r, mp.listing_from_row(r, read.site, read.places)) for r in rows
+    return max(seen), [(r, crawl.listing_from_row(r, read.site, read.places)) for r in rows
                        if (last := util.parse_time(r["last_seen"])) and last >= since]
 
 
@@ -308,7 +308,7 @@ def _era(ident: bi.Identity) -> str:
     return f"{'schijfrem' if ident.disc else 'velgrem'}{', elektronisch' if ident.electronic else ''}"
 
 
-def estimate(listing: mp.Listing, ident: bi.Identity, pool: bi.Pool, factor: float) -> Estimate:
+def estimate(listing: crawl.Listing, ident: bi.Identity, pool: bi.Pool, factor: float) -> Estimate:
     """De verwachte verkoopprijs uit de vergelijkbare fietsen van de trede
     die bike_identity.comparables() kiest. Zijn er minstens MIN_FAST snel
     verkocht, dan de mediaan van hun laatste prijs, zonder afdingfactor: dat
@@ -351,7 +351,7 @@ def estimate(listing: mp.Listing, ident: bi.Identity, pool: bi.Pool, factor: flo
                     (len(for_sale), _median(for_sale)), len(found))
 
 
-def specs_line(listing: mp.Listing, year: Optional[int] = None) -> str:
+def specs_line(listing: crawl.Listing, year: Optional[int] = None) -> str:
     specs, _ = up.listing_specs(listing, year)
     parts = []
     if listing.frame_height:
@@ -408,7 +408,7 @@ def _own_years(idents: dict) -> dict:
     return {item_id: ident.year for item_id, ident in idents.items() if ident.own_year}
 
 
-def _make_row(base: Base, l: mp.Listing, ident: bi.Identity, new: bool, verdict: Optional[tuple]) -> Row:
+def _make_row(base: Base, l: crawl.Listing, ident: bi.Identity, new: bool, verdict: Optional[tuple]) -> Row:
     est = estimate(l, ident, base.pool, base.factor)
     entry = up.entry_price(l)
     margin = est.resale - entry.amount if est.resale is not None and entry.amount is not None else None
@@ -417,7 +417,7 @@ def _make_row(base: Base, l: mp.Listing, ident: bi.Identity, new: bool, verdict:
     ok, gain, why = verdict or (False, None, base.owner_problem)
     name = base.names.get(ident.exact, (ident.name or "", ""))[0] if ident.exact else ""
     return Row(
-        listing=l, frame=mp.frame_height_bounds(l.frame_height),
+        listing=l, frame=crawl.frame_height_bounds(l.frame_height),
         specs=specs_line(l, ident.year if ident.own_year else None),
         text=l.detail_text or l.description, new=new,
         flip_margin=margin, resale=est.resale, flip_basis=est.basis, flip_rough=est.level in bi.UNCERTAIN_LEVELS,
@@ -843,7 +843,7 @@ def load_fresh(db_path) -> Fresh:
                  home, distances, bought, str(db_path))
 
 
-def price_kind(l: mp.Listing) -> str:
+def price_kind(l: crawl.Listing) -> str:
     return pc.price_kind(l)
 
 
@@ -1877,7 +1877,7 @@ def rule_update(base: Base, db_path, form: dict) -> dict:
             "rules": rules_json(base)}
 
 
-def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
+def find_listing(db_path, item_id: str) -> Optional[crawl.Listing]:
     """Eén actieve racefiets, zoals load_listings() hem zou geven, maar
     zonder alle ~14.000 te lezen: een klik op weg of favoriet deed dat wel,
     en hield daarmee de database seconden bezet ("database is locked" bij de
@@ -1904,7 +1904,7 @@ def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
     last, newest = util.parse_time(row["last_seen"]), util.parse_time(newest)
     if last is None or newest is None or last < newest - timedelta(days=ACTIVE_DAYS):
         return None
-    return mp.listing_from_row(row, site, places)
+    return crawl.listing_from_row(row, site, places)
 
 
 def resale_for(db_path, item_id: str) -> Optional[float]:
@@ -2001,7 +2001,7 @@ def plan_years(db_path, budget: int) -> list[YearTarget]:
 def year_in(title: str, text: str) -> Optional[int]:
     """Het bouwjaar zoals de rest het leest (upgrade.listing_specs()): eerst
     een gelabeld jaar in de tekst, dan een jaartal in de titel."""
-    year = mp.extract_specs(f"{title} {text}").get("model_year")
+    year = crawl.extract_specs(f"{title} {text}").get("model_year")
     if year and str(year).isdigit():
         return int(year)
     return val.title_year(title)
@@ -2041,7 +2041,7 @@ def lookup_years(db_path, budget: int, session=None, log=print) -> int:
                 elif resp.status_code >= 400:
                     result = f"niet opgehaald (HTTP {resp.status_code})"
                 else:
-                    parsed = mp.parse_listing_page(resp.text)
+                    parsed = crawl.parse_listing_page(resp.text)
                     if parsed is None:
                         log(f"  {t.item_id}: de omschrijving staat niet waar hij stond — Marktplaats heeft "
                             "waarschijnlijk zijn paginastructuur gewijzigd; gestopt")
@@ -2052,8 +2052,8 @@ def lookup_years(db_path, budget: int, session=None, log=print) -> int:
                     # nog eens op: wat een ronde eruit bewaart, dus nu.
                     rc.save_page_specs(conn, t.item_id, attributes)
                     try:
-                        stats = mp.page_stats(mp.listing_page_data(resp.text))
-                    except mp.ListingPageError:
+                        stats = crawl.page_stats(crawl.listing_page_data(resp.text))
+                    except crawl.ListingPageError:
                         stats = None  # de omschrijving is waar het om ging
                     if stats:
                         db.record_stats(conn, t.item_id, now, stats, price_eur=t.price, source="omschrijving")

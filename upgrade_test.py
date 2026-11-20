@@ -43,11 +43,11 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 import computers as pc
+import crawl
 import db
 import marks as mr
 import pages as pg
 import racebikes as rb
-import racefiets_jev as mp
 import report
 import scoring as sc
 import upgrade as up
@@ -121,7 +121,7 @@ def make_judge(owner, config: dict, problem: str = "") -> Judge:
 
 @dataclass
 class Bike:
-    listing: mp.Listing
+    listing: crawl.Listing
     prepared: up.Prepared
     active: bool = True
     label: Optional[str] = None
@@ -129,7 +129,7 @@ class Bike:
     own_year: bool = False
 
 
-def _listings_by_id(conn: sqlite3.Connection, ids: Sequence[str]) -> list[mp.Listing]:
+def _listings_by_id(conn: sqlite3.Connection, ids: Sequence[str]) -> list[crawl.Listing]:
     """Fietsen die je beoordeelde maar die niet meer te koop zijn: uit de
     database, zoals racebikes ze leest."""
 
@@ -142,11 +142,11 @@ def _listings_by_id(conn: sqlite3.Connection, ids: Sequence[str]) -> list[mp.Lis
         chunk = list(ids[start:start + 500])
         rows = conn.execute(rb.SELECT + f" AND item_id IN ({','.join('?' * len(chunk))})",
                             (f"%/{rb.CATEGORY}/%", *chunk)).fetchall()
-        found += [mp.listing_from_row(r, site, {}) for r in rows]
+        found += [crawl.listing_from_row(r, site, {}) for r in rows]
     return found
 
 
-def load_bikes(db_path, listings: Optional[Sequence[mp.Listing]] = None,
+def load_bikes(db_path, listings: Optional[Sequence[crawl.Listing]] = None,
                prepared: Optional[dict] = None) -> list[Bike]:
     """De actieve racefietsen (`listings`, anders racebikes.load_listings())
     plus de fietsen met een oordeel die niet meer te koop zijn, met het
@@ -300,8 +300,8 @@ def queue(assessments: Sequence[Assessment]) -> list[str]:
         b = a.bike
         if not b.active or b.label or b.excluded or a.size == up.SIZE_WRONG:
             continue
-        category = mp.category_from_url(b.listing.url)
-        if category is not None and category != mp.ROAD_BIKE_CATEGORY:
+        category = crawl.category_from_url(b.listing.url)
+        if category is not None and category != crawl.ROAD_BIKE_CATEGORY:
             continue
         band = sum(1 for edge in QUEUE_BANDS if a.gain > edge)
         known = b.prepared.build.model_year is not None and b.prepared.build.groupset_tier is not None
@@ -579,7 +579,7 @@ TEXT_CHARS = 1500  # zoveel van de omschrijving bij de testkaart
 def _tier_names() -> dict:
     """{niveau: "Shimano Dura-Ace, SRAM Red, ..."} uit GROUPSET_CATALOG."""
     names: dict = {}
-    for brand, name, _, tier, _ in mp.GROUPSET_CATALOG:
+    for brand, name, _, tier, _ in crawl.GROUPSET_CATALOG:
         names.setdefault(str(tier), []).append(f"{brand} {name}")
     return {tier: ", ".join(found) for tier, found in names.items()}
 

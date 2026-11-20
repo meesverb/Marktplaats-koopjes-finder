@@ -3,22 +3,24 @@ import contextlib
 import io
 import unittest
 
-from helpers import FakeSession, mp, raw_listing, search_page
+from helpers import FakeSession, raw_listing, search_page
+
+import crawl
 
 
 class ParseListingTest(unittest.TestCase):
     def test_price_in_cents_becomes_euros(self):
-        listing = mp.parse_listing(raw_listing(priceInfo={"priceCents": 12550, "priceType": "FIXED"}))
+        listing = crawl.parse_listing(raw_listing(priceInfo={"priceCents": 12550, "priceType": "FIXED"}))
         self.assertEqual(listing.price_eur, 125.50)
         self.assertFalse(listing.price_is_bid)
 
     def test_zero_cents_means_no_price_except_when_free(self):
         # Marktplaats reports 0 cents for "no real price shown" as well as for
         # genuinely free items; only priceType tells them apart.
-        priceless = mp.parse_listing(raw_listing(priceInfo={"priceCents": 0, "priceType": "FAST_BID"}))
+        priceless = crawl.parse_listing(raw_listing(priceInfo={"priceCents": 0, "priceType": "FAST_BID"}))
         self.assertIsNone(priceless.price_eur)
 
-        free = mp.parse_listing(raw_listing(priceInfo={"priceCents": 0, "priceType": "FREE"}))
+        free = crawl.parse_listing(raw_listing(priceInfo={"priceCents": 0, "priceType": "FREE"}))
         self.assertEqual(free.price_eur, 0.0)
 
     def test_a_price_that_is_not_a_number_is_no_price(self):
@@ -27,18 +29,18 @@ class ParseListingTest(unittest.TestCase):
         # then leads every price sort and every bargain list.
         for cents in (True, "12550", None, {}):
             with self.subTest(cents=cents):
-                listing = mp.parse_listing(
+                listing = crawl.parse_listing(
                     raw_listing(priceInfo={"priceCents": cents, "priceType": "FIXED"})
                 )
                 self.assertIsNone(listing.price_eur)
 
     def test_a_null_price_block_is_no_price(self):
-        self.assertIsNone(mp.parse_listing(raw_listing(priceInfo=None)).price_eur)
+        self.assertIsNone(crawl.parse_listing(raw_listing(priceInfo=None)).price_eur)
 
     def test_bid_types_are_marked_as_bids(self):
         for price_type in ("FAST_BID", "MIN_BID"):
             with self.subTest(price_type=price_type):
-                listing = mp.parse_listing(
+                listing = crawl.parse_listing(
                     raw_listing(priceInfo={"priceCents": 5000, "priceType": price_type})
                 )
                 self.assertTrue(listing.price_is_bid)
@@ -46,17 +48,17 @@ class ParseListingTest(unittest.TestCase):
     def test_min_bid_has_no_minimum_until_looked_up(self):
         # A MIN_BID search result carries the seller's asking price, not the
         # minimum bid Marktplaats accepts — that needs the listing page.
-        listing = mp.parse_listing(raw_listing(priceInfo={"priceCents": 4750, "priceType": "MIN_BID"}))
+        listing = crawl.parse_listing(raw_listing(priceInfo={"priceCents": 4750, "priceType": "MIN_BID"}))
         self.assertEqual(listing.price_eur, 47.50)
         self.assertIsNone(listing.bid_minimum)
         self.assertIsNone(listing.bid_count)
 
     def test_relative_url_is_made_absolute(self):
-        listing = mp.parse_listing(raw_listing(vipUrl="/v/fietsen/m1-test"))
+        listing = crawl.parse_listing(raw_listing(vipUrl="/v/fietsen/m1-test"))
         self.assertEqual(listing.url, "https://www.marktplaats.nl/v/fietsen/m1-test")
 
     def test_attributes_are_read_from_either_group(self):
-        listing = mp.parse_listing(
+        listing = crawl.parse_listing(
             raw_listing(
                 attributes=[{"key": "condition", "value": "Zo goed als nieuw"}],
                 extendedAttributes=[{"key": "frameHeight", "value": "53 tot 57 cm"}],
@@ -68,7 +70,7 @@ class ParseListingTest(unittest.TestCase):
     def test_null_text_fields_become_empty_strings(self):
         # Marktplaats can send a key with a null value; .get()'s default only
         # covers a missing key, and a None reaches html.escape() in the report.
-        listing = mp.parse_listing(
+        listing = crawl.parse_listing(
             raw_listing(
                 title=None,
                 description=None,
@@ -90,7 +92,7 @@ class FetchPageTest(unittest.TestCase):
     def requested_url(self, query: str, page: int = 1) -> str:
         session = FakeSession({})
         with self.assertRaises(RuntimeError):  # the canned page has no data
-            mp.fetch_page(session, query, page)
+            crawl.fetch_page(session, query, page)
         return session.requested[0]
 
     def test_a_question_mark_does_not_become_a_query_string(self):
@@ -112,9 +114,9 @@ class CollectListingsTest(unittest.TestCase):
         page = search_page([raw_listing(itemId="", title="Eerste"),
                             raw_listing(itemId="", title="Tweede"),
                             raw_listing(itemId="m9", title="Met id")])
-        session = FakeSession({mp.BASE_URL + "/q/test/": page})
+        session = FakeSession({crawl.BASE_URL + "/q/test/": page})
         with contextlib.redirect_stderr(io.StringIO()):
-            listings = mp.collect_listings("test", pages=1, delay=0, session=session)
+            listings = crawl.collect_listings("test", pages=1, delay=0, session=session)
         self.assertEqual([l.title for l in listings], ["Met id"])
 
 
@@ -122,18 +124,18 @@ class CollectListingsTest(unittest.TestCase):
         # maxAllowedPageNumber present but null: .get()'s default doesn't
         # apply, and the page bookkeeping used to raise a TypeError on it.
         page = search_page([raw_listing(itemId="m1")], max_page=None)
-        session = FakeSession({mp.BASE_URL + "/q/test/": page})
+        session = FakeSession({crawl.BASE_URL + "/q/test/": page})
         with contextlib.redirect_stderr(io.StringIO()) as err:
-            listings = mp.collect_listings("test", pages=3, delay=0, session=session)
+            listings = crawl.collect_listings("test", pages=3, delay=0, session=session)
         self.assertEqual([l.item_id for l in listings], ["m1"])
         # Without a known limit, the page we just fetched is the last one.
         self.assertIn("pagina 1/1", err.getvalue())
 
     def test_a_page_limit_stays_a_whole_number(self):
         page = search_page([raw_listing(itemId="m1")], max_page=4)
-        session = FakeSession({mp.BASE_URL + "/q/test/": page})
+        session = FakeSession({crawl.BASE_URL + "/q/test/": page})
         with contextlib.redirect_stderr(io.StringIO()) as err:
-            mp.collect_listings("test", pages=1, delay=0, session=session)
+            crawl.collect_listings("test", pages=1, delay=0, session=session)
         self.assertIn("pagina 1/1 opgehaald", err.getvalue())
 
 
@@ -147,11 +149,11 @@ class FrameHeightTest(unittest.TestCase):
         }
         for value, expected in cases.items():
             with self.subTest(value=value):
-                self.assertEqual(mp.frame_height_bounds(value), expected)
+                self.assertEqual(crawl.frame_height_bounds(value), expected)
 
     def test_unparseable_value(self):
-        self.assertIsNone(mp.frame_height_bounds("onbekend"))
-        self.assertIsNone(mp.frame_height_bounds(""))
+        self.assertIsNone(crawl.frame_height_bounds("onbekend"))
+        self.assertIsNone(crawl.frame_height_bounds(""))
 
     def test_filter_keeps_overlapping_buckets(self):
         from helpers import make_listing
@@ -162,7 +164,7 @@ class FrameHeightTest(unittest.TestCase):
             make_listing(item_id="big", frame_height="61 cm of meer"),
             make_listing(item_id="unknown", frame_height=""),
         ]
-        kept = {l.item_id for l in mp.filter_by_frame_height(listings, 54, 60)}
+        kept = {l.item_id for l in crawl.filter_by_frame_height(listings, 54, 60)}
         # The 53-57 bucket partially overlaps 54-60, so it's kept; a listing
         # with no frame size at all drops out once the filter is active.
         self.assertEqual(kept, {"overlap"})
@@ -171,40 +173,40 @@ class FrameHeightTest(unittest.TestCase):
         from helpers import make_listing
 
         listings = [make_listing(frame_height="")]
-        self.assertEqual(mp.filter_by_frame_height(listings, None, None), listings)
+        self.assertEqual(crawl.filter_by_frame_height(listings, None, None), listings)
 
 
 class GroupsetDetectionTest(unittest.TestCase):
     def test_highest_tier_wins(self):
-        label, tier = mp.detect_groupset("Racefiets met Shimano 105 en Ultegra remmen")
+        label, tier = crawl.detect_groupset("Racefiets met Shimano 105 en Ultegra remmen")
         self.assertEqual(label, "Shimano Ultegra")
         self.assertEqual(tier, 5)
 
     def test_ambiguous_words_need_their_brand(self):
         # "Force" and "Record" are ordinary words; without the brand they must
         # not count, or every listing mentioning "in perfecte staat" matches.
-        self.assertEqual(mp.detect_groupset("Fiets in topstaat, force op de pedalen"), ("", None))
-        label, tier = mp.detect_groupset("SRAM Force groepset")
+        self.assertEqual(crawl.detect_groupset("Fiets in topstaat, force op de pedalen"), ("", None))
+        label, tier = crawl.detect_groupset("SRAM Force groepset")
         self.assertEqual(label, "SRAM Force")
         self.assertEqual(tier, 5)
 
     def test_105_is_not_matched_on_measurements(self):
-        self.assertEqual(mp.detect_groupset("Framemaat 105 cm"), ("", None))
-        self.assertEqual(mp.detect_groupset("Vraagprijs 105 euro"), ("", None))
-        label, _ = mp.detect_groupset("Shimano 105 groepset")
+        self.assertEqual(crawl.detect_groupset("Framemaat 105 cm"), ("", None))
+        self.assertEqual(crawl.detect_groupset("Vraagprijs 105 euro"), ("", None))
+        label, _ = crawl.detect_groupset("Shimano 105 groepset")
         self.assertEqual(label, "Shimano 105")
 
     def test_electronic_tag(self):
         for text in ("Ultegra Di2 elektronisch", "Shimano Ultegra R8050 Di2 groepset",
                      "Di2 Ultegra 11 speed", "Shimano Ultegra/Di2"):
             with self.subTest(text=text):
-                label, _ = mp.detect_groupset(text)
+                label, _ = crawl.detect_groupset(text)
                 self.assertEqual(label, "Shimano Ultegra (elektronisch)")
 
     def test_an_electronic_marker_needs_the_matching_brand(self):
         # Di2 is Shimano's; a Campagnolo groupset doesn't become electronic
         # because the seller also has a Shimano part lying around.
-        label, _ = mp.detect_groupset("Campagnolo Record, verkoop ook een Di2 achterderailleur")
+        label, _ = crawl.detect_groupset("Campagnolo Record, verkoop ook een Di2 achterderailleur")
         self.assertEqual(label, "Campagnolo Record")
 
     def test_an_electronic_marker_outside_the_groupset_name_does_not_count(self):
@@ -215,11 +217,11 @@ class GroupsetDetectionTest(unittest.TestCase):
         for text in ("Shimano 105, Di2-upgrade mogelijk",
                      "Shimano Ultegra groepset, 11 speed, banden nieuw, ook Di2 onderdelen"):
             with self.subTest(text=text):
-                label, _ = mp.detect_groupset(text)
+                label, _ = crawl.detect_groupset(text)
                 self.assertNotIn("elektronisch", label)
 
     def test_sram_markers(self):
-        label, _ = mp.detect_groupset("SRAM Force eTap AXS 12 speed")
+        label, _ = crawl.detect_groupset("SRAM Force eTap AXS 12 speed")
         self.assertEqual(label, "SRAM Force (elektronisch)")
 
     def test_sram_tier_without_the_brand_name_counts_next_to_axs(self):
@@ -229,16 +231,16 @@ class GroupsetDetectionTest(unittest.TestCase):
                             ("Cube met Red eTap", "SRAM Red (elektronisch)"),
                             ("Rival AXS 2x12", "SRAM Rival (elektronisch)")):
             with self.subTest(text=text):
-                self.assertEqual(mp.detect_groupset(text)[0], label)
+                self.assertEqual(crawl.detect_groupset(text)[0], label)
 
     def test_a_loose_axs_does_not_make_force_a_groupset(self):
         self.assertEqual(
-            mp.detect_groupset("Veel force in de sprint, stuurtje met AXS-knopjes kan erbij, zie foto's"),
+            crawl.detect_groupset("Veel force in de sprint, stuurtje met AXS-knopjes kan erbij, zie foto's"),
             ("", None),
         )
 
     def test_nothing_recognized(self):
-        self.assertEqual(mp.detect_groupset("Gewone stadsfiets"), ("", None))
+        self.assertEqual(crawl.detect_groupset("Gewone stadsfiets"), ("", None))
 
 
 class DominantCategoryTest(unittest.TestCase):
@@ -257,7 +259,7 @@ class DominantCategoryTest(unittest.TestCase):
                 }
             ]
         }
-        self.assertEqual(mp.extract_dominant_category(response), 2)
+        self.assertEqual(crawl.extract_dominant_category(response), 2)
 
     def test_a_null_histogram_count_does_not_end_the_run(self):
         # A null count comes back out of .get(key, 0) as None, and max() then
@@ -273,35 +275,35 @@ class DominantCategoryTest(unittest.TestCase):
                 }
             ]
         }
-        self.assertEqual(mp.extract_dominant_category(response), 2)
+        self.assertEqual(crawl.extract_dominant_category(response), 2)
 
     def test_no_dominant_category(self):
         response = {"facets": [{"key": "RelevantCategories", "categories": [{"id": 1}]}]}
-        self.assertIsNone(mp.extract_dominant_category(response))
-        self.assertIsNone(mp.extract_dominant_category({"facets": []}))
+        self.assertIsNone(crawl.extract_dominant_category(response))
+        self.assertIsNone(crawl.extract_dominant_category({"facets": []}))
 
     def test_null_facets_are_no_categories(self):
         for response in ({"facets": None}, {"facets": [{"key": "RelevantCategories", "categories": None}]}):
             with self.subTest(response=response):
-                self.assertIsNone(mp.extract_dominant_category(response))
-                self.assertEqual(mp.relevant_categories(response), [])
+                self.assertIsNone(crawl.extract_dominant_category(response))
+                self.assertEqual(crawl.relevant_categories(response), [])
 
 
 class BalancedJsonTest(unittest.TestCase):
     def test_stops_at_the_matching_brace(self):
         text = 'prefix {"a": {"b": 1}} suffix {"c": 2}'
         start = text.index("{")
-        self.assertEqual(mp.extract_balanced_json(text, start), {"a": {"b": 1}})
+        self.assertEqual(crawl.extract_balanced_json(text, start), {"a": {"b": 1}})
 
     def test_braces_inside_strings_are_ignored(self):
         text = r'{"a": "een } accolade", "b": "escaped \" quote"}'
         self.assertEqual(
-            mp.extract_balanced_json(text, 0),
+            crawl.extract_balanced_json(text, 0),
             {"a": "een } accolade", "b": 'escaped " quote'},
         )
 
     def test_unterminated_object(self):
-        self.assertIsNone(mp.extract_balanced_json('{"a": 1', 0))
+        self.assertIsNone(crawl.extract_balanced_json('{"a": 1', 0))
 
 
 if __name__ == "__main__":

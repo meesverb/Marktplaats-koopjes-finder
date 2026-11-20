@@ -12,7 +12,7 @@ from helpers import make_listing
 
 import computers as pc
 import db
-import racefiets_jev as mp
+import report
 
 CATALOG = pc.load_catalog()
 CONFIG = pc.load_config()
@@ -307,7 +307,7 @@ class PanelTest(unittest.TestCase):
     def test_report_has_the_tab(self):
         listing = make_listing(title="Garmin Edge 530")
         pc.apply_computer_signals([listing])
-        html = mp.render_html([listing], "garmin edge")
+        html = report.render_html([listing], "garmin edge")
         self.assertIn("Fietscomputers (1)", html)
         self.assertIn('id="panel-computers"', html)
 

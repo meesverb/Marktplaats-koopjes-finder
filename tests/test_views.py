@@ -8,10 +8,10 @@ from pathlib import Path
 
 from helpers import FakeResponse, FakeSession, close_databases_before_cleanup, make_listing
 
+import crawl
 import db
 import flips as fl
 import own_bids as ob
-import racefiets_jev as mp
 import recheck as rc
 import views as vw
 
@@ -44,16 +44,16 @@ class Case(unittest.TestCase):
 
 class PageStatsTest(Case):
     def test_read_from_the_listing_page(self):
-        page = mp.listing_page_data(listing_page())
-        self.assertEqual(mp.page_stats(page), {"views": 158, "favorites": 4, "since": "2026-09-27T12:00:00Z"})
-        self.assertIsNone(mp.page_stats({"stats": None}))
-        self.assertIsNone(mp.page_stats({}))
+        page = crawl.listing_page_data(listing_page())
+        self.assertEqual(crawl.page_stats(page), {"views": 158, "favorites": 4, "since": "2026-09-27T12:00:00Z"})
+        self.assertIsNone(crawl.page_stats({"stats": None}))
+        self.assertIsNone(crawl.page_stats({}))
 
     def test_a_bid_lookup_brings_the_stats_along_and_the_round_stores_them(self):
         (l,) = self.bikes("b1")
         l.price_type, l.price_eur = "FAST_BID", None
         session = FakeSession({l.url: listing_page(views=12, favorites=1)})
-        mp.enrich_bid_listings([l], 0, "fast", session=session)
+        crawl.enrich_bid_listings([l], 0, "fast", session=session)
         self.assertEqual(l.page_stats["source"], "biedopvraging")
         db.sync_listings(self.conn, "racefiets", [l], NOW.isoformat())
         (obs,) = db.list_stats(self.conn)["b1"]

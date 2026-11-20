@@ -32,8 +32,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
+import crawl
 import db
-import racefiets_jev as mp
 import util
 
 # (sleutel, wat de pagina zegt, patroon op de titel in kleine letters).
@@ -93,7 +93,7 @@ def kinds_of(title: str, category: str) -> list[str]:
 
 @dataclass
 class Part:
-    listing: mp.Listing
+    listing: crawl.Listing
     kinds: list = field(default_factory=list)
     category: str = ""
 
@@ -142,11 +142,11 @@ def load(db_path, item_id: Optional[str] = None) -> list[Part]:
         kinds = kinds_of(r["title"], category)
         if not kinds:
             continue
-        out.append(Part(mp.listing_from_row(r, {}, places), kinds, category))
+        out.append(Part(crawl.listing_from_row(r, {}, places), kinds, category))
     return out
 
 
-def find_listing(db_path, item_id: str) -> Optional[mp.Listing]:
+def find_listing(db_path, item_id: str) -> Optional[crawl.Listing]:
     """Eén onderdeel dat nu te koop is (voor favoriet/weg op /racefietsen)."""
     found = load(db_path, item_id)
     return found[0].listing if found else None

@@ -13,6 +13,7 @@ from unittest import mock
 
 from helpers import close_databases_before_cleanup, make_listing, mp
 
+import crawl
 import db
 
 
@@ -31,7 +32,7 @@ class TempDirTest(unittest.TestCase):
         # sweep tests below are about a crawl that did.
         def fake_collect(query, pages, delay, **crawl_options):
             note = "164 van de 165 resultaten gezien" if near_complete else "1 van de 26354 resultaten gezien"
-            return mp.CrawlResult(
+            return crawl.CrawlResult(
                 listings, complete=complete, note=note, near_complete=near_complete,
                 cut_off_ids=cut_off_ids,
             )
@@ -49,8 +50,8 @@ class TempDirTest(unittest.TestCase):
         args = mp.parse_args(argv)
 
         self.stderr = io.StringIO()
-        with mock.patch.object(mp, "collect_listings", fake_collect), mock.patch.object(
-            mp, "enrich_bid_listings", fake_enrich
+        with mock.patch.object(crawl, "collect_listings", fake_collect), mock.patch.object(
+            crawl, "enrich_bid_listings", fake_enrich
         ):
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
                 self.stderr
@@ -177,7 +178,7 @@ class DisappearanceSweepTest(TempDirTest):
     def test_a_crawl_that_says_nothing_about_completeness_never_sweeps(self):
         db_path = self.path("koopjes.db")
         self.run_query([make_listing(item_id="a")], ["--db", db_path, "--pages", "0"])
-        with mock.patch.object(mp, "collect_listings", lambda q, p, d, **kw: []):
+        with mock.patch.object(crawl, "collect_listings", lambda q, p, d, **kw: []):
             args = mp.parse_args(["--db", db_path, "--pages", "0", "--no-html", "--no-log", "--delay", "0",
                                   "--no-price-history", "--no-notify-better",
                                   "--history-file", self.path("history.json"),

@@ -21,6 +21,8 @@ from urllib.parse import parse_qs, urlparse
 
 from helpers import FakeResponse, FakeSession, make_listing, mp, raw_listing
 
+import crawl
+
 
 def response(listings, *, total=None, max_page=1, offset=None, facets=None) -> dict:
     data = {"listings": listings, "maxAllowedPageNumber": max_page, "facets": facets or []}
@@ -63,7 +65,7 @@ class RoutingSession(FakeSession):
 def collect(session, **kwargs):
     err = io.StringIO()
     with contextlib.redirect_stderr(err):
-        result = mp.collect_listings("test", kwargs.pop("pages", 0), 0, session=session, **kwargs)
+        result = crawl.collect_listings("test", kwargs.pop("pages", 0), 0, session=session, **kwargs)
     return result, err.getvalue()
 
 
@@ -71,7 +73,7 @@ class QueryEncodingTest(unittest.TestCase):
     def requested_url(self, query, page=1):
         session = FakeSession({})
         with self.assertRaises(RuntimeError):
-            mp.fetch_page(session, query, page)
+            crawl.fetch_page(session, query, page)
         return session.requested[0]
 
     def test_a_space_becomes_a_plus(self):
@@ -85,20 +87,20 @@ class QueryEncodingTest(unittest.TestCase):
 class PageOffsetTest(unittest.TestCase):
     def test_page_one_served_for_page_two_is_an_error(self):
         with self.assertRaises(RuntimeError):
-            mp.check_page_offset(response([], offset=0), 2)
+            crawl.check_page_offset(response([], offset=0), 2)
 
     def test_the_right_offset_passes(self):
-        mp.check_page_offset(response([], offset=30), 2)
-        mp.check_page_offset(response([], offset=0), 1)
+        crawl.check_page_offset(response([], offset=30), 2)
+        crawl.check_page_offset(response([], offset=0), 1)
 
     def test_a_response_without_pagination_info_passes(self):
-        mp.check_page_offset(response([]), 3)
+        crawl.check_page_offset(response([]), 3)
 
     def test_fetch_page_stops_on_a_redirect_to_page_one(self):
-        url = mp.BASE_URL + "/q/test/p/2/"
+        url = crawl.BASE_URL + "/q/test/p/2/"
         session = FakeSession({url: html(response([raw_listing()], offset=0))})
         with self.assertRaises(RuntimeError):
-            mp.fetch_page(session, "test", 2)
+            crawl.fetch_page(session, "test", 2)
 
 
 class FetchApiPageTest(unittest.TestCase):
@@ -109,8 +111,8 @@ class FetchApiPageTest(unittest.TestCase):
             seen.update(params, path=path)
             return json.dumps(response([], offset=60))
 
-        mp.fetch_api_page(RoutingSession(route), "giant defy", 3, "newest", (445, [462, 3112]))
-        self.assertEqual(seen["path"], mp.SEARCH_API_PATH)
+        crawl.fetch_api_page(RoutingSession(route), "giant defy", 3, "newest", (445, [462, 3112]))
+        self.assertEqual(seen["path"], crawl.SEARCH_API_PATH)
         self.assertEqual(seen["query"], ["giant defy"])
         self.assertEqual(seen["offset"], ["60"])
         self.assertEqual(seen["sortBy"], ["SORT_INDEX"])
@@ -126,7 +128,7 @@ class FetchApiPageTest(unittest.TestCase):
             seen.update(params)
             return json.dumps(response([]))
 
-        mp.fetch_api_page(RoutingSession(route), "x", 1)
+        crawl.fetch_api_page(RoutingSession(route), "x", 1)
         self.assertEqual(seen["sortBy"], ["OPTIMIZED"])
         self.assertNotIn("l1CategoryId", seen)
 
@@ -134,7 +136,7 @@ class FetchApiPageTest(unittest.TestCase):
         for body in ["<html>verificatie</html>", json.dumps({"iets": "anders"}), "[]"]:
             with self.subTest(body=body):
                 with self.assertRaises(RuntimeError):
-                    mp.fetch_api_page(RoutingSession(lambda p, q: body), "x", 1)
+                    crawl.fetch_api_page(RoutingSession(lambda p, q: body), "x", 1)
 
 
 class ResolveCategoriesTest(unittest.TestCase):
@@ -142,15 +144,15 @@ class ResolveCategoriesTest(unittest.TestCase):
         return response([], facets=category_facet(BIKES_L1, PARTS, BIKES, SPORT))
 
     def test_by_key_and_by_number(self):
-        self.assertEqual(mp.resolve_categories(self.facet(), ["fietsonderdelen"]), (445, [462]))
-        self.assertEqual(mp.resolve_categories(self.facet(), ["462", "Fietsen-Racefietsen"]), (445, [462, 464]))
+        self.assertEqual(crawl.resolve_categories(self.facet(), ["fietsonderdelen"]), (445, [462]))
+        self.assertEqual(crawl.resolve_categories(self.facet(), ["462", "Fietsen-Racefietsen"]), (445, [462, 464]))
 
     def test_a_main_category_covers_everything_under_it(self):
-        self.assertEqual(mp.resolve_categories(self.facet(), ["fietsen-en-brommers", "fietsonderdelen"]), (445, []))
+        self.assertEqual(crawl.resolve_categories(self.facet(), ["fietsen-en-brommers", "fietsonderdelen"]), (445, []))
 
     def test_unknown_category_lists_what_is_there(self):
         with self.assertRaises(ValueError) as ctx:
-            mp.resolve_categories(self.facet(), ["fietscomputers"])
+            crawl.resolve_categories(self.facet(), ["fietscomputers"])
         self.assertIn("fietsonderdelen (255)", str(ctx.exception))
 
     def test_a_category_without_results_today_is_skipped_if_another_has_them(self):
@@ -158,19 +160,19 @@ class ResolveCategoriesTest(unittest.TestCase):
         # query fetched nothing. Only when none of them is there is it an error.
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            result = mp.resolve_categories(self.facet(), ["fietsonderdelen", "fietscomputers"])
+            result = crawl.resolve_categories(self.facet(), ["fietsonderdelen", "fietscomputers"])
         self.assertEqual(result, (445, [462]))
         self.assertIn("'fietscomputers' heeft nu geen resultaten", err.getvalue())
 
     def test_categories_under_different_main_categories_are_refused(self):
         with self.assertRaises(ValueError):
-            mp.resolve_categories(self.facet(), ["fietsonderdelen", "wielrennen"])
+            crawl.resolve_categories(self.facet(), ["fietsonderdelen", "wielrennen"])
 
 
 class CompletenessTest(unittest.TestCase):
     def html_session(self, pages: dict):
         return FakeSession({
-            mp.BASE_URL + ("/q/test/" if n == 1 else f"/q/test/p/{n}/"): html(data)
+            crawl.BASE_URL + ("/q/test/" if n == 1 else f"/q/test/p/{n}/"): html(data)
             for n, data in pages.items()
         })
 
@@ -203,7 +205,7 @@ class CompletenessTest(unittest.TestCase):
             1: response([raw_listing(itemId="a")], total=2, max_page=2),
             2: response([raw_listing(itemId="b")], total=2, max_page=2),
         })
-        page_two = mp.BASE_URL + "/q/test/p/2/"
+        page_two = crawl.BASE_URL + "/q/test/p/2/"
         good = session.pages.pop(page_two)
         real_get = session.get
 
@@ -255,8 +257,8 @@ class CompletenessTest(unittest.TestCase):
         self.assertFalse(result.near_complete)
 
     def test_the_tolerance_grows_with_the_query(self):
-        self.assertEqual(mp.near_complete_max_missing(165), 3)
-        self.assertEqual(mp.near_complete_max_missing(1000), 20)
+        self.assertEqual(crawl.near_complete_max_missing(165), 3)
+        self.assertEqual(crawl.near_complete_max_missing(1000), 20)
 
     def test_a_shallow_crawl_is_not_complete(self):
         session = self.html_session({1: response([raw_listing(itemId="a")], total=2, max_page=2)})
@@ -281,7 +283,7 @@ class WindowCheckTest(unittest.TestCase):
 
     def html_session(self, pages: dict):
         return FakeSession({
-            mp.BASE_URL + ("/q/test/" if n == 1 else f"/q/test/p/{n}/"): html(data)
+            crawl.BASE_URL + ("/q/test/" if n == 1 else f"/q/test/p/{n}/"): html(data)
             for n, data in pages.items()
         })
 
@@ -300,7 +302,7 @@ class WindowCheckTest(unittest.TestCase):
         self.assertEqual(result.cut_off_ids, ())
 
     def check(self, page, history, kept=None):
-        return mp.window_too_small(page, history, set(page) if kept is None else kept)
+        return crawl.window_too_small(page, history, set(page) if kept is None else kept)
 
     def test_all_new_at_the_bottom_means_the_window_may_be_too_small(self):
         page = tuple(f"n{i}" for i in range(30))
@@ -333,7 +335,7 @@ class CategoryTest(unittest.TestCase):
             [raw_listing(itemId="fiets", categoryId=464), raw_listing(itemId="onderdeel", categoryId=462)],
             facets=category_facet(PARTS, BIKES),
         ))
-        result, err = collect(FakeSession({mp.BASE_URL + "/q/test/": page}))
+        result, err = collect(FakeSession({crawl.BASE_URL + "/q/test/": page}))
         self.assertEqual([l.item_id for l in result], ["fiets"])
         self.assertIn("fietsonderdelen (255)", err)
         self.assertIn("--category", err)
@@ -385,7 +387,7 @@ class CategoryTest(unittest.TestCase):
         page = html(response([raw_listing(itemId="fiets", categoryId=464),
                               raw_listing(itemId="onderdeel", categoryId=462)],
                              total=2, facets=category_facet(PARTS, BIKES)))
-        result, _ = collect(FakeSession({mp.BASE_URL + "/q/test/": page}), categories=["alle"])
+        result, _ = collect(FakeSession({crawl.BASE_URL + "/q/test/": page}), categories=["alle"])
         self.assertEqual({l.item_id for l in result}, {"fiets", "onderdeel"})
 
     def test_alle_with_another_category_is_refused(self):
@@ -399,7 +401,7 @@ class CategoryTest(unittest.TestCase):
     def test_newest_goes_through_the_api(self):
         session = RoutingSession(lambda p, q: json.dumps(response([raw_listing(itemId="a")], total=1)))
         result, _ = collect(session, sort="newest")
-        self.assertTrue(session.requested[0].startswith(mp.BASE_URL + mp.SEARCH_API_PATH))
+        self.assertTrue(session.requested[0].startswith(crawl.BASE_URL + crawl.SEARCH_API_PATH))
         self.assertTrue(result.complete)
 
 
@@ -410,19 +412,19 @@ class WantedAdTest(unittest.TestCase):
                   "Gazelle innergy display (Gezocht)", "Garmin Edge 530 gezocht"]
         for title in wanted:
             with self.subTest(title=title):
-                self.assertTrue(mp.is_wanted_ad(title))
+                self.assertTrue(crawl.is_wanted_ad(title))
 
     def test_a_sales_pitch_is_not_a_wanted_ad(self):
         for title in ["Veel gezocht model Giant Defy", "Gezochte kleur Canyon Endurace, maat 56",
                       "Gazelle Champion Mondial, veel gezocht!", "Wahoo Roam v1 — zeer gezocht",
                       "Wahoo Elemnt Roam v2"]:
             with self.subTest(title=title):
-                self.assertFalse(mp.is_wanted_ad(title))
+                self.assertFalse(crawl.is_wanted_ad(title))
 
     def test_collect_skips_them(self):
         page = html(response([raw_listing(itemId="zoek", title="Gezocht: Wahoo Roam"),
                               raw_listing(itemId="aanbod", title="Wahoo Roam")], total=2))
-        result, err = collect(FakeSession({mp.BASE_URL + "/q/test/": page}))
+        result, err = collect(FakeSession({crawl.BASE_URL + "/q/test/": page}))
         self.assertEqual([l.item_id for l in result], ["aanbod"])
         self.assertIn("gezocht", err)
         # Still counted as seen: it is online, just not for sale.
@@ -437,9 +439,9 @@ class FrameHeightDefaultTest(unittest.TestCase):
     ]
 
     def test_function_keeps_unknown_only_when_asked(self):
-        self.assertEqual({l.item_id for l in mp.filter_by_frame_height(self.listings, 54, 58)}, {"past"})
+        self.assertEqual({l.item_id for l in crawl.filter_by_frame_height(self.listings, 54, 58)}, {"past"})
         self.assertEqual(
-            {l.item_id for l in mp.filter_by_frame_height(self.listings, 54, 58, keep_unknown=True)},
+            {l.item_id for l in crawl.filter_by_frame_height(self.listings, 54, 58, keep_unknown=True)},
             {"past", "onbekend"},
         )
 
@@ -457,10 +459,10 @@ class SplitCrawlTest(unittest.TestCase):
     per staat en prijsschijf (gemeten 30-09-2026 op de racefietsen)."""
 
     def setUp(self):
-        self.addCleanup(setattr, mp, "SPLIT_CAP", mp.SPLIT_CAP)
-        self.addCleanup(setattr, mp, "SPLIT_PAGE_SIZE", mp.SPLIT_PAGE_SIZE)
-        self.addCleanup(setattr, mp, "SPLIT_PRICE_BANDS_EUR", mp.SPLIT_PRICE_BANDS_EUR)
-        mp.SPLIT_CAP, mp.SPLIT_PAGE_SIZE, mp.SPLIT_PRICE_BANDS_EUR = 4, 2, (0, 500)
+        self.addCleanup(setattr, mp, "SPLIT_CAP", crawl.SPLIT_CAP)
+        self.addCleanup(setattr, mp, "SPLIT_PAGE_SIZE", crawl.SPLIT_PAGE_SIZE)
+        self.addCleanup(setattr, mp, "SPLIT_PRICE_BANDS_EUR", crawl.SPLIT_PRICE_BANDS_EUR)
+        crawl.SPLIT_CAP, crawl.SPLIT_PAGE_SIZE, crawl.SPLIT_PRICE_BANDS_EUR = 4, 2, (0, 500)
 
     def run_split(self, everything):
         """`everything`: (id, staat, prijs in cent of None). Nieuwste eerst =
@@ -479,10 +481,10 @@ class SplitCrawlTest(unittest.TestCase):
             if q.get("sortOrder") == ["INCREASING"]:
                 items.reverse()
             limit, offset = int(q["limit"][0]), int(q["offset"][0])
-            page = items[offset:offset + limit] if offset < mp.SPLIT_CAP else []
+            page = items[offset:offset + limit] if offset < crawl.SPLIT_CAP else []
             listings = [raw_listing(itemId=i, title=f"Fiets {i}", priceInfo={"priceCents": c or 0,
                                     "priceType": "FIXED" if c else "FAST_BID"}) for i, _, c in page]
-            data = response(listings, total=len(items), max_page=-(-mp.SPLIT_CAP // limit),
+            data = response(listings, total=len(items), max_page=-(-crawl.SPLIT_CAP // limit),
                             facets=category_facet(BIKES, BIKES_L1) + condition)
             data["searchRequest"] = {"pagination": {"offset": offset, "limit": limit}}
             return json.dumps(data)

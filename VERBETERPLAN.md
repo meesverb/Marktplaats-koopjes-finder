@@ -248,7 +248,7 @@ rest veiliger.
   *Klaar als:* `dashboard.py` onder de 2.000 regels zit en test A1 groen is.
   *Gedaan 20-11-2026:* `dashboard.py` van 4.500 naar 1.566 regels, alles letterlijk verplaatst (een script dat definities verhuist en elke verwijzing bijwerkt): `pages.py` (paden, balk bovenaan, gedeelde CSS/JS, formulieren — zonder dit importeerden pagina's en dashboard elkaar), `flips_page.py`, `bike_page.py`, `start_page.py`, en verder dan gepland `server.py` (de webserver, `LiveCache`, de acties): `dashboard.py` is nu alleen de dashboards per markt; `python dashboard.py --serve` werkt als voorheen. C2d: `do_POST` leest het formulier één keer en kiest uit een routetabel (was zeven keer hetzelfde blok); `do_GET` is zo gelaten — 55 leesbare regels, een tabel was niet korter. Gecontroleerd: alle pagina's geven op een verse database exact dezelfde bytes als op 16-11.
 
-- [ ] **C3 — `racefiets_jev.py` (3.700 regels) in lagen.**
+- [x] **C3 — `racefiets_jev.py` (3.700 regels) in lagen.**
   *Wat, één laag per commit:* ophalen en parsen van zoekpagina's
   (`collect_listings` en wat erbij hoort) → `crawl.py`; de dealscore →
   `dealscore.py`; de console-tabellen → `console.py`; het HTML-rapport
@@ -258,6 +258,7 @@ rest veiliger.
   *Na C1.* *Klaar als:* elke vlag uit `docs/zoeken.md` nog werkt (de
   bestaande tests in `test_crawl.py`, `test_parsing.py`, `test_report.py`
   dekken dat) en één echte pagina nog te halen is.
+  *Gedaan 20-11-2026:* `racefiets_jev.py` van 3.700 naar 1.420 regels: `crawl.py` (Marktplaats lezen, 1.800), `dealscore.py`, `console.py`, en het HTML-rapport naar `report.py`. Geen oude namen opnieuw aangeboden: elke verwijzing (`mp.detect_groupset` enz., ook `patch.object(mp, ...)` in de tests) wijst nu naar de nieuwe module. Daarmee is de laatste kring weg: `report` en `upgrade` hangen niet meer onder `racefiets_jev`, dat ze nu bovenaan importeert. Gecontroleerd: tests, elke `--help`, één echte pagina `luidsprekers`.
 
 - [ ] **C4 — CSS en JavaScript uit de Python-strings naar eigen bestanden.**
   *Bevinding:* ruim 1.700 regels, waarvan ruim 1.400 JavaScript. Geen editor

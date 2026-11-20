@@ -37,6 +37,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 
+import crawl
+import dashboard
 import db
 import markets
 import racefiets_jev as mp
@@ -221,8 +223,8 @@ def load_config(path: Path) -> Config:
         if not isinstance(pages, int) or isinstance(pages, bool) or pages < 0:
             raise ConfigError(f"tijdslot {name!r}: 'pages' moet een geheel getal ≥ 0 zijn")
         sort = spec.get("sort", "newest")
-        if sort not in mp.SORT_OPTIONS:
-            raise ConfigError(f"tijdslot {name!r}: 'sort' moet een van {', '.join(mp.SORT_OPTIONS)} zijn")
+        if sort not in crawl.SORT_OPTIONS:
+            raise ConfigError(f"tijdslot {name!r}: 'sort' moet een van {', '.join(crawl.SORT_OPTIONS)} zijn")
         bid_lookup = spec.get("bid_lookup", "fast")
         if bid_lookup not in BID_LOOKUP_CHOICES:
             raise ConfigError(
@@ -873,7 +875,6 @@ def write_dashboard(config: Config, market=None):
     """dashboard.html: alle fietscomputers uit de database op één pagina; met
     `market` de sporthorloges (dashboard_horloges.html). Geeft (pad,
     dashboard.Dashboard) terug. Elk dashboard linkt naar de andere."""
-    import dashboard
 
     market = market or markets.COMPUTERS
     path = config.base_dir / dashboard_file(config, market)
@@ -981,7 +982,7 @@ def unmatched_listings(config: Config) -> list[dict]:
     finally:
         conn.close()
     return [
-        dict(row) for row in rows if mp.category_from_url(row["url"] or "") == mp.ROAD_BIKE_CATEGORY
+        dict(row) for row in rows if crawl.category_from_url(row["url"] or "") == crawl.ROAD_BIKE_CATEGORY
     ]
 
 

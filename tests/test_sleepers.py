@@ -11,7 +11,9 @@ from pathlib import Path
 
 from helpers import make_listing, mp, raw_listing
 
+import crawl
 import koopjes
+import report
 import sleepers
 
 PHOTO = "https://images.marktplaats.com/api/v1/hz-mp-pro-listing/images/{}?rule=ecg_mp_eps$_{}.jpg"
@@ -40,18 +42,18 @@ def cannondale_raw(**overrides) -> dict:
     return raw
 
 
-def cannondale(**overrides) -> mp.Listing:
+def cannondale(**overrides) -> crawl.Listing:
     """As the pipeline leaves it: no usable bid yet, first seen this run."""
-    listing = mp.parse_listing(cannondale_raw())
+    listing = crawl.parse_listing(cannondale_raw())
     listing.bid_count = 0
     listing.is_new = True
-    mp.apply_bid_flags([listing])
+    crawl.apply_bid_flags([listing])
     for name, value in overrides.items():
         setattr(listing, name, value)
     return listing
 
 
-def generic(**overrides) -> mp.Listing:
+def generic(**overrides) -> crawl.Listing:
     fields = dict(title="Racefiets", description="", price_eur=None, price_type="FAST_BID",
                   price_is_bid=True)
     fields.update(overrides)
@@ -75,7 +77,7 @@ class CannondaleRegressionTest(unittest.TestCase):
         self.assertTrue(sleepers.is_sleeper(listing))
 
     def test_once_reserved_it_is_left_out(self):
-        listing = mp.parse_listing(cannondale_raw(reserved=True))
+        listing = crawl.parse_listing(cannondale_raw(reserved=True))
         self.assertTrue(listing.reserved)
         self.assertEqual(sleepers.sleeper_signal(listing), (None, ""))
 
@@ -86,7 +88,7 @@ class CannondaleRegressionTest(unittest.TestCase):
 
 class ParseListingTest(unittest.TestCase):
     def test_search_result_fields_are_kept(self):
-        listing = mp.parse_listing(cannondale_raw())
+        listing = crawl.parse_listing(cannondale_raw())
         self.assertTrue(listing.thin_content)
         self.assertFalse(listing.reserved)
         # Three at most, the large size, in order.
@@ -96,19 +98,19 @@ class ParseListingTest(unittest.TestCase):
     def test_missing_or_odd_picture_data_leaves_no_photos(self):
         for pictures in (None, [], ["x"], [{"largeUrl": None}], [{"largeUrl": "//images/x.jpg"}]):
             with self.subTest(pictures=pictures):
-                self.assertEqual(mp.parse_listing(raw_listing(pictures=pictures)).image_urls, "")
+                self.assertEqual(crawl.parse_listing(raw_listing(pictures=pictures)).image_urls, "")
 
     def test_flags_only_count_when_marktplaats_says_true(self):
-        listing = mp.parse_listing(raw_listing(thinContent="true", reserved=1))
+        listing = crawl.parse_listing(raw_listing(thinContent="true", reserved=1))
         self.assertFalse(listing.thin_content)
         self.assertFalse(listing.reserved)
 
     def test_new_fields_come_last_so_existing_csv_columns_stay_put(self):
         self.assertEqual(
-            mp.LISTING_FIELDS[-5:],
+            crawl.LISTING_FIELDS[-5:],
             ["thin_content", "reserved", "image_urls", "sleeper_score", "sleeper_reasons"],
         )
-        self.assertEqual(mp.LISTING_FIELDS.index("deal_reasons"), len(mp.LISTING_FIELDS) - 6)
+        self.assertEqual(crawl.LISTING_FIELDS.index("deal_reasons"), len(crawl.LISTING_FIELDS) - 6)
 
 
 class GenericTitleTest(unittest.TestCase):
@@ -239,7 +241,7 @@ class ReportTest(unittest.TestCase):
     def test_the_report_has_a_sleepers_tab_with_its_count(self):
         listing = cannondale()
         sleepers.apply_sleeper_signals([listing])
-        html = mp.render_html([listing, make_listing(item_id="m2")], "racefiets")
+        html = report.render_html([listing, make_listing(item_id="m2")], "racefiets")
         self.assertIn('data-panel="sleepers">Slapers (1)', html)
         self.assertIn('id="panel-sleepers"', html)
 

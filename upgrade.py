@@ -44,8 +44,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Sequence
 
+import crawl
 import db
-import racefiets_jev as mp
+import dealscore
 import scoring as sc
 import valuation as val
 
@@ -92,7 +93,7 @@ DEFAULT_SIZE_TOLERANCE_CM = 2.0
 # Evenveel waarnemingen als score_listing() eist voordat het 2e-hands
 # gemiddelde meetelt: onder twee sightings is het geen gemiddelde maar een
 # toevalstreffer. Bewust dezelfde drempel, zodat de twee niet uit elkaar lopen.
-MIN_MARKET_OBSERVATIONS = mp.SCORE_MARKET_MIN_OBSERVATIONS
+MIN_MARKET_OBSERVATIONS = dealscore.SCORE_MARKET_MIN_OBSERVATIONS
 
 SIZE_FITS = "past"
 SIZE_WRONG = "buiten de maat"
@@ -115,7 +116,7 @@ def size_verdict(
     zowel voor "veld leeg" als voor "onleesbaar", en dat is iets anders dan
     een maat die niet past. scoring.fits_frame_size() vouwt die twee samen tot
     False en laat de afweging bewust aan de aanroeper; dit is die afweging."""
-    bounds = mp.frame_height_bounds(frame_height)
+    bounds = crawl.frame_height_bounds(frame_height)
     if bounds is None:
         return SIZE_UNKNOWN
     return SIZE_FITS if sc.fits_frame_size(bounds, target_cm, tolerance_cm) else SIZE_WRONG
@@ -255,7 +256,7 @@ class EffectivePrice:
     asking_eur: Optional[float] = None
 
 
-def entry_price(listing: mp.Listing) -> EffectivePrice:
+def entry_price(listing: crawl.Listing) -> EffectivePrice:
     """Wat het kost om een biedadvertentie binnen te komen.
 
     De valkuil uit CLAUDE.md zit hier: bij een MIN_BID-advertentie is de prijs
@@ -291,7 +292,7 @@ def entry_price(listing: mp.Listing) -> EffectivePrice:
 
 
 def effective_price(
-    listing: mp.Listing, negotiation_factor: float = val.NEGOTIATION_DEFAULT[1]
+    listing: crawl.Listing, negotiation_factor: float = val.NEGOTIATION_DEFAULT[1]
 ) -> EffectivePrice:
     """De prijs waarop gerekend wordt (§7): vraagprijs maal onderhandelings-
     factor bij een vaste prijs, de instapprijs bij een biedadvertentie.
@@ -329,7 +330,7 @@ class ValueEstimate:
 SEGMENT_MIN_N = val.MIN_COMPS_FOR_A_HARD_NUMBER
 
 
-def segment_keys(listing: mp.Listing) -> list[tuple]:
+def segment_keys(listing: crawl.Listing) -> list[tuple]:
     """The segments a listing belongs to, narrowest first.
 
     Frame material and groupset tier are the base: the two things that set a
@@ -342,11 +343,11 @@ def segment_keys(listing: mp.Listing) -> list[tuple]:
     first run with segments valued a Campagnolo Record 10-speed bike at the
     median of both. Rim or disc is the nearest thing to an age the listing
     usually gives."""
-    material = mp.listing_spec_dict(listing).get("frame_material")
+    material = crawl.listing_spec_dict(listing).get("frame_material")
     if not material or listing.groupset_tier is None:
         return []
     base = (material, listing.groupset_tier)
-    route = brake_route(mp.listing_spec_dict(listing).get("brake_type"))
+    route = brake_route(crawl.listing_spec_dict(listing).get("brake_type"))
     if route == ROUTE_UNKNOWN:
         return [base]
     return [base + (route,), base]
@@ -364,7 +365,7 @@ class SegmentBenchmarks:
 
     prices: dict
 
-    def median_for(self, listing: mp.Listing) -> Optional[tuple[float, int, tuple]]:
+    def median_for(self, listing: crawl.Listing) -> Optional[tuple[float, int, tuple]]:
         """(median, n, key) of the narrowest segment with enough bikes in
         it, without the listing itself — its own price would pull the
         benchmark toward itself."""
@@ -375,11 +376,11 @@ class SegmentBenchmarks:
         return None
 
 
-def segment_benchmarks(listings: Sequence[mp.Listing]) -> SegmentBenchmarks:
+def segment_benchmarks(listings: Sequence[crawl.Listing]) -> SegmentBenchmarks:
     prices: dict = {}
     for listing in listings:
-        category = mp.category_from_url(listing.url)
-        if category is not None and category != mp.ROAD_BIKE_CATEGORY:
+        category = crawl.category_from_url(listing.url)
+        if category is not None and category != crawl.ROAD_BIKE_CATEGORY:
             continue
         if not listing.price_is_asking or not listing.price_eur or listing.price_eur <= 0:
             continue
@@ -389,7 +390,7 @@ def segment_benchmarks(listings: Sequence[mp.Listing]) -> SegmentBenchmarks:
 
 
 def estimate_value(
-    listing: mp.Listing,
+    listing: crawl.Listing,
     median_eur: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
     segments: Optional[SegmentBenchmarks] = None,
@@ -446,7 +447,7 @@ class ValueScore:
 
 
 def value_score(
-    listing: mp.Listing,
+    listing: crawl.Listing,
     median_eur: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
     segments: Optional[SegmentBenchmarks] = None,
@@ -479,7 +480,7 @@ class BidRow:
     """Eén regel van het biedpaneel. `headroom_eur` is de speelruimte uit §7:
     geschatte waarde − instapprijs. None betekent onbekend, niet nul."""
 
-    listing: mp.Listing
+    listing: crawl.Listing
     estimate: ValueEstimate
     entry: EffectivePrice
     headroom_eur: Optional[float]
@@ -487,7 +488,7 @@ class BidRow:
 
 
 def bid_headroom(
-    listing: mp.Listing,
+    listing: crawl.Listing,
     median_eur: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
     segments: Optional[SegmentBenchmarks] = None,
@@ -510,7 +511,7 @@ def bid_headroom(
 
 
 def bid_panel(
-    listings: Sequence[mp.Listing],
+    listings: Sequence[crawl.Listing],
     median_eur: Optional[float] = None,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
     segments: Optional[SegmentBenchmarks] = None,
@@ -540,7 +541,7 @@ def bid_panel(
 # --- De upgrade-finder -----------------------------------------------------
 
 
-def listing_specs(listing: mp.Listing, year: Optional[int] = None) -> tuple[dict[str, str], Optional[str]]:
+def listing_specs(listing: crawl.Listing, year: Optional[int] = None) -> tuple[dict[str, str], Optional[str]]:
     """extract_specs() voor de kwaliteitsscore, met één aanvulling: het
     bouwjaar uit de titel als de tekst geen gelabeld bouwjaar heeft.
 
@@ -556,7 +557,7 @@ def listing_specs(listing: mp.Listing, year: Optional[int] = None) -> tuple[dict
     `year`: een bouwjaar dat de eigenaar zelf invulde (/racefietsen,
     bike_link). Dat gaat voor de tekst, zodat het leeftijdsverval ermee
     rekent."""
-    specs = mp.listing_spec_dict(listing)
+    specs = crawl.listing_spec_dict(listing)
     if year is not None:
         return {**specs, "model_year": str(year)}, f"bouwjaar {year} door jou ingevuld"
     if specs.get("model_year"):
@@ -569,7 +570,7 @@ def listing_specs(listing: mp.Listing, year: Optional[int] = None) -> tuple[dict
 
 @dataclass(frozen=True)
 class Candidate:
-    listing: mp.Listing
+    listing: crawl.Listing
     quality: sc.QualityScore
     gain: float
     effective: EffectivePrice
@@ -586,7 +587,7 @@ class Candidate:
 
 @dataclass(frozen=True)
 class Rejected:
-    listing: mp.Listing
+    listing: crawl.Listing
     reason: str
 
 
@@ -608,7 +609,7 @@ DETAIL_LOOKUP_LIMIT = 10
 
 
 def detail_lookup_targets(
-    listings: Sequence[mp.Listing],
+    listings: Sequence[crawl.Listing],
     *,
     budgets: Budgets,
     target_size_cm: float,
@@ -616,7 +617,7 @@ def detail_lookup_targets(
     size_tolerance_cm: float = DEFAULT_SIZE_TOLERANCE_CM,
     negotiation_factor: float = val.NEGOTIATION_DEFAULT[1],
     limit: int = DETAIL_LOOKUP_LIMIT,
-) -> list[mp.Listing]:
+) -> list[crawl.Listing]:
     """De advertenties waarvan de volledige omschrijving het verschil kan
     maken: dezelfde poorten als find_upgrades() behalve de score — complete
     racefiets, maat niet fout, effectieve prijs binnen het ruimste budget —
@@ -628,8 +629,8 @@ def detail_lookup_targets(
     for listing in listings:
         if listing.detail_text:
             continue
-        category = mp.category_from_url(listing.url)
-        if category is not None and category != mp.ROAD_BIKE_CATEGORY:
+        category = crawl.category_from_url(listing.url)
+        if category is not None and category != crawl.ROAD_BIKE_CATEGORY:
             continue
         if size_verdict(listing.frame_height, target_size_cm, size_tolerance_cm) == SIZE_WRONG:
             continue
@@ -669,13 +670,13 @@ class Prepared:
     reasons: tuple
 
 
-def prepare_candidate(listing: mp.Listing, year: Optional[int] = None) -> Prepared:
+def prepare_candidate(listing: crawl.Listing, year: Optional[int] = None) -> Prepared:
     specs, year_note = listing_specs(listing, year)
     build = sc.build_from_listing(
         specs=specs,
         groupset_label=listing.groupset,
         groupset_tier=listing.groupset_tier,
-        text=mp.spec_text(listing),
+        text=crawl.spec_text(listing),
         label=listing.title,
     )
     route = brake_route(build.brake_type)
@@ -713,7 +714,7 @@ def finish_candidate(
 
 
 def score_candidate(
-    listing: mp.Listing,
+    listing: crawl.Listing,
     *,
     config: dict,
     owner_wheels: tuple = (None, False),
@@ -732,7 +733,7 @@ def score_candidate(
                             like_owner=like_owner, notes=notes)
 
 
-def precheck(listing: mp.Listing, target_size_cm: float, size_tolerance_cm: float = DEFAULT_SIZE_TOLERANCE_CM,
+def precheck(listing: crawl.Listing, target_size_cm: float, size_tolerance_cm: float = DEFAULT_SIZE_TOLERANCE_CM,
              allow_unknown_size: bool = True) -> tuple[str, Optional[str]]:
     """(maatoordeel, reden om af te wijzen of None): de poorten vóór de
     score. Gevonden in een echte run: met een powermeter-watchlist in
@@ -740,8 +741,8 @@ def precheck(listing: mp.Listing, target_size_cm: float, size_tolerance_cm: floa
     powermeter en een kettingblad. Een URL zonder herkenbare categorie mag
     door — onbekend is niet hetzelfde als "geen fiets"."""
     size = size_verdict(listing.frame_height, target_size_cm, size_tolerance_cm)
-    category = mp.category_from_url(listing.url)
-    if category is not None and category != mp.ROAD_BIKE_CATEGORY:
+    category = crawl.category_from_url(listing.url)
+    if category is not None and category != crawl.ROAD_BIKE_CATEGORY:
         return size, f"geen complete racefiets (categorie {category})"
     if size == SIZE_WRONG:
         return size, f"{SIZE_WRONG} ({listing.frame_height})"
@@ -751,7 +752,7 @@ def precheck(listing: mp.Listing, target_size_cm: float, size_tolerance_cm: floa
 
 
 def decide(
-    listing: mp.Listing,
+    listing: crawl.Listing,
     scored: Scored,
     *,
     size: str,
@@ -808,7 +809,7 @@ ASSUMED_LABELS = {"frame_material": "materiaal", "frame_class": "frameklasse", "
 
 
 def find_upgrades(
-    listings: Sequence[mp.Listing],
+    listings: Sequence[crawl.Listing],
     *,
     baseline: float,
     config: dict,
@@ -1047,7 +1048,7 @@ def fetch_candidate_listings(
     *,
     window_days: int = val.DEFAULT_COMP_WINDOW_DAYS,
     query: Optional[str] = None,
-) -> list[mp.Listing]:
+) -> list[crawl.Listing]:
     """Advertenties uit `koopjes.db` als `Listing`, klaar voor find_upgrades().
 
     Anders dan fetch_comp_candidates() in fase 3 blijven biedadvertenties hier
@@ -1079,7 +1080,7 @@ def fetch_candidate_listings(
         params.append(query)
 
     site_specs = db.read_listing_specs(conn, source=db.SITE_SPEC_SOURCE)
-    return [mp.listing_from_row(row, site_specs) for row in conn.execute("\n".join(sql), params).fetchall()]
+    return [crawl.listing_from_row(row, site_specs) for row in conn.execute("\n".join(sql), params).fetchall()]
 
 
 # --- Uitvoer ---------------------------------------------------------------
@@ -1349,7 +1350,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     finally:
         conn.close()
 
-    prices = mp.market_prices(listings)
+    prices = crawl.market_prices(listings)
     median_eur = statistics.median(prices) if prices else None
 
     print(f"Baseline eigen fiets ({bike.label}): {baseline:.0f}/100")

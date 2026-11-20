@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 from helpers import close_databases_before_cleanup, make_listing, raw_listing
 
+import crawl
 import db
 import distance as dm
-import racefiets_jev as mp
 import recheck as rc
 
 HOME = (52.0952, 5.1161)  # rond 3511AB, zoals op 29-09-2026 gemeten
@@ -84,12 +84,12 @@ class DistanceTest(unittest.TestCase):
         self.db = str(self.dir / "koopjes.db")
 
     def test_search_results_give_a_place_but_not_for_a_country_only_seller(self):
-        l = mp.parse_listing(raw_listing(location={"cityName": "Zwolle", "latitude": 52.51, "longitude": 6.09,
+        l = crawl.parse_listing(raw_listing(location={"cityName": "Zwolle", "latitude": 52.51, "longitude": 6.09,
                                                    "distanceMeters": -1000}, priorityProduct="DAGTOPPER",
                                          traits=["DAG_TOPPER_7DAYS", "PACKAGE_PREMIUM", 3]))
         self.assertEqual((l.latitude, l.longitude, l.promotion, l.traits),
                          (52.51, 6.09, "DAGTOPPER", "DAG_TOPPER_7DAYS PACKAGE_PREMIUM"))
-        country = mp.parse_listing(raw_listing(location={"latitude": 0, "longitude": 0, "onCountryLevel": True},
+        country = crawl.parse_listing(raw_listing(location={"latitude": 0, "longitude": 0, "onCountryLevel": True},
                                                priorityProduct="NONE"))
         self.assertEqual((country.latitude, country.longitude, country.promotion), (None, None, ""))
 

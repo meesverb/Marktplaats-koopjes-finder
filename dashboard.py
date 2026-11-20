@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 import computers as pc
+import crawl
 import db
 import distance as dm
 import flips as fl
@@ -55,7 +56,6 @@ import marks as mr
 import own_bids as ob
 import pages as pg
 import patterns as pt
-import racefiets_jev as mp
 import trades as tr
 import util
 from util import euro, local_time
@@ -70,7 +70,7 @@ DEFAULT_OUT = "dashboard.html"
 class Unknown:
     """Een advertentie zonder bekend model: een computer (of horloge) met
     onbekend model, of iets dat is uitgefilterd."""
-    listing: mp.Listing
+    listing: crawl.Listing
     kind: str
     reason: str
 
@@ -301,7 +301,7 @@ def load_active_listings(db_path, categories: Sequence[str], settings: dict):
         last = util.parse_time(r["last_seen"])
         if last is None or last < active_since:
             continue
-        listing = mp.listing_from_row(r)
+        listing = crawl.listing_from_row(r)
         first = util.parse_time(r["first_seen"])
         if first and first >= new_since:
             new_ids.add(listing.item_id)

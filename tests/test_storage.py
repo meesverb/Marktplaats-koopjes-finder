@@ -12,6 +12,8 @@ from pathlib import Path
 
 from helpers import FakeSession, config_page, make_listing, mp, read_csv_rows
 
+import crawl
+
 
 class TempDirTest(unittest.TestCase):
     def setUp(self):
@@ -325,7 +327,7 @@ class PriceHistoryTest(TempDirTest):
             {listing.url: config_page({"currentMinimumBid": 3500, "bids": [{"value": True}]})}
         )
         with contextlib.redirect_stderr(io.StringIO()):
-            mp.enrich_bid_listings([listing], delay=0, mode="all", session=session)
+            crawl.enrich_bid_listings([listing], delay=0, mode="all", session=session)
         self.assertEqual(listing.bid_count, 0)
         self.assertEqual(mp.append_reference_price_observations(path, [listing]), 1)
         self.assertEqual([r["item_id"] for r in read_csv_rows(path)], ["onbruikbaar"])

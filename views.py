@@ -44,8 +44,8 @@ from typing import Optional
 
 import requests
 
+import crawl
 import db
-import racefiets_jev as mp
 import recheck as rc
 import util
 
@@ -167,13 +167,13 @@ def measure(conn: sqlite3.Connection, target: Target, session=None, now: Optiona
     if resp.status_code >= 400:
         return f"niet opgehaald (HTTP {resp.status_code})"
     try:
-        page = mp.listing_page_data(resp.text)
-    except mp.ListingPageError as exc:
+        page = crawl.listing_page_data(resp.text)
+    except crawl.ListingPageError as exc:
         return f"pagina niet te lezen ({exc}) — Marktplaats heeft waarschijnlijk zijn paginastructuur gewijzigd"
-    stats = mp.page_stats(page)
+    stats = crawl.page_stats(page)
     if not stats:
         return "geen weergaven op de pagina"
-    price, _ = mp.price_from_info((page or {}).get("priceInfo") or {})
+    price, _ = crawl.price_from_info((page or {}).get("priceInfo") or {})
     db.record_stats(conn, target.item_id, now, stats, price_eur=price, source=target.why)
     return f"{stats.get('views')}× bekeken, {stats.get('favorites')}× bewaard"
 

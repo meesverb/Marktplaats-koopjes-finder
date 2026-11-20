@@ -14,6 +14,7 @@ from unittest import mock
 
 from helpers import make_listing, mp, repo_file
 
+import crawl
 import db
 import koopjes
 import markets
@@ -594,7 +595,7 @@ class SummaryTest(TempDirTest):
         conn.close()
 
         def fake_collect(query, pages, delay, **options):
-            return mp.CrawlResult(listings[query], complete=True)
+            return crawl.CrawlResult(listings[query], complete=True)
 
         argv = [
             "--watchlist", "fietscomputer", "--no-html", "--no-log", "--no-price-history", "--delay", "0",
@@ -603,8 +604,8 @@ class SummaryTest(TempDirTest):
             "--history-file", str(self.dir / "history.json"),
             "--summary-file", str(self.dir / "runs.jsonl"),
         ]
-        with mock.patch.object(mp, "collect_listings", fake_collect), \
-                mock.patch.object(mp, "enrich_bid_listings", lambda *a, **k: None), \
+        with mock.patch.object(crawl, "collect_listings", fake_collect), \
+                mock.patch.object(crawl, "enrich_bid_listings", lambda *a, **k: None), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(mp.main(argv), 0)
 

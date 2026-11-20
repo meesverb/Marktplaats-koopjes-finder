@@ -9,9 +9,10 @@ import os
 import tempfile
 import unittest
 
-from helpers import make_listing, mp, repo_file
+from helpers import make_listing, repo_file
 
 import db
+import dealscore
 import scoring as sc
 import upgrade as up
 import valuation as val
@@ -728,7 +729,7 @@ class SegmentValueTest(unittest.TestCase):
 
 class SharedConstantsTest(unittest.TestCase):
     def test_market_observation_threshold_is_the_one_the_deal_score_uses(self):
-        self.assertEqual(up.MIN_MARKET_OBSERVATIONS, mp.SCORE_MARKET_MIN_OBSERVATIONS)
+        self.assertEqual(up.MIN_MARKET_OBSERVATIONS, dealscore.SCORE_MARKET_MIN_OBSERVATIONS)
 
     def test_default_negotiation_factor_comes_from_the_valuation_engine(self):
         # Eén bron van waarheid: fase 3 stelt de factor vast, fase 5 gebruikt

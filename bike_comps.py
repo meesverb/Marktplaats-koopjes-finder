@@ -37,8 +37,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+import crawl
 import db
-import racefiets_jev as mp
 import valuation as val
 
 MEE = val.COMP_TAKEN
@@ -98,7 +98,7 @@ class Row:
     def category_label(self) -> str:
         """De categorie als hij niet racefietsen is, leesbaar: "heren
         sportfietsen en toerfietsen". Leeg voor racefietsen."""
-        if not self.category or self.category == mp.ROAD_BIKE_CATEGORY:
+        if not self.category or self.category == crawl.ROAD_BIKE_CATEGORY:
             return ""
         return self.category.removeprefix("fietsen-").replace("-", " ")
 
@@ -185,7 +185,7 @@ def load_rows(conn: sqlite3.Connection, subject: val.Subject, *,
         params.append((as_of - timedelta(days=window_days)).isoformat(timespec="seconds"))
     rows = [
         r for r in conn.execute(sql, params).fetchall()
-        if not is_parts_category(mp.category_from_url(r["url"] or ""))
+        if not is_parts_category(crawl.category_from_url(r["url"] or ""))
     ]
     ids = [r["item_id"] for r in rows]
     specs = db.read_listing_specs(conn)
@@ -201,7 +201,7 @@ def load_rows(conn: sqlite3.Connection, subject: val.Subject, *,
         if not spec:
             # Nog nooit specs vastgelegd (een rij van vóór fase 2, of een
             # ronde zonder): dan dezelfde lezing van de tekst hier.
-            spec = from_text = mp.extract_specs(
+            spec = from_text = crawl.extract_specs(
                 f"{r['title'] or ''} {r['full_description'] or r['description'] or ''}")
         material = materials.get(r["item_id"]) or spec.get("frame_material") or None
         if not material:
@@ -239,7 +239,7 @@ def load_rows(conn: sqlite3.Connection, subject: val.Subject, *,
             bid_high=r["bid_high"],
             material=material,
             material_source=source,
-            category=mp.category_from_url(r["url"] or "") or "",
+            category=crawl.category_from_url(r["url"] or "") or "",
             year=int(year) if year and str(year).isdigit() else val.title_year(r["title"] or ""),
             model_label=labels.get(r["item_id"], ""),
             counts=counts,

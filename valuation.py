@@ -43,8 +43,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
+import crawl
 import db
-import racefiets_jev as mp
 
 # Staat in elke valuation-rij, zodat een latere fase kan zien met welke methode
 # een opgeslagen taxatie gemaakt is. Ophogen zodra de rekenwijze verandert.
@@ -389,8 +389,8 @@ def _is_complete_bike(candidate: CompCandidate) -> bool:
     fietsonderdelen raakt elk patroon en trekt de schatting naar een
     frameprijs. Dat kan sinds watchlists onderdelen in dezelfde database
     zetten. Een URL zonder herkenbare categorie mag door."""
-    category = mp.category_from_url(candidate.url)
-    return category is None or category == mp.ROAD_BIKE_CATEGORY
+    category = crawl.category_from_url(candidate.url)
+    return category is None or category == crawl.ROAD_BIKE_CATEGORY
 
 
 RUNGS = [
@@ -582,7 +582,7 @@ def candidate_from_row(
     title = row["title"] or ""
     # The listing page's full text where --detail-lookup fetched it.
     description = _row_value(row, "full_description") or row["description"] or ""
-    _, tier = mp.detect_groupset(f"{title} {description}")
+    _, tier = crawl.detect_groupset(f"{title} {description}")
     disappeared = row["disappeared_at"] is not None
     days_online = row["days_online"]
     if days_online is None and not disappeared:

@@ -43,8 +43,8 @@ from urllib.parse import urlencode
 
 import requests
 
+import crawl
 import db
-import racefiets_jev as mp
 import recheck as rc
 
 EARTH_RADIUS_KM = 6371.0088
@@ -127,7 +127,7 @@ def locate_postcode(postcode: str, session=None) -> Home:
         raise LocateError(f"'{postcode}' is geen Nederlandse postcode (bv. 3511 of 3511AB).")
     params = [("query", LOCATE_QUERY), ("limit", LOCATE_LIMIT), ("offset", 0), ("postcode", code)]
     try:
-        resp = rc._get(session or rc.make_session(), mp.BASE_URL + mp.SEARCH_API_PATH + "?" + urlencode(params))
+        resp = rc._get(session or rc.make_session(), crawl.BASE_URL + crawl.SEARCH_API_PATH + "?" + urlencode(params))
         resp.raise_for_status()
         data = json.loads(resp.text)
     except (requests.RequestException, ValueError) as exc:
@@ -138,8 +138,8 @@ def locate_postcode(postcode: str, session=None) -> Home:
                           "Er is niets opgeslagen.")
     points = []
     for raw in listings:
-        lat, lon = mp.search_location(raw) if isinstance(raw, dict) else (None, None)
-        meters = mp.as_number(((raw.get("location") or {}) if isinstance(raw, dict) else {}).get("distanceMeters"))
+        lat, lon = crawl.search_location(raw) if isinstance(raw, dict) else (None, None)
+        meters = crawl.as_number(((raw.get("location") or {}) if isinstance(raw, dict) else {}).get("distanceMeters"))
         if lat is not None and meters is not None and meters > 0:
             points.append((lat, lon, meters / 1000))
     if len(points) < MIN_POINTS:

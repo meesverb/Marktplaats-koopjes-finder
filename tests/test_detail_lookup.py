@@ -17,6 +17,7 @@ from unittest import mock
 
 from helpers import make_listing, mp, repo_file
 
+import crawl
 import db
 import scoring as sc
 import upgrade as up
@@ -35,28 +36,28 @@ ROAD_BIKE_URL = "https://www.marktplaats.nl/v/fietsen-en-brommers/fietsen-racefi
 
 class ParseListingPageTest(unittest.TestCase):
     def test_full_description_and_attributes(self):
-        text, attributes = mp.parse_listing_page(PAGE)
+        text, attributes = crawl.parse_listing_page(PAGE)
         self.assertIn("Groepset: Ultegra 11 speed 52/36\nCassette: Dura Ace", text)
         self.assertIn("Garmin houder & bel", text)
         self.assertEqual(attributes["framehoogte"], "53 tot 57 cm")
-        self.assertEqual(mp.page_specs(attributes), {"frame_material": "carbon", "brake_type": "velrem"})
+        self.assertEqual(crawl.page_specs(attributes), {"frame_material": "carbon", "brake_type": "velrem"})
 
     def test_a_page_without_the_description_block_is_none(self):
-        self.assertIsNone(mp.parse_listing_page("<html>verificatie</html>"))
+        self.assertIsNone(crawl.parse_listing_page("<html>verificatie</html>"))
 
     def test_the_labelled_groupset_line_wins_over_a_higher_cassette(self):
-        text, _ = mp.parse_listing_page(PAGE)
-        self.assertEqual(mp.detect_groupset(text), ("Shimano Ultegra", 5))
+        text, _ = crawl.parse_listing_page(PAGE)
+        self.assertEqual(crawl.detect_groupset(text), ("Shimano Ultegra", 5))
         # Without a label the old rule stands: highest tier mentioned.
-        self.assertEqual(mp.detect_groupset("Ultegra met Dura-Ace cassette")[1], 6)
+        self.assertEqual(crawl.detect_groupset("Ultegra met Dura-Ace cassette")[1], 6)
 
     def test_a_computer_mount_is_not_a_computer(self):
         for text in ("Garmin houder", "garmin-mount", "Wahoo Kickr trainer", "Garmin Varia radar"):
             with self.subTest(text=text):
-                self.assertNotIn("has_computer", mp.extract_specs(text))
+                self.assertNotIn("has_computer", crawl.extract_specs(text))
         for text in ("Garmin Edge 530 erbij", "met Wahoo Elemnt", "inclusief Garmin"):
             with self.subTest(text=text):
-                self.assertEqual(mp.extract_specs(text).get("has_computer"), "1")
+                self.assertEqual(crawl.extract_specs(text).get("has_computer"), "1")
 
 
 def budgets(amount=640.0):
@@ -130,9 +131,9 @@ class LookupRunTest(unittest.TestCase):
             "--reference-file", str(self.tmp / "geen-referentie.csv"),
         ] + list(extra)
         args = mp.parse_args(argv)
-        with mock.patch.object(mp, "collect_listings",
-                               lambda *a, **k: mp.CrawlResult([self.listing()])), \
-                mock.patch.object(mp, "enrich_bid_listings", lambda *a, **k: None), \
+        with mock.patch.object(crawl, "collect_listings",
+                               lambda *a, **k: crawl.CrawlResult([self.listing()])), \
+                mock.patch.object(crawl, "enrich_bid_listings", lambda *a, **k: None), \
                 mock.patch.object(mp, "fetch_listing_page", fake_page), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             mp.run_for_query(args, "test", False)

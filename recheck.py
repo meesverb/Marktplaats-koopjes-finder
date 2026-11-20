@@ -29,8 +29,8 @@ from typing import Optional
 
 import requests
 
+import crawl
 import db
-import racefiets_jev as mp
 import util
 
 # Wat Marktplaats teruggeeft voor een advertentie die weg is (verkocht,
@@ -103,7 +103,7 @@ class Recheck:
 
 def make_session() -> requests.Session:
     session = requests.Session()
-    session.headers.update({"User-Agent": mp.USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
+    session.headers.update({"User-Agent": crawl.USER_AGENT, "Accept-Language": "nl-NL,nl;q=0.9"})
     return session
 
 
@@ -131,11 +131,11 @@ def save_page_specs(conn, item_id: str, attributes: dict) -> None:
     save_listing_details() zet de pagina op opgehaald, en dan haalt de ronde
     hem nooit meer op: zonder dit bleef een fiets zonder maat in de
     zoekresultaten voorgoed "maat onbekend" (review, 06-10-2026)."""
-    height = attributes.get(mp.PAGE_FRAME_HEIGHT_LABEL, "")
+    height = attributes.get(crawl.PAGE_FRAME_HEIGHT_LABEL, "")
     if height:
         conn.execute("UPDATE listing SET frame_height = ? WHERE item_id = ? AND COALESCE(frame_height, '') = ''",
                      (height, item_id))
-    specs = mp.page_specs(attributes)
+    specs = crawl.page_specs(attributes)
     if specs:
         site = {r[0]: r[1] for r in conn.execute(
             "SELECT key, value FROM spec WHERE listing_id = ? AND source = ?", (item_id, db.SITE_SPEC_SOURCE))}
@@ -178,8 +178,8 @@ def recheck_listing(db_path, item_id: str, session=None, now: Optional[str] = No
                                "Er is niets opgeslagen.") from None
 
         try:
-            page = mp.listing_page_data(resp.text)
-        except mp.ListingPageError as exc:
+            page = crawl.listing_page_data(resp.text)
+        except crawl.ListingPageError as exc:
             raise _structure_error(str(exc)) from None
         if page is None:
             raise _structure_error("geen advertentie in window.__CONFIG__")
@@ -192,25 +192,25 @@ def recheck_listing(db_path, item_id: str, session=None, now: Optional[str] = No
         if missing:
             raise _structure_error(f"{', '.join(missing)} ontbreekt")
 
-        price, price_type = mp.price_from_info(page.get("priceInfo") or {})
-        listing = mp.Listing(
+        price, price_type = crawl.price_from_info(page.get("priceInfo") or {})
+        listing = crawl.Listing(
             item_id=item_id, title=result.title, description="", price_eur=price, price_type=price_type,
             city="", date="", condition="", frame_height="", groupset="", groupset_tier=None,
-            url=row["url"], price_is_bid=price_type in mp.BID_PRICE_TYPES,
+            url=row["url"], price_is_bid=price_type in crawl.BID_PRICE_TYPES,
             reserved=page.get("isReserved") is True,
         )
         if listing.price_is_bid:
             bids_info = page.get("bidsInfo")
             if not isinstance(bids_info, dict) or not bids_info:
                 raise _structure_error("biedinformatie ontbreekt bij een biedadvertentie")
-            mp.apply_bid_info(listing, bids_info)
-        stats = mp.page_stats(page)
+            crawl.apply_bid_info(listing, bids_info)
+        stats = crawl.page_stats(page)
         if stats:
             listing.page_stats = {**stats, "source": "controleer"}
         db.record_listing_check(conn, listing, now)
         if details:
             result.page = page
-            parsed = mp.parse_listing_page(resp.text)
+            parsed = crawl.parse_listing_page(resp.text)
             if parsed is not None:
                 result.description, result.attributes = parsed
                 db.save_listing_details(conn, {item_id: result.description}, now)

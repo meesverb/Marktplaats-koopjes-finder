@@ -11,9 +11,13 @@ import unittest
 
 from helpers import make_listing, mp
 
+import console
+import dealscore
+import report
+
 
 def render(listings, query="racefiets"):
-    return mp.render_html(listings, query)
+    return report.render_html(listings, query)
 
 
 class TemplateTest(unittest.TestCase):
@@ -29,12 +33,12 @@ class TemplateTest(unittest.TestCase):
     def test_template_lives_in_its_own_file(self):
         # §8 of the plan: the template is read at runtime from a file next to
         # the script, so the CSS/JS in it can use braces without doubling.
-        self.assertTrue(mp.REPORT_TEMPLATE_PATH.is_file())
+        self.assertTrue(report.REPORT_TEMPLATE_PATH.is_file())
         self.assertFalse(hasattr(mp, "HTML_TEMPLATE"))
 
     def test_missing_template_gives_a_clear_error(self):
         with self.assertRaises(SystemExit) as caught:
-            mp.load_report_template(mp.REPORT_TEMPLATE_PATH.with_name("bestaat_niet.html"))
+            report.load_report_template(report.REPORT_TEMPLATE_PATH.with_name("bestaat_niet.html"))
         self.assertIn("--no-html", str(caught.exception))
 
     def test_javascript_braces_are_single(self):
@@ -56,7 +60,7 @@ class TemplateTest(unittest.TestCase):
 
     def test_every_listing_gets_a_row(self):
         listings = [make_listing(item_id=str(i), price_eur=float(i + 1) * 10) for i in range(5)]
-        mp.flag_bargains(listings, 0.6)
+        dealscore.flag_bargains(listings, 0.6)
         self.assertEqual(render(listings).count("<tr data-new="), 5)
 
 
@@ -100,7 +104,7 @@ class FilterTabTest(unittest.TestCase):
 class ScoreCellTest(unittest.TestCase):
     def test_score_breakdown_is_available_as_a_tooltip(self):
         listing = make_listing(price_eur=50.0, pct_of_median=50.0)
-        mp.score_listing(listing)
+        dealscore.score_listing(listing)
         html = render([listing])
         self.assertIn("van mediaan", html)
         self.assertIn("score-pill", html)
@@ -143,15 +147,15 @@ class UnfilteredStatsTest(unittest.TestCase):
             ),
         ]
         listings = fixed + bids
-        mp.flag_bargains(listings, 0.6)
+        dealscore.flag_bargains(listings, 0.6)
         return listings, bids
 
     def test_print_table_footer_uses_the_unfiltered_median(self):
         listings, bids = self._listings()
-        all_stats = mp.price_stats(listings)
+        all_stats = dealscore.price_stats(listings)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            mp.print_table(bids, stats=all_stats)
+            console.print_table(bids, stats=all_stats)
         footer = [line for line in out.getvalue().splitlines() if "mediaan" in line]
         self.assertTrue(footer, "no footer line with a median found")
         self.assertIn("mediaan: €100", footer[0])
@@ -161,14 +165,14 @@ class UnfilteredStatsTest(unittest.TestCase):
         listings, bids = self._listings()
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            mp.print_table(bids)
+            console.print_table(bids)
         footer = [line for line in out.getvalue().splitlines() if "mediaan" in line]
         self.assertIn("mediaan: €35", footer[0])
 
     def test_render_html_uses_the_unfiltered_median(self):
         listings, bids = self._listings()
-        all_stats = mp.price_stats(listings)
-        html = mp.render_html(bids, "racefiets", stats=all_stats)
+        all_stats = dealscore.price_stats(listings)
+        html = report.render_html(bids, "racefiets", stats=all_stats)
         self.assertIn("mediaan €100", html)
         self.assertNotIn("mediaan €35", html)
 
