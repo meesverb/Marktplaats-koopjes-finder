@@ -22,12 +22,10 @@ met de metingen aan Marktplaats waar de keuzes op rusten.
 | [database.md](database.md) | `koopjes.db`: WAL-modus, wat erin staat, verhouding tot de oude CSV/JSON-bestanden |
 | [architectuur.md](architectuur.md) | welk bestand doet wat, met tabellen, migraties en ingangen — voor wie aan de code werkt |
 
-**Taal.** De onderwerpspagina's zijn Engels: het is de tekst van de oude,
-lange README, per onderwerp uit elkaar gehaald (16-11-2026) zonder er iets
-aan te veranderen behalve de verwijzingen tussen de pagina's. De README,
-`architectuur.md` en alles wat de eigenaar in het programma ziet zijn
-Nederlands. Vertalen en inkorten kan per pagina (stap D2 in
-[`VERBETERPLAN.md`](../VERBETERPLAN.md)).
+**Herkomst.** Dit is de tekst van de oude, lange Engelse README, per
+onderwerp uit elkaar gehaald (16-11-2026) en vertaald (21-11-2026). Elke
+pagina begint met "Zo gebruik je het"; getallen, vlaggen en metingen zijn
+ongewijzigd overgenomen.
 
 **Bijhouden.** Verandert het gedrag van een vlag, een pagina of een
 bestandsformaat, werk dan de pagina hier bij in dezelfde commit. Alles wat

@@ -305,7 +305,7 @@ rest veiliger.
   niet weggooien.
   *Gedaan 20-11-2026:* `LOGBOEK.md`: de acht gedateerde secties uit `NEXT_STEPS.md` letterlijk (nieuwste eerst), plus de oude "stand van zaken" van 27-09 als geschiedenis. `NEXT_STEPS.md` (was 400 regels, nu 119) houdt wat de naam zegt: de open ideeën en wat we over Marktplaats leerden. Gecontroleerd dat er geen regel verloren ging (op de oude inleiding na). Het verouderde blok "Lees dit eerst" in `PLAN_FIETSWAARDE.md` (87 tests, een oude branch) is één regel geworden: alle fases zijn af. §12 van het plan en `opdrachten/weekend.md` zijn gebleven: dat zijn de logboeken per fase en per opdracht, en inkorten zou metingen weggooien.
 
-- [ ] **D2 — De pagina's in `docs/` vertalen en inkorten, één per sessie.**
+- [x] **D2 — De pagina's in `docs/` vertalen en inkorten, één per sessie.**
   *Bevinding:* ze zijn Engels (zo is de README gegroeid), de rest is
   Nederlands; en ze vertellen de geschiedenis mee ("since 02-10-2026 ...").
   *Wat per pagina:* naar het Nederlands, de geschiedenis naar het logboek
@@ -315,6 +315,7 @@ rest veiliger.
   `flips.md`, `eigen-fiets.md`, `rapport.md`, `zoeken.md`,
   `referentiedata.md`, `database.md`.
   *Let op:* geen getal of vlag veranderen zonder het in de code na te gaan.
+  *Gedaan 20-11-2026:* Alle naslag is Nederlands. `dashboards.md` (546 regels) is eerst gesplitst in `live.md` (wat alle live pagina's delen: `/start`, markeren, controleer, afstand, eigen biedingen, weergaven), `fietscomputers.md` en `horloges.md`; daarna zijn alle pagina's vertaald, elk met bovenaan "Zo gebruik je het". Getallen, vlaggen, metingen en datums zijn ongewijzigd overgenomen; ingekort is vooral door opsommingen en door verhaaltjes over hoe het vroeger ging weg te laten waar het logboek ze al heeft. Gecontroleerd: geen dode links, elke verwijzing naar een kop bestaat, elke vlag uit `racefiets_jev.py --help` staat in `zoeken.md`.
 
 - [x] **D3 — `docs/architectuur.md` naast de code leggen.**
   *Bevinding:* de tekst komt uit de oude tabel in `CLAUDE.md` en is op 16-11

@@ -22,7 +22,7 @@ Wat het voor de eigenaar doet staat in `README.md`; alles per onderwerp in
 3. Draai de tests, vóór én na je wijziging:
 
 ```bash
-python -m unittest discover -s tests -t tests    # 1082 tests, ~15 s, moet groen zijn
+python -m unittest discover -s tests -t tests    # 1081 tests, ~15 s, moet groen zijn
 ```
 
 4. Raakt je wijziging het crawlen, draai dan één echte pagina (één verzoek):
@@ -75,8 +75,7 @@ niet raden.
 
 - **Nederlandse teksten voor de gebruiker, Engelse identifiers in de code.**
   Console-uitvoer en pagina's zijn Nederlands; de kolomkoppen van de
-  hoofdtabel zijn historisch Engels. De onderwerpspagina's in `docs/` zijn
-  (nog) Engels, de rest van de documentatie Nederlands.
+  hoofdtabel zijn historisch Engels. Alle documentatie is Nederlands.
 - Commentaar legt uit *waarom*, niet *wat*. Vooral bij de eigenaardigheden van
   Marktplaats — die zijn niet af te leiden uit de code. Een meting hoort een
   datum te hebben ("gemeten 28-09-2026").

@@ -2,184 +2,204 @@
 
 [← README](../README.md) · [alle naslag](README.md)
 
-De CSV-bestanden waartegen advertenties herkend en vergeleken worden, en de hulpscripts om ze te onderhouden. De catalogus van sporthorloges (`reference_sport_watches.csv`) staat bij de horloges in [horloges.md](horloges.md).
+## Zo gebruik je het
 
-## Comparing against original prices — `--reference-file`
+```bash
+python racefiets_jev.py --query "giant defy" --reference-file reference_bikes.csv
+python check_reference_overlaps.py --file reference_bikes.csv   # overschaduwt een patroon een ander?
+python reference_overview.py                                    # de luidsprekerreferentie als doorzoekbare pagina
+python check_hifi_brand.py "Mission"                            # welke luidsprekers een merk heeft
+```
 
-There's no free database of "every model with its original price and a
-score" to plug in, for bikes or anything else. Instead, `--reference-file`
-lets you maintain your own — a plain CSV that grows as you go, at zero cost
-and no API key:
+De CSV-bestanden waartegen advertenties herkend en vergeleken worden, en de
+hulpscripts om ze bij te houden. Elk staat in git met `git add -f` (de
+`.gitignore` sluit `*.csv` uit), elke rij heeft een bron, en een nieuwprijs
+staat er alleen als een bron hem in euro's gaf (CLAUDE.md: geen verzonnen
+marktfeiten). De catalogi van fietscomputers en sporthorloges staan bij hun
+markt: [fietscomputers.md](fietscomputers.md) en [horloges.md](horloges.md).
+
+| Bestand | Wat | Gebruikt door |
+| --- | --- | --- |
+| `reference_prices.csv` | 43 luidsprekers, met nieuwprijs en een Denon SC-N10 als basislijn | `--reference-file` (de standaard) |
+| `reference_bikes.csv` | fietsmodellen: de Defy-familie, upgradedoelen en modelfamilies | `--reference-file`, herkenning op `/racefietsen`, de taxatie |
+| `reference_bike_accessories.csv` | fietscomputers en powermeters | `--reference-file` voor die zoekopdrachten |
+| `reference_bike_catalog.csv` | één rij per merk/model/modeljaar met specs en nieuwprijs | merken (slapers, ongeherkende lijst), modelnamen op `/racefietsen` |
+| `reference_price_history.csv` | je eigen waargenomen vraagprijzen (niet in git) | "2e-hands gem." in de dealscore |
+
+## Vergelijken met nieuwprijzen — `--reference-file`
+
+Er is geen gratis database van "elk model met zijn nieuwprijs en een score",
+voor fietsen of iets anders. In plaats daarvan houd je met `--reference-file`
+je eigen bij — een gewone CSV die meegroeit, zonder kosten of API-sleutel:
 
 ```csv
 pattern,label,original_price_eur,specs,score,better_than_baseline
 Canyon Ultimate CF SLX 8,Canyon Ultimate CF SLX 8 (2021),4000,"11.7 kg, Ultegra Di2",8.5/10,1
 ```
 
-- `pattern`: regex (case-insensitive), matched against the listing title and
-  description combined. Put more specific patterns earlier in the file — the
-  first match wins.
-- `label`: what to display when matched.
-- `original_price_eur`: what it cost new (optional — leave blank if unknown).
-- `specs`: the objective specs worth comparing (power, sensitivity, weight,
-  whatever matters for that category) — optional, free text.
-- `score`: any rating/ranking text you want shown (optional, free text).
-- `better_than_baseline`: `1` if this model is better than whatever you're
-  comparing against (e.g. your own gear's reference row) — used for the
-  HTML report's "Beter dan referentie" filter tab. Leave `0`/blank otherwise.
+- `pattern`: regex (hoofdletterongevoelig), gematcht tegen titel en
+  omschrijving samen. Zet specifiekere patronen eerder in het bestand — de
+  eerste match wint.
+- `label`: wat er getoond wordt bij een match.
+- `original_price_eur`: wat hij nieuw kostte (optioneel — leeg als onbekend).
+- `specs`: de objectieve specs die het vergelijken waard zijn (vermogen,
+  gevoeligheid, gewicht, wat ertoe doet voor die categorie) — optioneel, vrije
+  tekst.
+- `score`: een beoordeling die je wilt tonen (optioneel, vrije tekst).
+- `better_than_baseline`: `1` als dit model beter is dan waar je tegen
+  vergelijkt (bijv. de rij van je eigen spullen) — voor de filtertab "Beter
+  dan referentie" in het rapport. Anders `0`/leeg.
 
-When a listing matches, the report shows the label, the original price and
-what percentage of it is being asked now, the specs, and the score — in
-their own columns in the HTML report (Referentie / Nieuwprijs / Specs), plus
-a purple "BETER" badge when `better_than_baseline` is set. See
-`reference_prices.example.csv` for the exact format — copy it to
-`reference_prices.csv` and fill in models you actually care about (the
-values in the example file are placeholders, not real prices). If you want
-help researching a specific model's original price, just ask — that's more
-reliable done one model at a time than guessed in bulk.
+Bij een match toont het rapport het label, de nieuwprijs en welk percentage
+daarvan nu gevraagd wordt, de specs en de score — in eigen kolommen
+(Referentie / Nieuwprijs / Specs), plus een paars label "BETER" als
+`better_than_baseline` gezet is. Zie `reference_prices.example.csv` voor het
+precieze formaat (de waarden daarin zijn plaatsvullers, geen echte prijzen).
+De nieuwprijs van een model opzoeken gaat betrouwbaarder één model tegelijk dan
+in bulk gegokt.
 
-**Bikes have their own reference files.** `reference_prices.csv` is the
-speakers; a bike pattern in there would be matched against speaker titles.
-For bike searches, point `--reference-file` at one of these instead:
+## Fietsen hebben hun eigen referentiebestanden
+
+`reference_prices.csv` gaat over luidsprekers; een fietspatroon daarin zou
+tegen luidsprekertitels gematcht worden. Wijs voor fietszoekopdrachten
+`--reference-file` naar een van deze:
 
 ```bash
 python racefiets_jev.py --query "giant defy" --reference-file reference_bikes.csv
 python racefiets_jev.py --query "garmin edge" --reference-file reference_bike_accessories.csv
 ```
 
-- `reference_bikes.csv` — the Giant Defy family (the owner's own bike is the
-  row marked "Baseline") plus common upgrade targets (Canyon Endurace,
-  Specialized Roubaix, Trek Domane), followed by one row per model family
-  that often came up unrecognised in `lijsten/zonder_referentie.txt` (Giant
-  TCR, Trek Madone, Cube Attain, Koga-Miyata, ...). Those family rows name
-  no original price — a family spans trims and years — and fill in
-  `frame_material` only where the name itself settles it (Advanced, ALR,
-  CAAD, GTC, C:62, "Carbon"); their source is a representative row of
-  `reference_bike_catalog.csv`, whose counts per material are in `specs`.
-  Below those come 226 rows, one per model line of that catalog that none of
-  the rows above recognises (brand + first word of the model name: BH Quartz,
-  Felt F75, Cervélo R5, Trek Silque, Scott Contessa, ...), plus "Giant Defy
-  (overig)" for a Defy the researched rows can't place. Those are for
-  recognition only: the brand has to come before the line in the title
-  ("Terra" and "Supreme" are bikes of several brands), and they name no
-  original price and no `frame_material`. Catalog words that are ordinary
-  Dutch or a number in a title (Pinarello "MAAT", Cannondale "700", Bianchi
-  "1885") and catalog typos of a line that already has a row got no row.
-- `reference_bike_accessories.csv` — bike computers (Wahoo, Garmin) and
-  power meters. These are deliberately **not** in the bike file: the first
-  matching row supplies the original price the dealscore compares against,
-  so a "Garmin Edge 530" row there would make a €900 bike that mentions its
-  computer look like 300% of a €299.99 original price.
+- `reference_bikes.csv` — de Giant Defy-familie (de eigen fiets is de rij met
+  "Baseline") plus veelvoorkomende upgradedoelen (Canyon Endurace, Specialized
+  Roubaix, Trek Domane), gevolgd door één rij per modelfamilie die vaak
+  ongeherkend in `lijsten/zonder_referentie.txt` stond (Giant TCR, Trek
+  Madone, Cube Attain, Koga-Miyata, ...). Die familierijen noemen geen
+  nieuwprijs — een familie spant uitvoeringen en jaren — en vullen
+  `frame_material` alleen waar de naam het zelf beslist (Advanced, ALR, CAAD,
+  GTC, C:62, "Carbon"); hun bron is een representatieve rij uit
+  `reference_bike_catalog.csv`, met de aantallen per materiaal in `specs`.
+  Daaronder 226 rijen, één per modellijn uit die catalogus die geen rij
+  hierboven herkent (merk + eerste woord van de modelnaam: BH Quartz, Felt
+  F75, Cervélo R5, Trek Silque, Scott Contessa, ...), plus "Giant Defy
+  (overig)" voor een Defy die de onderzochte rijen niet kunnen plaatsen. Die
+  zijn alleen voor herkenning: het merk moet vóór de lijn in de titel staan
+  ("Terra" en "Supreme" zijn fietsen van meerdere merken), en ze noemen geen
+  nieuwprijs en geen `frame_material`. Catalogewoorden die gewoon Nederlands of
+  een getal in een titel zijn (Pinarello "MAAT", Cannondale "700", Bianchi
+  "1885") en tikfouten in de catalogus van een lijn die al een rij heeft,
+  kregen geen rij.
+- `reference_bike_accessories.csv` — fietscomputers (Wahoo, Garmin) en
+  powermeters. Die staan er met opzet **niet** in het fietsbestand: de eerste
+  passende rij levert de nieuwprijs waar de dealscore tegen vergelijkt, dus een
+  rij "Garmin Edge 530" daar zou een fiets van €900 die zijn computer noemt
+  laten lijken op 300% van een nieuwprijs van €299,99.
 
-Both files add three optional columns after the usual six: `kind` (`bike`,
-`computer`, `powermeter`, ...), `brand` and `source_url`. The script ignores
-them; the SQLite import (`--db`) stores them in the `model` table. Every row
-has a source, and `original_price_eur` is only filled in where a source
-gives a euro price — a model year or trim whose price couldn't be found is
-left blank rather than converted from dollars or guessed.
+Beide bestanden hebben na de gewone zes drie optionele kolommen: `kind`
+(`bike`, `computer`, `powermeter`, ...), `brand` en `source_url`. Het script
+negeert ze; de SQLite-import (`--db`) bewaart ze in de tabel `model`. Elke rij
+heeft een bron, en `original_price_eur` staat er alleen waar een bron een
+europrijs geeft — een modeljaar of uitvoering waarvan de prijs niet te vinden
+was blijft leeg in plaats van omgerekend uit dollars of gegokt.
 
-`reference_bikes.csv` has one more column, `frame_material` (`carbon`,
-`aluminium`, `staal`, `titanium` or empty), filled in only where the row's own
-sourced specs name the material. The valuation uses it: a listing matched to
-the aluminium "Giant Defy 0-5" row is no comp for a carbon Defy Composite,
-even when its text never says "alu".
+`reference_bikes.csv` heeft nog een kolom, `frame_material` (`carbon`,
+`aluminium`, `staal`, `titanium` of leeg), alleen gevuld waar de eigen
+onderbouwde specs van de rij het materiaal noemen. De taxatie gebruikt hem:
+een advertentie die op de aluminium rij "Giant Defy 0-5" past is geen
+vergelijking voor een carbon Defy Composite, ook als de tekst nooit "alu" zegt.
 
-## Bike catalogue — `reference_bike_catalog.csv`
+## De fietscatalogus — `reference_bike_catalog.csv`
 
-A third bike file, and a different kind: not regex patterns to match titles
-against, but one row per brand / model / model year with the specs and the
-original price. The pattern files can't hold this — every "Defy Advanced 2"
-from 2016 to 2025 would share one pattern, and with first-match-wins only
-the first of those rows would ever be used — which is also why it can't be
-passed to `--reference-file` (the run warns and matches nothing). Only its
-`brand` column is read automatically: `sleepers.py` uses it to rule out
-listings that name a brand, and `koopjes.py`'s list of unmatched listings
-groups by it. The rest — specs and new prices per model year — is reference
-data for looking things up by hand; the valuation doesn't read it (yet).
+Een derde fietsbestand, en een ander soort: geen regex-patronen om titels
+tegen te matchen, maar één rij per merk / model / modeljaar met de specs en de
+nieuwprijs. De patroonbestanden kunnen dat niet houden — elke "Defy Advanced 2"
+van 2016 tot 2025 zou één patroon delen, en met eerste-match-wint zou alleen de
+eerste rij ooit gebruikt worden — en daarom kan hij ook niet aan
+`--reference-file` (de run waarschuwt en herkent niets). Alleen de kolom
+`brand` wordt vanzelf gelezen: `sleepers.py` sluit er advertenties mee uit die
+een merk noemen, en de lijst ongeherkende advertenties van `koopjes.py`
+groepeert erop; `bike_identity.py` haalt er de modelnamen per merk uit. De rest
+— specs en nieuwprijzen per modeljaar — is naslag om met de hand op te zoeken;
+de taxatie leest het (nog) niet.
 
-Columns: `brand`, `model`, `model_year`, `seen_date`, `category`,
+Kolommen: `brand`, `model`, `model_year`, `seen_date`, `category`,
 `frame_material`, `groupset`, `electronic`, `speeds`, `brake_type`,
-`weight_kg`, `new_price`, `currency`, `market`, `price_basis`, `specs` (the
-full spec list as the source gives it), `source_url`, `spec_source_url`.
+`weight_kg`, `new_price`, `currency`, `market`, `price_basis`, `specs` (de
+volledige specslijst zoals de bron hem geeft), `source_url`,
+`spec_source_url`.
 
-Where it comes from, per brand:
+Waar het vandaan komt, per merk:
 
-| Brand | Specs and model year | Price |
+| Merk | Specs en modeljaar | Prijs |
 | --- | --- | --- |
-| Giant | giant-bicycles.com/nl — archived model pages (Wayback Machine) and Giant's own "Oudere modellen" archive | the NL price on the archived page, the earliest capture of that model year |
-| Trek | trekbikes.com/nl — Trek's bike archive (2011-2026) | NL price from archived overview/product pages; today's price for bikes still on sale |
-| Sensa | sensabikes.com — archived model pages | the price on the page. **No model year**: the pages don't state one, so `model_year` stays empty and `seen_date` holds the capture date |
-| Cube (today's line-up) | cube.eu/nl-nl — no model year on the page, so `seen_date` | the NL price shown today |
-| Cube (to 2024) and 26 other brands | bikezona.com catalogue: Specialized, Cannondale, Scott, Canyon, BMC, Bianchi, Merida, Orbea, Ridley, Cervélo, Pinarello, Focus, Lapierre, Rose, Stevens, KTM, Felt, Wilier, Colnago, De Rosa, Kuota, Time, BH, Fuji, GT, Btwin | bikezona's price, `market` = `ES` |
+| Giant | giant-bicycles.com/nl — gearchiveerde modelpagina's (Wayback Machine) en Giants eigen archief "Oudere modellen" | de NL-prijs op de gearchiveerde pagina, de vroegste opname van dat modeljaar |
+| Trek | trekbikes.com/nl — Treks fietsarchief (2011-2026) | NL-prijs van gearchiveerde overzichts-/productpagina's; de prijs van vandaag voor fietsen die nog te koop zijn |
+| Sensa | sensabikes.com — gearchiveerde modelpagina's | de prijs op de pagina. **Geen modeljaar**: de pagina's noemen er geen, dus `model_year` blijft leeg en `seen_date` heeft de opnamedatum |
+| Cube (het aanbod van nu) | cube.eu/nl-nl — geen modeljaar op de pagina, dus `seen_date` | de NL-prijs die nu getoond wordt |
+| Cube (tot 2024) en 26 andere merken | de catalogus van bikezona.com: Specialized, Cannondale, Scott, Canyon, BMC, Bianchi, Merida, Orbea, Ridley, Cervélo, Pinarello, Focus, Lapierre, Rose, Stevens, KTM, Felt, Wilier, Colnago, De Rosa, Kuota, Time, BH, Fuji, GT, Btwin | de prijs van bikezona, `market` = `ES` |
 
-Things to keep in mind when using it:
+Om op te letten:
 
-- **`market` matters.** `NL` is the brand's own Dutch price; `ES` is the
-  Spanish catalogue price from bikezona.com — a real euro list price, but not
-  the Dutch one. An ES row only appears where the brand's own Dutch page gave
-  no price for that model year.
-- **A price is what the source showed, on the date in `price_basis`.** For an
-  archived page that is usually the launch price; a capture late in the
-  season can already show a reduction. For bikes on sale today, Giant's
-  webshop discount is not counted (the "Reguliere prijs" is used), Trek's
-  `wasPrice` likewise.
-- **Derived columns are read from the row's own spec text** and left empty
-  when that text doesn't say — `brake_type` in particular is often empty for
-  older bikes whose spec list names the brake model without saying
-  "rim" or "disc". "Disc" in the model name counts.
-- Framesets, e-bikes, flat-bar fitness bikes and kids' bikes are left out.
+- **`market` doet ertoe.** `NL` is de eigen Nederlandse prijs van het merk;
+  `ES` de Spaanse catalogusprijs van bikezona.com — een echte europrijs, maar
+  niet de Nederlandse. Een ES-rij staat er alleen waar de eigen Nederlandse
+  pagina van het merk voor dat modeljaar geen prijs gaf.
+- **Een prijs is wat de bron toonde, op de datum in `price_basis`.** Bij een
+  gearchiveerde pagina is dat meestal de lanceringsprijs; een opname laat in
+  het seizoen kan al een korting tonen. Voor fietsen die nu te koop zijn telt
+  de webshopkorting van Giant niet (de "Reguliere prijs" telt), de `wasPrice`
+  van Trek evenmin.
+- **Afgeleide kolommen komen uit de eigen specstekst van de rij** en blijven
+  leeg als die het niet zegt — `brake_type` vooral is vaak leeg bij oudere
+  fietsen waarvan de specslijst het remmodel noemt zonder "rim" of "disc".
+  "Disc" in de modelnaam telt.
+- Framesets, e-bikes, fitnessfietsen met plat stuur en kinderfietsen zijn
+  weggelaten.
 
-Rebuilding it is slow (hours: every request is spaced out, and the Wayback
-Machine is often slow or briefly offline). The tools are in `catalog_tools/`;
-run them from an empty scratch directory, because they write a page cache and
-intermediate JSON to the working directory:
+Opnieuw opbouwen duurt lang (uren: elk verzoek met pauze, en de Wayback
+Machine is vaak traag of even weg). Het gereedschap staat in `catalog_tools/`;
+draai het vanuit een lege map, want het schrijft een paginacache en
+tussen-JSON in de werkmap:
 
 ```bash
 mkdir /tmp/catalog && cd /tmp/catalog
-sh /path/to/repo/catalog_tools/run_all.sh
+sh /pad/naar/repo/catalog_tools/run_all.sh
 ```
 
-`tests/test_bike_catalog.py` checks every row has a source, every price a
-market and a basis, and that no model year appears that the source didn't
-state.
+`tests/test_bike_catalog.py` controleert dat elke rij een bron heeft, elke prijs
+een markt en een basis, en dat er geen modeljaar staat dat de bron niet
+noemde.
 
-## Your own market price history — `--price-history-file`
+## Je eigen marktprijsgeschiedenis — `--price-history-file`
 
-Every time a listing matching a reference model is seen for the first time,
-its price gets logged to `reference_price_history.csv` (created
-automatically). From the second time a model shows up, the report also
-displays "2e-hands gem. €X (n=Y)" — the actual average secondhand asking
-price you've personally observed for that model, based on Y past sightings.
-This needs no research or original price at all, grows automatically the
-more you run the script, and is arguably more useful than a decades-old
-retail price for judging whether an asking price is reasonable. Disable
-with `--no-price-history`.
+Elke keer dat een advertentie die op een referentiemodel past voor het eerst
+gezien wordt, komt zijn prijs in `reference_price_history.csv` (vanzelf
+aangemaakt). Vanaf de tweede keer dat een model voorbijkomt, toont het rapport
+ook "2e-hands gem. €X (n=Y)" — de gemiddelde 2e-handsvraagprijs die je zelf
+voor dat model zag, op Y eerdere waarnemingen. Daar is geen onderzoek of
+nieuwprijs voor nodig, het groeit vanzelf, en het zegt vaak meer over een
+vraagprijs dan een nieuwprijs van jaren geleden. Uit met
+`--no-price-history`.
 
-## `check_hifi_brand.py` — a research aid for filling in the reference file
+## De hulpscripts
 
-When researching models for `reference_prices.csv` (audio speakers), this
-checks which models a brand actually has on hifidatabase.com, with
-view/vote counts, in a single request — much cheaper than a full web
-search per model, and the vote count tells you upfront whether a model
-is even worth researching further before spending that search.
+**`check_hifi_brand.py`** — voor het aanvullen van `reference_prices.csv`
+(luidsprekers): welke modellen een merk echt heeft op hifidatabase.com, met
+aantallen weergaven/stemmen, in één verzoek — veel goedkoper dan een volledige
+zoektocht per model, en het aantal stemmen zegt vooraf of een model het
+uitzoeken waard is. Staat los van `racefiets_jev.py`. De site heeft
+botbescherming die na een paar snelle verzoeken ingrijpt, dus één merk
+tegelijk, niet in een lus.
 
 ```bash
 python check_hifi_brand.py "Mission"
 python check_hifi_brand.py "Wharfedale" --min-votes 5
 ```
 
-Not wired into `racefiets_jev.py` itself — it's a standalone lookup you run
-by hand while researching, not something the main script needs. The site
-has bot-protection that kicks in after several rapid requests, so use it a
-brand at a time rather than in a loop.
-
-## `check_reference_overlaps.py` — validate the reference file
-
-As `reference_prices.csv` grows, a pattern can end up broader than intended
-and start matching listings meant for a different row (first match in file
-order wins, so the broader row silently steals them). This checks every
-row's pattern against every other row's own label and reports any
-unexpected match — no network access needed.
+**`check_reference_overlaps.py`** — naarmate een referentiebestand groeit, kan
+een patroon breder worden dan bedoeld en advertenties pakken die voor een
+andere rij bedoeld waren (de eerste match in bestandsvolgorde wint, dus de
+bredere rij steelt ze stil). Dit toetst het patroon van elke rij aan het label
+van elke andere rij en meldt elke onverwachte match — zonder netwerk.
 
 ```bash
 python check_reference_overlaps.py
@@ -187,22 +207,15 @@ python check_reference_overlaps.py --file reference_bikes.csv
 python check_reference_overlaps.py --file reference_bike_accessories.csv
 ```
 
-## `reference_overview.py` — browse the reference database
-
-Renders `reference_prices.csv` (plus `reference_price_history.csv` if
-present) as a standalone, searchable, sortable HTML page — a way to review
-your whole reference database without opening the CSV.
+**`reference_overview.py`** — zet `reference_prices.csv` (plus
+`reference_price_history.csv` als die er is) om in een losse, doorzoekbare,
+sorteerbare HTML-pagina, om je hele referentiedatabase te bekijken zonder de
+CSV te openen.
 
 ```bash
 python reference_overview.py
 ```
 
-`reference_prices.csv` itself is gitignored by default (like the other
-local/personal files), so it's yours to edit freely without it showing up as
-a change to commit — except this repo's copy is force-added anyway, since it
-already has real researched entries in it (currently 43 bookshelf
-speakers, compared against a Denon SC-N10 baseline — see git log for the
-sources). Keep adding to it freely; `git add -f reference_prices.csv` if you
-want your local edits committed too, otherwise they just stay local. The
-same goes for `reference_bikes.csv` and `reference_bike_accessories.csv`
-(force-added, with a `source_url` per row).
+Lokale wijzigingen aan een referentiebestand komen niet vanzelf in git (de
+`.gitignore` sluit `*.csv` uit); `git add -f reference_prices.csv` als je ze
+wilt committen. De bronnen van de luidsprekers staan in de git-geschiedenis.
